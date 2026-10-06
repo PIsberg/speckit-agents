@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "speckit-agents/activity-record/1.0",
+  "title": "speckit-agents activity record, schema 1.0",
+  "description": "One line of <git common dir>/speckit-team/activity/*.jsonl. Within major version 1 changes are additive: consumers MUST ignore unknown fields and unknown enum values. additionalProperties is left open on purpose.",
+  "type": "object",
+  "required": ["schema", "id", "ts", "kind", "source", "session", "agent", "feature", "phase", "worktree"],
+  "properties": {
+    "schema": { "type": "string", "pattern": "^1\\.[0-9]+$" },
+    "id": { "type": "string", "minLength": 1 },
+    "ts": { "type": "string", "format": "date-time" },
+    "kind": { "type": "string", "examples": ["agent-start", "agent-stop", "tool", "decision", "gate", "verdict", "lane", "phase"] },
+    "source": { "type": "string", "examples": ["hook", "mod"] },
+    "session": { "type": "string", "minLength": 1 },
+    "agent": {
+      "type": "object",
+      "required": ["id", "name", "team"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "team": { "type": "boolean" }
+      }
+    },
+    "feature": { "type": ["string", "null"] },
+    "phase": { "type": ["string", "null"], "examples": ["specify", "plan", "audit", "red", "green", "verify", "unknown"] },
+    "worktree": { "type": "string", "not": { "pattern": "^([A-Za-z]:|/)" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "agent-start" } } },
+      "then": { "properties": { "description": { "type": "string", "maxLength": 200 } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "tool" } } },
+      "then": {
+        "required": ["tool", "activity", "path"],
+        "properties": {
+          "tool": { "type": "string" },
+          "activity": { "type": "string", "examples": ["reading", "writing", "running", "searching", "delegating", "other"] },
+          "path": { "type": ["string", "null"], "not": { "pattern": "^([A-Za-z]:|/)" } },
+          "command": { "type": "string", "maxLength": 200 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "decision" } } },
+      "then": {
+        "required": ["rule", "outcome", "tool", "path"],
+        "properties": {
+          "rule": { "type": "string" },
+          "outcome": { "type": "string", "examples": ["allow", "deny", "block"] },
+          "tool": { "type": ["string", "null"] },
+          "path": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "gate" } } },
+      "then": {
+        "required": ["outcome", "trigger", "cause", "tool"],
+        "properties": {
+          "outcome": { "type": "string", "examples": ["allow", "block"] },
+          "trigger": { "type": "string", "examples": ["tool", "skill", "command"] },
+          "cause": { "type": ["string", "null"], "examples": ["no-feature", "no-verdict", "verdict-fail", "stale-audit"] },
+          "tool": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "verdict" } } },
+      "then": {
+        "required": ["verdict", "fingerprint"],
+        "properties": {
+          "verdict": { "type": "string", "examples": ["PASS", "FAIL"] },
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "lane" } } },
+      "then": {
+        "required": ["rule", "result", "paths", "pathCount", "final"],
+        "properties": {
+          "rule": { "type": "string", "examples": ["tests", "no-tests"] },
+          "result": { "type": "string", "examples": ["clean", "violations", "unchecked"] },
+          "paths": { "type": "array", "items": { "type": "string" }, "maxItems": 20 },
+          "pathCount": { "type": "integer", "minimum": 0 },
+          "final": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "phase" } } },
+      "then": {
+        "required": ["previous"],
+        "properties": {
+          "phase": { "type": "string" },
+          "previous": { "type": ["string", "null"] }
+        }
+      }
+    }
+  ]
+}
