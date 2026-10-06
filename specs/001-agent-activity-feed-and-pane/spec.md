@@ -19,6 +19,12 @@
 - Q: When is an agent shown as stale? -> A: After 120 seconds without a record.
 - Audit 2 fix (C1): SC-009 no longer demands byte-identical restore, because other tools rewrite the settings file between sessions. It now requires the same parsed value, preserved indentation and line endings unless something else changed the file, zero files left behind, and an idempotent second install.
 - Audit 2 fix (H3): the macOS and Linux "not run" follow-up in FR-020 and SC-005 is tracked as a GitHub issue in PIsberg/speckit-agents, linked from the feature PR.
+- Amendment 2026-10-06 (owner): added User Story 6, FR-024 to FR-035 and SC-010 to SC-014 for a richer, switchable view; the plain board stays the default.
+- Q (rich view scope, FR-026 to FR-028): which elements and numbers? -> A: All four elements; activity history in 15-second intervals over the last 5 minutes; 5-second highlight; at most 2 redraws per second.
+- Q (switch, FR-032): how is it made? -> A: An argument on the panel command naming the view, plus a key that toggles while the panel is open; the panel states how to switch.
+- Q (persistence, FR-034): what scope? -> A: Per user, for all repositories, stored locally; a missing or unreadable choice falls back to the plain board and records an observer fault.
+- Q (screen, FR-031): how much? -> A: At most 20 terminal lines; below 80 columns fall back to the plain board with a stated notice.
+- Q (summary): does the choice affect the one-line summary? -> A: No; the summary is identical in both views, only the open panel changes.
 - Review fix: User Story 1 scenario 1 no longer allows hiding the view when idle; the summary shows an idle state (0 agents) and the last completed phase, consistent with FR-012.
 - Audit fix (M5): FR-001 now includes "observer fault" as an activity kind, so faults are readable through the documented interface and the view (FR-016, FR-018) consistent.
 - Audit fix (M6): FR-020 states the exception that macOS and Linux verification is "not run", tracked as a follow-up issue, not claimed as passed.
@@ -110,6 +116,26 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 
 ---
 
+### User Story 6 - Switch to a richer visual view and back (Priority: P2)
+
+The plain text board stays the default. The user can switch to a richer view that places each active agent on a pipeline track, shows agents as cards with a short activity history, and briefly highlights important decisions, then switch back at any time, including mid-pipeline. The choice is remembered across sessions.
+
+**Why this priority**: The owner wants a more engaging way to see who is doing what, without giving up the plain board. It builds on the P1 view and the same documented interface.
+
+**Independent Test**: With a pipeline running, switch to the rich view and back, and confirm the content matches the documented records and the plain board is shown on a fresh install.
+
+**Acceptance Scenarios**:
+
+1. **Given** a fresh install, **When** the user opens the panel, **Then** the plain board is shown.
+2. **Given** the plain board is shown, **When** the user switches to the rich view, **Then** the rich view appears within 1 second without restarting the session or the pipeline, and agents already running remain shown.
+3. **Given** the rich view is chosen and the session is ended and restarted, **When** the user opens the panel, **Then** the rich view is shown; **When** the user switches back, **Then** the plain board is shown on the next restart.
+4. **Given** the rich view is shown and agents are in 3 different phases, **When** the user looks at the pipeline track, **Then** each agent appears on its own phase, and agents with no phase appear in a separate "no phase" area.
+5. **Given** a guardrail denial, a blocked gate or a FAIL verdict is recorded, **When** it happens, **Then** it is highlighted for 5 seconds with a text marker, then settles into the decisions list without the marker.
+6. **Given** the terminal is narrow or short, **When** the rich view cannot fit, **Then** it degrades to a reduced form or to the plain board, and states that it did, and never wraps into unreadability.
+7. **Given** a repository without Spec Kit initialised, **When** the user tries to switch, **Then** nothing is shown.
+
+---
+
 ### Edge Cases
 
 - A malformed, empty or unknown hook input arrives: nothing is thrown, nothing is blocked, and either a minimal event or no event is produced. A guardrail hook given such input makes no decision (the action proceeds, as it does today when the hook crashes) and the failure is recorded as an observer fault so it is visible.
@@ -162,6 +188,21 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - **FR-022**: The feature MUST cost nothing in repositories without Spec Kit initialised: no output, no blocking, no measurable delay.
 - **FR-023**: Docs MUST state what was verified in a live session, what only by unit test, and what not at all.
 
+**Rich view and switching**
+
+- **FR-024**: The plain board (FR-012) MUST remain the default on a fresh install. A second, richer view MUST be available alongside it.
+- **FR-025**: The rich view MUST show a pipeline track of the six phases (spec, plan, audit, red, green, gate) with each active team agent placed on its current phase, and agents without a phase in a separate area.
+- **FR-026**: The rich view MUST show each agent as a card with name, state (active, finished, stale), current activity and target, time since last activity, and a small activity history of tool calls per interval over the last few minutes. The history uses 15-second intervals over the last 5 minutes.
+- **FR-027**: In the rich view, a guardrail denial, gate block or FAIL verdict MUST be highlighted when it happens for 5 seconds, then settle into the decisions list.
+- **FR-028**: The rich view MUST show that it is live (a running indicator) and MUST NOT redraw more than 2 times per second, so that it neither floods the screen nor flickers.
+- **FR-029**: The rich view MUST read only the documented interface (FR-016) and MUST carry every item of the plain board (agents, decisions, latest verdict, phase, observer faults), so switching loses no information.
+- **FR-030**: Every state in the rich view MUST be readable without colour; colour may add to words and symbols, never replace them (FR-015).
+- **FR-031**: The rich view MUST degrade on narrow or short terminals to a reduced form or to the plain board, and MUST say that it did. The rich view MUST take at most 20 terminal lines and MUST fall back to the plain board, with a stated notice, below 80 columns.
+- **FR-032**: The user MUST be able to switch between the two views, and back, at any time including while a pipeline runs, without ending the session, interrupting an agent or losing history. The switch is made by an argument on the panel command naming the view, plus a key that toggles while the panel is open. The one-line summary (FR-012) is identical in both views; only the open panel changes.
+- **FR-033**: The switch MUST be discoverable: the open panel MUST state the current view and how to switch.
+- **FR-034**: The chosen view MUST persist across sessions. The choice is stored per user, for all repositories, locally; a missing or unreadable choice falls back to the plain board and records an observer fault.
+- **FR-035**: Rich view and switching MUST obey FR-017 to FR-019 and FR-022: they never block or delay an agent, failures are recorded as observer faults, and nothing is shown or stored in repositories without Spec Kit initialised.
+
 ### Key Entities
 
 - **Activity record**: one immutable fact about an agent at a point in time. Attributes: schema version, timestamp, kind, session, agent instance, agent name, team flag, feature, phase, worktree, and kind-specific details (tool, activity label, path, decision, rule, verdict, lane result).
@@ -185,6 +226,12 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - **SC-008**: In a repository without Spec Kit initialised, 0 bytes of output and 0 records are produced.
 - **SC-009**: After install then uninstall, the user's settings parse to the same value as before; the original indentation and line endings are kept unless the file's content was changed by something else in the meantime; zero files are left behind by the installer (no uninstall-time backup, and any install-time backup is removed); a second install changes nothing.
 
+- **SC-010**: The default view on a fresh install is the plain board in 100% of installs, and a stored choice of the rich view is shown after restart in 100% of tested restarts.
+- **SC-011**: Switching in either direction completes within 1 second, measured over 20 switches during a scripted run, with 0 agent actions altered or delayed.
+- **SC-012**: Over a scripted run, the rich view contains 100% of the items the plain board contains (agents, decisions, latest verdict, phase, observer faults), and every state in it is identified by text, verified by rendering with colour removed.
+- **SC-013**: At 3 tested terminal sizes (including one below the narrow limit) the rich view never exceeds its screen allowance and never wraps lines; below the limit it says it degraded.
+- **SC-014**: The rich view redraws no more often than its stated rate over a 60-second scripted run.
+
 ## Assumptions
 
 - The user runs a Claude Code version that supports the extension points the view needs. The plan must verify this live and name the minimum version.
@@ -192,4 +239,6 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - The six team agents are identified by name; any other agent name counts as non-team.
 - History and stream stay on the local disk of the machine running Claude.
 - Out of scope: shipping records to remote services, built-in chat or dashboard integrations, controlling or interrupting agents from the view, and showing prompt or output text by default.
+- The rich view is additive: it changes no record and no part of the documented interface.
+- Out of scope for the rich view: animation beyond a running indicator and the decision highlight, sound, and any control of agents.
 - Out of scope: persisting records across machines or aggregating several users.
