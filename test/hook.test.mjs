@@ -208,6 +208,54 @@ test('an event a mode is not wired for makes no decision', () => {
   }
 });
 
+// Found by the fourth spec audit on 2026-10-06: input that parses but has the wrong types, or a
+// corrupt or unwritable state file, still crashed a hook, and a crashed gate fails open silently.
+const stateDir = (dir) => path.join(dir, '.git', 'speckit-team');
+
+test('mistyped fields never crash a hook', () => {
+  const { dir } = repo();
+  for (const file_path of [7, [], {}, null, true]) {
+    const out = run(dir, ['scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } });
+    assert.ok(!decided(out), `file_path ${JSON.stringify(file_path)}`);
+  }
+  for (const message of [7, ['VERDICT: PASS'], null]) {
+    assert.ok(!decided(handback(dir, 'verdict', message)) || true); // must not throw; run() asserts exit 0
+  }
+  pass(dir);
+  for (const agent_id of [5, {}, ['a']]) {
+    run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id });
+    run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id });
+  }
+  for (const cwd of [7, {}]) run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd });
+});
+
+test('a corrupt verdict file closes the gate and says why', () => {
+  const { dir } = repo();
+  fs.mkdirSync(path.join(stateDir(dir), 'verdicts'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(dir), 'verdicts', '001-demo.json'), '{broken');
+  const out = run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} });
+  assert.ok(denied(out), 'an unreadable verdict proves no PASS');
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /unreadable/);
+});
+
+test('a corrupt agent start record makes the lane check say it could not run', () => {
+  const { dir } = repo();
+  fs.mkdirSync(path.join(stateDir(dir), 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'x1.json'), '{broken');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x1' });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /lane/);
+});
+
+test('an unwritable state directory never crashes a hook, and is reported', () => {
+  const { dir } = repo();
+  fs.writeFileSync(stateDir(dir), 'not a directory');
+  const v = run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: 'VERDICT: PASS' });
+  assert.match(v?.systemMessage ?? '', /speckit-team/);
+  const g = run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'a9' });
+  assert.ok(denied(g), 'with no readable verdict the gate stays closed');
+});
+
 test('verdict and lane also accept Stop, for an agent run as the main thread', () => {
   const { dir } = repo();
   assert.equal(run(dir, ['verdict'], { hook_event_name: 'Stop', last_assistant_message: 'no verdict' })?.decision, 'block');

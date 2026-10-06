@@ -42,6 +42,19 @@ try {
   inputProblem = raw.trim() ? 'input is not valid JSON' : 'input is empty';
 }
 const event = input.hook_event_name;
+// Fields used as paths must be strings; any other type is treated as absent.
+const str = (v) => (typeof v === 'string' && v ? v : null);
+const agentId = str(input.agent_id);
+// Safety net under every specific check below: a hook must never exit with a crash, because Claude
+// Code then lets the action through and says nothing. Inside a Spec Kit repo any error that slips
+// through becomes no decision plus a visible message; outside one it stays silent.
+let inSpecKitRepo = false;
+process.on('uncaughtException', (e) => {
+  if (inSpecKitRepo) {
+    process.stdout.write(JSON.stringify({ systemMessage: `speckit-team: ${mode} hit an internal error (${e?.message ?? e}); no decision made.` }));
+  }
+  process.exit(0);
+});
 // The events each mode is wired to. Any other event gets no decision rather than a guess.
 const WIRED = {
   scope: ['PreToolUse'],
@@ -67,9 +80,16 @@ const deny = (reason) => emit({ hookSpecificOutput: {
   hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const block = (reason) => emit({ decision: 'block', reason });
 
-const cwd = input.cwd || process.cwd();
+const cwd = str(input.cwd) ?? process.cwd();
 const root = git(cwd, 'rev-parse', '--show-toplevel');
 if (!root || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
+inSpecKitRepo = true;
+// State files are ours but can still be corrupt. `undefined` = missing, `null` = unreadable.
+function readState(f) {
+  const text = readOr(f, undefined);
+  if (text === undefined) return undefined;
+  try { return JSON.parse(text); } catch { return null; }
+}
 
 // Unusable input makes no decision, so the action proceeds exactly as it did when the hook crashed,
 // but the user is told instead of nothing happening silently.
@@ -109,8 +129,10 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 function auditProblem() {
   const feat = feature();
   if (!feat) return 'no active feature in .specify/feature.json';
-  const v = JSON.parse(readOr(verdictFile(feat), 'null'));
-  if (!v) return `spec-auditor has not passed ${feat}`;
+  const v = readState(verdictFile(feat));
+  if (v === undefined) return `spec-auditor has not passed ${feat}`;
+  // Fail closed: a verdict that cannot be read proves no PASS.
+  if (!v || typeof v !== 'object') return `the verdict file for ${feat} is unreadable, so no PASS can be proven`;
   if (v.verdict !== 'PASS') return `spec-auditor's last verdict on ${feat} was ${v.verdict} (${v.at})`;
   if (v.fingerprint !== fingerprint(feat)) {
     return `spec, plan, tasks or constitution changed after the audit of ${feat} (${v.at})`;
@@ -142,8 +164,10 @@ function lastAssistantText() {
 
 if (mode === 'scope') {
   const ti = input.tool_input || {};
-  const file = ti.file_path || ti.notebook_path;
-  if (!file) process.exit(0);
+  const given = ti.file_path ?? ti.notebook_path;
+  if (given === undefined || given === null || given === '') process.exit(0);
+  const file = str(given);
+  if (!file) noDecision(`tool_input.file_path is ${Array.isArray(given) ? 'an array' : typeof given}, not a path`);
   const rel = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
@@ -179,9 +203,9 @@ if (mode === 'gate') {
     if (typed) block(reason);
     deny(reason);
   }
-  if (input.agent_id && !fs.existsSync(baseFile(input.agent_id))) {
+  if (agentId && !fs.existsSync(baseFile(agentId))) {
     const sha = git(root, 'rev-parse', 'HEAD');
-    if (sha) writeJson(baseFile(input.agent_id), { sha, dirty: changedSince('HEAD') });
+    if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
   }
   process.exit(0);
 }
@@ -191,35 +215,42 @@ if (mode === 'gate') {
 if (mode === 'verdict') {
   const viaHandback = event === 'PreToolUse';
   if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
-  const text = viaHandback ? String(input.tool_input?.message ?? '') : lastAssistantText();
+  // Only a string is a report: String(['VERDICT: PASS']) would otherwise read as a PASS.
+  const text = viaHandback ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText();
   const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
   if (!found) {
     if (viaHandback) {
       // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
-      const asked = input.agent_id && path.join(stateDir, 'agents', `${input.agent_id}.verdict-asked`);
+      const asked = agentId && path.join(stateDir, 'agents', `${agentId}.verdict-asked`);
       if (!asked || fs.existsSync(asked)) process.exit(0);
       writeJson(asked, {});
       deny(`${ask} Add it and send the report again.`);
     }
-    const prev = feat && JSON.parse(readOr(verdictFile(feat), 'null'));
-    if (input.stop_hook_active || (prev && input.agent_id && prev.agent_id === input.agent_id)) process.exit(0);
+    const prev = feat && readState(verdictFile(feat));
+    if (input.stop_hook_active || (prev && agentId && prev.agent_id === agentId)) process.exit(0);
     block(ask);
   }
   if (!feat) process.exit(0);
   const verdict = found[1].toUpperCase();
   writeJson(verdictFile(feat), {
-    verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: input.agent_id ?? null,
+    verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
   emit({ systemMessage: `spec-auditor recorded VERDICT: ${verdict} for ${feat}` });
 }
 
 if (mode === 'lane') {
   const rule = args[0];
-  const f = input.agent_id && baseFile(input.agent_id);
-  const base = f && JSON.parse(readOr(f, 'null'));
-  if (!base) process.exit(0);
+  const f = agentId && baseFile(agentId);
+  const base = f && readState(f);
+  if (!base) {
+    if (base === null) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is unreadable.` });
+    process.exit(0);
+  }
+  if (typeof base.sha !== 'string' || !Array.isArray(base.dirty)) {
+    emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
+  }
   const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
   if (outside.length && !input.stop_hook_active) {
     block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `

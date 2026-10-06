@@ -212,7 +212,7 @@ implementers in separate git worktrees.
 
 ## Verifying
 
-`npm test` runs 34 tests: 18 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 38 tests: 22 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -272,8 +272,11 @@ these six names. Rename yours, or pass `--force` to back it up and replace it.
   installer's smoke check and the live check above are the defences. Input the hook cannot use
   (not JSON, not an object, an event the mode is not wired for) also lets the action through, but
   never silently: the hook makes no decision and shows a `speckit-team: ... no decision made`
-  message. Until 2026-10-06 it crashed on such input instead, which allowed the action without a
-  word.
+  message. The same holds for fields of the wrong type and for any unforeseen error: a safety net
+  turns every crash into no decision plus a `speckit-team: ... internal error` message. One case
+  fails closed instead: a verdict file that cannot be read proves no PASS, so the gate stays shut
+  and says why. Until 2026-10-06 the hook crashed on all of these, which allowed the action
+  without a word.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
 - **Read-only isn't airtight.** spec-auditor and spec-gatekeeper have no Write or Edit tools,
