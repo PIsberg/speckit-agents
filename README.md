@@ -136,17 +136,19 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files |
-| `gate` | test-writer, implementer: PreToolUse on every tool | doing anything before the audit passed |
+| `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
-| `verdict` | spec-auditor: Stop | finishing without a `VERDICT:` line; records the verdict |
+| `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
 
 ### The audit gate
 
-When spec-auditor finishes, its Stop hook reads the last `VERDICT:` line from the report and
-stores it with a fingerprint: a SHA-256 of the constitution, `spec.md`, `plan.md` and `tasks.md`.
+When spec-auditor reports, a hook reads the last `VERDICT:` line from the report and stores it
+with a fingerprint. In an interactive session the report is the `message` of the
+`SubagentHandback` tool, read by a PreToolUse hook as it is sent; under `claude -p` it is the
+agent's last message, read by the Stop hook. The fingerprint is a SHA-256 of the constitution, `spec.md`, `plan.md` and `tasks.md`.
 The gate recomputes the fingerprint on every check. Any edit to those four files after a PASS
 voids it, so the auditor has to look again. Task checkboxes are normalised before hashing, so
 ticking `- [X]` while implementing does not.
@@ -206,9 +208,9 @@ implementers in separate git worktrees.
 
 ## Verifying
 
-`npm test` runs 17 tests: 10 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 21 tests: 14 drive the hook with hook JSON on stdin against throwaway git repos,
 7 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
-Claude Code fires a hook, which is where both serious bugs in this project were. After changing a
+Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 
 ```sh
@@ -239,6 +241,13 @@ through and nothing tells you. Check that `node` is on the PATH Claude Code sees
 commands written with `$HOME` expanded to `/c/Users/...`, which `node` on Windows resolves to
 `C:\c\Users\...`. The installer therefore writes a quoted absolute path. Do not hand-edit it into
 `$HOME` or `~`.
+
+**An agent cannot report back, or a verdict is never recorded.** Subagents in an interactive
+session report through the `SubagentHandback` tool, not their last message. A hook that matches
+every tool (`.*`) also matches that one: before 2026-10-06 the gate denied it, so a gated agent
+retried its report until it gave up, and spec-auditor's verdict, read from the last message, was
+never found. The gate now lets `SubagentHandback` through and the verdict is read from its
+`message`. Any new catch-all hook must do the same.
 
 **`/speckit-implement` is not gated.** A typed slash command fires `UserPromptExpansion`, not
 `UserPromptSubmit`, and a PreToolUse `Skill` hook only sees Claude calling the skill. Both entries

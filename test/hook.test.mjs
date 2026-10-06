@@ -129,6 +129,45 @@ test('verdict demands a VERDICT line, once', () => {
   assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: '| x |\n\n**VERDICT: PASS**' }).systemMessage, /PASS/);
 });
 
+// Subagents report through the SubagentHandback tool, so the report is its input, not the last
+// assistant message. Found live on 2026-10-06: the gate denied every handback (the agent could
+// not report at all) and spec-auditor's VERDICT never reached the verdict file.
+const handback = (dir, mode, message, extra = {}) => run(dir, [mode], {
+  hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id: 'aud1', ...extra,
+});
+
+test('gate never blocks an agent from reporting back', () => {
+  const { dir } = repo();
+  assert.equal(handback(dir, 'gate', 'Blocked by the gate, nothing done.'), null);
+  assert.ok(denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} })),
+    'real work is still gated');
+});
+
+test('verdict is read from the handback report', () => {
+  const { dir } = repo();
+  const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };
+  const sent = handback(dir, 'verdict', '## Report\n| C1 | ... |\n\nVERDICT: PASS');
+  assert.ok(!denied(sent), 'the report goes through');
+  assert.match(sent.systemMessage, /recorded VERDICT: PASS/);
+  assert.equal(run(dir, ['gate'], tool), null, 'and the PASS unlocks the gate');
+  handback(dir, 'verdict', 'Findings...\nVERDICT: FAIL');
+  assert.ok(denied(run(dir, ['gate'], tool)));
+});
+
+test('a handback without a VERDICT line is sent back once', () => {
+  const { dir } = repo();
+  const out = handback(dir, 'verdict', 'Here is my analysis, no verdict.');
+  assert.ok(denied(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /VERDICT: PASS/);
+  assert.equal(handback(dir, 'verdict', 'Still no verdict.'), null, 'never gags the agent: the second report goes through');
+});
+
+test('stop after a handback verdict does not demand the line again', () => {
+  const { dir } = repo();
+  handback(dir, 'verdict', 'VERDICT: FAIL');
+  assert.equal(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud1', last_assistant_message: '' }), null);
+});
+
 test('lane check catches writes that bypassed Edit, including via Bash', () => {
   const { dir, write: w, g } = repo();
   pass(dir);
