@@ -70,10 +70,13 @@ and by any consumer (data-model.md "AgentInstance"):
 
 ## Observer faults
 
-Problems of the observer itself are `observer-fault` records (`cause`, `message`, `mode`) in the
-stream. Causes that cannot be written to the stream because the stream is the problem
-(`stream-unwritable:<code>`) are kept in `<os temp dir>/speckit-team-faults/<16 hex of sha256 of the
-stream directory path>.json`. The full cause list is in data-model.md "Fault causes".
+Problems of the observer itself, on the hook side and in the view alike, are `observer-fault`
+records (`cause`, `message`, `mode`) in the stream. Only two causes cannot be: the stream itself
+being unwritable (`stream-unwritable:<code>`) and the activity module failing to load
+(`activity-module-failed:<code>`). Those are kept in
+`<os temp dir>/speckit-team-faults/<16 hex of sha256 of the stream directory path>.json` as
+`{ "<cause>": { "message", "count", "firstAt", "lastAt" } }`, at most 50 causes. The full cause
+list is in data-model.md "Fault causes".
 
 ## Versioning (FR-006, constitution V)
 
@@ -92,9 +95,10 @@ stream directory path>.json`. The full cause list is in data-model.md "Fault cau
 
 ## Retention (FR-011)
 
-Enforced by the writer when it creates a segment. Defaults: records of the writing session plus
-the previous 7 days, capped at 10 MB, oldest segment removed first, the newest segment never
-removed. Configurable in `.specify/activity.json` (config.md). A consumer that falls behind by
+Enforced by the mod's relay (`emit`) whenever a new segment has appeared or a UTC day has passed;
+never by a guardrail. Without the mod loaded the cap is not enforced (a known limit). Defaults:
+records of the current session plus the previous 7 days, capped at 10 MB, oldest segment removed
+first, the newest segment never removed. Configurable in `.specify/activity.json` (config.md). A consumer that falls behind by
 more than the retained window loses the deleted segments; it can tell because the segment its
 cursor pointed into is gone.
 

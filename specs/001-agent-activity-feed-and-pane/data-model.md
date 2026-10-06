@@ -93,14 +93,18 @@ Activity labels by tool (FR-009):
 | `input-unknown-event:<mode>` | a guardrail mode given an event it is not wired to | `observer-fault` record |
 | `input-invalid:<event>` | the mod given a `classic.SubagentStart` or `turn.complete` without the ids it needs | `observer-fault` record (relayed) |
 | `envelope-invalid` | `emit` skipping malformed envelope lines or unknown kinds | `observer-fault` record, and `skipped` in `emit` output |
-| `config-invalid` | writer or mod reading a malformed `.specify/activity.json` | `observer-fault` record (writer); the mod's own toast |
-| `retention-failed:<code>` | the writer unable to delete a segment | `observer-fault` record |
+| `config-invalid` | writer or mod reading a malformed `.specify/activity.json`, or one whose `segmentBytes` exceeds `maxBytes` | `observer-fault` record (the mod's relayed as an envelope) |
+| `retention-failed:<code>` | `emit` unable to delete a segment | `observer-fault` record |
 | `stream-unwritable:<code>` | the writer unable to create or append to the stream (on Windows `EEXIST` from `mkdir` over a file, `ENOENT` from an append under it, measured) | fault file, `emit` output |
-| `activity-module-failed:<code>` | `speckit-team.mjs` unable to import or run `speckit-activity.mjs` | `emit` output only (the module that writes is the one missing) |
-| `emit-failed:<code>` | the mod's `emit` process could not start or exited non-zero | the mod's own toast |
-| `emit-output-invalid` | `emit` printed something that is not its status JSON | the mod's own toast |
-| `stream-unreadable:<code>` | the mod unable to list or read the stream (`ENOTDIR` when `activity` is a file) | the mod's own toast |
-| `render-failed` | the pane's drawing code threw | the mod's own toast and fallback line |
+| `activity-module-failed:<code>` | `speckit-team.mjs` unable to import or run `speckit-activity.mjs` | fault file (written by `speckit-team.mjs` itself), `emit` output |
+| `emit-failed:<code>` | the mod's `emit` process could not start or exited non-zero | `observer-fault` record, relayed by the next `emit` that succeeds |
+| `emit-output-invalid` | `emit` printed something that is not its status JSON | `observer-fault` record, relayed |
+| `stream-unreadable:<code>` | the mod unable to list or read the stream (`ENOTDIR` when `activity` is a file) | `observer-fault` record, relayed (lands once the stream is writable again) |
+| `render-failed` | the pane's drawing code threw | `observer-fault` record, relayed; fallback line in the pane |
+| `relay-overflow` | the mod's relay queue passed 1000 envelopes and dropped the oldest | `observer-fault` record, relayed, with the count in `message` |
+
+Every cause is also toasted by the view once per session (contracts/view.md). Whatever the mod
+raises itself is toasted at once, without waiting for it to come back through the stream.
 
 ### Validation rules
 
@@ -141,7 +145,9 @@ later `ts`.
 - The lane result shown with a finished agent is its latest `lane` record by `ts`.
 - Current activity: `activity` and `path` of the latest `tool` record by `ts`.
 - The main session (`agent.name == "main"`) is listed separately and is not counted in the
-  summary's agent count, so an idle pipeline reads `0 agents` (US1 scenario 1).
+  summary's agent count, so an idle pipeline reads `0 agents` (US1 scenario 1). Its `agent-start`
+  comes from `session.start`, or from the first main-loop event after a `/clear` (which ends the
+  session with `session.end` and starts no new one); its `agent-stop` from `session.end`.
 
 ## FeatureRun (derived)
 
@@ -154,9 +160,12 @@ feature is active. Latest verdict: the latest `verdict` record for the feature b
 - Store: `<git common dir>/speckit-team/activity/`, one per repository, shared by its worktrees.
 - Segment: `<UTC yyyyMMdd'T'HHmmssSSS>Z-<pid>-<4 hex>.jsonl`. Append-only; created with exclusive
   create; deleted whole by retention; never rewritten.
-- New segment when the newest is at least `segmentBytes` or was created on an earlier UTC day.
-- Retention runs at segment creation: never the newest; age (`maxAgeDays`, keeping segments that
-  hold the writing session's records); then size (`maxBytes`, oldest first, hard cap).
+- New segment when the newest is at least `segmentBytes` or was created on an earlier UTC day
+  (from its name). Any writer may start one, guardrail modes included.
+- Retention runs in `emit` only, when the newest segment changed since its last run or a UTC day
+  has passed (state in `<git common dir>/speckit-team/retention.json`): never the newest; age
+  (`maxAgeDays`, keeping segments that hold records of the sessions being relayed); then size
+  (`maxBytes`, oldest first, hard cap). Guardrail modes never delete.
 
 ## Cursor (consumer side)
 
@@ -181,7 +190,7 @@ field from these; nothing else is copied.
 | `enabled` | boolean | `true` |
 | `retention.maxAgeDays` | number > 0 | `7` |
 | `retention.maxBytes` | integer >= 65536 | `10485760` |
-| `retention.segmentBytes` | integer, 4096 to 1048576 | `262144` |
+| `retention.segmentBytes` | integer, 4096 to 1048576, and at most `maxBytes` | `262144`, or `maxBytes` when that is smaller |
 | `fields.command` | boolean | `false` |
 | `fields.description` | boolean | `false` |
 
@@ -191,8 +200,9 @@ for that key and raises `config-invalid`.
 ## Fault file (fallback)
 
 `<os.tmpdir()>/speckit-team-faults/<16 hex of sha256(stream dir)>.json`:
-`{ [cause]: { message, count, firstAt, lastAt } }`, at most 50 causes. Holds the causes that cannot
-be recorded in the stream (`stream-unwritable:*`); `emit` reports them. Documented in the README so
+`{ [cause]: { message, count, firstAt, lastAt } }`, at most 50 causes, the one with the oldest
+`lastAt` dropped first. Holds the causes that cannot be recorded in the stream
+(`stream-unwritable:*`, `activity-module-failed:*`); `emit` reports them. Documented in the README so
 outside tools can read it too.
 
 ## View state (`$.state`, plugin `speckit-activity`)

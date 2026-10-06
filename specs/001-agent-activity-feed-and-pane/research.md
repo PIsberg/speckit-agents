@@ -39,6 +39,12 @@ already running costs 0.5 ms. Every producer decision below follows from these t
   `agent_id`, `agent_type`, `cwd`, read), `turn.complete` carrying a subagent's `agentId` for its
   stop, and `session.start` and `session.end` for the main session. The hook on the tool path only
   pushes an envelope onto an in-memory queue and calls `next(e)`; it makes no `$` call first.
+- **The main session's start and stop** (audit finding C2): `agent-start` at `session.start`;
+  `agent-stop` at `session.end`, flushed within that event's short shared budget (`next.budget`);
+  `session.end` with `reason: 'clear'` is followed by no `session.start` (read), so the relay also
+  queues a main `agent-start` before the first main-loop event it sees with no open main run (after
+  a `/clear`, or after a reload). `session.end` is new wiring, so it gets a live question (V10) and a
+  live check (quickstart L12).
 - **Why `turn.complete` and not `classic.SubagentStop` for the stop** (audit finding M3):
   SubagentStop fires on every attempt to stop, including one that the lane check or the verdict
   line then refuses, after which the agent keeps working. `turn.complete` fires when the subagent's
@@ -115,22 +121,36 @@ documented interface as any outside consumer (FR-016).
 
 ## R5. Retention enforcement (FR-011)
 
-**Decision**: the writer enforces retention whenever it creates a segment (at most once per
-`segmentBytes` written, and at least once per UTC day while anything is written).
+**Decision**: retention runs only in `emit`, the mod's relay process, which is off every tool
+path (audit finding M2: reading up to 10 MB and deleting files inside a guardrail, before its
+decision is printed, would put that cost on a tool call, and Claude Code waits for a command hook
+to exit, so running it after printing would not help). Guardrail modes may still start a new
+segment when the newest is full (creating one empty file, measured as part of the rotation row in
+`bench/overhead.mjs`), but never delete anything.
 
-1. Never delete the segment just created.
+`emit` runs retention when the newest segment's name differs from the one it saw at its last run,
+or when its last run was on an earlier UTC day (state in `<git common dir>/speckit-team/retention.json`).
+So it runs at most once per segment written and at least once per UTC day while the mod relays.
+
+1. Never delete the newest segment.
 2. **Age**: delete a segment whose modification time is older than `maxAgeDays` (default 7),
-   unless it contains a record of the writing session (substring check for `"session":"<id>"`).
-   This keeps the current session's records plus the previous 7 days.
+   unless it contains a record of a session in the batch being relayed (substring check for
+   `"session":"<id>"`). This keeps the current session's records plus the previous 7 days.
 3. **Size**: while the directory holds more than `maxBytes` (default 10485760), delete the oldest
    segment by name. The size cap is hard: it wins over the current-session rule.
-4. Any error is reported as a fault (R10) and the write goes on.
+4. Any error is recorded as an `observer-fault` (`retention-failed:<code>`) and the relay goes on.
 
-Both limits, and `segmentBytes`, are configurable in `.specify/activity.json` (contracts/config.md).
+Both limits, and `segmentBytes`, are configurable in `.specify/activity.json` (contracts/config.md);
+`segmentBytes` must not exceed `maxBytes` (audit finding L4).
 
-**Alternatives rejected**: the mod enforces retention (`$.fs` has no delete, read; and retention
-would stop when the mod is not loaded); trimming on every write (cost on every guardrail call);
-a scheduled job (nothing to schedule it with, cross-platform).
+**Alternatives rejected**: the mod enforces retention itself (`$.fs` has no delete, read);
+retention inside the guardrail at rotation (cost on a tool call, M2); trimming on every write (cost
+on every guardrail call); a scheduled job (nothing to schedule it with, cross-platform).
+
+**Known limit**: without the mod loaded (Claude Code older than 2.1.291, or the mod disabled),
+guardrail records are still written and nothing enforces the cap, so the stream grows by about
+300 to 400 bytes per guardrail decision. Listed in the README's known limits and tracked as a
+follow-up issue (T061).
 
 **Known edge**: a second session in the same repo that has run for more than 7 days can lose its
 oldest records to another session's age check. Listed in the README's known limits.
@@ -209,16 +229,19 @@ What it covers, and the expected cost of each part:
 
 How it is measured:
 
-1. **Hook side**: `bench/overhead.mjs` copies `hooks/speckit-team.mjs` into two temp hook
-   directories, one with `speckit-activity.mjs` beside it (treatment) and one without (baseline:
-   the activity module absent, audit finding H4). It runs a `gate` on `PreToolUse Read` in a Spec
-   Kit repo 100 times in alternating pairs, to cancel drift, and reports the median and p90 of the
-   paired differences. Pairing is needed because the spawn itself varies by 75 to 178 ms (R1).
-   `enabled: false` is not the baseline, because the module is still loaded and the config still
-   read on that path. The baseline arm still attempts the guarded import and fails it
-   (`ERR_MODULE_NOT_FOUND`), so the difference slightly understates the module's load cost by the
-   cost of a failed resolution; the bench prints that cost on its own (100 failed imports,
-   in-process) so the reader can add it back.
+1. **Hook side**: `bench/overhead.mjs` puts two hooks in temp directories: the treatment, today's
+   `hooks/speckit-team.mjs` with `speckit-activity.mjs` beside it, and the baseline, the
+   `hooks/speckit-team.mjs` of the base commit (`git show <base>:hooks/speckit-team.mjs`, `--base`
+   defaulting to `b9b0dc3`, the commit this feature is stacked on; printed in the output). The
+   baseline therefore has no activity module, no import attempt and no record code at all (audit
+   findings H4 and M1: `enabled: false` still loads the module, and a module-absent copy of the new
+   hook still pays a failed import). It runs a `gate` on `PreToolUse Read` in a Spec Kit repo
+   100 times in alternating pairs, to cancel drift, and reports the median and p90 of the paired
+   differences. Pairing is needed because the spawn itself varies by 75 to 178 ms (R1).
+   A second row does the same while forcing a segment rotation on every treatment run (the newest
+   segment pre-filled to `segmentBytes`), so the cost of starting a segment from a guardrail is
+   measured too (audit finding M2); retention never runs in a guardrail (R5). Both rows are held to
+   the hook-side share of the budget.
 2. **Mod side**: `mod/speckit-activity/test/overhead.test.ts` drives 100 `$.tool.call`s through the
    mod and times call-to-beneath per call with `performance.now()` when the plugin test
    environment has it as wall time (sub-millisecond, live check V7), and prints the median and p90.
@@ -233,9 +256,11 @@ How it is measured:
 **Repositories without Spec Kit** (FR-022, SC-008): the guardrail modes keep their early exit,
 and `hooks/speckit-activity.mjs` is imported only after the `.specify/` check, so the code path
 outside Spec Kit is unchanged; the bench reports that case too and expects a paired median within
-2 ms (the measurement's noise floor at these spawn times). The mod runs one `git rev-parse` at
-session start (13.6 ms, R1), then its `tool.call` hook is a boolean check; it sets no status,
-registers no command, writes nothing.
+2 ms (the measurement's noise floor at these spawn times). The mod runs one `git rev-parse` per
+session (13.6 ms, R1), but not on the session's start path (audit finding M3): its `session.start`
+hook returns `next(e)` first and runs the detection from a `$.clock.after(0)` timer, so the first
+prompt never waits for git; until the detection answers, and for good outside Spec Kit, its
+`tool.call` hook is a boolean check. It sets no status, registers no command, writes nothing.
 
 Why 10 ms: it is about 6% of one Git Bash hook spawn (173 ms, R1), large enough to be measured
 reliably with paired runs, and 20 times the expected cost, so a regression to a per-call spawn
@@ -250,16 +275,23 @@ reliably with paired runs, and 20 times the expected cost, so a regression to a 
   product owner after audit finding H1): malformed or unknown hook input, invalid envelopes, an
   invalid config, a failed retention delete. Any consumer sees them, and the view reads them like
   every other record (FR-016, audit finding M5).
+- **The mod's own faults are records too** (audit finding M6): `emit-failed:<code>`,
+  `emit-output-invalid`, `stream-unreadable:<code>`, `config-invalid` (mod side) and
+  `render-failed` are queued as `observer-fault` envelopes and written by the next `emit` that
+  succeeds. The relay queue is bounded (1000 envelopes; past that the oldest are dropped and one
+  `relay-overflow` fault records how many), so an `emit` that keeps failing cannot grow memory.
 - **Only what cannot be in the stream goes to the fault file**:
   `<os.tmpdir()>/speckit-team-faults/<16 hex of sha256(stream dir)>.json`, a location that does not
-  depend on the stream directory being writable, holding `stream-unwritable:<code>` (cause code,
-  message, count, first and last time; at most 50 causes). `node <hook> emit` reports those, plus
-  `activity-module-failed:<code>` when the module itself cannot load, in its status JSON. The file
-  is documented in the README so outside tools can read it.
+  depend on the stream directory being writable, holding `stream-unwritable:<code>` and
+  `activity-module-failed:<code>` (cause code, message, count, first and last time; at most 50
+  causes, the least recently seen dropped first). `activity-module-failed` is written by
+  `speckit-team.mjs` itself with a few lines of its own, since the module that normally writes
+  faults is the one that failed. `node <hook> emit` reports the file's causes in its status JSON.
+  The file's location and format are documented in the README, so outside tools can read it.
 - The mod shows each distinct cause once per session with one fixed toast text (contracts/view.md)
-  and adds `observer: <n> problem(s)` to the summary line. Its own failures (`emit` cannot start,
-  exits non-zero or prints something unparsable; the stream cannot be listed; drawing throws) are
-  causes too. Drawing is wrapped in `try`/`catch` and falls back to a one-line text.
+  and adds `observer: <n> problem(s)` to the summary line. A fault it raised itself is toasted at
+  once, not only after it comes back through the stream. Drawing is wrapped in `try`/`catch` and
+  falls back to a one-line text.
 - Fault records carry a fixed message per cause and never any input content, so a malformed input
   holding prompt text cannot leak into the stream through its fault.
 
@@ -291,7 +323,7 @@ silent. Listed in the README's known limits.
 - Raw absolute paths cross from the mod to the writer only over the local `emit` process's stdin
   and are never stored.
 
-## R12. Install then uninstall leaves the configuration byte-identical (SC-009)
+## R12. Install then uninstall restores the configuration (SC-009, as amended by the owner)
 
 Found while reading `install.mjs`: today `--uninstall` re-serialises `settings.json` with 2-space
 indentation (a file indented otherwise changes bytes) and leaves directories it created
@@ -300,24 +332,42 @@ C1, reproduced): install then `--uninstall` into an empty config directory leave
 `settings.json` containing `{}` plus a `settings.json.bak-speckit-agents-*` that holds only the
 installer's own entries. Also found by the orchestrator: the installer removes its gate entries
 and re-appends them at the end of each array, so once another tool has re-sorted `settings.json`
-every re-run rewrites it (and backs it up), which is not idempotent.
+every re-run rewrites it (and backs it up), which is not idempotent. Found by the second audit
+(C1, reproduced with today's installer): with a pre-existing `settings.json`, install then
+uninstall leaves two backups (install and uninstall both take one), and `JSON.stringify` rewrites
+CRLF line endings, inline arrays and compact spacing.
 
-**Decision on `settings.json`**:
+**Owner decision (2026-10-06)**: no byte-identical restore as the general rule, because lean-ctx
+rewrites `settings.json` between sessions and restoring old bytes would discard its changes.
+Instead: after install then uninstall the settings parse to the same value as before; the original
+indentation and line endings (CRLF) are kept unless something else changed the content meanwhile;
+zero files are left behind (no uninstall-time backup; the install-time backup is removed on
+uninstall, its name kept in the manifest); a second install changes nothing.
 
-- Preserve the detected indentation and the presence of a trailing newline when writing it.
+**Decision on `settings.json`** (contracts/installed-files.md has the full order):
+
+- Every write detects and keeps the file's current indentation (spaces and count, or tabs) and
+  line endings (LF or CRLF) and trailing-newline state.
 - Update owned gate entries in place: an entry already present for its event and matcher keeps its
   position and only its command and timeout are set; stale owned entries are removed; missing ones
   appended. A re-sorted file is then left untouched by a re-run.
-- Record in the manifest (`createdSettings`) whether the installer created `settings.json`. On
-  uninstall, when it did and removing its entries leaves `{}`, delete the file instead of writing
-  `{}`.
-- Back up only content that is not the installer's: a backup is taken before changing a
-  `settings.json` that existed before the install or that holds anything besides the installer's
-  entries, and of agent or skill files replaced with `--force`. A file holding only installer
-  content is never backed up, so no backup is left after install then uninstall into an empty
-  config directory.
-- Backups of the user's own content stay on purpose (they are the user's copies). The SC-009 test
-  allows exactly those and no others. Flagged for confirmation in plan.md.
+- Install takes one backup, the first time it changes a pre-existing `settings.json`, and records
+  its name (`settingsBackup`). Later installs take none. Uninstall takes none.
+- Uninstall removes the installer's entries from the current value, then: deletes the file when the
+  installer created it (`createdSettings`) and the result is `{}`; else writes the backup's bytes
+  back when the backup's parsed value equals the result (nothing else changed it, so compact
+  spacing and inline arrays come back too); else writes the result with the current file's
+  indentation and line endings, which keeps another tool's changes. Then it deletes the backup.
+- `--force` replacements are recorded (`forceBackups`) and moved back to their original names on
+  uninstall, so the user's own agent returns and no copy is left.
+- Without a usable manifest (an install made before this change), uninstall removes the entries as
+  today but with the formatting kept and no backup, and deletes no file it cannot prove it created.
+
+**Rejected**: restoring the pre-install bytes unconditionally (discards lean-ctx's changes, the
+owner's reason); keeping backups after uninstall (files left behind); a position-aware JSON
+splice that edits only the installer's entries in the text (keeps every byte of the user's
+formatting even after another tool's changes, but needs a hand-written tokenizer with positions,
+since Node has none, for a case the backup restore already covers when nothing else changed).
 
 **Directories: the installer records the ones it creates, and uninstall removes only those.**
 Installation Constraints say `--uninstall` removes what the installer added "and nothing else", so
@@ -329,8 +379,8 @@ an empty directory that existed before the install must survive it.
   whole. The config directory itself is never recorded and never removed.
 - It writes the list to a manifest, `<claude dir>/hooks/speckit-agents.install.json`:
   `{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks"], "createdSettings": true }`,
-  forward slashes, sorted (`createdSettings` from the `settings.json` decision above, merged by
-  or-ing with the existing value). The `managedBy` value contains the marker, so the existing ownership
+  forward slashes, sorted (`createdSettings`, `settingsBackup` and `forceBackups` from the
+  `settings.json` decision above; full field list and merge rules in contracts/installed-files.md). The `managedBy` value contains the marker, so the existing ownership
   check (`ours()`) applies. `hooks/` always exists after an install, so the manifest always has a
   home.
 - A later install merges: `createdDirs` = the manifest's existing list plus any directory created
@@ -387,7 +437,9 @@ denies, and `verdict` reads an empty last message and blocks. Claude Code always
 means.
 
 **Decision (H1)**: on empty stdin, stdin that is not a JSON object, or an event the mode is not
-wired to (table in contracts/emit-cli.md), every mode makes no decision: exit 0, empty stdout, so
+wired to (table in contracts/emit-cli.md; `lane` and `verdict` accept `Stop` as well as
+`SubagentStop`, audit finding M4, because an agent's frontmatter Stop hook may arrive as `Stop` when
+the agent runs as the main thread, live check V11), every mode makes no decision: exit 0, empty stdout, so
 the action proceeds, as today's crash already lets it. In a Spec Kit repository the mode also
 writes one `observer-fault` record (`input-invalid:<mode>` or `input-unknown-event:<mode>`) so the
 event is visible instead of silent, with a fixed message and no input content (R10, R11). Outside
@@ -427,6 +479,25 @@ and spec-auditor's verdict is read by a PreToolUse hook on `SubagentHandback` fr
 - No new command hook is added. The mod's `tool.call` hook sees `SubagentHandback` like any tool,
   never answers in place of `next`, and never reads `message`, so it cannot hold a report back.
 
+## R17. Delivery and follow-ups (owner decision 2026-10-06, audit finding H3)
+
+The repository has a private GitHub remote, `PIsberg/speckit-agents`. PR #1 (branch
+`fix/subagent-handback`, commit b9b0dc3) is open against `main`, and branch
+`001-agent-activity-feed-and-pane` is rebased on it.
+
+- The feature PR is opened with `gh pr create --base main` and is stacked on #1: its body says
+  "stacked on #1, review the last N commits", N being the feature's own commits. Its base stays
+  `main`, so the repository's checks run for it.
+- Everything the feature leaves undone becomes a GitHub issue in `PIsberg/speckit-agents`, one per
+  item, each saying what is missing, why it was not done now and what it would take, linked from
+  the PR body: macOS and Linux not run (SC-005 measurement, live checks, `npm test`); any live
+  check reported "not run" (for example L9 if V9 fails); retention without the mod (R5); the
+  retention edge for sessions older than 7 days; a phase record repeating across racing sessions;
+  silence when both the stream and the temp directory are unwritable; decision records lost while
+  the activity module is missing; a main session's stop lost when the relay outlasts the
+  session-end budget; installs made before the manifest, whose uninstall leaves
+  directories and backups. Task T061; the PR (T062) links them.
+
 ## Live verification log
 
 To be filled in by T001 (a throwaway mod outside the repo) before the mod implementation tasks
@@ -442,8 +513,10 @@ audit needed because no contract changes.
 | V2 | Does `classic.SubagentStart` fire in the mod for every subagent, and is its `agent_id` the same value the agent's frontmatter command hooks receive as `agent_id`? | stop: hook and mod records could not be joined per agent, the design's key | not run |
 | V3 | Does `tool.call` carry `agentId` for a subagent's tool calls and none for the main session's? | stop: tool records could not be attributed (FR-002, SC-007) | not run |
 | V4 | Does `$.process.run(['node', '<abs path>', 'emit'], { stdin })` find `node` on Windows with no shell? | stop: the relay transport changes | not run |
-| V5 | For an `isolation: "worktree"` subagent, is `classic.SubagentStart`'s `cwd` the worktree? | fallback: at the agent's first file tool call the mod matches its absolute `file_path` against the roots from one `git worktree list --porcelain` (off the tool path) and uses the matching root as the agent's `cwd`; until matched, its envelopes carry the session's `cwd` plus `worktree_unknown: true` (an additive envelope field), which the writer records as `worktree: "unknown"`. Tasks T017, T026 adapt; US4 S2 holds for guardrail records, which have their own `cwd`. | not run |
+| V5 | For an `isolation: "worktree"` subagent, is `classic.SubagentStart`'s `cwd` the worktree? | stop (owner decision 2026-10-06): US4 S2 is not weakened and no `worktree_unknown` field is added; architect redesigns how the mod learns the worktree | not run |
 | V6 | Does `claude plugin test mod/speckit-activity` discover `test/*.test.ts` in the plugin folder? | fallback: tests move to `mod/speckit-activity/*.test.ts` and the fixture to `mod/speckit-activity/fixtures/`; the installer skips `*.test.ts` and `fixtures/`. Task paths change, not their content. | not run |
 | V7 | Inside `claude plugin test` without `mock.clock`: is `performance.now()` available and wall time? Is `Date.now()`? | fallback per R9: `Date.now()` mean bound, else timing "not run" (T037) | not run |
 | V8 | Does `turn.complete` fire once when a subagent's run ends, carrying its `agentId` (equal to V2's `agent_id`), and not when a Stop hook refused its stop (lane check blocking once)? | stop: the `agent-stop` source (R2, M3) changes the data model | not run |
-| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings), and which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? | record only; quickstart L9 uses the answer | not run |
+| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings)? Which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? Is `$.clock.now()` wall time in a live session (compared with the system clock over a 10 s span, within 50 ms)? | no stop. If any part is no, the SC-002 live check (quickstart L9) cannot run: it is reported as "not run" in the README with the reason, SC-002 rests on the mocked-clock unit test (T018) alone, and the gap becomes a follow-up issue (T061). | not run |
+| V10 | Does `session.end` fire in the mod on `/exit`, on Ctrl-D and on `/clear` (`reason: 'clear'`), and does a `$.process.run` of `emit` started from it finish within `next.budget` so the main session's `agent-stop` is written? After `/clear`, which `session_id` do later main-loop events carry? | stop if `session.end` never fires on `/exit` (the main session's `agent-stop`, a public guarantee in activity-stream.md, has no source). If it fires but the relay cannot finish within the budget: fallback, the mod writes the main session's stop on the next session's start for a main id it saw start and not stop (`agent-stop` with that session's last `ts`), and quickstart L12 checks it there. | not run |
+| V11 | Which `hook_event_name` does an agent's frontmatter `Stop` hook receive when the agent runs as a subagent, and when it runs as the main thread (`claude --agent implementer`)? | no stop: `lane` and `verdict` accept both `SubagentStop` and `Stop` (audit finding M4); the answer is recorded so the README states it | not run |

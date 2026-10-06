@@ -7,8 +7,11 @@ stream, FR-016). Plugin API: Claude Code 2.1.291, `claude-code` types.
 
 ## Activation
 
-- At `session.start` the mod runs `git rev-parse --show-toplevel --path-format=absolute --git-common-dir`
-  once through `$.process.run`, and checks `<top>/.specify` with `$.fs.exists`.
+- At `session.start` the mod first returns `next(e)`'s result, and only then, from a
+  `$.clock.after(0)` timer, runs `git rev-parse --show-toplevel --path-format=absolute --git-common-dir`
+  once through `$.process.run` and checks `<top>/.specify` with `$.fs.exists` (audit finding M3).
+  No repository's first prompt waits for git (FR-022). Until the detection has answered, the mod
+  behaves as inert; tool calls in that window are not recorded.
 - The mod is inert when git fails (rejects, non-zero exit, or output that is not two lines), when
   there is no `.specify/`, or when `.specify/activity.json` has `enabled: false`. Inert means: no
   status, no command registered, no timer, no envelope, and its `tool.call` hook only calls
@@ -24,7 +27,10 @@ stream, FR-016). Plugin API: Claude Code 2.1.291, `claude-code` types.
 | `tool.call` | `tool`; `cwd` from the agent's `classic.SubagentStart`, else the session cwd | missing or mistyped tool fields: envelope with what is there (`file_path` only when it is a string); never throws. Applies to every tool, `SubagentHandback` included, whose `message` is never read. |
 | `classic.SubagentStart` | `agent-start` with the event's `cwd`; the mod keeps `agent_id -> cwd` | no `agent_id`: no agent-start, an `observer-fault` envelope `input-invalid:SubagentStart`; no `cwd`: the session cwd |
 | `turn.complete` with `agentId` | `agent-stop` (`final: true`) for that agent; the `agent_id -> cwd` entry is dropped | without `agentId` it is the main loop's turn: nothing |
-| `session.start` / `session.end` | main session `agent-start` / `agent-stop` | |
+| `session.start` | main session `agent-start` (queued once detection says Spec Kit) | |
+| first main-loop `tool.call` with no open main run | main session `agent-start` first, then the `tool` envelope | covers `/clear`, which ends the session with `session.end` and starts no new one, and a reload |
+| `session.end` | main session `agent-stop`, then one flush of the queue, raced against `next.budget`: the hook returns `next(e)` when the flush ends or the budget is nearly spent, whichever is first, and never waits past it | no session id from `$.session.id()`: the id seen at start; a flush that hangs or fails: abandoned at the budget, with no throw (the envelopes are lost and the README says so); inert mod: only `next(e)` |
+| `command.run` with matcher `{ command: 'speckit-activity' }` | none; opens the pane | the matcher keeps every other command away from the hook; the test proves another command passes through untouched and opens nothing; arguments, if any, are ignored |
 
 `turn.complete` is used for subagent stops instead of `classic.SubagentStop` because it fires once
 the agent's run has really ended, after any Stop hook (lane check, verdict line) has let it go, so
@@ -90,14 +96,16 @@ Two agents of the same type are always two rows with different `#xxxx` suffixes 
 
 ## Failures (FR-018)
 
-Fault causes are the list in data-model.md "Fault causes". The mod learns of them from three
-places, all available to any consumer except its own:
+Fault causes are the list in data-model.md "Fault causes". Every fault is a record or a fault-file
+entry, so an outside tool sees the same set (FR-001, FR-016, audit finding M6). The mod learns of
+them from:
 
-1. `observer-fault` records it reads from the stream (FR-016: the same records an outside tool sees);
-2. the `faults` array in `emit`'s status JSON, which carries the causes that cannot be in the stream
-   (`stream-unwritable:*`, `activity-module-failed:*`; the fault file is documented for outside tools);
-3. its own: `emit-failed:<code>`, `emit-output-invalid`, `stream-unreadable:<code>`,
-   `config-invalid`, `render-failed`.
+1. `observer-fault` records it reads from the stream, the hook side's and its own;
+2. the `faults` array in `emit`'s status JSON, which carries the fault file's causes, the two that
+   cannot be in the stream (`stream-unwritable:*`, `activity-module-failed:*`);
+3. its own faults (`emit-failed:<code>`, `emit-output-invalid`, `stream-unreadable:<code>`,
+   `config-invalid`, `render-failed`, `relay-overflow`), which it queues as `observer-fault`
+   envelopes so the next `emit` that succeeds records them, and toasts at once.
 
 Each distinct cause is toasted once per session, with exactly this text:
 

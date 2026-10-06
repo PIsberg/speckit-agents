@@ -24,9 +24,11 @@ node bench/overhead.mjs        # 100 alternating pairs; prints medians and exits
 claude plugin test mod/speckit-activity   # overhead.test.ts prints the mod-side median (or mean bound)
 ```
 
-The bench's baseline arm is the same `speckit-team.mjs` with `speckit-activity.mjs` absent, the
-treatment arm has it present (research R9). Pass: hook-side paired median at most 8 ms, plus the
-mod-side figure, at most 10 ms; the repository-without-Spec-Kit row within 2 ms. Record the
+The bench's baseline arm is the base commit's `hooks/speckit-team.mjs` (`--base`, default
+`b9b0dc3`), which has no activity code at all; the treatment arm is today's hook with
+`speckit-activity.mjs` beside it (research R9). Pass: hook-side paired median at most 8 ms in both
+the plain row and the segment-rotation row, plus the mod-side figure, at most 10 ms; the
+repository-without-Spec-Kit row within 2 ms. Record the
 numbers, which mod-side measure was used (`performance.now()` median or `Date.now()` mean bound),
 date, Node, git and Claude Code versions in the README. macOS and Linux: record "not run".
 
@@ -57,6 +59,7 @@ used) as `claude --debug`. Expected immediately: the status line reads
 | L9 | See below | see below | SC-002 |
 | L10 | After L4 to L7, run the privacy scan below on the real stream | 0 hits | SC-006 |
 | L11 | See below | see below | US2 S1, S3, FR-007 |
+| L12 | See below | see below | FR-001, FR-004 (main session stop), audit finding C2 |
 
 ### L8: unwritable destination
 
@@ -73,6 +76,11 @@ used) as `claude --debug`. Expected immediately: the status line reads
 6. Restore: `rm "$D/activity"; mv "$D/activity.saved" "$D/activity"`.
 
 ### L9: latency over 100 records
+
+If research V9 found no way to set `latencyLog`, no debug log file for `$.ui.log` lines, or a
+`$.clock.now()` that is not wall time, L9 cannot run: report SC-002 live as "not run" with that
+reason in the README (SC-002 then rests on the mocked-clock test in `follow.test.ts`) and open the
+follow-up issue (T061). Otherwise:
 
 1. Turn on `latencyLog`: open `/config`, find the row for `speckit-activity` `latencyLog`, set it on
    (the route recorded as V9 in research.md's live verification log; if V9 found that it is set
@@ -116,12 +124,28 @@ cursor map after every pass and resumes from it.
    (the first run reads history from the start of the stream, so with default retention every id
    in `all.txt` should be in `live.txt`).
 
+### L12: the main session's stop
+
+1. In the Spec Kit repo, start `claude --debug`, run one tool call, note the session id
+   (`/status`), then end the session with `/exit`.
+2. Read the stream with the reference consumer or directly:
+   `grep -h '"kind":"agent-stop"' "$(git rev-parse --path-format=absolute --git-common-dir)"/speckit-team/activity/*.jsonl | grep '"main:<session id>"'`
+   Expect exactly one line.
+3. Start a new session in the same repo and open `/speckit-activity`: the previous session's
+   `main` row reads `done` (it ended within the last 10 minutes), and the new session's `main` row
+   reads `run`.
+4. Repeat with Ctrl-D, and once with `/clear` followed by one tool call: after `/clear` there is an
+   `agent-stop` for the old main run and a new `agent-start` for main before the next `tool` record.
+   (If research V10 recorded the fallback, step 2's line appears only after step 3's session start.)
+
 ## 5. Uninstall
 
 ```sh
 node install.mjs --claude-dir "$SCRATCH/claude" --uninstall
 ```
 
-Expect the scratch config byte-identical to before the install, with no `settings.json` left if
-there was none before and no backup of installer-only content; backups of a pre-existing
-`settings.json` may remain (SC-009, contracts/installed-files.md). The per-repo stream stays.
+Expect (SC-009 as amended by the owner, contracts/installed-files.md): `settings.json` parses to
+the same value as before the install, with its indentation and line endings, byte-identical if
+nothing else changed it meanwhile; no `settings.json` if there was none before; no
+`*.bak-speckit-agents-*` file and no `hooks/speckit-agents.install.json` left; a pre-existing empty
+directory still there. The per-repo stream stays.

@@ -12,20 +12,30 @@ Additions to what `install.mjs` installs today. No new flag. `settings.json` get
 | `skills/speckit-activity/types/index.d.ts` | `mod/speckit-activity/types/index.d.ts` | same |
 | `hooks/speckit-agents.install.json` | written by the installer (no source file) | `managedBy` value contains the marker |
 
-The manifest `hooks/speckit-agents.install.json` (research R12):
+The mod's `test/` folder is not installed.
+
+## The manifest `hooks/speckit-agents.install.json` (research R12)
 
 ```json
-{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks", "skills"], "createdSettings": true }
+{
+  "managedBy": "speckit-agents: managed by install.mjs",
+  "createdDirs": ["agents", "hooks", "skills"],
+  "createdSettings": false,
+  "settingsBackup": "settings.json.bak-speckit-agents-2026-10-06T19-00-00-000Z",
+  "forceBackups": [{ "file": "agents/architect.md", "backup": "agents/architect.md.bak-speckit-agents-2026-10-06T19-00-00-000Z" }]
+}
 ```
 
-- `createdDirs` lists, relative to `<claude dir>`, forward slashes, sorted, each of `agents/`,
-  `hooks/` and `skills/` that this installer created, on this install or an earlier one. Folders
-  owned as a unit (`skills/speckit-team/`, `skills/speckit-activity/`) are not listed; the config
-  directory itself never is.
-- `createdSettings` is `true` when this installer created `settings.json` (it did not exist before
-  the first install that wrote this manifest), on this install or an earlier one; else `false`.
-
-The mod's `test/` folder is not installed.
+- `createdDirs`: relative to `<claude dir>`, forward slashes, sorted: each of `agents/`, `hooks/`
+  and `skills/` this installer created, on this install or an earlier one. Folders owned as a unit
+  (`skills/speckit-team/`, `skills/speckit-activity/`) are not listed; the config directory itself
+  never is.
+- `createdSettings`: `true` when this installer created `settings.json`.
+- `settingsBackup`: the install-time copy of a pre-existing `settings.json`, taken by the first
+  install that changed it; `null` when there is none. Later installs never take another.
+- `forceBackups`: each file `--force` replaced, with the copy of the user's original.
+- Values are merged across installs: lists are unioned, `createdSettings` is or-ed, an existing
+  `settingsBackup` is kept. So a second install writes the same bytes.
 
 Rendering: every installed text file has `{{HOOK}}` replaced by
 `<claude dir>/hooks/speckit-team.mjs` as an absolute path with forward slashes (constitution II).
@@ -35,42 +45,49 @@ Collision rule: `skills/speckit-activity/` existing without the marker in `hooks
 collision, handled like an agent collision (refuse, or back up and replace with `--force`). So is a
 `hooks/speckit-agents.install.json` without the marker.
 
-## `settings.json` entries: updated in place
+## `settings.json` (owner decision 2026-10-06, audit findings C1)
+
+The guarantee is about the value and the formatting conventions, not the bytes, because another
+tool (lean-ctx, in the owner's setup) may rewrite `settings.json` between sessions and its changes
+must survive an uninstall:
+
+1. **Value**: after install then uninstall, `settings.json` parses to the same value as before
+   (deep equality, key order included), plus whatever another tool changed in between.
+2. **Formatting**: the file's indentation (spaces, their count, or tabs) and line endings (LF or
+   CRLF) are kept on every write the installer makes, detected from the file as it is at that
+   moment. When nothing else changed the content between install and uninstall, uninstall writes
+   back the pre-install bytes exactly (from `settingsBackup`, after checking that its parsed value
+   equals the current value minus the installer's entries), so compact spacing and inline arrays
+   survive too.
+3. **No files left behind**: uninstall never takes a backup; it deletes `settingsBackup` (and any
+   older backups it recorded); it restores each `forceBackups` entry to its original name, so the
+   user's own agent comes back and the copy is gone. A `settings.json` the installer created and
+   that would be left as `{}` is deleted.
+4. **Idempotent**: a second install changes nothing, including after another tool re-sorted the
+   file (below).
+
+### Gate entries are updated in place
 
 The installer owns two gate entries (`PreToolUse` matcher `Skill`, `UserPromptExpansion` matcher
 `speckit-implement|speckit\.implement`), recognised as today by a command containing
-`speckit-team.mjs`.
-
-- An owned entry already present for that event and matcher is updated where it stands: its
-  command and timeout are set, its position in the array and every other entry are left alone.
-- An owned entry that matches no current gate is removed. A missing gate is appended.
-- So after another tool re-sorts `settings.json`, a re-run finds every entry already right and
-  writes nothing (reported `unchanged`, no backup). Today it removes and re-appends its entries,
-  so a re-sorted file is rewritten and backed up on every run.
-
-## Backups
-
-A `*.bak-speckit-agents-<time>` copy is made only of a file that holds content the installer did
-not write:
-
-- `settings.json` is backed up before a change when it existed before the install, or when it now
-  holds anything besides the installer's own gate entries.
-- A `settings.json` the installer created (`createdSettings`) and that holds nothing but its
-  entries is changed without a backup, and on uninstall, when removing the entries would leave
-  `{}`, it is deleted instead of being written back as `{}`.
-- Agent and skill files replaced with `--force` are backed up as today.
+`speckit-team.mjs`. An owned entry already present for that event and matcher is updated where it
+stands (command and timeout set, position kept); an owned entry that matches no current gate is
+removed; a missing gate is appended. After another tool re-sorts `settings.json`, a re-run finds
+every entry right and writes nothing. (Today it removes and re-appends its entries, so a re-sorted
+file is rewritten, and backed up, on every run.)
 
 ## Install, in order
 
 1. Validate everything it will read (sources exist, `settings.json` parses, the manifest's
    ownership) before writing anything.
 2. Note which of `agents/`, `hooks/`, `skills/` and whether `settings.json` do not exist yet.
-3. Write files; merge the gate entries in place (above).
-4. Write the manifest: `createdDirs` = the existing manifest's list (if it parses and carries the
-   marker) plus the directories noted now; `createdSettings` = the existing value or-ed with
-   whether `settings.json` was created now.
+3. Write files (backing up `--force` replacements and recording them); merge the gate entries in
+   place; when that changes a pre-existing `settings.json` and the manifest records no
+   `settingsBackup`, copy the file first and record the copy's name.
+4. Write the manifest with the merged values above.
 5. Smoke check: run the installed hook in `gate` mode and in `emit` mode with empty stdin from the
-   temp directory; expect exit 0, and for `emit` its status JSON.
+   temp directory; require exit 0, and for `emit` its status JSON; anything else fails the install
+   with the hook's output.
 
 A second install writes nothing and reports every file, the manifest and `settings.json`
 `unchanged`.
@@ -78,23 +95,24 @@ A second install writes nothing and reports every file, the manifest and `settin
 ## Uninstall, in order
 
 1. Remove owned files and folders (`hooks/speckit-activity.mjs`, `skills/speckit-activity/` and
-   the existing ones) when marker-owned.
-2. Remove the installer's gate entries from `settings.json`. If `createdSettings` is true and the
-   result is `{}`, delete `settings.json` and take no backup; otherwise write it back with its
-   original indentation and trailing-newline state, backing it up first.
+   the existing ones) when marker-owned; move each `forceBackups` copy back to its original name.
+2. `settings.json`: remove the installer's entries from the current value. If `createdSettings`
+   and the result is `{}`: delete the file. Else if `settingsBackup` exists and its parsed value
+   deep-equals the result: write the backup's bytes back. Else: write the result with the current
+   file's indentation and line endings. Never back up. Then delete `settingsBackup`.
 3. Read `createdDirs`, remove the manifest, then remove each listed directory that is empty,
-   deepest first. A directory not in the list is never removed, empty or not, so an empty
-   directory that existed before the install survives it. A listed directory holding other files
-   is kept.
-4. No manifest, one without the marker, or one that does not parse: no directory is removed and
-   `settings.json` is never deleted (fails safe; an empty `{}` may be left behind).
+   deepest first. A directory not in the list is never removed, empty or not. A listed directory
+   holding other files is kept.
+4. No manifest, one without the marker, or one that does not parse: remove the owned files and the
+   gate entries as today (writing with the current file's indentation and line endings, no
+   backup), remove no directory, delete no `settings.json`, and touch no backup file.
 
-## Byte-identity (SC-009)
+## Result (SC-009, as amended by the owner)
 
-Install then uninstall leaves every pre-existing file byte-identical and adds no file or
-directory. That includes a config directory that had no `settings.json`: none is left behind, and
-no backup is. The only files that can remain are backups of the user's own content (a pre-existing
-`settings.json`, files replaced with `--force`), kept on purpose.
+After install then uninstall: `settings.json` has the same value as before (or does not exist, if
+it did not exist), with its indentation and line endings, and byte-identical when nothing else
+changed it meanwhile; every other pre-existing file is byte-identical; no file or directory is
+left that was not there before, backups included.
 
 Per-repo data is never touched by the installer: `.git/speckit-team/activity/` and the fault file
 in the temp directory stay; the uninstall message says where they are.

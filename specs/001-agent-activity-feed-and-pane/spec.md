@@ -17,6 +17,8 @@
 - Q: How much history is retained? -> A: The current session plus the previous 7 days, capped at 10 MB, oldest removed first; both limits configurable.
 - Q: When does the view appear and what does it show? -> A: An always-on one-line summary (agent count, phase, last verdict) in repos with Spec Kit initialised, and a fuller panel the user opens on demand; nothing shown in other repos.
 - Q: When is an agent shown as stale? -> A: After 120 seconds without a record.
+- Audit 2 fix (C1): SC-009 no longer demands byte-identical restore, because other tools rewrite the settings file between sessions. It now requires the same parsed value, preserved indentation and line endings unless something else changed the file, zero files left behind, and an idempotent second install.
+- Audit 2 fix (H3): the macOS and Linux "not run" follow-up in FR-020 and SC-005 is tracked as a GitHub issue in PIsberg/speckit-agents, linked from the feature PR.
 - Review fix: User Story 1 scenario 1 no longer allows hiding the view when idle; the summary shows an idle state (0 agents) and the last completed phase, consistent with FR-012.
 - Audit fix (M5): FR-001 now includes "observer fault" as an activity kind, so faults are readable through the documented interface and the view (FR-016, FR-018) consistent.
 - Audit fix (M6): FR-020 states the exception that macOS and Linux verification is "not run", tracked as a follow-up issue, not claimed as passed.
@@ -155,7 +157,7 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - **FR-017**: Observation MUST NOT deny, delay or alter any agent action or guardrail decision. Added time per tool call MUST stay within a budget the plan states and measures.
 - **FR-018**: If emitting or rendering fails, agent work MUST continue unchanged and the failure MUST be visible to the user at most once per distinct cause per session.
 - **FR-019**: Every hook entry point added or changed MUST handle empty, malformed and unknown input without throwing.
-- **FR-020**: The feature MUST work on Windows (Git Bash and PowerShell hook shells), macOS and Linux, with forward-slash repo-relative paths in all records. Exception: only Windows is available for verification, so verification on macOS and Linux is reported as "not run" in the docs and tracked as a follow-up issue, not claimed as passed.
+- **FR-020**: The feature MUST work on Windows (Git Bash and PowerShell hook shells), macOS and Linux, with forward-slash repo-relative paths in all records. Exception: only Windows is available for verification, so verification on macOS and Linux is reported as "not run" in the docs and tracked as a follow-up GitHub issue in PIsberg/speckit-agents, linked from the feature PR, not claimed as passed.
 - **FR-021**: The feature MUST install and uninstall through the existing installer idempotently, and uninstall MUST remove everything it added and nothing else.
 - **FR-022**: The feature MUST cost nothing in repositories without Spec Kit initialised: no output, no blocking, no measurable delay.
 - **FR-023**: Docs MUST state what was verified in a live session, what only by unit test, and what not at all.
@@ -177,11 +179,11 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - **SC-002**: A record appears in the view within 1 second of the event, measured over 100 consecutive events.
 - **SC-003**: A reference consumer written using only the fields, types and location documented in the README receives and correctly parses 100% of the record kinds listed in FR-001 during a scripted run, and runs in the test suite.
 - **SC-004**: With the destination unwritable, all guardrail decisions across a recorded run match the unobserved run in 100% of cases, and agent output is unchanged.
-- **SC-005**: Observer overhead per tool call stays under the budget stated in the plan, measured as the median over 100 calls on Windows. macOS and Linux measurements are reported as "not run" in the docs and tracked as a follow-up, not claimed as passed; FR-020 still requires the feature to work on all 3.
+- **SC-005**: Observer overhead per tool call stays under the budget stated in the plan, measured as the median over 100 calls on Windows. macOS and Linux measurements are reported as "not run" in the docs and tracked as a follow-up GitHub issue in PIsberg/speckit-agents, linked from the feature PR, not claimed as passed; FR-020 still requires the feature to work on all 3.
 - **SC-006**: A default-config scan of a full pipeline's records finds 0 occurrences of prompt text, model output, file contents, command output or environment values.
 - **SC-007**: With 3 concurrent same-type agents, 100% of records are attributable to the correct instance.
 - **SC-008**: In a repository without Spec Kit initialised, 0 bytes of output and 0 records are produced.
-- **SC-009**: Install then uninstall leaves the user's configuration byte-identical to before; a second install changes nothing.
+- **SC-009**: After install then uninstall, the user's settings parse to the same value as before; the original indentation and line endings are kept unless the file's content was changed by something else in the meantime; zero files are left behind by the installer (no uninstall-time backup, and any install-time backup is removed); a second install changes nothing.
 
 ## Assumptions
 
