@@ -1,0 +1,163 @@
+// Run: npm test (or node --test test/)
+// Drives speckit-team.mjs exactly as Claude Code does: hook JSON on stdin, decision on stdout.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HOOK = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'hooks', 'speckit-team.mjs');
+const FEAT = 'specs/001-demo';
+
+function repo({ speckit = true } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skteam-'));
+  const g = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'ignore' });
+  g('init', '-q');
+  g('config', 'user.email', 't@t'); g('config', 'user.name', 't');
+  const write = (rel, text) => {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  };
+  if (speckit) {
+    write('.specify/memory/constitution.md', '# Constitution\nTests first.\n');
+    write('.specify/feature.json', JSON.stringify({ feature_directory: FEAT }));
+    write(`${FEAT}/spec.md`, '# Spec\nFR-001 must work.\n');
+    write(`${FEAT}/plan.md`, '# Plan\n');
+    write(`${FEAT}/tasks.md`, '- [ ] T001 write test\n- [ ] T002 implement\n');
+  }
+  write('src/main/App.java', 'class App {}\n');
+  g('add', '-A'); g('commit', '-qm', 'init');
+  return { dir, write, g };
+}
+
+function run(dir, args, payload) {
+  const r = spawnSync('node', [HOOK, ...args], {
+    input: JSON.stringify({ cwd: dir, ...payload }), encoding: 'utf8',
+  });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout ? JSON.parse(r.stdout) : null;
+}
+const write = (dir, args, file, extra = {}) => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(dir, file) }, ...extra,
+});
+const denied = (out) => out?.hookSpecificOutput?.permissionDecision === 'deny';
+const pass = (dir) => run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: 'All good.\n\nVERDICT: PASS' });
+
+test('every mode is a no-op outside a Spec Kit repo', () => {
+  const { dir } = repo({ speckit: false });
+  assert.equal(write(dir, ['scope', 'only', 'specs/'], 'src/main/App.java'), null);
+  assert.equal(run(dir, ['gate'], { hook_event_name: 'UserPromptExpansion', command_name: 'speckit-implement' }), null);
+});
+
+test('scope only: planning agents write specs and CLAUDE.md, nothing else', () => {
+  const { dir } = repo();
+  const only = ['scope', 'only', 'specs/', 'CLAUDE.md'];
+  assert.equal(write(dir, only, `${FEAT}/plan.md`), null);
+  assert.equal(write(dir, only, 'CLAUDE.md'), null);
+  assert.ok(denied(write(dir, only, 'src/main/App.java')));
+  assert.ok(denied(write(dir, only, 'CLAUDE.md.bak')));
+  assert.equal(write(dir, only, path.join('..', 'outside-repo.txt')), null, 'paths outside the repo are not its business');
+});
+
+test('scope tests: test-writer writes test files and tasks.md only', () => {
+  const { dir } = repo();
+  for (const f of ['src/test/java/AppTest.java', 'tests/test_app.py', 'web/app.test.ts', 'pkg/app_test.go', `${FEAT}/tasks.md`]) {
+    assert.equal(write(dir, ['scope', 'tests'], f), null, f);
+  }
+  for (const f of ['src/main/App.java', `${FEAT}/spec.md`, 'specs/test.md']) {
+    assert.ok(denied(write(dir, ['scope', 'tests'], f)), f);
+  }
+});
+
+test('scope no-tests: implementer cannot touch tests', () => {
+  const { dir } = repo();
+  assert.equal(write(dir, ['scope', 'no-tests'], 'src/main/App.java'), null);
+  assert.ok(denied(write(dir, ['scope', 'no-tests'], 'src/test/java/AppTest.java')));
+  assert.ok(denied(write(dir, ['scope', 'no-tests'], 'spec/app_spec.rb')));
+});
+
+test('.specify/test-paths adds repo-specific test patterns', () => {
+  const { dir, write: w } = repo();
+  assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);
+  w('.specify/test-paths', '# golden files\n^checks/\n');
+  assert.ok(denied(write(dir, ['scope', 'no-tests'], 'checks/golden.txt')));
+});
+
+test('gate blocks implementation until a PASS verdict on the current artifacts', () => {
+  const { dir, write: w } = repo();
+  const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };
+  assert.match(run(dir, ['gate'], tool).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+
+  run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: 'VERDICT: FAIL' });
+  assert.match(run(dir, ['gate'], tool).hookSpecificOutput.permissionDecisionReason, /was FAIL/);
+
+  assert.match(pass(dir).systemMessage, /PASS/);
+  assert.equal(run(dir, ['gate'], tool), null);
+
+  w(`${FEAT}/tasks.md`, '- [X] T001 write test\n- [x] T002 implement\n');
+  assert.equal(run(dir, ['gate'], tool), null, 'ticking checkboxes keeps the audit valid');
+
+  w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work.\nFR-002 added later.\n');
+  assert.match(run(dir, ['gate'], tool).hookSpecificOutput.permissionDecisionReason, /changed after the audit/);
+});
+
+test('gate on a typed /speckit-implement and on the Skill tool, nothing else', () => {
+  const { dir } = repo();
+  // A typed /command never reaches UserPromptSubmit or PreToolUse; it fires UserPromptExpansion.
+  const prompt = (name) => run(dir, ['gate'], {
+    hook_event_name: 'UserPromptExpansion', expansion_type: 'slash_command', command_name: name, prompt: `/${name}`,
+  });
+  const skill = (s) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Skill', tool_input: { skill_name: s } });
+  assert.equal(prompt('speckit-plan'), null);
+  assert.equal(prompt('speckit-implementation-notes'), null);
+  assert.equal(prompt('speckit-implement')?.decision, 'block');
+  assert.equal(prompt('speckit.implement')?.decision, 'block');
+  assert.equal(skill('speckit-plan'), null);
+  assert.ok(denied(skill('speckit-implement')));
+  pass(dir);
+  assert.equal(prompt('speckit-implement'), null);
+  assert.equal(skill('speckit-implement'), null);
+});
+
+test('verdict demands a VERDICT line, once', () => {
+  const { dir } = repo();
+  const stop = (extra) => run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: 'looks fine', ...extra });
+  assert.equal(stop()?.decision, 'block');
+  assert.equal(stop({ stop_hook_active: true }), null, 'never loops');
+  assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: '| x |\n\n**VERDICT: PASS**' }).systemMessage, /PASS/);
+});
+
+test('lane check catches writes that bypassed Edit, including via Bash', () => {
+  const { dir, write: w, g } = repo();
+  pass(dir);
+  const start = (id) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: id });
+  const stop = (id, rule, extra = {}) => run(dir, ['lane', rule], { hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'implementer', ...extra });
+
+  start('a1');
+  w('src/main/App.java', 'class App { int x; }\n');
+  w('src/test/java/AppTest.java', 'class AppTest {}\n');
+  g('add', '-A'); g('commit', '-qm', 'sneaky commit');
+  const out = stop('a1', 'no-tests');
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /AppTest\.java/);
+  assert.doesNotMatch(out.reason, /App\.java,|main\/App\.java/);
+  assert.match(stop('a1', 'no-tests', { stop_hook_active: true }).systemMessage, /WARNING/, 'second stop warns instead of looping');
+
+  start('a2');
+  w('src/main/Other.java', 'class Other {}\n');
+  assert.equal(stop('a2', 'no-tests'), null);
+
+  start('t1');
+  w('src/main/Sneaky.java', 'class Sneaky {}\n');
+  assert.equal(stop('t1', 'tests')?.decision, 'block', 'test-writer may not add production code');
+});
+
+test('lane check ignores files that were already dirty when the agent started', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  w('src/test/java/WipTest.java', 'class WipTest {}\n');
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: 'b1' });
+  assert.equal(run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'b1' }), null);
+});

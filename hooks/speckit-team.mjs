@@ -1,0 +1,187 @@
+#!/usr/bin/env node
+// speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
+// Guardrails for the Spec Kit agent team. How it works: README.md of the speckit-agents repo.
+// Called from agent frontmatter hooks and from ~/.claude/settings.json. Every mode is a
+// no-op outside a git repo that contains .specify/, so registering it globally is safe.
+//
+//   scope only <prefix>...  PreToolUse Write/Edit: allow only paths under these prefixes
+//   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
+//   scope no-tests          PreToolUse Write/Edit: allow anything except test files
+//   gate                    PreToolUse / UserPromptExpansion: block implementation until
+//                           spec-auditor has passed the current spec, plan, tasks, constitution
+//   verdict                 SubagentStop of spec-auditor: record its VERDICT line
+//   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const TEST_PATTERNS = [
+  /(^|\/)(test|tests|__tests__|testing|testdata|test-data|fixtures|e2e|spec)\//i,
+  /(^|\/)src\/(it|integrationTest|testFixtures)\//,
+  /(^|\/)test_[^/]*\.py$/,
+  /_test\.(go|py|rs|exs|dart|c|cc|cpp)$/,
+  /\.(test|spec)\.[cm]?[jt]sx?$/,
+  /(Test|Tests|IT|Spec)\.(java|kt|kts|groovy|scala|cs)$/,
+  /_spec\.rb$/,
+  /Tests?\.swift$/,
+];
+const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
+
+const [mode, ...args] = process.argv.slice(2);
+const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+const event = input.hook_event_name;
+const who = input.agent_type || 'the main session';
+
+const git = (cwd, ...a) => {
+  try {
+    return execFileSync('git', ['-c', 'core.quotepath=off', ...a], {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+const lines = (s) => (s ? s.split('\n').filter(Boolean) : []);
+const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } catch { return fallback; } };
+const emit = (obj) => { process.stdout.write(JSON.stringify(obj)); process.exit(0); };
+const deny = (reason) => emit({ hookSpecificOutput: {
+  hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
+const block = (reason) => emit({ decision: 'block', reason });
+
+const cwd = input.cwd || process.cwd();
+const root = git(cwd, 'rev-parse', '--show-toplevel');
+if (!root || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
+const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'speckit-team');
+
+function extraTestPatterns() {
+  return lines(readOr(path.join(root, '.specify', 'test-paths'), ''))
+    .map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => new RegExp(l));
+}
+const isTest = (rel) => [...TEST_PATTERNS, ...extraTestPatterns()].some((re) => re.test(rel));
+const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel));
+
+function feature() {
+  try { return JSON.parse(readOr(path.join(root, '.specify', 'feature.json'), '')).feature_directory; } catch { return null; }
+}
+
+// Ticking a task checkbox must not invalidate the audit, so checkbox state is normalised away.
+function fingerprint(feat) {
+  const files = ['.specify/memory/constitution.md', `${feat}/spec.md`, `${feat}/plan.md`, `${feat}/tasks.md`];
+  const h = createHash('sha256');
+  for (const f of files) {
+    const text = readOr(path.join(root, f), '<missing>')
+      .replace(/\r\n/g, '\n').replace(/^(\s*[-*]\s+\[)[xX ](\])/gm, '$1 $2');
+    h.update(`${f}\0${text}\0`);
+  }
+  return h.digest('hex').slice(0, 16);
+}
+const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
+const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
+const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
+
+function auditProblem() {
+  const feat = feature();
+  if (!feat) return 'no active feature in .specify/feature.json';
+  const v = JSON.parse(readOr(verdictFile(feat), 'null'));
+  if (!v) return `spec-auditor has not passed ${feat}`;
+  if (v.verdict !== 'PASS') return `spec-auditor's last verdict on ${feat} was ${v.verdict} (${v.at})`;
+  if (v.fingerprint !== fingerprint(feat)) {
+    return `spec, plan, tasks or constitution changed after the audit of ${feat} (${v.at})`;
+  }
+  return null;
+}
+
+function changedSince(base) {
+  return [...new Set([
+    ...lines(git(root, 'diff', '--name-only', base)),
+    ...lines(git(root, 'ls-files', '--others', '--exclude-standard')),
+  ])];
+}
+
+function lastAssistantText() {
+  if (input.last_assistant_message) return input.last_assistant_message;
+  const entries = lines(readOr(input.agent_transcript_path || '', '')).reverse();
+  for (const l of entries) {
+    try {
+      const m = JSON.parse(l).message;
+      if (m?.role !== 'assistant') continue;
+      const c = typeof m.content === 'string' ? m.content
+        : (m.content || []).filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+      if (c) return c;
+    } catch { /* skip malformed line */ }
+  }
+  return '';
+}
+
+if (mode === 'scope') {
+  const ti = input.tool_input || {};
+  const file = ti.file_path || ti.notebook_path;
+  if (!file) process.exit(0);
+  const rel = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/');
+  if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
+  const [rule, ...prefixes] = args;
+  // A prefix ending in / is a directory; anything else must match the whole path.
+  if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
+    deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
+      + 'Tests belong to test-writer and production code to implementer: report what should change instead.');
+  }
+  if (rule === 'tests' && !inLane('tests', rel)) {
+    deny(`${who} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
+      + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
+  }
+  if (rule === 'no-tests' && !inLane('no-tests', rel)) {
+    deny(`${who} may not change tests: ${rel} is part of the executable spec. `
+      + 'If the test is wrong, stop and report it with evidence so test-writer or the human can fix it.');
+  }
+  process.exit(0);
+}
+
+if (mode === 'gate') {
+  // A typed /speckit-implement fires UserPromptExpansion, not UserPromptSubmit or PreToolUse(Skill).
+  const typed = event === 'UserPromptExpansion';
+  if (typed && !/(^|:)speckit[-.]implement$/.test(input.command_name || '')) process.exit(0);
+  if (event === 'PreToolUse' && input.tool_name === 'Skill') {
+    const ti = input.tool_input || {};
+    if (!/(^|:)speckit[-.]implement$/.test(ti.skill_name || ti.skill || ti.name || '')) process.exit(0);
+  }
+  const problem = auditProblem();
+  if (problem) {
+    const reason = `Implementation gate: ${problem}. Run @agent-spec-auditor and get VERDICT: PASS first.`;
+    if (typed) block(reason);
+    deny(reason);
+  }
+  if (input.agent_id && !fs.existsSync(baseFile(input.agent_id))) {
+    const sha = git(root, 'rev-parse', 'HEAD');
+    if (sha) writeJson(baseFile(input.agent_id), { sha, dirty: changedSince('HEAD') });
+  }
+  process.exit(0);
+}
+
+if (mode === 'verdict') {
+  const found = [...lastAssistantText().matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
+  if (!found) {
+    if (input.stop_hook_active) process.exit(0);
+    block('End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.');
+  }
+  const feat = feature();
+  if (!feat) process.exit(0);
+  const verdict = found[1].toUpperCase();
+  writeJson(verdictFile(feat), { verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
+  emit({ systemMessage: `spec-auditor recorded VERDICT: ${verdict} for ${feat}` });
+}
+
+if (mode === 'lane') {
+  const rule = args[0];
+  const f = input.agent_id && baseFile(input.agent_id);
+  const base = f && JSON.parse(readOr(f, 'null'));
+  if (!base) process.exit(0);
+  const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
+  if (outside.length && !input.stop_hook_active) {
+    block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
+      + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
+  }
+  fs.rmSync(f, { force: true });
+  if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
+  process.exit(0);
+}
