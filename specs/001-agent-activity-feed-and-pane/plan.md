@@ -18,9 +18,11 @@ plain board stays the default; a rich view (pipeline track, agent cards with a 5
 history, 5-second highlights, a live indicator, at most 2 redraws per second, at most 20 lines) is
 switched to and from with `/speckit-activity rich|plain` or the `v` key, and the choice is kept per
 user in the mod's `$.store` (User Story 6, research R18). The
-installer adds one hook module, the mod folder and a small manifest, and no `settings.json`
-entry. The plan sits on commit b9b0dc3: subagents report through `SubagentHandback`, which the
-gate exempts, and spec-auditor's verdict is read from it (research R16).
+installer adds one hook module and the mod folder, and no `settings.json` entry. The plan sits on
+PR #1 (commit b9b0dc3: subagents report through `SubagentHandback`, which the gate exempts, and
+spec-auditor's verdict is read from it, research R16) and PR #2 (commit 274bae6: unusable hook
+input decides nothing and says so; the installer's manifest, in-place settings edits, byte-exact
+restore and created-only removal, research R19). Work those PRs delivered is built on, not redone.
 
 ## Technical Context
 
@@ -65,21 +67,23 @@ implementers in SC-007), more than one session per repo.
 
 | Principle | How the design meets it | Result |
 |---|---|---|
-| I. Test-First | `tasks.md` puts every test task before the implementation it covers; each names its file and FR/SC IDs. Tests that guard behaviour which may already hold name a deliberate break to show them red once (T007, T009, T036, T037, T043, T047, T055); the evidence goes in the PR body (T073). Tests assert observable output: hook stdout, files in the stream, what `emit` prints, what the pane and status line show. Mod tests run under `npm test` through `test/mod.test.mjs`. | PASS |
-| II. Guardrails Never Fail Silently | Stdin parse made safe (today it throws on malformed JSON, research R14). Empty, malformed or unknown input makes no decision in every mode and writes an `observer-fault` record, so it is visible, not silent (H1); `gate` and `verdict` get the no-op path they lack today (T012). The activity module is loaded with a guarded dynamic `import()` after the `.specify/` check, so it cannot crash a guardrail or change a decision, with a test for a missing and a throwing module (T009). Every new entry point in the mod has a malformed or partial input test (T017: `tool.call`, `classic.SubagentStart`, `turn.complete`, `session.start`, `session.end`; T020: `command.run`). `lane` and `verdict` accept `Stop` as well as `SubagentStop`, so an agent run as the main thread is still checked (M4). No hook command, event or matcher in `settings.json` or agent frontmatter changes, and no catch-all hook is added; the mod's `tool.call` never holds back `SubagentHandback`. Every mod event this feature wires, `session.end` and the view switch (command argument, `v` hotkey, `$.store`) included, is verified live (T001 V1 to V11, T052 V12 to V16, quickstart L1 to L15, tasks T030, T062 and T070). The mod runs `node` with an absolute forward-slash path as an argv element. | PASS |
-| III. Observers Never Block | The mod's `tool.call` hook makes no `$` call before `next(e)` and never answers in its place; records are written in a `try`/`catch` before the decision is printed, never altering it; failures are `observer-fault` records in the stream, the mod's own included (the fault file only when the stream is unwritable or the activity module fails), and are toasted once per cause. Guardrails never run retention (it runs in `emit`, R5), and the mod's `session.start` returns before it runs `git` (R9). Budget stated: 10 ms median per tool call, measured against the base commit's hook, including a segment-rotation row (R9). The view switch and the rich view run only on the user's command, the `v` press and the view's own timers, never on the tool path; `$.store` is written without the drawing waiting for it; failures are `view-choice-*` faults (FR-035, T054). | PASS |
+| I. Test-First | `tasks.md` puts every test task before the implementation it covers; each names its file and FR/SC IDs. Tests that guard behaviour which may already hold name a deliberate break to show them red once (T007, T009, T036, T037, T043, T047, T055); the evidence goes in the PR body (T073). Tests assert observable output: hook stdout, files in the stream, what `emit` prints, what the pane and status line show. Mod tests run under `npm test` through `test/mod.test.mjs`. Work PR #2 already delivered with tests is not re-tested; tasks extend those tests (T005, T063). | PASS |
+| II. Guardrails Never Fail Silently | PR #2 (research R19) already makes unusable hook input (not a JSON object, or an event outside the mode's `WIRED` list) decide nothing and say so with a `systemMessage`, silently outside Spec Kit, with `Stop` accepted by `lane` and `verdict`; this feature adds an `observer-fault` record on that path (T005, T012) and nothing else to it. The activity module is loaded with a guarded dynamic `import()` after the `.specify/` check, so it cannot crash a guardrail or change a decision, with a test for a missing and a throwing module (T009). Every new entry point in the mod has a malformed or partial input test (T017: `tool.call`, `classic.SubagentStart`, `turn.complete`, `session.start`, `session.end`; T020 and T054: `command.run`, including non-string `args`; T054: `ui.press` for foreign, other-plugin and incomplete presses). No hook command, event or matcher in `settings.json` or agent frontmatter changes, and no catch-all hook is added; the mod's `tool.call` never holds back `SubagentHandback`. Every mod event this feature wires, `session.end` and the view switch (command argument, `v` and `n` keys, `$.store`) included, is verified live (T001 V1 to V11, T052 V12 to V16, quickstart L1 to L16, tasks T030, T062 and T068), on Windows Terminal; hooks under the PowerShell hook shell are unit-tested in T063 and live-checked in L16, or reported not run with an issue (audit finding M11). The mod runs `node` with an absolute forward-slash path as an argv element. | PASS |
+| III. Observers Never Block | The mod's `tool.call` hook makes no `$` call before `next(e)` and never answers in its place; records are written in a `try`/`catch` before the decision is printed, never altering it; failures are `observer-fault` records in the stream, the mod's own included (the fault file only when the stream is unwritable or the activity module fails), and are toasted once per cause. Guardrails never run retention (it runs in `emit`, R5), and the mod's `session.start` returns before it runs `git` (R9). The mod's first history fold runs in slices of 500 records with yields, so a tool call never waits behind it on the shared event loop, and T037 measures tool calls during a 10 MB fold and with the rich view open (audit finding M9). Budget stated: 10 ms median per tool call, measured against the base commit's hook, including a segment-rotation row (R9). The view switch and the rich view run only on the user's command, the `v`/`n` presses and the view's own timers, never on the tool path; `$.store` is written without the drawing waiting for it; failures are `view-choice-*` faults (FR-035, T054). | PASS |
 | IV. Zero Runtime Dependencies | Node stdlib in hooks, installer, `test/*.test.mjs`, bench. The mod ships as `.tsx`/`.ts` source using only `$`. The mod's tests import `claude-code/testing`: they run inside Claude Code's plugin environment, not on Node, and the kit is part of the plugin API the engine supplies (declared in the same `claude-code.d.ts`); nothing is installed or added to `package.json`, so it is not a runtime dependency (research R13, audit finding M8). | PASS |
-| V. Versioned Public Contracts | Every record carries `schema: "1.0"`; additive-only rule and ignore-unknown rule published in the README; contracts in [contracts/](contracts/) for the stream, record, config, view, hook CLI and installed files. The rich view adds no record field (its history is derived from `tool` records); its public surface is the command argument, the `v` key and the stored choice, in contracts/view.md. | PASS |
-| VI. Local and Private by Default | Local file inside `.git`; allow-listed fields only; worktree relative, never absolute; `command` and `description` opt-in per field, off by default (R11). The view choice is one word in the mod's local `$.store` under the user's Claude Code directory, read and written only in Spec Kit repositories, removed on uninstall (R18). | PASS |
-| VII. Every Supported Platform | Append semantics hold on all three; paths emitted with `/`; segment names have no `:`. Verified on Windows only: macOS and Linux are "not run" for SC-005 (allowed by the spec), for the live checks and for `npm test`; the README says so, and the gap is a GitHub issue in `PIsberg/speckit-agents` linked from the PR (T072, owner decision 2026-10-06, research R17). | PASS, with the gap reported and tracked |
-| VIII. Docs in the Same Change | Tasks update README (install table, activity stream reference, reference consumer, view including the rich view and how to switch, config, verifying, known limits, uninstall), CLAUDE.md (layout, verify) and the installer's help and final message. | PASS |
-| Installation Constraints | Idempotent; marker-owned files and folder; sources and settings validated before any write; inert outside Spec Kit; uninstall removes everything added and nothing else. SC-009 as amended by the owner (2026-10-06, R12): after install then uninstall `settings.json` parses to the same value as before, keeps its indentation and line endings (CRLF included), and is byte-identical when nothing else changed it meanwhile (the install-time backup's bytes are written back only when its value matches); zero files are left behind (no uninstall-time backup; the one install-time backup and `--force` copies are removed or restored, their names kept in the manifest); a second install changes nothing, also after another tool re-sorts the file (gate entries updated in place). Directories and a `settings.json` are removed only when the installer created them, recorded in a marker-owned manifest; a pre-existing empty directory is kept. Uninstall also removes the mod's view-choice store (only that plugin's), so no file is left behind. | PASS |
-| Workflow and Quality Gates | `npm test`, `claude plugin validate`, `claude plugin test`, live checks, each reported as passed, failed, skipped or not run (tasks T068 to T070), and the PR body records them (T073), with follow-up issues for anything not run (T072). | PASS |
+| V. Versioned Public Contracts | Every record carries `schema: "1.0"`; additive-only rule and ignore-unknown rule published in the README; contracts in [contracts/](contracts/) for the stream, record, config, view, hook CLI and installed files. The rich view adds no record field (its history is derived from `tool` records); its public surface is the command argument and its answers, the `v` and `n` keys and the stored choice, in contracts/view.md. | PASS |
+| VI. Local and Private by Default | Local file inside `.git`; allow-listed fields only; worktree relative, never absolute; `command` and `description` opt-in per field, off by default (R11). The view choice is one word in the mod's local `$.store` under the user's Claude Code directory, read and written only in Spec Kit repositories (R18). Claude Code, not the installer, writes that file, so uninstall leaves it; the README says so and how to remove it (audit finding K1). | PASS |
+| VII. Every Supported Platform | Append semantics hold on all three; paths emitted with `/`; segment names have no `:`. Verified on Windows only: macOS and Linux are "not run" for SC-005 (allowed by the spec), for the live checks and for `npm test`; the view's live checks run on Windows Terminal only, not on the desktop app, VS Code or mobile; the PowerShell hook shell is checked by T063 and L16 or reported not run. The README says each, and each gap is a GitHub issue in `PIsberg/speckit-agents` linked from the PR (T069, owner decision 2026-10-06, research R17). | PASS, with the gaps reported and tracked |
+| VIII. Docs in the Same Change | Tasks update README (install table, activity stream reference, reference consumer, view including the rich view, paging and how to switch, config, verifying, known limits, uninstall including that the stored view choice stays), CLAUDE.md (layout, verify) and the installer's help, final and uninstall messages. Every README edit lands before the gates run (Polish order, audit finding M8). | PASS |
+| Installation Constraints | Delivered by PR #2 (research R19), with tests: the marker-owned manifest, one fixed-name settings backup, edits in the file's own indentation and line endings, gate entries updated in place, byte-exact restore when nothing else changed the settings, others' later changes kept otherwise, no uninstall-time backup, the install-time copy deleted, `--force` replacements restored, only created directories removed, a user's own empty `hooks` containers kept (audit finding M7). SC-009 as amended by the owner therefore holds for the files PR #2 installs; this feature adds `hooks/speckit-activity.mjs` and the `skills/speckit-activity/` folder to the same machinery (T013, T029), so the existing round-trip tests cover them, and T063 adds the cases PR #2 does not test. Uninstall does not touch the mod's view-choice store, which Claude Code writes (audit finding K1). | PASS |
+| Workflow and Quality Gates | `npm test`, `claude plugin validate`, `claude plugin test`, live checks, each reported as passed, failed, skipped or not run (tasks T068, T071, T072), after the last README edit; the PR body records them (T073), with follow-up issues for anything not run (T069). | PASS |
 
 Post-design re-check (after data-model.md and contracts/): no principle changed status. The one
 open risk is not a violation but an unverified platform fact: whether the installer's chosen mod
 location loads (research V1), along with V2 to V11 (event ids, `turn.complete`, worktree `cwd`,
-test discovery, clocks, the debug log, `session.end`, the Stop event name). T001 settles them before anything is built on them; each has a stated rule,
+test discovery, clocks, the debug log, `session.end`, the Stop event name) and V12 to V16 (the
+toggle key, persistence, glyphs, render rate, pane sizes) for the rich view. T001 and T052 settle
+them before anything is built on them; each has a stated rule,
 stop and hand back to architect, or a named fallback (research, "Live verification log").
 
 ## Decisions
@@ -119,12 +123,15 @@ rejected. Evidence in [research.md](research.md).
    call before `next`. Outside Spec Kit: unchanged hook path, paired median within 2 ms.
 
 6. **The switchable rich view** (R18, contracts/view.md "Rich view and switching"): drawn in the
-   same Pane from one throttled `richFrame` value (at most once per 500 ms plus a 1 s live tick,
-   which is how the 2-per-second cap is met: the API has no frame-rate setting); switched by the
-   command argument (`args` on `command.run`) and a `switch-view` Button with `hotkey: 'v'`, which
-   the API presses only while the pane holds the keyboard, so the panel says "ctrl+x tab then v";
-   stored in the mod's `$.store`; 20-row cap ours, 80-column rule on `viewport.columns`, reduced
-   form and plain fallback by `scroll.bodyRows`; no borders (each costs 2 of the 20 rows).
+   same Pane from one throttled `richFrame` value, written at most once per 500 ms; the 1 s live
+   tick is one of those writes, not an extra one, which is how the 2-per-second cap is met (the API
+   has no frame-rate setting); switched by the command argument (`args` on `command.run`) and a
+   `switch-view` Button with `hotkey: 'v'`, which the API presses only while the pane holds the
+   keyboard, so the panel says "ctrl+x tab then v"; capped sections end in a counted `+n more` and
+   a `rich-page` Button (`hotkey: 'n'`) pages them, so every plain-board item is reachable (H1);
+   stored in the mod's `$.store`; 20-row cap ours, 80-column rule on `viewport.columns`, 76-column
+   rule on the pane's `bodyColumns` (a narrow docked pane, M6), reduced form and plain fallback by
+   `scroll.bodyRows`; no borders (each costs 2 of the 20 rows).
    Rejected: `userConfig`/`pluginConfigs` for the choice (writes the user's `settings.json`,
    reloads the module on each switch); opening the pane with `focus` so `v` works at once (takes
    the keyboard from the prompt on every open); `Raster` for the history (terminal only).
@@ -141,24 +148,26 @@ under `test/` (measured, R13).
 | No new runtime dependency; the mod relies on the early-access plugin API of Claude Code 2.1.291 | dependency (platform) | R15 |
 | New public record format `schema 1.0` and its location `.git/speckit-team/activity/*.jsonl` | public API | contracts/activity-stream.md |
 | New per-repo config file `.specify/activity.json` (`enabled`, `retention.*`, `fields.*`) | public API, schema | contracts/config.md |
-| New slash command `/speckit-activity`, plugin name `speckit-activity`, `userConfig.latencyLog` | public API | contracts/view.md |
-| New installed files `hooks/speckit-activity.mjs`, `skills/speckit-activity/` and the manifest `hooks/speckit-agents.install.json` (`createdDirs`, `createdSettings`, `settingsBackup`, `forceBackups`); no new `settings.json` entry | public API (installed files) | contracts/installed-files.md |
+| New slash command `/speckit-activity [plain\|rich\|cool]`, its answer texts, plugin name `speckit-activity`, `userConfig.latencyLog` | public API | contracts/view.md |
+| New installed files `hooks/speckit-activity.mjs` and `skills/speckit-activity/`, tracked by PR #2's manifest; no new `settings.json` entry | public API (installed files) | contracts/installed-files.md |
 | New record kind `observer-fault` and new fields `verdict.via`, `agent-stop.final` | public API | data-model.md, schema |
 | New hook mode `emit` (internal, envelope `v: 1`) | CLI surface | contracts/emit-cli.md |
-| Installer behaviour change (owner decision 2026-10-06 on SC-009): keep `settings.json`'s value, indentation and line endings, writing back the pre-install bytes when nothing else changed it; one install-time backup, never one at uninstall, and that backup deleted at uninstall; `--force` replacements restored at uninstall; gate entries updated in place; directories and a `settings.json` removed only when the installer created them; installs made before this change have no manifest, so their uninstall removes no directory, deletes no backup and may leave an empty `settings.json` | behaviour change | R12 |
+| Unusable hook input now also writes an `observer-fault` record, beside PR #2's `systemMessage` | behaviour change | R14, R19 |
 | Retention runs only in the mod's relay; without the mod the 10 MB cap is not enforced | design, known limit | R5 |
-| `lane` and `verdict` accept `Stop` as well as `SubagentStop` | behaviour change | R14, M4 |
 | If an isolated worktree agent's `cwd` is not visible to the mod, T001 stops and the design is revisited (no weakened US4 S2) | owner decision | research V5 |
-| Malformed stdin, and events a mode is not wired to, now make no decision and write an `observer-fault` record, instead of crashing (every mode) or denying and blocking (`gate` and `verdict` on `{}`); the effective result for a crash is unchanged: the action proceeds | behaviour change | R14 |
 | A subagent's stop is taken from `turn.complete`, not `SubagentStop`; `agent-stop` is terminal | design | R2, V8 |
 | Phase changes are inferred at team agent start; `SKILL.md` is not changed | design | R6 |
-| A never-stored view choice (every fresh install) is plain with no fault; only an unreadable or invalid stored choice records `view-choice-unreadable` (the spec says "missing or unreadable") | interpretation of FR-034 | R18 |
-| `cool` accepted as a synonym of `rich` on `/speckit-activity`; docs and panel say `rich` | public API | contracts/view.md |
-| The `v` key toggles only after ctrl+x tab (or a click) gives the pane the keyboard; the pane is not opened with focus | UX, platform limit | R18, V12 |
+| The rich view pages its capped sections with an `n` key (`rich-page` Button) so every plain-board item is reachable, each capped section ending in a counted `+n more` | UX, public API | contracts/view.md, audit finding H1 |
+| A docked pane narrower than 76 columns shows the plain board with a notice, even in a wide terminal | UX | contracts/view.md, audit finding M6 |
 | The rich view adds up to 500 ms (one frame) to record-to-screen time, still under 1 s | performance | contracts/view.md "Timing" |
-| Uninstall deletes the mod's `$.store` file (the user's view choice), matched by plugin name | behaviour, files | contracts/installed-files.md |
-| Track labels `spec` and `gate` are display names for the record values `specify` and `verify`; schema 1.0 unchanged | public API | R18 |
-| macOS and Linux reported "not run"; a follow-up issue in `PIsberg/speckit-agents` per gap; the feature PR is stacked on #1, base `main` | verification scope, delivery | Constitution Check VII, R17 |
+| Uninstall leaves the stored view choice in Claude Code's plugin store; the README says how to remove it | behaviour, files | contracts/installed-files.md, audit finding K1 |
+| Track labels `spec` and `gate` are display names for the record values `specify` and `verify`; one state-word mapping (`run`, `STALE`, `done`) in both views; schema 1.0 unchanged | public API | R18, data-model.md |
+| macOS and Linux reported "not run"; the view not live-tested on the desktop app, VS Code or mobile; a follow-up issue in `PIsberg/speckit-agents` per gap; the feature PR is stacked on #2 (itself on #1), base `main` | verification scope, delivery | Constitution Check VII, R17 |
+
+Settled by the owner (2026-10-06) and recorded in spec.md, no longer open: a never-stored view
+choice is plain with no fault, an unreadable or invalid one is a fault (FR-034); the toggle key
+works once the user gives the pane focus (ctrl+x tab or a click) and the panel never takes focus
+itself (FR-032); `cool` stays as a synonym of `rich`; the SC-009 settings behaviour (PR #2).
 
 ## Project Structure
 
@@ -185,7 +194,7 @@ specs/001-agent-activity-feed-and-pane/
 
 ```text
 hooks/
-├── speckit-team.mjs          # changed: safe stdin, records at each decision, `emit` mode
+├── speckit-team.mjs          # changed: records at each decision and on PR #2's no-decision path, `emit` mode
 └── speckit-activity.mjs      # new: config, record builder, privacy filter, writer, segments,
                               #      retention, phase state, faults
 mod/speckit-activity/         # new: the mod (installed to <claude dir>/skills/speckit-activity/)
@@ -214,11 +223,10 @@ mod/speckit-activity/         # new: the mod (installed to <claude dir>/skills/s
 bench/
 ├── overhead.mjs              # new: SC-005 paired measurement
 └── latency.mjs               # new: SC-002 live helper
-install.mjs                   # changed: installs the activity module and the mod; SC-009 fixes;
-                              #          writes hooks/speckit-agents.install.json (created dirs,
-                              #          created settings.json); gate entries updated in place
+install.mjs                   # changed: installs the activity module and the mod (manifest,
+                              #          in-place settings and created-only removal from PR #2)
 test/
-├── hook.test.mjs             # extended: malformed stdin
+├── hook.test.mjs             # extended: PR #2's unusable-input tests also check the record
 ├── activity.test.mjs         # new: emit, record shape, labels, paths, phase, non-team
 ├── isolation.test.mjs        # new: activity module missing or throwing changes no decision
 ├── privacy.test.mjs          # new: SC-006, opt-in fields
@@ -227,7 +235,7 @@ test/
 ├── stream.test.mjs           # new: FR-007 follow, README reference consumer, docs drift
 ├── retention.test.mjs        # new: FR-011
 ├── parallel.test.mjs         # new: SC-007, worktrees, two sessions
-├── install.test.mjs          # extended: new files, SC-009
+├── install.test.mjs          # extended: new files, cases PR #2 does not test, PowerShell shell
 └── mod.test.mjs              # new: runs claude plugin validate/test
 README.md, CLAUDE.md          # changed
 ```

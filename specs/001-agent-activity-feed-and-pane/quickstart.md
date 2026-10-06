@@ -63,6 +63,7 @@ used) as `claude --debug`. Expected immediately: the status line reads
 | L13 | See below | see below | US6 S1 to S3, FR-024, FR-032 to FR-034, SC-010, SC-011 |
 | L14 | See below | see below | US6 S4 to S6, FR-025 to FR-031, SC-012, SC-013 |
 | L15 | See below | see below | FR-028, SC-014 |
+| L16 | See below | see below | FR-020, constitution VII (the PowerShell hook shell, third audit M11) |
 
 ### L8: unwritable destination
 
@@ -83,7 +84,7 @@ used) as `claude --debug`. Expected immediately: the status line reads
 If research V9 found no way to set `latencyLog`, no debug log file for `$.ui.log` lines, or a
 `$.clock.now()` that is not wall time, L9 cannot run: report SC-002 live as "not run" with that
 reason in the README (SC-002 then rests on the mocked-clock test in `follow.test.ts`) and open the
-follow-up issue (T072). Otherwise:
+follow-up issue (T069). Otherwise:
 
 1. Turn on `latencyLog`: open `/config`, find the row for `speckit-activity` `latencyLog`, set it on
    (the route recorded as V9 in research.md's live verification log; if V9 found that it is set
@@ -98,6 +99,11 @@ follow-up issue (T072). Otherwise:
 5. Lag is defined in contracts/view.md: the mod's clock when the poll has parsed the record, minus
    the record's `ts`; it includes the relay, the write, the wait for the poll and the read, and
    excludes the redraw.
+6. Repeat steps 3 and 4 with the rich view open (`/speckit-activity rich`), writing to a second ids
+   file. The rich view shows a record up to one frame (500 ms) after the poll that read it, so for
+   this pass also check the render lines: for each id, the first `speckit-activity render rich <ms>`
+   line after its lag line must be within 500 ms, and lag plus that gap under 1000 ms (third audit
+   M5; T055 asserts the same in mocked time).
 
 ### L10: privacy scan
 
@@ -153,29 +159,53 @@ cursor map after every pass and resumes from it.
 4. Leave rich chosen, `/exit`, start a new session in a different Spec Kit repository, open the
    panel: rich. Switch to plain, restart: plain.
 5. In a repository without `.specify/`: `/speckit-activity` is not offered, and the store file
-   (research V13's location) has not changed (modification time).
+   (research V13's location, or its fallback file) has not changed (modification time).
 6. Do 20 switches during one pipeline run, alternating the command and the key; note any switch
    that took longer than 1 s and any agent action that failed or waited (none expected).
 
 ### L14: the rich layout, its limits and parity
 
-1. With agents in at least 3 phases, the track shows each under its phase and non-team agents
-   under `no phase`; cards show history bars and `<n> calls/5m`.
-2. Provoke a denial (`@agent-architect write src/x.txt`): its line starts with `NEW` for about 5 s,
+1. With agents in at least 3 phases, the track shows each under its phase (a stale one marked
+   `STALE`) and non-team agents under `no phase`; cards show history bars, `<n> calls/5m`, the
+   feature, the worktree when not `.`, and `lane ...` for finished agents.
+2. With more than 4 agents or more than 4 non-allow decisions, the capped sections end in counted
+   `+<n> more` lines and the switch row shows `[ n: next page ]`; press ctrl+x tab, then `n` until
+   the page number wraps, and check that every agent, decision, verdict and fault cause on the
+   plain board (switch to it to compare) appeared on some page (third audit H1).
+3. Provoke a denial (`@agent-architect write src/x.txt`): its line starts with `NEW` for about 5 s,
    then stays without it.
-3. Resize the terminal to 120 columns, then 80, then 79: at 79 the panel shows
+4. Resize the terminal to 120 columns, then 80, then 79: at 79 the panel shows
    `Rich view needs 80 columns (now 79); showing the plain board.`; at no size does a line wrap,
    and the rich view never takes more than 20 lines (count them).
-4. Shorten the terminal until the pane has fewer than 20 rows: the header says `reduced`.
-5. Switch the terminal to a monochrome scheme (or `NO_COLOR=1` if the session honours it): every
+5. In fullscreen at 160 columns, with the pane docked and narrowed below 76 columns, the panel
+   shows `Rich view needs 76 columns in the pane (now <n>); showing the plain board.` (third audit M6).
+6. Shorten the terminal until the pane has fewer than 20 rows: the header says `reduced`.
+7. Switch the terminal to a monochrome scheme (or `NO_COLOR=1` if the session honours it): every
    state is still readable by its word or glyph and number.
 
 ### L15: redraw rate
 
-With `latencyLog` on (L9 step 1), the rich view open and a pipeline running for 60 s, count the
-pane's render lines in the debug log:
-`grep -c "speckit-activity render rich" "$LOG"` over a 60 s window must be at most 120. If research
-V9 found no debug-log route, report L15 "not run" with that reason; SC-014 then rests on T055.
+With `latencyLog` on (L9 step 1), the rich view open, the terminal not resized, and a pipeline
+running, take the render lines of one 60-second span and bucket them per second (third audit H3):
+each line is `speckit-activity render rich <clock ms>`, one per draw, so
+
+```sh
+grep -o "speckit-activity render rich [0-9]*" "$LOG" | awk '{print int($4/1000)}' \
+  | awk -v from="$FROM" -v to="$((FROM + 60))" '$1 >= from && $1 < to' | sort | uniq -c | sort -rn | head -3
+```
+
+with `FROM` the first second of the span (Unix seconds) must show no count above 2. If research V9
+found no debug-log route, report L15 "not run" with that reason; SC-014 then rests on T055.
+
+### L16: hooks under the PowerShell hook shell (third audit M11)
+
+FR-020 names Git Bash and PowerShell as hook shells on Windows. If this Claude Code build lets a
+hook command run under PowerShell (a hook `shell` setting, or the session's shell setting; research
+records which), install, set it, and repeat L3 (scope deny) and the typed `/speckit-implement`
+check of README "Verifying" (gate block at 0 turns): same decisions as under Git Bash, and the
+records in the stream. If the build offers no way to choose PowerShell for hooks, report L16
+"not run" with that reason; T063's unit test (installed commands run through
+`powershell -NoProfile -Command`) is then the only evidence, and T069 opens the issue.
 
 ## 5. Uninstall
 
@@ -186,6 +216,6 @@ node install.mjs --claude-dir "$SCRATCH/claude" --uninstall
 Expect (SC-009 as amended by the owner, contracts/installed-files.md): `settings.json` parses to
 the same value as before the install, with its indentation and line endings, byte-identical if
 nothing else changed it meanwhile; no `settings.json` if there was none before; no
-`*.bak-speckit-agents-*` file, no `hooks/speckit-agents.install.json` and no `speckit-activity`
-view-choice store left (other plugins' store files untouched); a pre-existing empty directory
-still there. The per-repo stream stays.
+`settings.json.bak-speckit-agents` and no `hooks/speckit-agents.install.json` left (PR #2); a
+pre-existing empty directory still there. The stored view choice in Claude Code's plugin store is
+untouched and stays, as does the per-repo stream (third audit K1).

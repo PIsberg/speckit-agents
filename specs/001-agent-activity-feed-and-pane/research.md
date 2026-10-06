@@ -150,7 +150,7 @@ on every guardrail call); a scheduled job (nothing to schedule it with, cross-pl
 **Known limit**: without the mod loaded (Claude Code older than 2.1.291, or the mod disabled),
 guardrail records are still written and nothing enforces the cap, so the stream grows by about
 300 to 400 bytes per guardrail decision. Listed in the README's known limits and tracked as a
-follow-up issue (T072).
+follow-up issue (T069).
 
 **Known edge**: a second session in the same repo that has run for more than 7 days can lose its
 oldest records to another session's age check. Listed in the README's known limits.
@@ -325,84 +325,38 @@ silent. Listed in the README's known limits.
 
 ## R12. Install then uninstall restores the configuration (SC-009, as amended by the owner)
 
-Found while reading `install.mjs`: today `--uninstall` re-serialises `settings.json` with 2-space
-indentation (a file indented otherwise changes bytes) and leaves directories it created
-(`agents/`, `hooks/`, `skills/`) behind empty. Found by the orchestrator in the audit (finding
-C1, reproduced): install then `--uninstall` into an empty config directory leaves
-`settings.json` containing `{}` plus a `settings.json.bak-speckit-agents-*` that holds only the
-installer's own entries. Also found by the orchestrator: the installer removes its gate entries
-and re-appends them at the end of each array, so once another tool has re-sorted `settings.json`
-every re-run rewrites it (and backs it up), which is not idempotent. Found by the second audit
-(C1, reproduced with today's installer): with a pre-existing `settings.json`, install then
-uninstall leaves two backups (install and uninstall both take one), and `JSON.stringify` rewrites
-CRLF line endings, inline arrays and compact spacing.
+**Delivered by PR #2** (commit 274bae6, research R19), with tests, on the code this feature builds on:
+the defects found here and in the first two audits (uninstall re-serialising `settings.json`,
+leaving `{}` and timestamped backups after an install into an empty config dir, two backups and
+rewritten CRLF, inline arrays and compact spacing with a pre-existing file, a dropped user
+`"hooks": {}`, empty `agents/` `hooks/` `skills/` left behind, a reinstall rewriting a re-sorted
+file) are fixed there, and its tests cover each one. What PR #2 does, which this plan relies on and
+does not redo:
 
-**Owner decision (2026-10-06)**: no byte-identical restore as the general rule, because lean-ctx
-rewrites `settings.json` between sessions and restoring old bytes would discard its changes.
-Instead: after install then uninstall the settings parse to the same value as before; the original
-indentation and line endings (CRLF) are kept unless something else changed the content meanwhile;
-zero files are left behind (no uninstall-time backup; the install-time backup is removed on
-uninstall, its name kept in the manifest); a second install changes nothing.
+- `hooks/speckit-agents.install.json`, carrying the marker: `createdDirs`, `createdSettings`,
+  `settingsBackup` (the fixed name `settings.json.bak-speckit-agents`), `forceBackups`
+  (`{ path, backup }` per `--force` replacement). A manifest without the marker is a collision.
+- Edits `settings.json` in place in its own indentation, line endings and trailing-newline state;
+  updates gate entries in place, so a re-sorted file is left alone on a re-run.
+- One backup of the user's original settings, the first time the installer changes them; none at
+  uninstall; the install-time copy deleted at uninstall.
+- Uninstall writes the original bytes back when nothing else changed the settings, otherwise keeps
+  the other tool's changes and strips the gates in the file's own format, puts back `--force`
+  replacements, keeps a user's own empty `hooks` containers, and removes only directories it
+  created. Without a usable manifest it removes the owned files and the gates and nothing else.
 
-**Decision on `settings.json`** (contracts/installed-files.md has the full order):
+**What this feature adds**: two more owned entries in `files()` (`hooks/speckit-activity.mjs`, the
+`skills/speckit-activity/` folder, owned through the marker in `hooks/register.tsx` and removed as
+a unit), an `emit` smoke check, and the help, final and uninstall messages (T013, T029, T064). PR
+#2's round-trip tests then cover the new files with no change; T063 adds the cases PR #2 does not
+test (a deleted or unmarked manifest, the messages, the smoke check, the PowerShell shell).
 
-- Every write detects and keeps the file's current indentation (spaces and count, or tabs) and
-  line endings (LF or CRLF) and trailing-newline state.
-- Update owned gate entries in place: an entry already present for its event and matcher keeps its
-  position and only its command and timeout are set; stale owned entries are removed; missing ones
-  appended. A re-sorted file is then left untouched by a re-run.
-- Install takes one backup, the first time it changes a pre-existing `settings.json`, and records
-  its name (`settingsBackup`). Later installs take none. Uninstall takes none.
-- Uninstall removes the installer's entries from the current value, then: deletes the file when the
-  installer created it (`createdSettings`) and the result is `{}`; else writes the backup's bytes
-  back when the backup's parsed value equals the result (nothing else changed it, so compact
-  spacing and inline arrays come back too); else writes the result with the current file's
-  indentation and line endings, which keeps another tool's changes. Then it deletes the backup.
-- `--force` replacements are recorded (`forceBackups`) and moved back to their original names on
-  uninstall, so the user's own agent returns and no copy is left.
-- Without a usable manifest (an install made before this change), uninstall removes the entries as
-  today but with the formatting kept and no backup, and deletes no file it cannot prove it created.
-
-**Rejected**: restoring the pre-install bytes unconditionally (discards lean-ctx's changes, the
-owner's reason); keeping backups after uninstall (files left behind); a position-aware JSON
-splice that edits only the installer's entries in the text (keeps every byte of the user's
-formatting even after another tool's changes, but needs a hand-written tokenizer with positions,
-since Node has none, for a case the backup restore already covers when nothing else changed).
-
-**Directories: the installer records the ones it creates, and uninstall removes only those.**
-Installation Constraints say `--uninstall` removes what the installer added "and nothing else", so
-an empty directory that existed before the install must survive it.
-
-- Before writing anything, the installer notes which of `agents/`, `hooks/` and `skills/` under
-  the config directory do not exist yet. Directories inside a folder it owns as a unit
-  (`skills/speckit-team/`, `skills/speckit-activity/`) need no record: those folders are removed
-  whole. The config directory itself is never recorded and never removed.
-- It writes the list to a manifest, `<claude dir>/hooks/speckit-agents.install.json`:
-  `{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks"], "createdSettings": true }`,
-  forward slashes, sorted (`createdSettings`, `settingsBackup` and `forceBackups` from the
-  `settings.json` decision above; full field list and merge rules in contracts/installed-files.md). The `managedBy` value contains the marker, so the existing ownership
-  check (`ours()`) applies. `hooks/` always exists after an install, so the manifest always has a
-  home.
-- A later install merges: `createdDirs` = the manifest's existing list plus any directory created
-  in this run. A second install therefore writes the same bytes and reports `unchanged`
-  (idempotent). Without that merge, a reinstall would see the directories as pre-existing and
-  forget it created them.
-- `--uninstall` removes the owned files and folders, then the manifest, then each directory in
-  `createdDirs` that is empty, deepest first. A recorded directory that now holds the user's files
-  is kept. Every directory not in the list is kept, empty or not.
-- No manifest (an install made before this change, or the user deleted it), a manifest without the
-  marker, or one that does not parse: uninstall removes no directory. Failing safe means leaving
-  an empty directory behind, never deleting one the installer cannot prove it created. A manifest
-  without the marker is a collision, handled like any other (refuse, or `--force` with a backup).
-
-**Alternatives rejected**:
-
-| Alternative | Why not |
-|---|---|
-| Remove `agents/`, `hooks/`, `skills/` whenever they are left empty (the first design) | Deletes an empty directory the user made before the install; violates "and nothing else". |
-| A marker file inside each created directory | Puts a stray non-agent file in `agents/` and a non-skill entry in `skills/`, which Claude Code scans; three files to own instead of one. |
-| Decide at uninstall time from timestamps | Birth times are not available on every filesystem, and a directory's age says nothing about who created it. |
-| Never remove directories | Leaves directories the installer added behind; breaks SC-009 for a fresh config directory. |
+**The stored view choice is not the installer's** (third audit, finding K1): the mod's `$.store`
+file is written by Claude Code under its plugin store, named by plugin and source. Deleting it at
+uninstall would remove a file the installer did not write ("and nothing else"), and a match on the
+`speckit-activity` prefix could hit a same-named plugin from another source. Uninstall leaves it;
+the README's uninstall section says where it is and that removing it by hand only resets the view
+to plain. T063(d) asserts it is untouched.
 
 ## R13. Where the mod's tests live (constitution I, gates)
 
@@ -427,35 +381,34 @@ amendment. If the auditor reads IV otherwise, this is the place to amend it.
 
 ## R14. Malformed input to the existing hook (FR-019, constitution II)
 
-Found while reading `hooks/speckit-team.mjs`: line 32 is
-`JSON.parse(fs.readFileSync(0, 'utf8') || '{}')`, which throws on malformed stdin, so the hook
-crashes and the action proceeds silently. The feature changes this script, so FR-019 applies.
+**Delivered by PR #2** (commit 274bae6, research R19), with tests: stdin is read and parsed without
+throwing; input that is not a JSON object, or an event outside the mode's `WIRED` list (`scope`:
+PreToolUse; `gate`: PreToolUse, UserPromptExpansion; `verdict`: PreToolUse, SubagentStop, Stop;
+`lane`: SubagentStop, Stop), makes no decision, so the action proceeds as it did when the hook
+crashed, and in a Spec Kit repository prints
+`{"systemMessage": "speckit-team: <mode> got unusable input (<why>); no decision made."}`; outside
+one it stays silent. `lane` and `verdict` accept `Stop` (an agent run as the main thread). The
+defects found earlier here (the crash on `JSON.parse`, and `gate` denying and `verdict` blocking on
+`{}`) are fixed there, and its tests cover them.
 
-Also found (audit finding H1): with stdin `{}` in a Spec Kit repo, `gate` evaluates the audit and
-denies, and `verdict` reads an empty last message and blocks. Claude Code always sends
-`hook_event_name`, so neither happens live, but the modes do not agree on what malformed input
-means.
+**What this feature adds (H1 of the first audit, still needed)**: the `systemMessage` tells the
+person once, in the transcript; it is not readable through the documented interface. So on PR #2's
+no-decision path, in a Spec Kit repository, the mode also writes one `observer-fault` record
+(`input-invalid:<mode>` when the input is unusable, `input-unknown-event:<mode>` when the event is
+outside `WIRED[mode]`), with a fixed message and no input content (R10, R11), before the
+`systemMessage` is printed and without changing it. Outside a Spec Kit repository nothing is
+written. Tasks T005 and T012.
 
-**Decision (H1)**: on empty stdin, stdin that is not a JSON object, or an event the mode is not
-wired to (table in contracts/emit-cli.md; `lane` and `verdict` accept `Stop` as well as
-`SubagentStop`, audit finding M4, because an agent's frontmatter Stop hook may arrive as `Stop` when
-the agent runs as the main thread, live check V11), every mode makes no decision: exit 0, empty stdout, so
-the action proceeds, as today's crash already lets it. In a Spec Kit repository the mode also
-writes one `observer-fault` record (`input-invalid:<mode>` or `input-unknown-event:<mode>`) so the
-event is visible instead of silent, with a fixed message and no input content (R10, R11). Outside
-a Spec Kit repository it writes nothing. `gate` and `verdict` get an explicit no-op path for this;
-`scope` and `lane` already exit without a decision when their fields are missing. Covered by tests
-that fail today (crash on `{not json`, deny from `gate`, block from `verdict`).
+**Rejected**: replacing PR #2's `systemMessage` with the record (the person would no longer be told
+in the transcript); deny or block on unusable input (turns a wiring fault into a refusal the agent
+cannot act on).
 
-**Rejected**: deny or block on malformed input (it would turn a malformed event into a refusal the
-agent cannot act on, and changes today's effective behaviour); no record (fails silently, against
-constitution II).
-
-**The guarded import** (audit finding C2): `speckit-team.mjs` loads `speckit-activity.mjs` with
-`import()` inside `try`/`catch`. Missing module (`ERR_MODULE_NOT_FOUND`, measured on Node 26), a
-module that throws while loading, or an export that throws when called: the guardrail's output and
-exit code are what they would be with the module intact, no record is written, and `emit` reports
-`activity-module-failed:<code>` so the view can say so.
+**The guarded import** (audit finding C2 of the first audit): `speckit-team.mjs` loads
+`speckit-activity.mjs` with `import()` inside `try`/`catch`. Missing module (`ERR_MODULE_NOT_FOUND`,
+measured on Node 26), a module that throws while loading, or an export that throws when called: the
+guardrail's output and exit code are what they would be with the module intact, no record is
+written, and `activity-module-failed:<code>` goes to the fault file and `emit`'s output so the view
+can say so.
 
 ## R15. Minimum Claude Code version
 
@@ -482,21 +435,24 @@ and spec-auditor's verdict is read by a PreToolUse hook on `SubagentHandback` fr
 ## R17. Delivery and follow-ups (owner decision 2026-10-06, audit finding H3)
 
 The repository has a private GitHub remote, `PIsberg/speckit-agents`. PR #1 (branch
-`fix/subagent-handback`, commit b9b0dc3) is open against `main`, and branch
-`001-agent-activity-feed-and-pane` is rebased on it.
+`fix/subagent-handback`, commit b9b0dc3) is open against `main`; PR #2 (branch
+`fix/hook-input-and-uninstall`, commit 274bae6) is stacked on it; branch
+`001-agent-activity-feed-and-pane` is rebased on PR #2.
 
-- The feature PR is opened with `gh pr create --base main` and is stacked on #1: its body says
-  "stacked on #1, review the last N commits", N being the feature's own commits. Its base stays
-  `main`, so the repository's checks run for it.
+- The feature PR is opened with `gh pr create --base main` and is stacked on #2 (itself on #1):
+  its body says "Stacked on #2 (itself stacked on #1); review the last N commits", N being the
+  feature's own commits. Its base stays `main`, so the repository's checks run for it.
 - Everything the feature leaves undone becomes a GitHub issue in `PIsberg/speckit-agents`, one per
   item, each saying what is missing, why it was not done now and what it would take, linked from
-  the PR body: macOS and Linux not run (SC-005 measurement, live checks, `npm test`); any live
-  check reported "not run" (for example L9 if V9 fails); retention without the mod (R5); the
+  the PR body: macOS and Linux not run (SC-005 measurement, live checks, `npm test`); the view not
+  live-tested on the desktop app, VS Code or mobile (T052 and the L-checks run on Windows Terminal
+  only); any live check reported "not run" (for example L9 if V9 fails, L16 if the PowerShell hook
+  shell cannot be set); each fallback T001 or T052 applied; retention without the mod (R5); the
   retention edge for sessions older than 7 days; a phase record repeating across racing sessions;
   silence when both the stream and the temp directory are unwritable; decision records lost while
   the activity module is missing; a main session's stop lost when the relay outlasts the
-  session-end budget; installs made before the manifest, whose uninstall leaves
-  directories and backups. Task T072; the PR (T073) links them.
+  session-end budget. Task T069, after the live run (T068) so its "not run" items are known; it
+  also adds each issue's link to the README's "Known limits"; the PR (T073) links them.
 
 ## R18. The switchable rich view (User Story 6, FR-024 to FR-035)
 
@@ -505,29 +461,48 @@ What this build's drawing surface supports, read from `claude-code.d.ts` and ref
 
 | Need | What the API offers (read) | Decision | Live item |
 |---|---|---|---|
-| A key that toggles while the panel is open (FR-032) | No free key event for a Pane. A `Button`'s `hotkey` (one digit or lowercase letter) presses it "while the plugin's site holds the focus", which a site gets "after ctrl+x tab, a click or `open({ focus })`"; Enter on the focused Button also presses it (`ButtonProps`). `action` binds only engine keybinding actions, not new ones. | A `switch-view` Button with `hotkey: 'v'` in both views. The panel is not opened with `focus` (it would take the keyboard from the prompt on every open); the switch line says "ctrl+x tab then v". | V12 |
+| A key that toggles while the panel is open (FR-032) | No free key event for a Pane. A `Button`'s `hotkey` (one digit or lowercase letter) presses it "while the plugin's site holds the focus", which a site gets "after ctrl+x tab, a click or `open({ focus })`"; Enter on the focused Button also presses it (`ButtonProps`). `action` binds only engine keybinding actions, not new ones. | A `switch-view` Button with `hotkey: 'v'` in both views. The panel never takes the keyboard itself (owner decision 2026-10-06: the key works once the user gives the pane focus, by ctrl+x tab or a click); the switch line says "ctrl+x tab then v". Whether Enter presses the switch Button after ctrl+x tab depends on which Button the focus lands on first, which is unverified (T052 probes it). | V12 |
 | The view named on the command (FR-032) | `command.run`'s input has `args`: "everything after the name, as typed" (`CommandRunInput`); `CommandSpec.argumentHint` shows a hint. | `/speckit-activity [plain\|rich\|cool]`. | none (unit-tested) |
-| Per-user persistence across repositories and sessions, local (FR-034) | `$.store`: "This plugin's own key-value store, kept between sessions and hot reloads... A JSON file of the plugin's own under the user's Claude Code configuration directory." On this machine such files sit in `~/.claude/plugins/store/<plugin>_<source>-<hash>.json`. | `$.store` key `view`. | V13 |
+| Per-user persistence across repositories and sessions, local (FR-034) | `$.store`: "This plugin's own key-value store, kept between sessions and hot reloads... A JSON file of the plugin's own under the user's Claude Code configuration directory." On this machine such files sit in `~/.claude/plugins/store/<plugin>_<source>-<hash>.json`. | `$.store` key `view`. Claude Code writes the file, so uninstall leaves it (K1). | V13 |
 | (alternative) `userConfig` / `pluginConfigs` | A `userConfig` field is a `/config` row, stored under `pluginConfigs` in settings; `$.config.set` changes it, and a change reloads the module. | Rejected: it writes the user's `settings.json`, which another tool rewrites between sessions (the SC-009 decision) and which the installer guarantees to leave as it found it; a reload per switch also drops timers and costs the 1 s budget. | |
 | Borders (layout) | `Box` `borderStyle`: `single`, `double`, `round`, `bold`, ... on the terminal; another value draws no border. | Not used: each border costs 2 of the 20 rows. | none |
-| Block characters for history bars | `Text` draws any string; no glyph restriction is stated. `Raster` (a grid of coloured cells) is terminal-only, so not usable on every surface. | `Text` with `▁▂▃▄▅▆▇█` and `.`, backed by a number. | V14 |
+| Block characters for history bars | `Text` draws any string; no glyph restriction is stated. `Raster` (a grid of coloured cells) is terminal-only, so not usable on every surface. | `Text` with `▁▂▃▄▅▆▇█` and `.` for an empty interval. Per-interval counts are shown only as relative heights; the one number is the 5-minute total. | V14 |
 | Colour without relying on it (FR-030) | `Text`: `color` (theme key or raw), `backgroundColor`, `bold`, `inverse`, `dimColor`, `wrap` (`truncate`, ...). | Colour and `inverse` only on top of words (`NEW`, `DENY`, state words). Every Text `wrap: 'truncate'`, so no line wraps (SC-013). | none |
-| Timer-driven redraw capped at 2 per second (FR-028, SC-014) | `$.clock.every`/`after` run until cancelled or reload; a `$.state.set` redraws the sites that read the value "at the redraw rate"; `$.ui.invalidate` asks for a redraw. No frame-rate setting. A change of width redraws every site; a change of height alone redraws nothing. | The cap comes from our writes: the rich view reads one value, `richFrame`, written by a throttled publisher (at most once per 500 ms, plus a 1 s live tick). Redraws the engine makes on its own (resize) are outside our count. | V15 |
-| Room for the 20-line and 80-column rules (FR-031) | `viewport.columns` (cells across the whole surface); `viewport.rows` is informational and not re-evaluated on a height change. A Pane gives `bodyColumns` (the box it draws into) and `scroll.bodyRows` (the most rows the frame may take, less the engine's). `placement` is `dock` or `inline`. | 80-column rule on `viewport.columns` (the spec's terminal width), layout sized to `bodyColumns`; the 20-row cap is ours, the reduced form and the plain fallback by `scroll.bodyRows`. | V16 |
+| Timer-driven redraw capped at 2 per second (FR-028, SC-014) | `$.clock.every`/`after` run until cancelled or reload; a `$.state.set` redraws the sites that read the value "at the redraw rate"; `$.ui.invalidate` asks for a redraw. No frame-rate setting. A change of width redraws every site; a change of height alone redraws nothing. | The cap comes from our writes: the rich view reads only `richFrame` (and `view`), written by a throttled publisher at most once per 500 ms; the 1 s live tick is one of those writes, not an extra one. What is counted is pane draws (rich renders), not writes (T055, L15, audit finding H3). Draws the engine makes on its own (a resize) are outside our control; V15 checks there are no others. | V15 |
+| Room for the 20-line and 80-column rules (FR-031) | `viewport.columns` (cells across the whole surface); `viewport.rows` is informational and not re-evaluated on a height change. A Pane gives `bodyColumns` (the box it draws into) and `scroll.bodyRows` (the most rows the frame may take, less the engine's). `placement` is `dock` or `inline`. | 80-column rule on `viewport.columns` (the spec's terminal width) and a 76-column rule on `bodyColumns` (the room the layout needs; catches a narrow docked pane in a wide terminal, audit finding M6), both with a stated notice; the 20-row cap is ours, the reduced form and the plain fallback by `scroll.bodyRows`. | V16 |
 
 **Other decisions**:
 
-- The spec's "missing or unreadable choice ... records an observer fault" (FR-034) is applied to an
-  unreadable or invalid stored value. A choice never stored (every fresh install) is plain with no
-  fault, because SC-010 makes plain on a fresh install the expected case. Flagged for the owner.
-- `cool` is accepted as a synonym of `rich` on the command, because the owner's example used it;
-  docs and the panel say `rich`. Flagged for the owner.
+- FR-034, settled by the owner (2026-10-06): a never-stored choice (every fresh install) is plain
+  with no fault; an unreadable or invalid stored choice is plain and a `view-choice-unreadable`
+  fault.
+- `cool` is a synonym of `rich` on the command (owner-approved); docs and the panel say `rich`.
 - Track labels follow FR-025 (`spec, plan, audit, red, green, gate`); record values stay
-  `specify` and `verify` (schema 1.0 is unchanged); the view maps them.
-- Uninstall removes the mod's view-choice store, matched by the plugin name, so no file is left
-  behind (SC-009).
+  `specify` and `verify` (schema 1.0 is unchanged); the view maps them. State words are one mapping
+  in both views and the summary: `run` (active), `STALE` (stale), `done` (finished)
+  (data-model.md "AgentInstance", third audit L3).
+- Every plain-board item is reachable in the rich view (third audit H1, as settled in spec.md):
+  each capped section (cards, decisions, verdicts per feature, fault causes) ends in a counted
+  `+n more`, and a `rich-page` Button (`hotkey: 'n'`) pages all capped sections together until
+  each has shown every item; the reduced form follows the same rule. Paging rather than a taller
+  tree, because the 20-line cap bounds the frame, and an inline pane's frame grows with its tree.
+- Uninstall leaves the mod's view-choice store (K1, R12).
 - The rich view adds at most 500 ms (one frame) to the record-to-screen time; worst cases stay
-  under FR-014's 1 s (contracts/view.md "Timing").
+  under FR-014's 1 s (contracts/view.md "Timing"); T055 asserts it in mocked time and L9 is run
+  with the rich view open too (third audit M5).
+- The history fold and the rich frame share the mod's event loop with `tool.call`: the first
+  pass over up to 10 MB is folded in slices of 500 records with yields, and building `richFrame`
+  touches only the items it shows plus per-section counts, so T037 can hold tool calls to the same
+  2 ms during both (third audit M9).
+
+## R19. PR #2 (commit 274bae6), landed under this plan
+
+Branch 001 is rebased on `fix/hook-input-and-uninstall` (PR #2, stacked on PR #1). PR #2 fixed two
+defects on main that running this feature through the pipeline found: the hook's crash and wrong
+decisions on unusable input (R14), and uninstall leaving files and reformatting `settings.json`
+(R12). It brings the test count to 34 (18 hook, 16 install). Every task and contract here that
+covered that work is reshaped as an extension of it (tasks.md "Base"), and the feature PR is
+stacked on #2 (R17, T073).
 
 ## Live verification log
 
@@ -549,11 +524,12 @@ audit needed because no contract changes.
 | V6 | Does `claude plugin test mod/speckit-activity` discover `test/*.test.ts` in the plugin folder? | fallback: tests move to `mod/speckit-activity/*.test.ts` and the fixture to `mod/speckit-activity/fixtures/`; the installer skips `*.test.ts` and `fixtures/`. Task paths change, not their content. | not run |
 | V7 | Inside `claude plugin test` without `mock.clock`: is `performance.now()` available and wall time? Is `Date.now()`? | fallback per R9: `Date.now()` mean bound, else timing "not run" (T037) | not run |
 | V8 | Does `turn.complete` fire once when a subagent's run ends, carrying its `agentId` (equal to V2's `agent_id`), and not when a Stop hook refused its stop (lane check blocking once)? | stop: the `agent-stop` source (R2, M3) changes the data model | not run |
-| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings)? Which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? Is `$.clock.now()` wall time in a live session (compared with the system clock over a 10 s span, within 50 ms)? | no stop. If any part is no, the SC-002 live check (quickstart L9) cannot run: it is reported as "not run" in the README with the reason, SC-002 rests on the mocked-clock unit test (T018) alone, and the gap becomes a follow-up issue (T072). | not run |
-| V10 | Does `session.end` fire in the mod on `/exit`, on Ctrl-D and on `/clear` (`reason: 'clear'`), and does a `$.process.run` of `emit` started from it finish within `next.budget` so the main session's `agent-stop` is written? After `/clear`, which `session_id` do later main-loop events carry? | stop if `session.end` never fires on `/exit` (the main session's `agent-stop`, a public guarantee in activity-stream.md, has no source). If it fires but the relay cannot finish within the budget: fallback, the mod writes the main session's stop on the next session's start for a main id it saw start and not stop (`agent-stop` with that session's last `ts`), and quickstart L12 checks it there. | not run |
+| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings)? Which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? Is `$.clock.now()` wall time in a live session (compared with the system clock over a 10 s span, within 50 ms)? | no stop. If any part is no, the SC-002 live check (quickstart L9) cannot run: it is reported as "not run" in the README with the reason, SC-002 rests on the mocked-clock unit test (T018) alone, and the gap becomes a follow-up issue (T069). | not run |
+| V10 | Does `session.end` fire in the mod on `/exit`, on Ctrl-D and on `/clear` (`reason: 'clear'`), and does a `$.process.run` of `emit` started from it finish within `next.budget` so the main session's `agent-stop` is written? After `/clear`, which `session_id` do later main-loop events carry? | stop if `session.end` never fires on `/exit` (the main session's `agent-stop`, a public guarantee in activity-stream.md, has no source). Fallback, no stop, if it fires on `/exit` but not on Ctrl-D or `/clear`, or fires but the relay cannot finish within the budget (third audit M10): the mod writes the main session's stop at the next session's start, or before the next main run's start, for any `main:<session>` it saw start and not stop (`agent-stop` with that run's last `ts`); quickstart L12 checks it there, and what changes for the user is that such a stop appears when the next session starts, not when the old one ends. | not run |
 | V11 | Which `hook_event_name` does an agent's frontmatter `Stop` hook receive when the agent runs as a subagent, and when it runs as the main thread (`claude --agent implementer`)? | no stop: `lane` and `verdict` accept both `SubagentStop` and `Stop` (audit finding M4); the answer is recorded so the README states it | not run |
-| V12 | (T052) Does a Pane `Button` with `hotkey: 'v'` toggle when the pane holds the keyboard after ctrl+x tab, and after a click, inline and docked, in Windows Terminal with Git Bash and with PowerShell? Does `/spike-view rich` deliver `args: "rich"`? | fallback, no stop: the Button still presses with Enter under the focus or a click, and the command argument always works; the switch line says `ctrl+x tab then Enter on the button`. What changes for the user: two keys instead of one. If `args` were not delivered: stop (FR-032's argument has no source). | not run |
-| V13 | (T052) Does a `$.store.set` survive a session restart and read back in another repository? Where is the file, and what is its name? | fallback, no stop: the mod writes `{"view": ...}` with `$.fs.write` to `<claude dir>/hooks/speckit-activity.view.json` (the directory from the rendered `{{HOOK}}` path), and the installer removes that file on uninstall. Nothing changes for the user. | not run |
-| V14 | (T052) Do `▁▂▃▄▅▆▇█`, `─`, `·` and `●` each take one cell, without replacement characters, in Windows Terminal with Git Bash and with PowerShell? | fallback, no stop: the ASCII set `_.:-=+*#` everywhere (contracts/view.md "Glyphs"). What changes for the user: coarser bars, the same numbers. | not run |
-| V15 | (T052) With a timer writing a `$.state` value every 100 ms and then every 500 ms, how often does the pane's `ui.render` run (debug log over 60 s)? Does anything else (transcript output, focus) re-run it? | fallback, no stop: if the engine re-runs the hook more often than our writes, the hook returns the memoized tree for an unchanged `richFrame` version, so the drawing does not change more than twice per second; SC-014 is counted on `richFrame` writes in T055 and on render lines in quickstart L15. | not run |
-| V16 | (T052) Are `e.viewport.columns`, `e.props.bodyColumns` and `e.props.scroll.bodyRows` present for an inline and a docked pane on the terminal, and does a height-only resize redraw the pane? | fallback, no stop: no viewport, then the 80-column rule uses `bodyColumns + 4`; a height-only resize not redrawing means the reduced or plain form is chosen at the next draw (at most 1 s later, by the live tick). | not run |
+| V12 | (T052) Does a Pane `Button` with `hotkey: 'v'` toggle when the pane holds the keyboard after ctrl+x tab, and after a click, inline and docked, in Windows Terminal with Git Bash and with PowerShell? After ctrl+x tab, which Button holds the focus first, and does Enter press it? Does `/spike-view rich` deliver `args: "rich"`? | stop if `args` is not delivered (FR-032's argument has no source). Fallback, no stop, if the hotkey does not press: Enter on the focused switch Button, reached by ctrl+x tab and, if the focus lands elsewhere, Tab to it; the switch line then says so. What changes for the user: one or two more keys after ctrl+x tab; both paths need ctrl+x tab (or a click) first in any case. The Enter path is unverified until T052 probes it. | not run |
+| V13 | (T052) Does a `$.store.set` survive a session restart and read back in another repository? Where is the file, and what is its name? If not: does a `$.fs.write` of `<claude dir>/hooks/speckit-activity.view.json`, the directory taken from the rendered `{{HOOK}}` path, survive a restart and read back? | fallback, no stop, if only `$.store` fails: the mod uses that file (written outside the repository by `$.fs.write`; the installer never touches it, and the README names it). Nothing changes for the user. Stop if neither survives a restart (FR-034 would have no store). | not run |
+| V14 | (T052) Do `▁▂▃▄▅▆▇█`, `─`, `·` and `●` each take one cell, without replacement characters, in Windows Terminal with Git Bash and with PowerShell? | fallback, no stop: the ASCII set of contracts/view.md everywhere (8 distinct level characters, `.` only for an empty interval). What changes for the user: coarser bars; per-interval counts stay relative heights in both sets, the 5-minute total stays a number. Only Windows Terminal is probed; the desktop app, VS Code and mobile are not (T069 issue). | not run |
+| V15 | (T052) With a timer writing a `$.state` value every 100 ms, then every 500 ms, and then not at all while transcript output streams, a tool runs and the focus moves, how many times per second does the pane's `ui.render` run (one debug-log line per invocation, bucketed per second)? | stop if the engine runs the pane hook more than twice in a second without our writes (third audit H3): SC-014 counts draws, and our throttle could not bound them, so the owner decides how SC-014 counts engine-initiated draws. If it runs at most once per write: nothing changes. | not run |
+| V16 | (T052) Are `e.viewport.columns`, `e.props.bodyColumns` and `e.props.scroll.bodyRows` present for an inline pane and a docked pane in a 160-column window, and does a height-only resize redraw the pane? | fallback, no stop: without a viewport only the 76-column `bodyColumns` rule applies, so a pane at least 76 columns wide shows the rich view whatever the terminal width; what is lost is the separate 80-terminal-column notice, which a pane under 76 columns gets in its own words instead (third audit L6). A height-only resize not redrawing means the reduced or plain form is chosen at the next draw, at most 1 s later by the live tick. | not run |
+| V17 | (T068) Can this Claude Code build run hook commands under PowerShell (a hook `shell` setting, or the session's shell setting), and if so do the installed commands decide as under Git Bash (quickstart L16)? | no stop: if PowerShell cannot be chosen for hooks, L16 is "not run" with that reason, T063's `powershell -NoProfile -Command` unit test is the only evidence, and T069 opens the issue (third audit M11). | not run |

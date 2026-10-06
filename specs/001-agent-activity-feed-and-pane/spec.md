@@ -25,6 +25,9 @@
 - Q (persistence, FR-034): what scope? -> A: Per user, for all repositories, stored locally; a missing or unreadable choice falls back to the plain board and records an observer fault.
 - Q (screen, FR-031): how much? -> A: At most 20 terminal lines; below 80 columns fall back to the plain board with a stated notice.
 - Q (summary): does the choice affect the one-line summary? -> A: No; the summary is identical in both views, only the open panel changes.
+- Audit 3 fix (H2): FR-029 replaces "carries every item, loses no information" with "every item reachable, and each capped section shows a counted +n more", because a 20-line cap cannot show everything; the reduced form follows the same rule and parity is checked with colour removed. SC-012 is aligned: 100% reachable, every capped section shows a "+n more" equal to the items not shown, measured on a fixture exceeding every section's capacity.
+- Audit 3 fix (H4): FR-034 distinguishes a choice never stored (plain board, no fault) from an unreadable or invalid stored choice (plain board plus an observer fault).
+- Audit 3 fix (M4): FR-032 states the toggle key works once the panel has keyboard focus (one platform keystroke or a click), the panel never takes focus by itself, and the command argument needs no focus step.
 - Review fix: User Story 1 scenario 1 no longer allows hiding the view when idle; the summary shows an idle state (0 agents) and the last completed phase, consistent with FR-012.
 - Audit fix (M5): FR-001 now includes "observer fault" as an activity kind, so faults are readable through the documented interface and the view (FR-016, FR-018) consistent.
 - Audit fix (M6): FR-020 states the exception that macOS and Linux verification is "not run", tracked as a follow-up issue, not claimed as passed.
@@ -195,12 +198,12 @@ The plain text board stays the default. The user can switch to a richer view tha
 - **FR-026**: The rich view MUST show each agent as a card with name, state (active, finished, stale), current activity and target, time since last activity, and a small activity history of tool calls per interval over the last few minutes. The history uses 15-second intervals over the last 5 minutes.
 - **FR-027**: In the rich view, a guardrail denial, gate block or FAIL verdict MUST be highlighted when it happens for 5 seconds, then settle into the decisions list.
 - **FR-028**: The rich view MUST show that it is live (a running indicator) and MUST NOT redraw more than 2 times per second, so that it neither floods the screen nor flickers.
-- **FR-029**: The rich view MUST read only the documented interface (FR-016) and MUST carry every item of the plain board (agents, decisions, latest verdict, phase, observer faults), so switching loses no information.
+- **FR-029**: The rich view MUST read only the documented interface (FR-016) and MUST make every item of the plain board (agents, decisions, verdicts, phase, observer faults) reachable. Wherever a section is capped by the screen allowance (FR-031), it MUST show a counted "+n more" for that section (agents, decisions, verdicts, observer causes), so nothing disappears silently. The reduced form (10 to 19 rows) follows the same rule. Parity is checked with colour removed.
 - **FR-030**: Every state in the rich view MUST be readable without colour; colour may add to words and symbols, never replace them (FR-015).
 - **FR-031**: The rich view MUST degrade on narrow or short terminals to a reduced form or to the plain board, and MUST say that it did. The rich view MUST take at most 20 terminal lines and MUST fall back to the plain board, with a stated notice, below 80 columns.
-- **FR-032**: The user MUST be able to switch between the two views, and back, at any time including while a pipeline runs, without ending the session, interrupting an agent or losing history. The switch is made by an argument on the panel command naming the view, plus a key that toggles while the panel is open. The one-line summary (FR-012) is identical in both views; only the open panel changes.
+- **FR-032**: The user MUST be able to switch between the two views, and back, at any time including while a pipeline runs, without ending the session, interrupting an agent or losing history. The switch is made by an argument on the panel command naming the view, plus a key that toggles once the panel has keyboard focus. The user gives focus with one platform keystroke (in the terminal, ctrl+x tab) or a click; the panel MUST NOT take focus by itself, so it never steals the prompt. The command argument works without any focus step. The one-line summary (FR-012) is identical in both views; only the open panel changes.
 - **FR-033**: The switch MUST be discoverable: the open panel MUST state the current view and how to switch.
-- **FR-034**: The chosen view MUST persist across sessions. The choice is stored per user, for all repositories, locally; a missing or unreadable choice falls back to the plain board and records an observer fault.
+- **FR-034**: The chosen view MUST persist across sessions. The choice is stored per user, for all repositories, locally; a choice never stored shows the plain board with no fault; an unreadable or invalid stored choice shows the plain board and records an observer fault.
 - **FR-035**: Rich view and switching MUST obey FR-017 to FR-019 and FR-022: they never block or delay an agent, failures are recorded as observer faults, and nothing is shown or stored in repositories without Spec Kit initialised.
 
 ### Key Entities
@@ -228,7 +231,7 @@ The plain text board stays the default. The user can switch to a richer view tha
 
 - **SC-010**: The default view on a fresh install is the plain board in 100% of installs, and a stored choice of the rich view is shown after restart in 100% of tested restarts.
 - **SC-011**: Switching in either direction completes within 1 second, measured over 20 switches during a scripted run, with 0 agent actions altered or delayed.
-- **SC-012**: Over a scripted run, the rich view contains 100% of the items the plain board contains (agents, decisions, latest verdict, phase, observer faults), and every state in it is identified by text, verified by rendering with colour removed.
+- **SC-012**: With colour removed, 100% of the plain board's items (agents, decisions, verdicts, phase, observer faults) are reachable in the rich view, every state in it is identified by text, and every capped section shows a counted "+n more" whose count equals the number of items not shown; measured on a fixture that exceeds every section's capacity.
 - **SC-013**: At 3 tested terminal sizes (including one below the narrow limit) the rich view never exceeds its screen allowance and never wraps lines; below the limit it says it degraded.
 - **SC-014**: The rich view redraws no more often than its stated rate over a 60-second scripted run.
 

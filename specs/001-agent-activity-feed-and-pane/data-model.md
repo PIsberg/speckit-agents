@@ -215,9 +215,11 @@ outside tools can read it too.
 | `now` | Milliseconds, updated by a 1 s tick so ages and stale marks advance. |
 | `faults` | Causes already toasted this session. |
 | `view` | `'plain'` or `'rich'`: the view the open panel draws. Set from the stored choice after detection (plain when none or unreadable) and by each switch. |
-| `richFrame` | The only value the rich view draws from (`RichFrame`, below), written by a publisher at most once per 500 ms and once per second for the live indicator, only while the rich view is open. |
+| `richPage` | The rich view's page number (contracts/view.md "Paging"); incremented by the `rich-page` Button, reset to 1 on a switch. |
+| `richFrame` | The only value the rich view draws from besides `view` and `richPage` (`RichFrame`, below), written by a publisher at most once per 500 ms; the 1 s live-indicator tick is one of those writes, not an extra one; only while the rich view is open. |
 
-`RichFrame` (exported from `types/index.d.ts`):
+`RichFrame` (exported from `types/index.d.ts`). It carries every plain-board item; the view pages
+the capped sections (third audit H1):
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -225,11 +227,15 @@ outside tools can read it too.
 | `lastReadAt` | number or null | ms of the last successful poll; `null` before the first. Drives `read <n>s ago` and `feed stalled` (more than 5 s). |
 | `tick` | 0 or 1 | Flips each second: the live indicator's glyph. |
 | `phase` | `{ current, previous, lastCompleted }` | Record phase values (`specify` ... `verify`) or `null`; the view maps them to track labels. |
-| `track` | `{ [phase]: AgentRef[] }` plus `none: AgentRef[]` | Active and stale agents by phase; non-team in `none`. `AgentRef` = `{ id, label }`, `label` being `name#<last 4 of id>`. |
-| `cards` | `Card[]` | Per agent in display order: `ref`, `state` (`active`, `stale`, `finished`), `team`, `activity`, `path`, `ageMs`, `history` (20 integers, calls per 15-second interval, oldest first, covering `at - 300 s` to `at`), `total` (sum of `history`), `lane` (for finished agents). |
-| `decisions` | `{ id, ts, firstReadAt, outcome, agent, rule, path }[]` | Latest non-allow decisions, newest first; the view marks `NEW` while `at - firstReadAt < 5000`. |
-| `verdict` | `{ verdict, feature, ts }` or null | Latest verdict. |
-| `faults` | string[] | Fault causes seen this session. |
+| `track` | `{ [phase]: AgentRef[] }` plus `none: AgentRef[]` | Active and stale subagents by phase, each with its state; non-team subagents in `none`; finished agents and the main session are not on the track. `AgentRef` = `{ id, label, state }`, `label` being `name#<last 4 of id>`. |
+| `cards` | `Card[]` | Every agent the plain board lists, in display order: `ref`, `state` (`active`, `stale`, `finished`), `team`, `activity`, `path`, `ageMs`, `feature` (short name or null), `worktree`, `history` (20 integers, calls per 15-second interval, oldest first, covering `at - 300 s` to `at`), `total` (sum of `history`), `lane` (`clean`, `violations` with a count, `unchecked`, or null). |
+| `decisions` | `{ id, ts, firstReadAt, outcome, agent, rule, path }[]` | Every non-allow decision the plain board lists, newest first; the view marks `NEW` while `at - firstReadAt < 5000`. |
+| `counters` | `{ allowed, gatePasses }` | Allowed decisions and gate passes since session start, as on the plain board. |
+| `verdicts` | `{ verdict, feature, ts }[]` | Latest verdict per feature, newest first. |
+| `faults` | string[] | Every fault cause seen this session. |
+
+State words (third audit L3): one mapping wherever a state is shown, in both views and the
+summary: `active` -> `run`, `stale` -> `STALE`, `finished` -> `done`.
 
 Activity history is derived by consumers from `tool` records alone (`ts` bucketed into 15-second
 intervals ending at the frame's `at`); it is not a record field, so any outside consumer can build
@@ -237,3 +243,4 @@ the same history from the stream (FR-029, FR-016).
 
 The stored view choice is not view state: it lives in the plugin's `$.store` (key `view`, value
 `{ "view": "plain" | "rich" }`), per user and for all repositories, on the local disk (FR-034).
+Claude Code writes that file, not the installer, so uninstall leaves it (third audit K1).

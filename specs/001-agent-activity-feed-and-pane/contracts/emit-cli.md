@@ -11,30 +11,37 @@ PreToolUse `Skill` and `UserPromptExpansion` in `settings.json`, with `SubagentH
 `verdict` on spec-auditor's PreToolUse `SubagentHandback` and its Stop; `lane` on Stop of
 test-writer and implementer. No new command hook is added, catch-all or otherwise.
 
-## All modes: input handling (FR-019, decided in audit finding H1)
+## All modes: input handling (FR-019; behaviour delivered by PR #2, record added here)
 
-Each mode accepts only the events it is wired to:
+**Delivered by PR #2** (commit 274bae6, research R14, R19), with tests. Each mode accepts only the
+events in its `WIRED` list:
 
 | Mode | Accepted `hook_event_name` |
 |---|---|
 | `scope` | `PreToolUse` |
 | `gate` | `PreToolUse`, `UserPromptExpansion` |
-| `verdict` | `PreToolUse` (with `tool_name` `SubagentHandback`), `SubagentStop`, `Stop` |
+| `verdict` | `PreToolUse`, `SubagentStop`, `Stop` (a `PreToolUse` for any tool but `SubagentHandback` exits with no output, as since b9b0dc3) |
 | `lane` | `SubagentStop`, `Stop` |
 
 `Stop` is accepted because an agent's frontmatter Stop hook may arrive as `Stop` when the agent
-runs as the main thread (`claude --agent <name>`), and refusing it would make both modes stop
-deciding without a word (audit finding M4; live check V11 records which name arrives).
+runs as the main thread (`claude --agent <name>`); live check V11 records which name arrives.
 
-On empty stdin, stdin that is not a JSON object, or an event the mode does not accept, the mode
-**makes no decision**: exit 0, empty stdout, so the action proceeds, which is what today's crash
-on malformed stdin already does in effect. In a Spec Kit repository (found from `cwd` in the input,
-else the process's working directory) it also writes one `observer-fault` record with cause
-`input-invalid:<mode>` (empty or unparsable) or `input-unknown-event:<mode>`, and no input content.
-Outside a Spec Kit repository it writes nothing (FR-022, SC-008).
+On empty stdin, stdin that is not a JSON object, or an event outside the mode's `WIRED` list, the
+mode **makes no decision**, so the action proceeds, and in a Spec Kit repository (found from `cwd`
+in the input, else the process's working directory) it prints, exit 0:
 
-Today `gate` given `{}` in a Spec Kit repo denies, and `verdict` given `{}` blocks; both get this
-no-op path (tasks).
+```json
+{"systemMessage":"speckit-team: <mode> got unusable input (<why>); no decision made."}
+```
+
+Outside a Spec Kit repository it prints nothing (FR-022, SC-008).
+
+**Added by this feature** (T005, T012): on that same path, in a Spec Kit repository, the mode also
+writes one `observer-fault` record, through the guarded import and before the `systemMessage` is
+printed, with cause `input-invalid:<mode>` (empty, unparsable, or not an object) or
+`input-unknown-event:<mode>` (an event outside `WIRED[mode]`), a fixed message and no input
+content. The `systemMessage`, the exit code and the absence of a decision are unchanged. Outside a
+Spec Kit repository nothing is written.
 
 ## Guardrail modes: records (FR-001)
 
