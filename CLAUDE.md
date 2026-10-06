@@ -23,3 +23,8 @@ this file is how to work on it.
 - A new hook command goes in the agent frontmatter or `SETTINGS_GATES` in `install.mjs`, and the
   README's guardrail table.
 - Hooks fail open when they crash. Any change that can make the script throw needs a test.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
