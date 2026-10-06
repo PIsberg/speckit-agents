@@ -22,7 +22,16 @@ function claudeDir(settings) {
 }
 const install = (dir, ...args) => spawnSync(process.execPath, [INSTALL, '--claude-dir', dir, ...args], { encoding: 'utf8' });
 const settingsOf = (dir) => JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
-const backups = (dir) => fs.readdirSync(dir).filter((f) => f.includes('.bak-speckit-agents-'));
+const backups = (dir) => fs.readdirSync(dir).filter((f) => f.includes('.bak-speckit-agents'));
+// Install then uninstall, returning what is left in the config dir.
+function roundTrip(dir) {
+  const i = install(dir);
+  assert.equal(i.status, 0, i.stderr + i.stdout);
+  const u = install(dir, '--uninstall');
+  assert.equal(u.status, 0, u.stderr + u.stdout);
+  return fs.readdirSync(dir).sort();
+}
+const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 
@@ -125,4 +134,64 @@ test('a settings.json that is not JSON is left alone', () => {
   assert.match(r.stderr, /not valid JSON/);
   assert.equal(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'), '{ "hooks": { // a comment\n } }');
   assert.deepEqual(fs.readdirSync(dir), ['settings.json'], 'no half install: fail before writing anything');
+});
+
+// Uninstall leaves the config as it found it (SC-009 as the owner decided on 2026-10-06): the same
+// settings, in their own formatting, and no file or directory of the installer's left behind.
+test('install then uninstall into an empty config dir leaves it empty', () => {
+  const dir = claudeDir();
+  assert.deepEqual(roundTrip(dir), []);
+});
+
+for (const [name, text] of [
+  ['CRLF with 4 spaces', '{\r\n    "model": "opus",\r\n    "hooks": {\r\n        "PreToolUse": []\r\n    }\r\n}\r\n'],
+  ['compact one line with inline arrays', '{"model":"opus","permissions":{"deny":["Grep","Glob"]}}'],
+  ['tabs, no trailing newline', '{\n\t"model": "opus",\n\t"env": {\n\t\t"A": "1"\n\t}\n}'],
+  ['a user\'s own empty hooks object', '{\n  "hooks": {}\n}\n'],
+]) {
+  test(`round trip restores ${name} byte for byte, with nothing left behind`, () => {
+    const dir = claudeDir(text);
+    assert.deepEqual(roundTrip(dir), ['settings.json']);
+    assert.equal(bytes(dir).toString('utf8'), text);
+  });
+}
+
+test('a change another tool made between install and uninstall is kept, in the file\'s own format', () => {
+  const dir = claudeDir('{\r\n    "model": "opus"\r\n}\r\n');
+  assert.equal(install(dir).status, 0);
+  const s = settingsOf(dir);
+  s.theme = 'dark';
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(s, null, 4).replace(/\n/g, '\r\n') + '\r\n');
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['settings.json']);
+  assert.equal(bytes(dir).toString('utf8'), '{\r\n    "model": "opus",\r\n    "theme": "dark"\r\n}\r\n');
+});
+
+test('a reinstall after another tool re-sorted settings.json changes nothing', () => {
+  const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
+  install(dir);
+  const s = settingsOf(dir);
+  s.hooks.PreToolUse.reverse(); // the gate entry now comes first, as a key-sorting tool leaves it
+  const resorted = JSON.stringify(s, null, 2) + '\n';
+  fs.writeFileSync(path.join(dir, 'settings.json'), resorted);
+  const r = install(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'), resorted);
+});
+
+test('uninstall removes the directories it created and keeps ones that were already there', () => {
+  const dir = claudeDir();
+  fs.mkdirSync(path.join(dir, 'agents'));
+  assert.deepEqual(roundTrip(dir), ['agents']);
+});
+
+test('uninstall puts back an agent that --force replaced', () => {
+  const dir = claudeDir();
+  const mine = path.join(dir, 'agents', 'architect.md');
+  fs.mkdirSync(path.dirname(mine));
+  fs.writeFileSync(mine, '---\nname: architect\ndescription: my own\n---\n');
+  assert.equal(install(dir, '--force').status, 0);
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.equal(fs.readFileSync(mine, 'utf8'), '---\nname: architect\ndescription: my own\n---\n');
+  assert.deepEqual(fs.readdirSync(path.join(dir, 'agents')), ['architect.md']);
 });

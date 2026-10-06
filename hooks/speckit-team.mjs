@@ -29,8 +29,26 @@ const TEST_PATTERNS = [
 const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
 
 const [mode, ...args] = process.argv.slice(2);
-const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+// Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
+// a crashed hook is a non-blocking error, and the action would go through with nobody told.
+const raw = (() => { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } })();
+let input = {};
+let inputProblem = null;
+try {
+  const parsed = JSON.parse(raw);
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) input = parsed;
+  else inputProblem = `input is ${Array.isArray(parsed) ? 'an array' : parsed === null ? 'null' : typeof parsed}, not a hook event`;
+} catch {
+  inputProblem = raw.trim() ? 'input is not valid JSON' : 'input is empty';
+}
 const event = input.hook_event_name;
+// The events each mode is wired to. Any other event gets no decision rather than a guess.
+const WIRED = {
+  scope: ['PreToolUse'],
+  gate: ['PreToolUse', 'UserPromptExpansion'],
+  verdict: ['PreToolUse', 'SubagentStop', 'Stop'],
+  lane: ['SubagentStop', 'Stop'],
+};
 const who = input.agent_type || 'the main session';
 
 const git = (cwd, ...a) => {
@@ -52,6 +70,14 @@ const block = (reason) => emit({ decision: 'block', reason });
 const cwd = input.cwd || process.cwd();
 const root = git(cwd, 'rev-parse', '--show-toplevel');
 if (!root || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
+
+// Unusable input makes no decision, so the action proceeds exactly as it did when the hook crashed,
+// but the user is told instead of nothing happening silently.
+const noDecision = (why) => emit({ systemMessage: `speckit-team: ${mode} got unusable input (${why}); no decision made.` });
+if (inputProblem) noDecision(inputProblem);
+if (WIRED[mode] && !WIRED[mode].includes(event)) {
+  noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
+}
 const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'speckit-team');
 
 function extraTestPatterns() {
