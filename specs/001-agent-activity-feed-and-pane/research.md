@@ -11,7 +11,7 @@ that only a live session can settle are collected in "Live verification log" at 
 ## R1. What a hook costs on this machine (measured)
 
 Windows 11, Node v26.8.2, git 2.55.0.windows.5, 100 runs each, `process.hrtime` around `spawnSync`.
-Script kept outside the repo; `bench/overhead.mjs` (T036) reproduces the hook rows.
+Script kept outside the repo; `bench/overhead.mjs` (T040) reproduces the hook rows.
 
 | Case | Median ms | p90 ms | Min ms |
 |---|---|---|---|
@@ -32,12 +32,21 @@ already running costs 0.5 ms. Every producer decision below follows from these t
 
 - **Guardrail facts** (`decision`, `gate`, `verdict`, `lane`) are written by `hooks/speckit-team.mjs`
   in the process that makes the decision, at the moment it decides, before it prints the decision.
-  These processes already run; the added cost is the append (0.5 ms, R1).
+  These processes already run; the added cost is the append (0.5 ms, R1). Verdicts are recorded on
+  both paths of commit b9b0dc3 (R16): spec-auditor's PreToolUse `SubagentHandback` hook and its Stop.
 - **Activity facts** (`agent-start`, `agent-stop`, `tool`) come from the mod's in-process function
-  hooks: `tool.call` (carries `agentId` inside a subagent, read), `classic.SubagentStart` and
-  `classic.SubagentStop` (carry `agent_id`, `agent_type`, `cwd`, read), `session.start` and
-  `session.end` for the main session. The hook on the tool path only pushes an envelope onto an
-  in-memory queue and calls `next(e)`; it makes no `$` call first.
+  hooks: `tool.call` (carries `agentId` inside a subagent, read), `classic.SubagentStart` (carries
+  `agent_id`, `agent_type`, `cwd`, read), `turn.complete` carrying a subagent's `agentId` for its
+  stop, and `session.start` and `session.end` for the main session. The hook on the tool path only
+  pushes an envelope onto an in-memory queue and calls `next(e)`; it makes no `$` call first.
+- **Why `turn.complete` and not `classic.SubagentStop` for the stop** (audit finding M3):
+  SubagentStop fires on every attempt to stop, including one that the lane check or the verdict
+  line then refuses, after which the agent keeps working. `turn.complete` fires when the subagent's
+  turn has ended (read: "a subagent's own `turn.complete`, carrying `agentId`"), so each run gets
+  exactly one `agent-stop`, and consumers can treat it as terminal. Live check V8.
+- **Observer faults** (`observer-fault`) are written by whichever side sees the fault: the hook for
+  malformed or unknown input (R14) and its own writer errors, the mod (relayed) for partial event
+  input. Faults that cannot be written to the stream go to the fault file (R10).
 - **Phase facts** (`phase`) are derived by the writer when a team agent starts in a phase different
   from the feature's last recorded phase (R6).
 - **One writer**: the mod hands its queue to `node <hook> emit` through `$.process.run` with the
@@ -200,17 +209,26 @@ What it covers, and the expected cost of each part:
 
 How it is measured:
 
-1. **Hook side**: `bench/overhead.mjs` runs the installed-equivalent hook 100 times in pairs
-   (observation enabled, then `.specify/activity.json` `{"enabled": false}`), alternating to cancel
-   drift, for a `gate` on `PreToolUse Read` in a Spec Kit repo, and reports the median of the paired
-   differences. Pairing is needed because the spawn itself varies by 75 to 178 ms (R1).
+1. **Hook side**: `bench/overhead.mjs` copies `hooks/speckit-team.mjs` into two temp hook
+   directories, one with `speckit-activity.mjs` beside it (treatment) and one without (baseline:
+   the activity module absent, audit finding H4). It runs a `gate` on `PreToolUse Read` in a Spec
+   Kit repo 100 times in alternating pairs, to cancel drift, and reports the median and p90 of the
+   paired differences. Pairing is needed because the spawn itself varies by 75 to 178 ms (R1).
+   `enabled: false` is not the baseline, because the module is still loaded and the config still
+   read on that path. The baseline arm still attempts the guarded import and fails it
+   (`ERR_MODULE_NOT_FOUND`), so the difference slightly understates the module's load cost by the
+   cost of a failed resolution; the bench prints that cost on its own (100 failed imports,
+   in-process) so the reader can add it back.
 2. **Mod side**: `mod/speckit-activity/test/overhead.test.ts` drives 100 `$.tool.call`s through the
-   mod and times call-to-beneath with `Date.now()`, and separately asserts the structural
-   guarantee (the beneath hook is reached before the mod makes any `$.fs` or `$.process` call).
-   If T001 shows the test environment's clock is not wall time, the timing half is reported as
-   "not run" and the structural half stands.
-3. SC-005 passes when hook-side median plus mod-side median is at most 10 ms. Results go in the
-   README with date and versions. macOS and Linux: "not run" (spec, SC-005).
+   mod and times call-to-beneath per call with `performance.now()` when the plugin test
+   environment has it as wall time (sub-millisecond, live check V7), and prints the median and p90.
+   `Date.now()` has 1 ms resolution, too coarse for work expected well under 1 ms; if only
+   `Date.now()` is wall time, the test times the 100 calls together and prints the mean per call
+   as a bound, labelled as a mean. If neither is wall time, the timing is "not run". It always
+   asserts the structural guarantee: the beneath hook is reached before the mod makes any `$.fs`
+   or `$.process` call.
+3. SC-005 passes when hook-side median plus mod-side median (or mean bound) is at most 10 ms.
+   Results go in the README with date and versions. macOS and Linux: "not run" (spec, SC-005).
 
 **Repositories without Spec Kit** (FR-022, SC-008): the guardrail modes keep their early exit,
 and `hooks/speckit-activity.mjs` is imported only after the `.specify/` check, so the code path
@@ -228,19 +246,28 @@ reliably with paired runs, and 20 times the expected cost, so a regression to a 
 **Decision**:
 
 - The writer never changes a hook's stdout or exit code, and catches every error.
-- On a failure it records a fault (cause code, message, count, first and last time) in
-  `<os.tmpdir()>/speckit-team-faults/<16 hex of sha256(stream dir)>.json`, a location that does
-  not depend on the stream directory being writable. At most 50 causes are kept.
-- `node <hook> emit` prints `{ "written", "skipped", "faults" }` on stdout, faults included, so the
-  mod learns about failures in guardrail processes it does not run.
-- The mod shows each distinct cause once per session with `$.ui.toast` and adds
-  `observer: <n> problem(s)` to the summary line. A failure of its own (the `emit` process cannot
-  start, exits non-zero, or prints something unparsable) is a cause too. Its own drawing is
-  wrapped in `try`/`catch` and falls back to a one-line text naming the problem.
+- **Faults go into the stream first**, as `observer-fault` records (FR-001 kind added by the
+  product owner after audit finding H1): malformed or unknown hook input, invalid envelopes, an
+  invalid config, a failed retention delete. Any consumer sees them, and the view reads them like
+  every other record (FR-016, audit finding M5).
+- **Only what cannot be in the stream goes to the fault file**:
+  `<os.tmpdir()>/speckit-team-faults/<16 hex of sha256(stream dir)>.json`, a location that does not
+  depend on the stream directory being writable, holding `stream-unwritable:<code>` (cause code,
+  message, count, first and last time; at most 50 causes). `node <hook> emit` reports those, plus
+  `activity-module-failed:<code>` when the module itself cannot load, in its status JSON. The file
+  is documented in the README so outside tools can read it.
+- The mod shows each distinct cause once per session with one fixed toast text (contracts/view.md)
+  and adds `observer: <n> problem(s)` to the summary line. Its own failures (`emit` cannot start,
+  exits non-zero or prints something unparsable; the stream cannot be listed; drawing throws) are
+  causes too. Drawing is wrapped in `try`/`catch` and falls back to a one-line text.
+- Fault records carry a fixed message per cause and never any input content, so a malformed input
+  holding prompt text cannot leak into the stream through its fault.
 
 **Alternatives rejected**: `systemMessage` in the hook's output (changes the hook output that
 SC-004 compares, and repeats in every agent's transcript); stderr only (not shown without
-`--debug`); a record in the stream itself (the stream may be the thing that is broken).
+`--debug`); the fault file for every fault (outside tools would need a second interface, and the
+view would read something outside the stream, M5); the stream for every fault (it may be the thing
+that is broken).
 
 **Known edge**: if both the stream directory and the temp directory are unwritable, the failure is
 silent. Listed in the README's known limits.
@@ -253,8 +280,9 @@ silent. Listed in the README's known limits.
   hook input objects. `tool_input` contributes the tool name and, for file tools (Read, Write,
   Edit, MultiEdit, NotebookEdit), the target path made repo-relative with forward slashes; a path
   outside the repo is `null`.
-- `last_assistant_message`, prompts, tool output, file contents and environment values are never
-  read into a record. `worktree` is relative to the main worktree, so no home directory (and no
+- `last_assistant_message`, the SubagentHandback `message` (read by the verdict hook only to find
+  the VERDICT line), prompts, tool output, file contents and environment values are never read
+  into a record. `worktree` is relative to the main worktree, so no home directory (and no
   user name) appears.
 - Opt-in fields in `.specify/activity.json` `fields`: `command` (Bash command text, first 200
   characters) and `description` (a subagent's task description, first 200 characters). Both off by
@@ -267,12 +295,29 @@ silent. Listed in the README's known limits.
 
 Found while reading `install.mjs`: today `--uninstall` re-serialises `settings.json` with 2-space
 indentation (a file indented otherwise changes bytes) and leaves directories it created
-(`agents/`, `hooks/`, `skills/`) behind empty.
+(`agents/`, `hooks/`, `skills/`) behind empty. Found by the orchestrator in the audit (finding
+C1, reproduced): install then `--uninstall` into an empty config directory leaves
+`settings.json` containing `{}` plus a `settings.json.bak-speckit-agents-*` that holds only the
+installer's own entries. Also found by the orchestrator: the installer removes its gate entries
+and re-appends them at the end of each array, so once another tool has re-sorted `settings.json`
+every re-run rewrites it (and backs it up), which is not idempotent.
 
-**Decision**: preserve the detected indentation and the presence of a trailing newline when
-writing `settings.json`. `*.bak-speckit-agents-*` backups stay on purpose (they are the user's
-copies of their own files); the SC-009 test excludes them and the README says so. Flagged for
-confirmation in plan.md.
+**Decision on `settings.json`**:
+
+- Preserve the detected indentation and the presence of a trailing newline when writing it.
+- Update owned gate entries in place: an entry already present for its event and matcher keeps its
+  position and only its command and timeout are set; stale owned entries are removed; missing ones
+  appended. A re-sorted file is then left untouched by a re-run.
+- Record in the manifest (`createdSettings`) whether the installer created `settings.json`. On
+  uninstall, when it did and removing its entries leaves `{}`, delete the file instead of writing
+  `{}`.
+- Back up only content that is not the installer's: a backup is taken before changing a
+  `settings.json` that existed before the install or that holds anything besides the installer's
+  entries, and of agent or skill files replaced with `--force`. A file holding only installer
+  content is never backed up, so no backup is left after install then uninstall into an empty
+  config directory.
+- Backups of the user's own content stay on purpose (they are the user's copies). The SC-009 test
+  allows exactly those and no others. Flagged for confirmation in plan.md.
 
 **Directories: the installer records the ones it creates, and uninstall removes only those.**
 Installation Constraints say `--uninstall` removes what the installer added "and nothing else", so
@@ -283,8 +328,9 @@ an empty directory that existed before the install must survive it.
   (`skills/speckit-team/`, `skills/speckit-activity/`) need no record: those folders are removed
   whole. The config directory itself is never recorded and never removed.
 - It writes the list to a manifest, `<claude dir>/hooks/speckit-agents.install.json`:
-  `{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks"] }`,
-  forward slashes, sorted. The `managedBy` value contains the marker, so the existing ownership
+  `{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks"], "createdSettings": true }`,
+  forward slashes, sorted (`createdSettings` from the `settings.json` decision above, merged by
+  or-ing with the existing value). The `managedBy` value contains the marker, so the existing ownership
   check (`ours()`) applies. `hooks/` always exists after an install, so the manifest always has a
   home.
 - A later install merges: `createdDirs` = the manifest's existing list plus any directory created
@@ -320,15 +366,44 @@ on by default). A mod test there would be picked up by `npm test` and fail on it
 when `claude` is not on PATH, so the mod's behaviour is under `npm test` as constitution I asks
 without making `npm test` depend on Claude Code.
 
+**Constitution IV and `claude-code/testing`** (audit finding M8): IV's first bullet ("hooks,
+installer and tests MUST use only the Node standard library") governs code that runs on Node:
+`hooks/`, `install.mjs`, `test/*.test.mjs` and `bench/` follow it. The mod's tests do not run on
+Node; they run inside Claude Code's plugin environment, like the mod, which IV's second bullet
+governs ("only the plugin API"). `claude-code/testing` is part of that API: it is declared by the
+engine in the same `claude-code.d.ts`, supplied by the engine at test time, and nothing is
+installed, downloaded or added to `package.json`. So it is not a runtime dependency and needs no
+amendment. If the auditor reads IV otherwise, this is the place to amend it.
+
 ## R14. Malformed input to the existing hook (FR-019, constitution II)
 
 Found while reading `hooks/speckit-team.mjs`: line 32 is
 `JSON.parse(fs.readFileSync(0, 'utf8') || '{}')`, which throws on malformed stdin, so the hook
 crashes and the action proceeds silently. The feature changes this script, so FR-019 applies.
 
-**Decision**: parse inside `try`/`catch`; malformed input is treated as `{}`. The effective
-decision is unchanged (the action proceeds, as it does after a crash today), but the hook no
-longer crashes and no record is written. Covered by a test that fails today.
+Also found (audit finding H1): with stdin `{}` in a Spec Kit repo, `gate` evaluates the audit and
+denies, and `verdict` reads an empty last message and blocks. Claude Code always sends
+`hook_event_name`, so neither happens live, but the modes do not agree on what malformed input
+means.
+
+**Decision (H1)**: on empty stdin, stdin that is not a JSON object, or an event the mode is not
+wired to (table in contracts/emit-cli.md), every mode makes no decision: exit 0, empty stdout, so
+the action proceeds, as today's crash already lets it. In a Spec Kit repository the mode also
+writes one `observer-fault` record (`input-invalid:<mode>` or `input-unknown-event:<mode>`) so the
+event is visible instead of silent, with a fixed message and no input content (R10, R11). Outside
+a Spec Kit repository it writes nothing. `gate` and `verdict` get an explicit no-op path for this;
+`scope` and `lane` already exit without a decision when their fields are missing. Covered by tests
+that fail today (crash on `{not json`, deny from `gate`, block from `verdict`).
+
+**Rejected**: deny or block on malformed input (it would turn a malformed event into a refusal the
+agent cannot act on, and changes today's effective behaviour); no record (fails silently, against
+constitution II).
+
+**The guarded import** (audit finding C2): `speckit-team.mjs` loads `speckit-activity.mjs` with
+`import()` inside `try`/`catch`. Missing module (`ERR_MODULE_NOT_FOUND`, measured on Node 26), a
+module that throws while loading, or an export that throws when called: the guardrail's output and
+exit code are what they would be with the module intact, no record is written, and `emit` reports
+`activity-module-failed:<code>` so the view can say so.
 
 ## R15. Minimum Claude Code version
 
@@ -337,18 +412,38 @@ The plugin API is marked early access in its own declarations (read). Guardrail 
 need no new Claude Code feature; the view and the activity records need the mod. README states
 both.
 
+## R16. Reports through SubagentHandback (commit b9b0dc3, landed under this plan)
+
+In interactive sessions subagents report through the `SubagentHandback` tool, not their last
+message. Since b9b0dc3 the gate exempts `SubagentHandback` (not evaluated, so no `gate` record),
+and spec-auditor's verdict is read by a PreToolUse hook on `SubagentHandback` from
+`tool_input.message`, with the Stop path kept for `claude -p`. Consequences for this plan:
+
+- `verdict` records are written on both paths and say which (`via`: `handback` or `stop`). A
+  missing VERDICT line on the handback is a `decision` `verdict-line` `deny` the first time and
+  `allow` when it is let through the second time.
+- The handback `message` is model output: it is never copied into a record (R11), and the privacy
+  test plants its marker there too.
+- No new command hook is added. The mod's `tool.call` hook sees `SubagentHandback` like any tool,
+  never answers in place of `next`, and never reads `message`, so it cannot hold a report back.
+
 ## Live verification log
 
-To be filled in by T001 (a throwaway mod outside the repo) before the mod implementation tasks (T020 to T024) build on these. Each line:
-result, date, Claude Code version, how observed. If V1 fails, switch to the R8 fallback and
-update plan.md, contracts/installed-files.md and the tasks before continuing.
+To be filled in by T001 (a throwaway mod outside the repo) before the mod implementation tasks
+(T024 to T028) build on these. Each line: result, date, Claude Code version, how observed. Each
+question has a rule for a failed answer (audit finding H3): **stop** means T001 hands back to
+architect, because the answer changes plan.md or the contracts and so voids the audit;
+**fallback** means the named fallback is recorded here and the listed tasks adapt, with no new
+audit needed because no contract changes.
 
-| Id | Question | Result |
-|---|---|---|
-| V1 | Does a function-hooks plugin folder in `<claude dir>/skills/<name>/` (no SKILL.md) load in a new session, interactive and `claude -p`, with no prompt? | not run |
-| V2 | Do `classic.SubagentStart` and `classic.SubagentStop` fire in the mod for every subagent, with the same `agent_id` the agent's frontmatter command hooks receive? | not run |
-| V3 | Does `tool.call` carry `agentId` for a subagent's tool calls and none for the main session's? | not run |
-| V4 | Does `$.process.run(['node', '<abs path>', 'emit'], { stdin })` find `node` on Windows with no shell? | not run |
-| V5 | For an `isolation: "worktree"` subagent, is `classic.SubagentStart`'s `cwd` the worktree? | not run |
-| V6 | Does `claude plugin test mod/speckit-activity` discover `test/*.test.ts` in the plugin folder? | not run |
-| V7 | Is `Date.now()` wall time inside `claude plugin test` when `mock.clock` is not used? | not run |
+| Id | Question | If the answer is no | Result |
+|---|---|---|---|
+| V1 | Does a function-hooks plugin folder in `<claude dir>/skills/<name>/` (no SKILL.md) load in a new session, interactive and `claude -p`, with no prompt? | stop: R8 fallback (`CLAUDE_CODE_PLUGIN_DIRS`) changes installed-files.md | not run |
+| V2 | Does `classic.SubagentStart` fire in the mod for every subagent, and is its `agent_id` the same value the agent's frontmatter command hooks receive as `agent_id`? | stop: hook and mod records could not be joined per agent, the design's key | not run |
+| V3 | Does `tool.call` carry `agentId` for a subagent's tool calls and none for the main session's? | stop: tool records could not be attributed (FR-002, SC-007) | not run |
+| V4 | Does `$.process.run(['node', '<abs path>', 'emit'], { stdin })` find `node` on Windows with no shell? | stop: the relay transport changes | not run |
+| V5 | For an `isolation: "worktree"` subagent, is `classic.SubagentStart`'s `cwd` the worktree? | fallback: at the agent's first file tool call the mod matches its absolute `file_path` against the roots from one `git worktree list --porcelain` (off the tool path) and uses the matching root as the agent's `cwd`; until matched, its envelopes carry the session's `cwd` plus `worktree_unknown: true` (an additive envelope field), which the writer records as `worktree: "unknown"`. Tasks T017, T026 adapt; US4 S2 holds for guardrail records, which have their own `cwd`. | not run |
+| V6 | Does `claude plugin test mod/speckit-activity` discover `test/*.test.ts` in the plugin folder? | fallback: tests move to `mod/speckit-activity/*.test.ts` and the fixture to `mod/speckit-activity/fixtures/`; the installer skips `*.test.ts` and `fixtures/`. Task paths change, not their content. | not run |
+| V7 | Inside `claude plugin test` without `mock.clock`: is `performance.now()` available and wall time? Is `Date.now()`? | fallback per R9: `Date.now()` mean bound, else timing "not run" (T037) | not run |
+| V8 | Does `turn.complete` fire once when a subagent's run ends, carrying its `agentId` (equal to V2's `agent_id`), and not when a Stop hook refused its stop (lane check blocking once)? | stop: the `agent-stop` source (R2, M3) changes the data model | not run |
+| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings), and which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? | record only; quickstart L9 uses the answer | not run |

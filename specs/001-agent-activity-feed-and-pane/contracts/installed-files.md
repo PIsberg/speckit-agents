@@ -15,13 +15,15 @@ Additions to what `install.mjs` installs today. No new flag. `settings.json` get
 The manifest `hooks/speckit-agents.install.json` (research R12):
 
 ```json
-{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks", "skills"] }
+{ "managedBy": "speckit-agents: managed by install.mjs", "createdDirs": ["agents", "hooks", "skills"], "createdSettings": true }
 ```
 
-`createdDirs` lists, relative to `<claude dir>`, forward slashes, sorted, each of `agents/`,
-`hooks/` and `skills/` that this installer created, on this install or an earlier one. Folders
-owned as a unit (`skills/speckit-team/`, `skills/speckit-activity/`) are not listed; the config
-directory itself never is.
+- `createdDirs` lists, relative to `<claude dir>`, forward slashes, sorted, each of `agents/`,
+  `hooks/` and `skills/` that this installer created, on this install or an earlier one. Folders
+  owned as a unit (`skills/speckit-team/`, `skills/speckit-activity/`) are not listed; the config
+  directory itself never is.
+- `createdSettings` is `true` when this installer created `settings.json` (it did not exist before
+  the first install that wrote this manifest), on this install or an earlier one; else `false`.
 
 The mod's `test/` folder is not installed.
 
@@ -30,30 +32,69 @@ Rendering: every installed text file has `{{HOOK}}` replaced by
 In the mod it is an argv element for `$.process.run`, so no shell quoting is involved.
 
 Collision rule: `skills/speckit-activity/` existing without the marker in `hooks/register.tsx` is a
-collision, handled like an agent collision (refuse, or back up and replace with `--force`).
+collision, handled like an agent collision (refuse, or back up and replace with `--force`). So is a
+`hooks/speckit-agents.install.json` without the marker.
 
-Collision rule for the manifest: `hooks/speckit-agents.install.json` existing without the marker is
-a collision like any other.
+## `settings.json` entries: updated in place
 
-Install, in order: validate everything it will read (sources exist, `settings.json` parses) before
-writing anything; note which of `agents/`, `hooks/`, `skills/` do not exist yet; write files; write
-the manifest with `createdDirs` = the existing manifest's list (if it parses and carries the marker)
-plus the directories noted now; merge settings as today; smoke check runs the installed hook in
-`gate` mode and in `emit` mode with empty stdin from the temp directory and expects exit 0 (and,
-for `emit`, JSON on stdout). A second install writes an identical manifest and reports it
+The installer owns two gate entries (`PreToolUse` matcher `Skill`, `UserPromptExpansion` matcher
+`speckit-implement|speckit\.implement`), recognised as today by a command containing
+`speckit-team.mjs`.
+
+- An owned entry already present for that event and matcher is updated where it stands: its
+  command and timeout are set, its position in the array and every other entry are left alone.
+- An owned entry that matches no current gate is removed. A missing gate is appended.
+- So after another tool re-sorts `settings.json`, a re-run finds every entry already right and
+  writes nothing (reported `unchanged`, no backup). Today it removes and re-appends its entries,
+  so a re-sorted file is rewritten and backed up on every run.
+
+## Backups
+
+A `*.bak-speckit-agents-<time>` copy is made only of a file that holds content the installer did
+not write:
+
+- `settings.json` is backed up before a change when it existed before the install, or when it now
+  holds anything besides the installer's own gate entries.
+- A `settings.json` the installer created (`createdSettings`) and that holds nothing but its
+  entries is changed without a backup, and on uninstall, when removing the entries would leave
+  `{}`, it is deleted instead of being written back as `{}`.
+- Agent and skill files replaced with `--force` are backed up as today.
+
+## Install, in order
+
+1. Validate everything it will read (sources exist, `settings.json` parses, the manifest's
+   ownership) before writing anything.
+2. Note which of `agents/`, `hooks/`, `skills/` and whether `settings.json` do not exist yet.
+3. Write files; merge the gate entries in place (above).
+4. Write the manifest: `createdDirs` = the existing manifest's list (if it parses and carries the
+   marker) plus the directories noted now; `createdSettings` = the existing value or-ed with
+   whether `settings.json` was created now.
+5. Smoke check: run the installed hook in `gate` mode and in `emit` mode with empty stdin from the
+   temp directory; expect exit 0, and for `emit` its status JSON.
+
+A second install writes nothing and reports every file, the manifest and `settings.json`
 `unchanged`.
 
-Uninstall: remove `hooks/speckit-activity.mjs` and the `skills/speckit-activity/` folder when
-marker-owned; remove the two settings gates as today; read `createdDirs` from the manifest, remove
-the manifest, then remove each listed directory that is empty, deepest first. A directory not in
-the list is never removed, empty or not, so an empty directory that existed before the install
-survives it. A listed directory holding other files is kept. No manifest, one without the marker,
-or one that does not parse: no directory is removed (fails safe).
+## Uninstall, in order
 
-Byte-identity (SC-009): install then uninstall leaves every pre-existing file byte-identical and
-adds no file or directory, except `*.bak-speckit-agents-*` backups, which are kept on purpose.
-`settings.json` is written back with its original indentation and trailing-newline state. A second
-install changes nothing.
+1. Remove owned files and folders (`hooks/speckit-activity.mjs`, `skills/speckit-activity/` and
+   the existing ones) when marker-owned.
+2. Remove the installer's gate entries from `settings.json`. If `createdSettings` is true and the
+   result is `{}`, delete `settings.json` and take no backup; otherwise write it back with its
+   original indentation and trailing-newline state, backing it up first.
+3. Read `createdDirs`, remove the manifest, then remove each listed directory that is empty,
+   deepest first. A directory not in the list is never removed, empty or not, so an empty
+   directory that existed before the install survives it. A listed directory holding other files
+   is kept.
+4. No manifest, one without the marker, or one that does not parse: no directory is removed and
+   `settings.json` is never deleted (fails safe; an empty `{}` may be left behind).
+
+## Byte-identity (SC-009)
+
+Install then uninstall leaves every pre-existing file byte-identical and adds no file or
+directory. That includes a config directory that had no `settings.json`: none is left behind, and
+no backup is. The only files that can remain are backups of the user's own content (a pre-existing
+`settings.json`, files replaced with `--force`), kept on purpose.
 
 Per-repo data is never touched by the installer: `.git/speckit-team/activity/` and the fault file
 in the temp directory stay; the uninstall message says where they are.

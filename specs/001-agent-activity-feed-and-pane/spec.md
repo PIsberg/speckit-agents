@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-06
 
-**Status**: Draft
+**Status**: Approved
 
 **Input**: User description: "Implement a Claude mod that has a generic interface of what the agents are doing, so that we can hook it into anything. Then also make a visual agent representation within Claude to show what the agents are doing, who is doing what, etc."
 
@@ -18,6 +18,10 @@
 - Q: When does the view appear and what does it show? -> A: An always-on one-line summary (agent count, phase, last verdict) in repos with Spec Kit initialised, and a fuller panel the user opens on demand; nothing shown in other repos.
 - Q: When is an agent shown as stale? -> A: After 120 seconds without a record.
 - Review fix: User Story 1 scenario 1 no longer allows hiding the view when idle; the summary shows an idle state (0 agents) and the last completed phase, consistent with FR-012.
+- Audit fix (M5): FR-001 now includes "observer fault" as an activity kind, so faults are readable through the documented interface and the view (FR-016, FR-018) consistent.
+- Audit fix (M6): FR-020 states the exception that macOS and Linux verification is "not run", tracked as a follow-up issue, not claimed as passed.
+- Audit fix (L7): Status set to Approved (owner approval 2026-10-06).
+- Audit fix (H1): malformed, empty or unknown input to a guardrail hook yields no decision, the action proceeds, and an observer fault is recorded.
 - Review fix: SC-003 is now an automated criterion (a reference consumer built from the README alone parses 100% of FR-001 record kinds in a scripted run, in the test suite) instead of a human trial.
 - Review fix: SC-005 overhead is measured on Windows only; macOS and Linux are reported as "not run" and tracked as a follow-up. FR-020 still requires all 3 platforms to work.
 
@@ -106,7 +110,7 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 
 ### Edge Cases
 
-- A malformed, empty or unknown hook input arrives: nothing is thrown, nothing is blocked, and either a minimal event or no event is produced.
+- A malformed, empty or unknown hook input arrives: nothing is thrown, nothing is blocked, and either a minimal event or no event is produced. A guardrail hook given such input makes no decision (the action proceeds, as it does today when the hook crashes) and the failure is recorded as an observer fault so it is visible.
 - An agent crashes and never reports a stop: the view and consumers must not show it as running forever (FR-013).
 - Two sessions run in the same repo at once: events keep session identity and do not merge into one agent's row.
 - The history store grows without bound: retention limits apply (FR-011).
@@ -120,7 +124,7 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 
 **Activity interface**
 
-- **FR-001**: The system MUST emit a record for each of these activity kinds: agent start, agent stop, tool use by an agent, guardrail decision (allowed or denied, with the rule that decided), implementation gate outcome (blocked or allowed), audit verdict (PASS or FAIL), lane check at agent stop (clean or violations), and pipeline phase change.
+- **FR-001**: The system MUST emit a record for each of these activity kinds: agent start, agent stop, tool use by an agent, guardrail decision (allowed or denied, with the rule that decided), implementation gate outcome (blocked or allowed), audit verdict (PASS or FAIL), lane check at agent stop (clean or violations), pipeline phase change, and observer fault (a failure to emit, write, read or render, with a cause code and no payload beyond metadata). Faults are records like any other, so any consumer, including the view, reads them from the documented interface.
 - **FR-002**: Every record MUST carry a schema version, a timestamp, a session identity, an agent identity that is unique per running instance, an agent name, and a flag saying whether the agent belongs to the Spec Kit team.
 - **FR-003**: Every record about a team agent MUST carry the feature identifier and the pipeline phase when they can be determined, and MUST say so explicitly when they cannot.
 - **FR-004**: The system MUST also emit records for agents outside the team and for the main session, with the same shape and no phase.
@@ -151,7 +155,7 @@ If the feed or the view breaks, the agents carry on exactly as before and the us
 - **FR-017**: Observation MUST NOT deny, delay or alter any agent action or guardrail decision. Added time per tool call MUST stay within a budget the plan states and measures.
 - **FR-018**: If emitting or rendering fails, agent work MUST continue unchanged and the failure MUST be visible to the user at most once per distinct cause per session.
 - **FR-019**: Every hook entry point added or changed MUST handle empty, malformed and unknown input without throwing.
-- **FR-020**: The feature MUST work on Windows (Git Bash and PowerShell hook shells), macOS and Linux, with forward-slash repo-relative paths in all records.
+- **FR-020**: The feature MUST work on Windows (Git Bash and PowerShell hook shells), macOS and Linux, with forward-slash repo-relative paths in all records. Exception: only Windows is available for verification, so verification on macOS and Linux is reported as "not run" in the docs and tracked as a follow-up issue, not claimed as passed.
 - **FR-021**: The feature MUST install and uninstall through the existing installer idempotently, and uninstall MUST remove everything it added and nothing else.
 - **FR-022**: The feature MUST cost nothing in repositories without Spec Kit initialised: no output, no blocking, no measurable delay.
 - **FR-023**: Docs MUST state what was verified in a live session, what only by unit test, and what not at all.

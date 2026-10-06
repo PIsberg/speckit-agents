@@ -2,14 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "speckit-agents/activity-record/1.0",
   "title": "speckit-agents activity record, schema 1.0",
-  "description": "One line of <git common dir>/speckit-team/activity/*.jsonl. Within major version 1 changes are additive: consumers MUST ignore unknown fields and unknown enum values. additionalProperties is left open on purpose.",
+  "description": "One line of <git common dir>/speckit-team/activity/*.jsonl. Within major version 1 changes are additive: consumers MUST ignore unknown fields, unknown kinds and unknown enum values. additionalProperties is left open on purpose.",
   "type": "object",
   "required": ["schema", "id", "ts", "kind", "source", "session", "agent", "feature", "phase", "worktree"],
   "properties": {
     "schema": { "type": "string", "pattern": "^1\\.[0-9]+$" },
     "id": { "type": "string", "minLength": 1 },
     "ts": { "type": "string", "format": "date-time" },
-    "kind": { "type": "string", "examples": ["agent-start", "agent-stop", "tool", "decision", "gate", "verdict", "lane", "phase"] },
+    "kind": { "type": "string", "examples": ["agent-start", "agent-stop", "tool", "decision", "gate", "verdict", "lane", "phase", "observer-fault"] },
     "source": { "type": "string", "examples": ["hook", "mod"] },
     "session": { "type": "string", "minLength": 1 },
     "agent": {
@@ -29,6 +29,10 @@
     {
       "if": { "properties": { "kind": { "const": "agent-start" } } },
       "then": { "properties": { "description": { "type": "string", "maxLength": 200 } } }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "agent-stop" } } },
+      "then": { "required": ["final"], "properties": { "final": { "const": true } } }
     },
     {
       "if": { "properties": { "kind": { "const": "tool" } } },
@@ -69,10 +73,11 @@
     {
       "if": { "properties": { "kind": { "const": "verdict" } } },
       "then": {
-        "required": ["verdict", "fingerprint"],
+        "required": ["verdict", "fingerprint", "via"],
         "properties": {
           "verdict": { "type": "string", "examples": ["PASS", "FAIL"] },
-          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" }
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "via": { "type": "string", "examples": ["handback", "stop"] }
         }
       }
     },
@@ -96,6 +101,17 @@
         "properties": {
           "phase": { "type": "string" },
           "previous": { "type": ["string", "null"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "observer-fault" } } },
+      "then": {
+        "required": ["cause", "message", "mode"],
+        "properties": {
+          "cause": { "type": "string", "examples": ["input-invalid:gate", "input-unknown-event:verdict", "envelope-invalid", "config-invalid", "retention-failed:EPERM"] },
+          "message": { "type": "string", "maxLength": 200 },
+          "mode": { "type": ["string", "null"] }
         }
       }
     }

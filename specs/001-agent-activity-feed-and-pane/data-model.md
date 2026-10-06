@@ -12,8 +12,9 @@ Session 1--* AgentInstance 1--* ActivityRecord *--1 Segment *--1 Store (one per 
 FeatureRun 1--* ActivityRecord (team records only)
 Envelope (mod -> writer) --becomes--> ActivityRecord
 Consumer 1--1 Cursor --points into--> Segment
-Config (.specify/activity.json) --governs--> writer (enabled, retention, opt-in fields)
-Fault (per cause) --reported by--> writer, shown by the view
+Config (.specify/activity.json) --governs--> writer and mod (enabled, retention, opt-in fields)
+Fault --recorded as--> observer-fault record (when the stream is writable)
+      --else kept in--> fault file (temp dir), reported by `emit`
 ```
 
 ## ActivityRecord
@@ -26,17 +27,17 @@ One immutable fact about an agent at a point in time. One JSON object per line.
 |---|---|---|
 | `schema` | string | `"1.0"` for this feature. `major.minor`. Consumers check the major. |
 | `id` | string | UUID v4 from `crypto.randomUUID()`. Unique per record. |
-| `ts` | string | ISO 8601 UTC with milliseconds, when the event happened (the producer's clock, not the write time). |
-| `kind` | string | One of `agent-start`, `agent-stop`, `tool`, `decision`, `gate`, `verdict`, `lane`, `phase`. |
+| `ts` | string | ISO 8601 UTC with milliseconds, when the event happened (the producer's clock, not the write time). The basis for ordering (see AgentInstance). |
+| `kind` | string | One of `agent-start`, `agent-stop`, `tool`, `decision`, `gate`, `verdict`, `lane`, `phase`, `observer-fault`. |
 | `source` | string | `"hook"` (written by a guardrail process) or `"mod"` (relayed from the mod). |
 | `session` | string | Claude Code `session_id`; `"unknown"` when the input has none. |
 | `agent` | object | `{ "id": string, "name": string, "team": boolean }`. |
-| `agent.id` | string | Claude Code `agent_id` for a subagent; `"main:<session>"` for the main session. Unique per running instance (FR-002). |
-| `agent.name` | string | The subagent's `agent_type` (`implementer`, `Explore`, ...); `"main"` for the main session. |
+| `agent.id` | string | Claude Code `agent_id` for a subagent; `"main:<session>"` for the main session; `"unknown"` for an `observer-fault` whose input named no agent. Unique per running instance (FR-002). |
+| `agent.name` | string | The subagent's `agent_type` (`implementer`, `Explore`, ...); `"main"` for the main session; `"unknown"` as above. |
 | `agent.team` | boolean | `true` when `agent.name` is one of the six team agents, else `false`. |
-| `feature` | string or null | Team records: the active feature directory (`specs/001-x`) from `.specify/feature.json`, or `"unknown"` when it cannot be read. Non-team records: `null` (not applicable). |
-| `phase` | string or null | Team records: the agent's phase (table below), or `"unknown"`. `phase` records: the phase entered. Non-team records: `null`. |
-| `worktree` | string | The checkout the event came from: path of its top level relative to the main worktree's top level, forward slashes, `"."` for the main checkout, `"unknown"` when git cannot say. Never absolute. |
+| `feature` | string or null | Team records: the active feature directory (`specs/001-x`) from `.specify/feature.json`, or `"unknown"` when it cannot be read. All other records: `null` (not applicable). |
+| `phase` | string or null | Team records: the agent's phase (table below), or `"unknown"`. `phase` records: the phase entered. All other records: `null`. |
+| `worktree` | string | The checkout the event came from: path of its top level relative to the main worktree's top level, forward slashes, `"."` for the main checkout, `"unknown"` when it cannot be determined. Never absolute. |
 
 Team agents and their phases: `product-owner` -> `specify`, `architect` -> `plan`,
 `spec-auditor` -> `audit`, `test-writer` -> `red`, `implementer` -> `green`,
@@ -46,14 +47,14 @@ Team agents and their phases: `product-owner` -> `specify`, `architect` -> `plan
 
 | Kind | Field | Type | Rule |
 |---|---|---|---|
-| `agent-start` | `description` | string | Opt-in only (`fields.description`), first 200 characters. Absent by default. |
-| `agent-stop` | (none) | | May repeat for one agent when a Stop hook kept it running (the lane check does this); a later record from the agent means it is active again. |
+| `agent-start` | `description` | string | Opt-in only (`fields.description`), first 200 characters. Absent by default. Source: the mod's `classic.SubagentStart` (subagents) or `session.start` (main session). |
+| `agent-stop` | `final` | `true` | The agent's run has ended. Source: the mod's `turn.complete` carrying the subagent's `agentId`, which fires only once any Stop hook (the lane check, the verdict line) has let the agent go; `session.end` for the main session. Written once per run. |
 | `tool` | `tool` | string | Tool name as Claude Code reports it (`Edit`, `Bash`, `mcp__x__y`). |
 | | `activity` | string | `reading`, `writing`, `running`, `searching`, `delegating` or `other` (table below). |
 | | `path` | string or null | File tools only: repo-relative target path, forward slashes. `null` for other tools and for paths outside the repo. |
 | | `command` | string | Opt-in only (`fields.command`), Bash command text, first 200 characters. Absent by default. |
 | `decision` | `rule` | string | The rule that decided: `scope only <prefixes>`, `scope tests`, `scope no-tests`, or `verdict-line`. |
-| | `outcome` | string | `allow`, `deny` (a tool call refused) or `block` (a stop refused). |
+| | `outcome` | string | `allow`, `deny` (a tool call refused) or `block` (a stop refused). For `verdict-line`: `deny` when spec-auditor's SubagentHandback lacked the VERDICT line the first time, `allow` when it was let through without one the second time, `block` when its stop lacked one. |
 | | `tool` | string or null | The tool the decision was about; `null` for a stop. |
 | | `path` | string or null | Repo-relative path decided on, forward slashes; `null` when none. |
 | `gate` | `outcome` | string | `allow` or `block`. |
@@ -62,12 +63,16 @@ Team agents and their phases: `product-owner` -> `specify`, `architect` -> `plan
 | | `tool` | string or null | Tool name for `trigger: "tool"`, else `null`. |
 | `verdict` | `verdict` | string | `PASS` or `FAIL`. |
 | | `fingerprint` | string | 16 hex characters: the audited artifacts' fingerprint the gate compares against. |
+| | `via` | string | `handback` (read from the SubagentHandback message by the PreToolUse hook, the interactive path) or `stop` (read from the last message at SubagentStop, the `claude -p` path). One record each time a verdict is recorded. |
 | `lane` | `rule` | string | `tests` or `no-tests`. |
 | | `result` | string | `clean`, `violations`, or `unchecked` (no start point was recorded for the agent). |
 | | `paths` | string[] | Out-of-lane repo-relative paths, at most 20. Empty when clean. |
 | | `pathCount` | integer | Total out-of-lane paths (may exceed the 20 listed). |
 | | `final` | boolean | `true` when the stop went through (clean, or the second stop with a warning); `false` when the stop was blocked. |
 | `phase` | `previous` | string or null | The feature's phase before this record; `null` for the first. |
+| `observer-fault` | `cause` | string | One of the causes in "Fault causes" below. |
+| | `message` | string | Fixed text per cause, at most 200 characters. Never contains input content. |
+| | `mode` | string or null | The hook mode (`gate`, `verdict`, ...) or mod event that saw the fault; `null` when none. |
 
 Activity labels by tool (FR-009):
 
@@ -78,46 +83,71 @@ Activity labels by tool (FR-009):
 | `running` | Bash, PowerShell, BashOutput, KillShell |
 | `searching` | Grep, Glob, WebSearch, ToolSearch |
 | `delegating` | Agent, Task, Skill, SendMessage |
-| `other` | everything else, including MCP tools |
+| `other` | everything else, including SubagentHandback and MCP tools |
+
+### Fault causes (one list, used by the writer, `emit` and the view)
+
+| Cause | Raised by | Where it surfaces |
+|---|---|---|
+| `input-invalid:<mode>` | a guardrail mode given empty or unparsable stdin | `observer-fault` record |
+| `input-unknown-event:<mode>` | a guardrail mode given an event it is not wired to | `observer-fault` record |
+| `input-invalid:<event>` | the mod given a `classic.SubagentStart` or `turn.complete` without the ids it needs | `observer-fault` record (relayed) |
+| `envelope-invalid` | `emit` skipping malformed envelope lines or unknown kinds | `observer-fault` record, and `skipped` in `emit` output |
+| `config-invalid` | writer or mod reading a malformed `.specify/activity.json` | `observer-fault` record (writer); the mod's own toast |
+| `retention-failed:<code>` | the writer unable to delete a segment | `observer-fault` record |
+| `stream-unwritable:<code>` | the writer unable to create or append to the stream (on Windows `EEXIST` from `mkdir` over a file, `ENOENT` from an append under it, measured) | fault file, `emit` output |
+| `activity-module-failed:<code>` | `speckit-team.mjs` unable to import or run `speckit-activity.mjs` | `emit` output only (the module that writes is the one missing) |
+| `emit-failed:<code>` | the mod's `emit` process could not start or exited non-zero | the mod's own toast |
+| `emit-output-invalid` | `emit` printed something that is not its status JSON | the mod's own toast |
+| `stream-unreadable:<code>` | the mod unable to list or read the stream (`ENOTDIR` when `activity` is a file) | the mod's own toast |
+| `render-failed` | the pane's drawing code threw | the mod's own toast and fallback line |
 
 ### Validation rules
 
-- Every record carries all common fields; `feature` and `phase` are `null` exactly when
-  `agent.team` is `false`, except `phase` records, which always have a phase.
+- Every record carries all common fields; `feature` and `phase` are non-null exactly when
+  `agent.team` is `true`, except `phase` records, which always have a phase.
 - Strings are UTF-8; paths use `/` and never start with a drive letter or `/`.
 - A serialized record is at most 4096 bytes. The writer shortens `paths` first, then opt-in strings.
-- Forbidden content (FR-008): prompt text, model output (`last_assistant_message`), file contents,
-  command output, environment values, credentials, and absolute paths. Only the allow-listed fields
-  above are ever written.
-- Within major version 1, fields and enum values may be added, never removed, renamed or retyped.
-  Consumers ignore fields and enum values they do not know.
+- Forbidden content (FR-008): prompt text, model output (`last_assistant_message`, the
+  SubagentHandback `message`), file contents, command output, environment values, credentials,
+  absolute paths, and raw hook input. Only the allow-listed fields above are ever written.
+- Within major version 1, fields, kinds and enum values may be added, never removed, renamed or
+  retyped. Consumers ignore fields, kinds and values they do not know.
 
 ## AgentInstance (derived by consumers)
 
-Identified by `agent.id` (with `session` for display). State is derived from its records:
+Identified by `agent.id` (with `session` for display).
+
+**Ordering basis**: the record's `ts`, ties broken by position in the stream. File order is not
+used for state: the two producers write with different delays (the mod's records are relayed in
+batches, the guardrail's are written at once), so a record can land in the file after one with a
+later `ts`.
 
 ```
-            any record                 agent-stop
-  (none) ------------> active ---------------------> finished
-                        ^  |                            |
-          any record    |  | no record for 120 s        | any later record
-                        |  v                            v
-                        stale <---------------------- active
+              agent-start / any record          agent-stop (final)
+  (none) -----------------------------> active -------------------> finished (terminal)
+                                         ^  |                          |
+                       record with later |  | no record for 120 s      | agent-start with a later ts
+                       ts                |  v                          v
+                                        stale                       active (a new run)
 ```
 
-- `active`: the latest record is not `agent-stop` and is at most 120 s old.
-- `stale`: not finished and the latest record is more than 120 s old (FR-013). Shown, never as running.
-- `finished`: the latest record is `agent-stop`. The lane result shown with it is the latest `lane`
-  record for the same `agent.id`.
-- Current activity: `activity` and `path` of the latest `tool` record.
+- `active`: not finished, and the latest record by `ts` is at most 120 s old.
+- `stale`: not finished, and the latest record by `ts` is more than 120 s old (FR-013).
+- `finished`: an `agent-stop` exists for the agent. Finished is terminal: records of the agent
+  with a later `ts` (for example a guardrail record written during its stop) are shown among
+  decisions but do not reactivate the row. Only an `agent-start` with a later `ts` begins a new
+  active run.
+- The lane result shown with a finished agent is its latest `lane` record by `ts`.
+- Current activity: `activity` and `path` of the latest `tool` record by `ts`.
 - The main session (`agent.name == "main"`) is listed separately and is not counted in the
   summary's agent count, so an idle pipeline reads `0 agents` (US1 scenario 1).
 
 ## FeatureRun (derived)
 
-Key: `feature`. Current phase: `phase` of the latest `phase` record for the feature, else of the
-latest team record. Last completed phase: the current phase once no team agent of the feature is
-active. Latest verdict: the latest `verdict` record for the feature.
+Key: `feature`. Current phase: `phase` of the latest `phase` record for the feature by `ts`, else
+of the latest team record. Last completed phase: the current phase once no team agent of the
+feature is active. Latest verdict: the latest `verdict` record for the feature by `ts`.
 
 ## Segment and Store
 
@@ -131,14 +161,18 @@ active. Latest verdict: the latest `verdict` record for the feature.
 ## Cursor (consumer side)
 
 `{ [segmentName]: byteOffset }`. Offset is the first unconsumed byte; only bytes up to the last
-`\n` are consumed. A cursor for a segment that no longer exists is dropped.
+`\n` are consumed. A cursor for a segment that no longer exists is dropped. The README's reference
+consumer can persist it to a file (`--cursor <file>`) and resume from it.
 
 ## Envelope (mod -> writer, internal)
 
 One JSON object per stdin line of `node <hook> emit` (contracts/emit-cli.md):
-`{ v: 1, kind, ts, session_id, cwd, agent_id?, agent_type?, tool?, file_path?, command?, description? }`.
-`kind` is `agent-start`, `agent-stop` or `tool`. Unknown kinds and malformed lines are skipped and
-counted. The writer derives every record field from these; nothing else is copied.
+`{ v: 1, kind, ts, session_id, cwd, agent_id?, agent_type?, tool?, file_path?, command?, description?, cause?, mode? }`.
+`kind` is `agent-start`, `agent-stop`, `tool` or `observer-fault`. For a subagent, `cwd` is the
+`cwd` its `classic.SubagentStart` carried (its worktree for an isolated agent), kept by the mod per
+`agent_id`; the session's cwd when no start was seen. Unknown kinds and malformed lines are skipped,
+counted, and recorded as one `envelope-invalid` fault per batch. The writer derives every record
+field from these; nothing else is copied.
 
 ## Config (`.specify/activity.json`, optional)
 
@@ -152,19 +186,19 @@ counted. The writer derives every record field from these; nothing else is copie
 | `fields.description` | boolean | `false` |
 
 A missing file means all defaults. A malformed file or an invalid value falls back to the default
-for that key and records a `config-invalid` fault.
+for that key and raises `config-invalid`.
 
-## Fault
+## Fault file (fallback)
 
-`{ cause: string, message: string, count: integer, firstAt: ts, lastAt: ts }`, keyed by `cause`
-(`stream-unwritable:<code>`, `retention-failed:<code>`, `config-invalid`, `emit-failed:<code>`,
-`emit-output-invalid`). Stored per stream in the temp directory; reported in `emit` output; shown by
-the view once per cause per session.
+`<os.tmpdir()>/speckit-team-faults/<16 hex of sha256(stream dir)>.json`:
+`{ [cause]: { message, count, firstAt, lastAt } }`, at most 50 causes. Holds the causes that cannot
+be recorded in the stream (`stream-unwritable:*`); `emit` reports them. Documented in the README so
+outside tools can read it too.
 
 ## View state (`$.state`, plugin `speckit-activity`)
 
 | Key | Value |
 |---|---|
-| `model` | Folded view: agents by id (name, team, session, worktree, state inputs, latest activity, path, lane), recent non-allow decisions (latest 8), allow counters, latest verdict per feature, current and last completed phase. |
+| `model` | Folded view: agents by id (name, team, session, worktree, state inputs, latest activity, path, lane), recent non-allow decisions (latest 8), allow counters, latest verdict per feature, current and last completed phase, fault causes seen. |
 | `now` | Milliseconds, updated by a 1 s tick so ages and stale marks advance. |
-| `faults` | Causes already shown this session. |
+| `faults` | Causes already toasted this session. |

@@ -46,11 +46,34 @@ loop every 250 ms (or on an fs.watch hint):
 - First pass = history; every later pass = live. No gaps and no duplicates, because offsets only
   move forward over bytes that never change.
 - A consumer that starts late and wants only recent history filters on `ts`.
+- A consumer that saves its cursor map (the README's reference consumer does with
+  `--cursor <file>`, after every pass) resumes from it with no gap and no duplicate.
 - A consumer that restarts without its cursor deduplicates on `id`.
 - Order: records from one producer process appear in the order it wrote them. Records from
-  different processes interleave; sort by `ts` when a total order matters. For one agent, a
+  different processes interleave; sort by `ts` when a total order matters. For one agent, its
   `agent-start`, its `tool` records and its `agent-stop` all come from the mod's single queue and
   appear in that order (US2 scenario 1).
+
+## Deriving agent state (published in the README, audit finding M7)
+
+The stream holds facts; "running", "stale" and "finished" are derived, the same way by the view
+and by any consumer (data-model.md "AgentInstance"):
+
+- Order a single agent's records by `ts`, ties by stream position. Never by file position alone:
+  relayed records (`source: "mod"`) are written up to a few hundred milliseconds after the event,
+  guardrail records (`source: "hook"`) at once.
+- `agent-stop` ends the run and is terminal: later records of the same `agent.id` do not make it
+  active again; only an `agent-start` with a later `ts` does. A stop that a Stop hook refused never
+  produces an `agent-stop` (it is taken from the end of the agent's turn).
+- An agent that is not finished and whose latest record is more than 120 s old is stale.
+- The main session is `agent.id` `main:<session>`; it starts at session start and stops at session end.
+
+## Observer faults
+
+Problems of the observer itself are `observer-fault` records (`cause`, `message`, `mode`) in the
+stream. Causes that cannot be written to the stream because the stream is the problem
+(`stream-unwritable:<code>`) are kept in `<os temp dir>/speckit-team-faults/<16 hex of sha256 of the
+stream directory path>.json`. The full cause list is in data-model.md "Fault causes".
 
 ## Versioning (FR-006, constitution V)
 
@@ -82,4 +105,5 @@ cursor pointed into is gone.
 | Every record has `schema`, `id`, `ts`, `kind`, `source`, `session`, `agent{id,name,team}`, `feature`, `phase`, `worktree` | single writer implementation, test/activity.test.mjs |
 | Concurrent writers never corrupt each other's lines | one `appendFileSync` per batch, lines at most 4096 bytes; test/parallel.test.mjs |
 | A guardrail's decision is identical whether the stream works, is disabled, or is unwritable | test/safety.test.mjs (SC-004) |
+| A guardrail's decision is identical when the activity module is missing or throws | test/isolation.test.mjs |
 | No record in a repository without `.specify/` | test/safety.test.mjs (SC-008) |
