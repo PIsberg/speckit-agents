@@ -60,6 +60,9 @@ used) as `claude --debug`. Expected immediately: the status line reads
 | L10 | After L4 to L7, run the privacy scan below on the real stream | 0 hits | SC-006 |
 | L11 | See below | see below | US2 S1, S3, FR-007 |
 | L12 | See below | see below | FR-001, FR-004 (main session stop), audit finding C2 |
+| L13 | See below | see below | US6 S1 to S3, FR-024, FR-032 to FR-034, SC-010, SC-011 |
+| L14 | See below | see below | US6 S4 to S6, FR-025 to FR-031, SC-012, SC-013 |
+| L15 | See below | see below | FR-028, SC-014 |
 
 ### L8: unwritable destination
 
@@ -80,7 +83,7 @@ used) as `claude --debug`. Expected immediately: the status line reads
 If research V9 found no way to set `latencyLog`, no debug log file for `$.ui.log` lines, or a
 `$.clock.now()` that is not wall time, L9 cannot run: report SC-002 live as "not run" with that
 reason in the README (SC-002 then rests on the mocked-clock test in `follow.test.ts`) and open the
-follow-up issue (T061). Otherwise:
+follow-up issue (T072). Otherwise:
 
 1. Turn on `latencyLog`: open `/config`, find the row for `speckit-activity` `latencyLog`, set it on
    (the route recorded as V9 in research.md's live verification log; if V9 found that it is set
@@ -138,6 +141,42 @@ cursor map after every pass and resumes from it.
    `agent-stop` for the old main run and a new `agent-start` for main before the next `tool` record.
    (If research V10 recorded the fallback, step 2's line appears only after step 3's session start.)
 
+### L13: switching and persistence
+
+1. On a fresh install (no stored choice), open `/speckit-activity`: the plain board, and its last
+   row reads `View: plain. Switch: /speckit-activity rich, or ctrl+x tab then v.`
+2. During `/speckit-team`, type `/speckit-activity rich`: the rich view appears within 1 s; the
+   agents that were running are still there and their work goes on (compare the stream before and
+   after: no gap in their `tool` records).
+3. Press ctrl+x tab, then `v`: the plain board within 1 s. Press `v` again: rich. (If research V12
+   recorded the fallback, use Enter on the button instead, as the switch line then says.)
+4. Leave rich chosen, `/exit`, start a new session in a different Spec Kit repository, open the
+   panel: rich. Switch to plain, restart: plain.
+5. In a repository without `.specify/`: `/speckit-activity` is not offered, and the store file
+   (research V13's location) has not changed (modification time).
+6. Do 20 switches during one pipeline run, alternating the command and the key; note any switch
+   that took longer than 1 s and any agent action that failed or waited (none expected).
+
+### L14: the rich layout, its limits and parity
+
+1. With agents in at least 3 phases, the track shows each under its phase and non-team agents
+   under `no phase`; cards show history bars and `<n> calls/5m`.
+2. Provoke a denial (`@agent-architect write src/x.txt`): its line starts with `NEW` for about 5 s,
+   then stays without it.
+3. Resize the terminal to 120 columns, then 80, then 79: at 79 the panel shows
+   `Rich view needs 80 columns (now 79); showing the plain board.`; at no size does a line wrap,
+   and the rich view never takes more than 20 lines (count them).
+4. Shorten the terminal until the pane has fewer than 20 rows: the header says `reduced`.
+5. Switch the terminal to a monochrome scheme (or `NO_COLOR=1` if the session honours it): every
+   state is still readable by its word or glyph and number.
+
+### L15: redraw rate
+
+With `latencyLog` on (L9 step 1), the rich view open and a pipeline running for 60 s, count the
+pane's render lines in the debug log:
+`grep -c "speckit-activity render rich" "$LOG"` over a 60 s window must be at most 120. If research
+V9 found no debug-log route, report L15 "not run" with that reason; SC-014 then rests on T055.
+
 ## 5. Uninstall
 
 ```sh
@@ -147,5 +186,6 @@ node install.mjs --claude-dir "$SCRATCH/claude" --uninstall
 Expect (SC-009 as amended by the owner, contracts/installed-files.md): `settings.json` parses to
 the same value as before the install, with its indentation and line endings, byte-identical if
 nothing else changed it meanwhile; no `settings.json` if there was none before; no
-`*.bak-speckit-agents-*` file and no `hooks/speckit-agents.install.json` left; a pre-existing empty
-directory still there. The per-repo stream stays.
+`*.bak-speckit-agents-*` file, no `hooks/speckit-agents.install.json` and no `speckit-activity`
+view-choice store left (other plugins' store files untouched); a pre-existing empty directory
+still there. The per-repo stream stays.

@@ -41,10 +41,12 @@ a stop that a guardrail refused never produces an `agent-stop` (research R2; liv
 | Item | Value | Contract |
 |---|---|---|
 | Plugin name | `speckit-activity` | `plugin.json` `name` |
-| Slash command | `/speckit-activity` | Opens the panel. Registered with `immediate: true`, so it works while a pipeline turn runs. Answers `{ text: 'Agent activity pane opened.' }`. |
+| Slash command | `/speckit-activity [plain\|rich\|cool]` | Opens the panel, in the stored view, or in the named view after storing it (`cool` is a synonym of `rich`). Registered with `immediate: true` and `argumentHint: '[plain|rich]'`, so it works while a pipeline turn runs. Answers `{ text: 'Agent activity pane opened (<view> view).' }`; an unknown argument opens the current view and answers `Unknown view "<arg>": use plain or rich.` |
+| Switch key | Button key `switch-view`, `hotkey: 'v'`, in both views | Toggles the view while the pane holds the keyboard (after ctrl+x tab or a click on the pane); Enter on the focused Button and a click work too (research V12). |
+| Stored choice | `$.store` key `view`, value `{ "view": "plain" }` or `{ "view": "rich" }` | Per user, all repositories, local (FR-034); read and written only in Spec Kit repositories. |
 | Pane id | `speckit-activity`, title `Agents` | Opened only by the command, never unasked. |
 | Status line | one per plugin via `$.ui.status` | Format below. Set only in Spec Kit repos. |
-| `userConfig.latencyLog` | boolean, default `false` | When on, each record the poll reads for the first time logs `speckit-activity lag <ms> <kind> <id>` with `$.ui.log(text, { to: 'debug' })`. `<ms>` = `$.clock.now()` when that poll has parsed the record, minus `Date.parse(record.ts)`: it covers the producer's delay (relay queue and `emit` spawn for mod records), the write, the wait for the poll and the read; it excludes the redraw that follows the `$.state.set` in the same tick. Used by the SC-002 live check only. |
+| `userConfig.latencyLog` | boolean, default `false` | When on, each record the poll reads for the first time logs `speckit-activity lag <ms> <kind> <id>` with `$.ui.log(text, { to: 'debug' })`. `<ms>` = `$.clock.now()` when that poll has parsed the record, minus `Date.parse(record.ts)`: it covers the producer's delay (relay queue and `emit` spawn for mod records), the write, the wait for the poll and the read; it excludes the redraw that follows the `$.state.set` in the same tick. Also, each time the rich view draws a new `richFrame`, one line `speckit-activity render rich <frame at>`. Used by the SC-002 and SC-014 live checks only (quickstart L9, L15). |
 
 ## Summary line (FR-012, always on in Spec Kit repos)
 
@@ -126,14 +128,97 @@ Windows with Node 26 (measured for Node's `fs`): the writer's `stream-unwritable
   is skipped by the engine and the tool runs. This holds for `SubagentHandback` like any tool.
 - Drawing code is wrapped in `try`/`catch`; on error the pane shows one line naming the problem.
 
+## Rich view and switching (User Story 6, FR-024 to FR-035)
+
+### Which view is drawn
+
+1. The plain board is the default: no stored choice means plain, with no fault (FR-024, SC-010).
+2. A stored choice is read from `$.store` once per load, after Spec Kit detection. A read that
+   rejects, or a value other than `plain` or `rich`, means plain and one `observer-fault`
+   `view-choice-unreadable` (FR-034). (The spec's "missing" is read as "present but unreadable": a
+   fresh install has no choice and is not a fault. Flagged for the owner in plan.md.)
+3. A switch (command argument, or the `switch-view` Button by `v`, Enter or click) sets the `view`
+   state at once, which redraws the panel within the next frame (at most 500 ms, so well within
+   SC-011's 1 s), and then writes `$.store` without the drawing waiting for it. A write that
+   rejects keeps the switch for this session and raises `view-choice-unwritable`.
+4. Size rules, checked on every draw:
+   - `e.viewport.columns` below 80 (the spec's terminal width; `bodyColumns + 4` when the surface
+     gives no viewport): the plain board, with the first line
+     `Rich view needs 80 columns (now <n>); showing the plain board.`
+   - `scroll.bodyRows` below 10: the plain board, with the first line
+     `Rich view needs 10 rows (now <n>); showing the plain board.`
+   - `scroll.bodyRows` from 10 to 19: the reduced form (below), with `reduced` in its header.
+   - Otherwise the full rich layout, never more than 20 rows.
+5. The summary line (`$.ui.status`) is produced by the same function in both views and does not
+   depend on the choice (FR-032).
+6. Nothing is drawn, read or stored in a repository without Spec Kit: the command is not
+   registered there, and `$.store` is never called (FR-035).
+
+### Switch line (FR-033), in both views, the last row
+
+```
+View: <plain|rich>. Switch: /speckit-activity <other>, or ctrl+x tab then v.   [ v: <other> view ]
+```
+
+`[ v: <other> view ]` is the `switch-view` Button. If research V12 found that the hotkey does not
+press while the pane holds the keyboard, the text reads `or ctrl+x tab then Enter on the button`.
+
+### Full rich layout (at most 20 rows, laid out for 76 body columns, truncated beyond)
+
+| Rows | Content |
+|---|---|
+| 1 | Header: `AGENTS (rich)`, `LIVE` plus a glyph that alternates `*` and `+` once per second plus `read <n>s ago` (time since the last successful poll); when no poll has succeeded for 5 s, `LIVE?` and `feed stalled`. (FR-028) |
+| 2 to 4 | Pipeline track (FR-025): row 2 the six phases `spec > plan > audit > red > green > gate` and `no phase`, the current phase in capitals and marked `<-now`; row 3 under each phase the active team agents on it, `name#xxxx`, at most 2 then `+<n>`; row 4 under `no phase` the active non-team agents the same way. Phase labels map from record values: `specify` -> `spec`, `verify` -> `gate`, the rest unchanged. |
+| 5 to 12 | Agent cards (FR-026), 2 per row, each 2 rows and half the body width (38 cells at 76): row A `<state word> name#xxxx team\|other <activity> <path>`; row B the 20-cell history (oldest left, one cell per 15 s, glyph height by calls in that interval relative to the agent's busiest interval, `.` for none), then `<n> calls/5m`, then the age. Order: active, stale, then finished within the last 10 minutes, newest first, the main session last. Up to 8 agents as cards. |
+| 13 | `+<n> more: name#xxxx <state>, ...` for agents beyond 8 (truncated, with the count), else blank. |
+| 14 to 18 | Decisions (FR-027): the latest 5 non-allow records as in the plain board; a record first read less than 5 s ago starts with `NEW ` and is drawn `inverse`; after 5 s the same line stays without `NEW `. |
+| 19 | `verdict <PASS\|FAIL> <feature> <time> \| phase <current> (previous <p>, last completed <c>) \| observer: <f> problem(s)` |
+| 20 | The switch line. |
+
+The main session is a card like any agent, named `main`.
+
+**Reduced form** (10 to 19 rows): header, track rows 2 to 4, one row per agent (row A only, no
+history) as many as fit, a `+<n> more` row when some do not, the latest 2 decisions, the verdict
+row, the switch line; the header says `reduced`.
+
+**Parity with the plain board** (FR-029, SC-012): every agent, decision line, verdict, phase and
+fault cause the plain board shows at the same size is present in the rich view's text; colour
+(`color`, `backgroundColor`, `inverse`) adds to words and glyphs and never replaces them (FR-030).
+Every history glyph is backed by the number beside it.
+
+**Glyphs**: `▁▂▃▄▅▆▇█` for history heights, `.` for an empty interval. If research V14 finds them
+not single-width on a supported terminal, the ASCII set `_.:-=+*#` is used everywhere instead
+(what changes for the user: coarser-looking bars, the same numbers).
+
+**Borders**: none. `Box` `borderStyle` exists, but each bordered box costs 2 of the 20 rows;
+sections are separated by their headers instead.
+
+### Timing (FR-028, SC-014)
+
+The rich view draws only from the `richFrame` state value. A publisher writes it at most once per
+500 ms (leading edge: a change after a quiet period is written at once, later changes wait for the
+500 ms mark), and once per second for the live indicator, so `richFrame` is written between 1 and 2
+times per second while the rich view is open, and the rich view therefore redraws at most twice per
+second from its own state (resizes, which the engine redraws on its own, excepted). The publisher
+runs only while the rich view is open. Worst-case delay from a record's write to the rich view is
+one poll (250 ms) plus one frame (500 ms), inside FR-014's 1 s for guardrail records; relayed
+records add the relay (100 ms plus the `emit` spawn), still inside 1 s at the measured p90 (R1).
+
 ## State contract (`mod/speckit-activity/types/index.d.ts`)
 
 ```ts
 declare module 'claude-code' {
   interface PluginState {
-    'speckit-activity': { model: ActivityModel; now: number; faults: string[] }
+    'speckit-activity': {
+      model: ActivityModel
+      now: number
+      faults: string[]
+      view: 'plain' | 'rich'
+      richFrame: RichFrame
+    }
   }
 }
 ```
 
-`ActivityModel` is exported from the same file and documented there.
+`ActivityModel` and `RichFrame` are exported from the same file and documented there
+(data-model.md "View state").

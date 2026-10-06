@@ -103,7 +103,14 @@ A second install writes nothing and reports every file, the manifest and `settin
 3. Read `createdDirs`, remove the manifest, then remove each listed directory that is empty,
    deepest first. A directory not in the list is never removed, empty or not. A listed directory
    holding other files is kept.
-4. No manifest, one without the marker, or one that does not parse: remove the owned files and the
+4. Remove the mod's view-choice store (FR-034): the `$.store` file Claude Code keeps for the plugin
+   `speckit-activity` under `<claude dir>` (location and name pattern recorded by live check V13;
+   on this machine other plugins' stores are `<claude dir>/plugins/store/<plugin>_<source>-<hash>.json`,
+   so the match is on the `speckit-activity_` prefix in that folder), or V13's fallback file
+   `<claude dir>/hooks/speckit-activity.view.json`. No other plugin's store is touched. The mod
+   writes this file at run time, not the installer, but it exists only because the installer put
+   the mod there, so "zero files left behind" covers it.
+5. No manifest, one without the marker, or one that does not parse: remove the owned files and the
    gate entries as today (writing with the current file's indentation and line endings, no
    backup), remove no directory, delete no `settings.json`, and touch no backup file.
 
@@ -112,7 +119,7 @@ A second install writes nothing and reports every file, the manifest and `settin
 After install then uninstall: `settings.json` has the same value as before (or does not exist, if
 it did not exist), with its indentation and line endings, and byte-identical when nothing else
 changed it meanwhile; every other pre-existing file is byte-identical; no file or directory is
-left that was not there before, backups included.
+left that was not there before, backups and the mod's view-choice store included.
 
 Per-repo data is never touched by the installer: `.git/speckit-team/activity/` and the fault file
 in the temp directory stay; the uninstall message says where they are.

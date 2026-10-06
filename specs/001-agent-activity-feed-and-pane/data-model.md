@@ -102,6 +102,8 @@ Activity labels by tool (FR-009):
 | `stream-unreadable:<code>` | the mod unable to list or read the stream (`ENOTDIR` when `activity` is a file) | `observer-fault` record, relayed (lands once the stream is writable again) |
 | `render-failed` | the pane's drawing code threw | `observer-fault` record, relayed; fallback line in the pane |
 | `relay-overflow` | the mod's relay queue passed 1000 envelopes and dropped the oldest | `observer-fault` record, relayed, with the count in `message` |
+| `view-choice-unreadable` | the mod's `$.store` read of the view choice rejected, or held a value other than `plain` or `rich` (not raised when no choice was ever stored) | `observer-fault` record, relayed; the plain board is shown |
+| `view-choice-unwritable` | the mod's `$.store` write of a new view choice rejected | `observer-fault` record, relayed; the switch holds for the session |
 
 Every cause is also toasted by the view once per session (contracts/view.md). Whatever the mod
 raises itself is toasted at once, without waiting for it to come back through the stream.
@@ -212,3 +214,26 @@ outside tools can read it too.
 | `model` | Folded view: agents by id (name, team, session, worktree, state inputs, latest activity, path, lane), recent non-allow decisions (latest 8), allow counters, latest verdict per feature, current and last completed phase, fault causes seen. |
 | `now` | Milliseconds, updated by a 1 s tick so ages and stale marks advance. |
 | `faults` | Causes already toasted this session. |
+| `view` | `'plain'` or `'rich'`: the view the open panel draws. Set from the stored choice after detection (plain when none or unreadable) and by each switch. |
+| `richFrame` | The only value the rich view draws from (`RichFrame`, below), written by a publisher at most once per 500 ms and once per second for the live indicator, only while the rich view is open. |
+
+`RichFrame` (exported from `types/index.d.ts`):
+
+| Field | Type | Meaning |
+|---|---|---|
+| `at` | number | ms; the clock when the frame was built (ages are computed from it). |
+| `lastReadAt` | number or null | ms of the last successful poll; `null` before the first. Drives `read <n>s ago` and `feed stalled` (more than 5 s). |
+| `tick` | 0 or 1 | Flips each second: the live indicator's glyph. |
+| `phase` | `{ current, previous, lastCompleted }` | Record phase values (`specify` ... `verify`) or `null`; the view maps them to track labels. |
+| `track` | `{ [phase]: AgentRef[] }` plus `none: AgentRef[]` | Active and stale agents by phase; non-team in `none`. `AgentRef` = `{ id, label }`, `label` being `name#<last 4 of id>`. |
+| `cards` | `Card[]` | Per agent in display order: `ref`, `state` (`active`, `stale`, `finished`), `team`, `activity`, `path`, `ageMs`, `history` (20 integers, calls per 15-second interval, oldest first, covering `at - 300 s` to `at`), `total` (sum of `history`), `lane` (for finished agents). |
+| `decisions` | `{ id, ts, firstReadAt, outcome, agent, rule, path }[]` | Latest non-allow decisions, newest first; the view marks `NEW` while `at - firstReadAt < 5000`. |
+| `verdict` | `{ verdict, feature, ts }` or null | Latest verdict. |
+| `faults` | string[] | Fault causes seen this session. |
+
+Activity history is derived by consumers from `tool` records alone (`ts` bucketed into 15-second
+intervals ending at the frame's `at`); it is not a record field, so any outside consumer can build
+the same history from the stream (FR-029, FR-016).
+
+The stored view choice is not view state: it lives in the plugin's `$.store` (key `view`, value
+`{ "view": "plain" | "rich" }`), per user and for all repositories, on the local disk (FR-034).

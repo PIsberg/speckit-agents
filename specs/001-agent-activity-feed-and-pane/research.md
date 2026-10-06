@@ -150,7 +150,7 @@ on every guardrail call); a scheduled job (nothing to schedule it with, cross-pl
 **Known limit**: without the mod loaded (Claude Code older than 2.1.291, or the mod disabled),
 guardrail records are still written and nothing enforces the cap, so the stream grows by about
 300 to 400 bytes per guardrail decision. Listed in the README's known limits and tracked as a
-follow-up issue (T061).
+follow-up issue (T072).
 
 **Known edge**: a second session in the same repo that has run for more than 7 days can lose its
 oldest records to another session's age check. Listed in the README's known limits.
@@ -496,12 +496,44 @@ The repository has a private GitHub remote, `PIsberg/speckit-agents`. PR #1 (bra
   silence when both the stream and the temp directory are unwritable; decision records lost while
   the activity module is missing; a main session's stop lost when the relay outlasts the
   session-end budget; installs made before the manifest, whose uninstall leaves
-  directories and backups. Task T061; the PR (T062) links them.
+  directories and backups. Task T072; the PR (T073) links them.
+
+## R18. The switchable rich view (User Story 6, FR-024 to FR-035)
+
+What this build's drawing surface supports, read from `claude-code.d.ts` and reference.md
+(2.1.291), and what each finding decides:
+
+| Need | What the API offers (read) | Decision | Live item |
+|---|---|---|---|
+| A key that toggles while the panel is open (FR-032) | No free key event for a Pane. A `Button`'s `hotkey` (one digit or lowercase letter) presses it "while the plugin's site holds the focus", which a site gets "after ctrl+x tab, a click or `open({ focus })`"; Enter on the focused Button also presses it (`ButtonProps`). `action` binds only engine keybinding actions, not new ones. | A `switch-view` Button with `hotkey: 'v'` in both views. The panel is not opened with `focus` (it would take the keyboard from the prompt on every open); the switch line says "ctrl+x tab then v". | V12 |
+| The view named on the command (FR-032) | `command.run`'s input has `args`: "everything after the name, as typed" (`CommandRunInput`); `CommandSpec.argumentHint` shows a hint. | `/speckit-activity [plain\|rich\|cool]`. | none (unit-tested) |
+| Per-user persistence across repositories and sessions, local (FR-034) | `$.store`: "This plugin's own key-value store, kept between sessions and hot reloads... A JSON file of the plugin's own under the user's Claude Code configuration directory." On this machine such files sit in `~/.claude/plugins/store/<plugin>_<source>-<hash>.json`. | `$.store` key `view`. | V13 |
+| (alternative) `userConfig` / `pluginConfigs` | A `userConfig` field is a `/config` row, stored under `pluginConfigs` in settings; `$.config.set` changes it, and a change reloads the module. | Rejected: it writes the user's `settings.json`, which another tool rewrites between sessions (the SC-009 decision) and which the installer guarantees to leave as it found it; a reload per switch also drops timers and costs the 1 s budget. | |
+| Borders (layout) | `Box` `borderStyle`: `single`, `double`, `round`, `bold`, ... on the terminal; another value draws no border. | Not used: each border costs 2 of the 20 rows. | none |
+| Block characters for history bars | `Text` draws any string; no glyph restriction is stated. `Raster` (a grid of coloured cells) is terminal-only, so not usable on every surface. | `Text` with `▁▂▃▄▅▆▇█` and `.`, backed by a number. | V14 |
+| Colour without relying on it (FR-030) | `Text`: `color` (theme key or raw), `backgroundColor`, `bold`, `inverse`, `dimColor`, `wrap` (`truncate`, ...). | Colour and `inverse` only on top of words (`NEW`, `DENY`, state words). Every Text `wrap: 'truncate'`, so no line wraps (SC-013). | none |
+| Timer-driven redraw capped at 2 per second (FR-028, SC-014) | `$.clock.every`/`after` run until cancelled or reload; a `$.state.set` redraws the sites that read the value "at the redraw rate"; `$.ui.invalidate` asks for a redraw. No frame-rate setting. A change of width redraws every site; a change of height alone redraws nothing. | The cap comes from our writes: the rich view reads one value, `richFrame`, written by a throttled publisher (at most once per 500 ms, plus a 1 s live tick). Redraws the engine makes on its own (resize) are outside our count. | V15 |
+| Room for the 20-line and 80-column rules (FR-031) | `viewport.columns` (cells across the whole surface); `viewport.rows` is informational and not re-evaluated on a height change. A Pane gives `bodyColumns` (the box it draws into) and `scroll.bodyRows` (the most rows the frame may take, less the engine's). `placement` is `dock` or `inline`. | 80-column rule on `viewport.columns` (the spec's terminal width), layout sized to `bodyColumns`; the 20-row cap is ours, the reduced form and the plain fallback by `scroll.bodyRows`. | V16 |
+
+**Other decisions**:
+
+- The spec's "missing or unreadable choice ... records an observer fault" (FR-034) is applied to an
+  unreadable or invalid stored value. A choice never stored (every fresh install) is plain with no
+  fault, because SC-010 makes plain on a fresh install the expected case. Flagged for the owner.
+- `cool` is accepted as a synonym of `rich` on the command, because the owner's example used it;
+  docs and the panel say `rich`. Flagged for the owner.
+- Track labels follow FR-025 (`spec, plan, audit, red, green, gate`); record values stay
+  `specify` and `verify` (schema 1.0 is unchanged); the view maps them.
+- Uninstall removes the mod's view-choice store, matched by the plugin name, so no file is left
+  behind (SC-009).
+- The rich view adds at most 500 ms (one frame) to the record-to-screen time; worst cases stay
+  under FR-014's 1 s (contracts/view.md "Timing").
 
 ## Live verification log
 
 To be filled in by T001 (a throwaway mod outside the repo) before the mod implementation tasks
-(T024 to T028) build on these. Each line: result, date, Claude Code version, how observed. Each
+(T024 to T028) build on these, and for V12 to V16 by T052 before the rich view's tasks (T056 to
+T061). Each line: result, date, Claude Code version, how observed. Each
 question has a rule for a failed answer (audit finding H3): **stop** means T001 hands back to
 architect, because the answer changes plan.md or the contracts and so voids the audit;
 **fallback** means the named fallback is recorded here and the listed tasks adapt, with no new
@@ -517,6 +549,11 @@ audit needed because no contract changes.
 | V6 | Does `claude plugin test mod/speckit-activity` discover `test/*.test.ts` in the plugin folder? | fallback: tests move to `mod/speckit-activity/*.test.ts` and the fixture to `mod/speckit-activity/fixtures/`; the installer skips `*.test.ts` and `fixtures/`. Task paths change, not their content. | not run |
 | V7 | Inside `claude plugin test` without `mock.clock`: is `performance.now()` available and wall time? Is `Date.now()`? | fallback per R9: `Date.now()` mean bound, else timing "not run" (T037) | not run |
 | V8 | Does `turn.complete` fire once when a subagent's run ends, carrying its `agentId` (equal to V2's `agent_id`), and not when a Stop hook refused its stop (lane check blocking once)? | stop: the `agent-stop` source (R2, M3) changes the data model | not run |
-| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings)? Which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? Is `$.clock.now()` wall time in a live session (compared with the system clock over a 10 s span, within 50 ms)? | no stop. If any part is no, the SC-002 live check (quickstart L9) cannot run: it is reported as "not run" in the README with the reason, SC-002 rests on the mocked-clock unit test (T018) alone, and the gap becomes a follow-up issue (T061). | not run |
+| V9 | How is a mod's `userConfig` field set (the `/config` row, or `pluginConfigs` in settings)? Which file holds `$.ui.log(..., { to: 'debug' })` lines in a `claude --debug` session? Is `$.clock.now()` wall time in a live session (compared with the system clock over a 10 s span, within 50 ms)? | no stop. If any part is no, the SC-002 live check (quickstart L9) cannot run: it is reported as "not run" in the README with the reason, SC-002 rests on the mocked-clock unit test (T018) alone, and the gap becomes a follow-up issue (T072). | not run |
 | V10 | Does `session.end` fire in the mod on `/exit`, on Ctrl-D and on `/clear` (`reason: 'clear'`), and does a `$.process.run` of `emit` started from it finish within `next.budget` so the main session's `agent-stop` is written? After `/clear`, which `session_id` do later main-loop events carry? | stop if `session.end` never fires on `/exit` (the main session's `agent-stop`, a public guarantee in activity-stream.md, has no source). If it fires but the relay cannot finish within the budget: fallback, the mod writes the main session's stop on the next session's start for a main id it saw start and not stop (`agent-stop` with that session's last `ts`), and quickstart L12 checks it there. | not run |
 | V11 | Which `hook_event_name` does an agent's frontmatter `Stop` hook receive when the agent runs as a subagent, and when it runs as the main thread (`claude --agent implementer`)? | no stop: `lane` and `verdict` accept both `SubagentStop` and `Stop` (audit finding M4); the answer is recorded so the README states it | not run |
+| V12 | (T052) Does a Pane `Button` with `hotkey: 'v'` toggle when the pane holds the keyboard after ctrl+x tab, and after a click, inline and docked, in Windows Terminal with Git Bash and with PowerShell? Does `/spike-view rich` deliver `args: "rich"`? | fallback, no stop: the Button still presses with Enter under the focus or a click, and the command argument always works; the switch line says `ctrl+x tab then Enter on the button`. What changes for the user: two keys instead of one. If `args` were not delivered: stop (FR-032's argument has no source). | not run |
+| V13 | (T052) Does a `$.store.set` survive a session restart and read back in another repository? Where is the file, and what is its name? | fallback, no stop: the mod writes `{"view": ...}` with `$.fs.write` to `<claude dir>/hooks/speckit-activity.view.json` (the directory from the rendered `{{HOOK}}` path), and the installer removes that file on uninstall. Nothing changes for the user. | not run |
+| V14 | (T052) Do `▁▂▃▄▅▆▇█`, `─`, `·` and `●` each take one cell, without replacement characters, in Windows Terminal with Git Bash and with PowerShell? | fallback, no stop: the ASCII set `_.:-=+*#` everywhere (contracts/view.md "Glyphs"). What changes for the user: coarser bars, the same numbers. | not run |
+| V15 | (T052) With a timer writing a `$.state` value every 100 ms and then every 500 ms, how often does the pane's `ui.render` run (debug log over 60 s)? Does anything else (transcript output, focus) re-run it? | fallback, no stop: if the engine re-runs the hook more often than our writes, the hook returns the memoized tree for an unchanged `richFrame` version, so the drawing does not change more than twice per second; SC-014 is counted on `richFrame` writes in T055 and on render lines in quickstart L15. | not run |
+| V16 | (T052) Are `e.viewport.columns`, `e.props.bodyColumns` and `e.props.scroll.bodyRows` present for an inline and a docked pane on the terminal, and does a height-only resize redraw the pane? | fallback, no stop: no viewport, then the 80-column rule uses `bodyColumns + 4`; a height-only resize not redrawing means the reduced or plain form is chosen at the next draw (at most 1 s later, by the live tick). | not run |
