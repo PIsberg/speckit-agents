@@ -6,14 +6,14 @@ this file is how to work on it.
 ## Layout
 - `agents/*.md`: subagent definitions. `{{HOOK}}` is replaced by the installer with the absolute
   path of the installed hook script. Never hard-code a path or use `$HOME` there.
-- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `lane`.
+- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `lane`.
 - `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill.
 - `install.mjs`: installer (`setup.sh` / `setup.ps1` only check for Node and call it).
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs.
 
 ## Verify
-- `npm test`: all suites, no network, about 30 s on Windows (38 tests, 2026-10-06).
+- `npm test`: all suites, no network, about 90 s on Windows (44 tests, 2026-10-07).
 - Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
   matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
 

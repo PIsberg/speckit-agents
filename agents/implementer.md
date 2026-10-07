@@ -10,7 +10,11 @@ hooks:
     - matcher: ".*"
       hooks:
         - type: command
-          command: 'node "{{HOOK}}" gate'
+          command: 'node "{{HOOK}}" gate retries'
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" result'
     - matcher: "Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
@@ -19,6 +23,8 @@ hooks:
     - hooks:
         - type: command
           command: 'node "{{HOOK}}" lane no-tests'
+        - type: command
+          command: 'node "{{HOOK}}" result'
 ---
 
 The tests are the spec. You make them pass. You never change them.
@@ -41,4 +47,6 @@ restore any made through Bash. If a test looks wrong, stop and report the test, 
 
 ## Report
 Tasks done, the exact test command and its final summary line, and anything left red or skipped,
-stated as such.
+stated as such. The last line is exactly `RESULT: GREEN` (your tasks' tests and the full suite
+pass) or `RESULT: RED` (anything else). A hook counts RED reports: after 3 in a row on the same
+plan and tasks it blocks further attempts until the architect revises them or the user decides.

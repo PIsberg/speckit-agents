@@ -141,6 +141,8 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
+| `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
+| `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
 | `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
@@ -158,6 +160,23 @@ voids it, so the auditor has to look again. Task checkboxes are normalised befor
 ticking `- [X]` while implementing does not.
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains.
+
+### The retry limit
+
+An implementer that cannot make its tests pass will otherwise keep trying small tweaks, and each
+attempt costs a full agent run. So every implementer report ends with `RESULT: GREEN` (its tests
+and the full suite pass), `RESULT: RED` (anything else) or `RESULT: STUB` (the signatures-only
+pass described under [The pipeline skill](#the-pipeline-skill)). The `result` hook counts them per
+feature: GREEN resets the count, STUB leaves it, RED adds one, and a report that still has no
+`RESULT:` line after one request counts as RED. A handback and the Stop that follows it are one
+attempt, not two.
+
+After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
+and says why. The count belongs to the plan and tasks it was made on (the audit fingerprint), so
+the way forward is to send the failing task to the architect: the revised `plan.md` or `tasks.md`
+needs a new audit and starts the count from zero. Or the user decides, and to retry unchanged
+deletes `.git/speckit-team/retries/<feature>.json`. A retry record that cannot be read keeps the
+gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-team.mjs`.
 
 ### The lane check
 
@@ -182,7 +201,7 @@ Plus every regex line in the repo's `.specify/test-paths` (see below).
 
 ### State
 
-Verdicts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
+Verdicts, retry counts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
 That is inside `.git`, so it is never committed, and it is shared by every worktree of the repo,
 which lets parallel implementers in worktrees pass the same gate.
 
@@ -207,6 +226,7 @@ implementers in separate git worktrees.
 
 - **Models:** edit `model:` in `agents/*.md` and rerun the installer. Use `inherit` to follow the
   session's model.
+- **More or fewer implementer attempts:** `MAX_RED` in `hooks/speckit-team.mjs` (default 3).
 - **A stricter or looser PASS:** spec-auditor's "Verdict" section in `agents/spec-auditor.md`.
   By default only CRITICAL and HIGH findings fail an audit.
 - **How much design the architect adds:** step 2 of `agents/architect.md` asks for the minimal
@@ -216,7 +236,7 @@ implementers in separate git worktrees.
 
 ## Verifying
 
-`npm test` runs 38 tests: 22 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 44 tests: 28 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -264,6 +284,10 @@ them.
 
 **"spec-auditor has not passed".** Run `@agent-spec-auditor`. If it passed and you then edited
 the spec, plan, tasks or constitution, the PASS is void by design: run it again.
+
+**"Retry limit: implementer reported RESULT: RED 3 times in a row".** The plan or tasks need
+rethinking: send the failing task to the architect and re-audit, which resets the count. To retry
+without changes, delete the file the message names.
 
 **An agent is blocked writing a legitimate test file.** Add a pattern to `.specify/test-paths`.
 

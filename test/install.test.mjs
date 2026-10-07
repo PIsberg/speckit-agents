@@ -47,7 +47,9 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
     assert.doesNotMatch(text, /\{\{HOOK\}\}/, a);
     assert.match(text, /speckit-agents: managed/, a);
   }
-  assert.match(fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8'), new RegExp(`node "${hookPath}" gate`));
+  const implementer = fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8');
+  assert.match(implementer, new RegExp(`node "${hookPath}" gate retries`));
+  assert.match(implementer, new RegExp(`node "${hookPath}" result`));
   assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md')));
 
   const s = settingsOf(dir);
@@ -75,7 +77,7 @@ test('installed hook commands run through a shell from a path with a space', { s
   install(dir);
   const text = fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8');
   const commands = [...text.matchAll(/command: '(.+)'/g)].map((m) => m[1]);
-  assert.equal(commands.length, 3);
+  assert.equal(commands.length, 5);
   for (const cmd of commands) {
     // Claude Code runs hook commands in a shell (Git Bash on Windows). Outside a Spec Kit repo the
     // hook must exit 0, so this catches quoting and space-in-path breakage. It cannot catch the

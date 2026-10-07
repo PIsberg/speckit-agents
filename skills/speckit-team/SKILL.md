@@ -35,6 +35,11 @@ or constitution.
 Check that the report shows failing output for every test before moving on.
 
 ## 5. Green: implementer
+Every implementer report ends with `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with
+the failing output. After 3 REDs in a row the hook blocks implementer: do not retry. Either send
+the failing task and its output to the architect to rethink (a new audit then resets the count),
+or hand the decision to the user.
+
 Default: one implementer, all tasks. For `[P]` tasks on disjoint files, launch one implementer
 per task group with `isolation: "worktree"` and its task IDs, then merge their branches into the
 feature branch in task order.
