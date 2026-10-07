@@ -7,11 +7,11 @@ implementer cannot touch tests, and nobody writes code until an independent audi
 the spec.
 
 ```
-idea ─► product-owner ─► architect ─► spec-auditor ─► test-writer ─► implementer ─► spec-gatekeeper ─► PR
-        spec.md          plan.md      VERDICT:        failing        code that      APPROVED /
-        + questions      tasks.md     PASS / FAIL     tests (red)    passes (green) REJECTED
-           ▲                ▲              │
-           └── you answer   └── findings routed back on FAIL
+idea ─► product-owner ─► architect ─► spec-auditor ─► per slice: stubs ─► red ─► green ─► spec-gatekeeper ─► PR
+        spec.md          plan.md      VERDICT:        implementer  test-writer  implementer  APPROVED /
+        + questions      tasks.md     PASS / FAIL                                  │         REJECTED
+           ▲                ▲              │                                       │
+           └── you answer   └── findings routed back on FAIL ◄── 3 REDs in a row ──┘
 ```
 
 ## Contents
@@ -20,6 +20,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► test-write
 - [Install](#install)
 - [Quick start](#quick-start)
 - [The team](#the-team)
+- [Why this architecture](#why-this-architecture)
 - [How it works](#how-it-works)
 - [Customising](#customising)
 - [Verifying](#verifying)
@@ -94,8 +95,8 @@ Then, in Claude Code:
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
-After that it audits, writes failing tests, implements, verifies and opens a PR, which it does not
-merge.
+After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
+verifies and opens a PR, which it does not merge.
 
 You can also run one phase at a time by @-mentioning an agent:
 
@@ -109,15 +110,15 @@ You can also run one phase at a time by @-mentioning an agent:
 | Agent | Spec Kit phase | May write | Hands over | Model |
 |---|---|---|---|---|
 | `product-owner` | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
-| `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md` | opus |
-| `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; PASS means zero CRITICAL and zero HIGH findings | opus |
-| `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing for the right reason | sonnet |
-| `implementer` | TDD green | anything except test files | committed code with the suite green | sonnet |
+| `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
+| `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
+| `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error | sonnet |
+| `implementer` | stubs, TDD green | anything except test files | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
 | `spec-gatekeeper` | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 15 to 25 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 19 to 33 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
@@ -127,6 +128,27 @@ edit holds every time, and its rejection message tells the agent what to do inst
 **Why each agent has a narrow description.** Claude Code puts every agent's description into
 every session so it can route work. These six total about 1,700 characters, roughly 420 tokens.
 Each one says when to use the agent and what it will not do, so routing does not have to guess.
+
+## Why this architecture
+
+- **No guessing at requirements.** Most agent pipelines go wrong at the start: the spec is vague,
+  and the coding agent fills the gaps with guesses. Here product-owner has to return its open
+  questions with recommended answers, `/speckit-team` puts them to you, and nothing is planned
+  until you have approved the spec.
+- **Tests written before the code.** A model that writes tests for code it has just written tends
+  to write tautologies: tests that mock everything and pass regardless. test-writer writes the
+  tests first, against stubs, and has to show each one failing on an assertion. implementer then
+  has to make them pass and cannot edit them. A test that failed before the code existed shows the
+  acceptance criterion became a check the code did not shape.
+- **Circuit breakers.** spec-auditor stands between the plan and the code: a plan that breaks the
+  spec is sent back before any tokens go into tests or code, and any later edit to spec, plan,
+  tasks or constitution voids its PASS. During the build, the [retry limit](#the-retry-limit)
+  stops an implementer after 3 failed attempts in a row and sends the task back to the architect
+  or to you.
+- **Permissions per role, enforced by hooks.** Each agent's file-system lane is checked by a hook
+  on every write and again when it stops, not asked for in its prompt. A rule in a prompt is a
+  request that holds most of the time; a hook that denies the write holds every time, and its
+  message tells the agent what to do instead.
 
 ## How it works
 
@@ -141,6 +163,8 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
+| `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
+| `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
 | `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
@@ -158,6 +182,23 @@ voids it, so the auditor has to look again. Task checkboxes are normalised befor
 ticking `- [X]` while implementing does not.
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains.
+
+### The retry limit
+
+An implementer that cannot make its tests pass will otherwise keep trying small tweaks, and each
+attempt costs a full agent run. So every implementer report ends with `RESULT: GREEN` (its tests
+and the full suite pass), `RESULT: RED` (anything else) or `RESULT: STUB` (the signatures-only
+pass described under [The pipeline skill](#the-pipeline-skill)). The `result` hook counts them per
+feature: GREEN resets the count, STUB leaves it, RED adds one, and a report that still has no
+`RESULT:` line after one request counts as RED. A handback and the Stop that follows it are one
+attempt, not two.
+
+After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
+and says why. The count belongs to the plan and tasks it was made on (the audit fingerprint), so
+the way forward is to send the failing task to the architect: the revised `plan.md` or `tasks.md`
+needs a new audit and starts the count from zero. Or the user decides, and to retry unchanged
+deletes `.git/speckit-team/retries/<feature>.json`. A retry record that cannot be read keeps the
+gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-team.mjs`.
 
 ### The lane check
 
@@ -182,7 +223,7 @@ Plus every regex line in the repo's `.specify/test-paths` (see below).
 
 ### State
 
-Verdicts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
+Verdicts, retry counts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
 That is inside `.git`, so it is never committed, and it is shared by every worktree of the repo,
 which lets parallel implementers in worktrees pass the same gate.
 
@@ -190,9 +231,35 @@ which lets parallel implementers in worktrees pass the same gate.
 
 `/speckit-team` runs in the main session, because only the main session can talk to you. It
 launches each agent with the inputs it needs and relays the product owner's questions to you. On
-a FAIL or REJECTED, it routes each finding to the agent that owns it, and after two failed audits
-it hands the findings to you. For `[P]` tasks touching disjoint files, it can run several
-implementers in separate git worktrees.
+a FAIL it routes each CRITICAL and HIGH finding to the agent that owns it; MEDIUM and LOW findings
+are accepted and listed once at hand-over. On a REJECTED it routes each reason the same way. After
+two failed audits it hands the findings to you.
+
+After the audit it builds the feature one slice at a time, never in one shot. A slice is one small
+implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
+those slices. For each slice:
+
+1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
+   signatures the task lists, with bodies that only signal "not implemented", and reports
+   `RESULT: STUB`. This is what lets the next step fail cleanly.
+2. **Red.** test-writer writes the slice's tests and loops until each one fails on an assertion
+   or on the stub's not-implemented signal. A test that fails because it does not parse, an
+   import is missing or a name is undefined proves nothing about the behaviour, so test-writer
+   fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
+3. **Green.** implementer makes the slice's tests pass, under the [retry limit](#the-retry-limit).
+
+For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
+own git worktree.
+
+**Handoffs are lossy on purpose.** A subagent never sees the main session's conversation; it
+starts with the prompt the skill writes and whatever files it reads. So the skill passes each
+agent only what its Inputs section lists, and never the chat, the product owner's questions and
+answers, or another agent's full report. implementer gets the slice's task IDs and test-writer's
+report for them, and its own prompt tells it to read `tasks.md`, the failing tests and the code
+they touch, not `spec.md`, `plan.md`, `research.md` or `data-model.md`. The tests are its spec.
+
+The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
+compile error in an arbitrary language, so the skill checks test-writer's pasted output.
 
 ## Customising
 
@@ -206,13 +273,17 @@ implementers in separate git worktrees.
 
 - **Models:** edit `model:` in `agents/*.md` and rerun the installer. Use `inherit` to follow the
   session's model.
+- **More or fewer implementer attempts:** `MAX_RED` in `hooks/speckit-team.mjs` (default 3).
 - **A stricter or looser PASS:** spec-auditor's "Verdict" section in `agents/spec-auditor.md`.
+  By default only CRITICAL and HIGH findings fail an audit.
+- **How much design the architect adds:** step 2 of `agents/architect.md` asks for the minimal
+  design and no recovery machinery unless a requirement or constitution rule demands it.
 - **Edit the source, not the installed copy.** Installed files carry a
   `speckit-agents: managed by install.mjs` marker, and the next install overwrites them.
 
 ## Verifying
 
-`npm test` runs 38 tests: 22 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 44 tests: 28 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -234,7 +305,7 @@ Live results on 2026-10-06 (Claude Code 2.1.291, Windows 11, Haiku subagents):
 - implementer's first `Bash` call before an audit: denied by the gate
 - spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
 
-Not yet exercised live: test-writer, implementer's test-file denial, and the lane checks. Those
+Not yet exercised live: test-writer, implementer's test-file denial, the lane checks, and the retry limit (`result` and `gate retries`, added 2026-10-07). Those
 are covered by the unit tests only.
 
 ## Troubleshooting
@@ -245,6 +316,13 @@ through and nothing tells you. Check that `node` is on the PATH Claude Code sees
 commands written with `$HOME` expanded to `/c/Users/...`, which `node` on Windows resolves to
 `C:\c\Users\...`. The installer therefore writes a quoted absolute path. Do not hand-edit it into
 `$HOME` or `~`.
+
+If the agents come from a project's `.claude/` (an install with `--claude-dir <repo>/.claude`)
+rather than your user directory, Claude Code skips their frontmatter hooks until that folder has
+been trusted, and says so only in the debug log: `Skipping frontmatter hooks for agent
+'implementer': the folder its definition file came from is not trusted`. Open Claude Code in that
+folder once and accept the trust dialog. Seen on Claude Code 2.1.292, where the scratch repo's
+implementer ran Bash with no audit recorded and the gate never fired.
 
 **An agent cannot report back, or a verdict is never recorded.** Subagents in an interactive
 session report through the `SubagentHandback` tool, not their last message. A hook that matches
@@ -260,6 +338,10 @@ them.
 
 **"spec-auditor has not passed".** Run `@agent-spec-auditor`. If it passed and you then edited
 the spec, plan, tasks or constitution, the PASS is void by design: run it again.
+
+**"Retry limit: implementer reported RESULT: RED 3 times in a row".** The plan or tasks need
+rethinking: send the failing task to the architect and re-audit, which resets the count. To retry
+without changes, delete the file the message names.
 
 **An agent is blocked writing a legitimate test file.** Add a pattern to `.specify/test-paths`.
 

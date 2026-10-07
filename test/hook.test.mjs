@@ -173,7 +173,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['verdict'], ['lane', 'no-tests']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -201,7 +201,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['verdict'], ['lane', 'no-tests']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -293,4 +293,84 @@ test('lane check ignores files that were already dirty when the agent started', 
   w('src/test/java/WipTest.java', 'class WipTest {}\n');
   run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: 'b1' });
   assert.equal(run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'b1' }), null);
+});
+
+// Retry limit: an implementer that keeps failing would otherwise loop on minor tweaks, burning
+// tokens. Each implementer report ends with RESULT: GREEN, RED or STUB; three REDs in a row on the
+// same plan and tasks close the gate for implementer (gate retries) until the plan changes.
+const report = (dir, message, agent_id, extra = {}) => run(dir, ['result'], {
+  hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id, ...extra,
+});
+const implementerTool = (dir, args = ['gate', 'retries']) => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'next',
+});
+
+test('three RED results in a row close the gate for implementer, and say where to go', () => {
+  const { dir } = repo();
+  pass(dir);
+  assert.match(report(dir, 'T002 still failing.\n\nRESULT: RED', 'i1').systemMessage, /RED.*1 of 3/);
+  report(dir, 'RESULT: RED', 'i2');
+  assert.equal(implementerTool(dir), null, 'two REDs leave the gate open');
+  assert.match(report(dir, 'RESULT: RED', 'i3').systemMessage, /3 of 3/);
+  const out = implementerTool(dir);
+  assert.ok(denied(out), 'the fourth attempt is stopped');
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /3 times in a row.*architect/s);
+  assert.equal(implementerTool(dir, ['gate']), null, 'plain gate (test-writer) does not count implementer results');
+  assert.equal(handback(dir, 'gate', 'Stopped by the retry limit.', { agent_id: 'next' }) , null, 'reporting back stays open');
+});
+
+test('GREEN resets the count, STUB leaves it alone', () => {
+  const { dir } = repo();
+  pass(dir);
+  report(dir, 'RESULT: RED', 'i1');
+  report(dir, 'RESULT: RED', 'i2');
+  assert.match(report(dir, 'Stubs only.\nRESULT: STUB', 's1')?.systemMessage ?? '', /STUB/);
+  assert.match(report(dir, 'RESULT: GREEN', 'i3').systemMessage, /GREEN/);
+  report(dir, 'RESULT: RED', 'i4');
+  report(dir, 'RESULT: RED', 'i5');
+  assert.equal(implementerTool(dir), null, 'only REDs since the last GREEN count');
+});
+
+test('a revised plan or tasks resets the count', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  for (const id of ['i1', 'i2', 'i3']) report(dir, 'RESULT: RED', id);
+  assert.ok(denied(implementerTool(dir)));
+  w(`${FEAT}/tasks.md`, '- [ ] T001 write test\n- [ ] T002 implement, smaller\n');
+  pass(dir);
+  assert.equal(implementerTool(dir), null);
+});
+
+test('handback and stop from the same implementer count once', () => {
+  const { dir } = repo();
+  pass(dir);
+  for (const id of ['i1', 'i2']) {
+    report(dir, 'RESULT: RED', id);
+    run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: id, last_assistant_message: 'RESULT: RED' });
+  }
+  assert.equal(implementerTool(dir), null, 'two implementers, two REDs');
+  report(dir, 'RESULT: RED', 'i3');
+  assert.ok(denied(implementerTool(dir)), 'the third one closes it');
+});
+
+test('a report without a RESULT line is sent back once, then counts as RED', () => {
+  const { dir } = repo();
+  pass(dir);
+  const out = report(dir, 'Done, I think.', 'i1');
+  assert.ok(denied(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /RESULT: GREEN/);
+  assert.match(report(dir, 'Done.', 'i1').systemMessage, /1 of 3/, 'never gags the agent, and an unproven result is not GREEN');
+  assert.equal(run(dir, ['result'], { hook_event_name: 'SubagentStop', last_assistant_message: 'no line' })?.decision, 'block');
+  assert.match(run(dir, ['result'], { hook_event_name: 'SubagentStop', last_assistant_message: 'no line', stop_hook_active: true }).systemMessage, /2 of 3/);
+});
+
+test('a corrupt retry record closes the implementer gate and says why', () => {
+  const { dir } = repo();
+  pass(dir);
+  fs.mkdirSync(path.join(stateDir(dir), 'retries'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(dir), 'retries', '001-demo.json'), '{broken');
+  const out = implementerTool(dir);
+  assert.ok(denied(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /unreadable/);
+  assert.match(report(dir, 'RESULT: RED', 'i1').systemMessage, /unreadable/);
 });

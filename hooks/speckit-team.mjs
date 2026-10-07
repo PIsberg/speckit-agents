@@ -9,7 +9,9 @@
 //   scope no-tests          PreToolUse Write/Edit: allow anything except test files
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution
+//   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
+//   result                  SubagentHandback / Stop of implementer: count its RESULT line
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -27,6 +29,8 @@ const TEST_PATTERNS = [
   /Tests?\.swift$/,
 ];
 const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
+// Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
+const MAX_RED = 3;
 
 const [mode, ...args] = process.argv.slice(2);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -60,6 +64,7 @@ const WIRED = {
   scope: ['PreToolUse'],
   gate: ['PreToolUse', 'UserPromptExpansion'],
   verdict: ['PreToolUse', 'SubagentStop', 'Stop'],
+  result: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
@@ -124,6 +129,9 @@ function fingerprint(feat) {
 }
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
+const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
+// REDs count only against the plan and tasks they were made on: a revision starts from zero.
+const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array.isArray(r.red) ? r.red.length : 0);
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
 
 function auditProblem() {
@@ -146,6 +154,12 @@ function changedSince(base) {
     ...lines(git(root, 'ls-files', '--others', '--exclude-standard')),
   ])];
 }
+
+// Two ways a report arrives: as the SubagentHandback tool's message (PreToolUse, the normal case in
+// interactive sessions) or as the agent's last message (SubagentStop, e.g. under claude -p).
+// Only a string is a report: String(['VERDICT: PASS']) would otherwise read as a PASS.
+const reportText = (viaHandback) => (viaHandback
+  ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText());
 
 function lastAssistantText() {
   if (input.last_assistant_message) return input.last_assistant_message;
@@ -203,6 +217,19 @@ if (mode === 'gate') {
     if (typed) block(reason);
     deny(reason);
   }
+  if (args[0] === 'retries') {
+    const feat = feature();
+    const r = readState(retryFile(feat));
+    if (r === null) {
+      deny(`Retry limit: the retry record for ${feat} is unreadable, so no further attempt can be allowed. `
+        + `Delete ${retryFile(feat)} to reset it.`);
+    }
+    if (redCount(r, feat) >= MAX_RED) {
+      deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
+        + 'Stop and report back. The architect rethinks plan.md or tasks.md (the new audit resets the count), '
+        + `or the user decides; to retry unchanged, delete ${retryFile(feat)}.`);
+    }
+  }
   if (agentId && !fs.existsSync(baseFile(agentId))) {
     const sha = git(root, 'rev-parse', 'HEAD');
     if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
@@ -210,13 +237,10 @@ if (mode === 'gate') {
   process.exit(0);
 }
 
-// Two ways a report arrives: as the SubagentHandback tool's message (PreToolUse, the normal case in
-// interactive sessions) or as the agent's last message (SubagentStop, e.g. under claude -p).
 if (mode === 'verdict') {
   const viaHandback = event === 'PreToolUse';
   if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
-  // Only a string is a report: String(['VERDICT: PASS']) would otherwise read as a PASS.
-  const text = viaHandback ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText();
+  const text = reportText(viaHandback);
   const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
@@ -238,6 +262,44 @@ if (mode === 'verdict') {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
   emit({ systemMessage: `spec-auditor recorded VERDICT: ${verdict} for ${feat}` });
+}
+
+// Every implementer report ends with RESULT: GREEN, RED or STUB. GREEN clears the count, STUB (the
+// signatures-only pass before tests are written) leaves it, RED adds one. A report that still has no
+// RESULT line after one request counts as RED: it did not show the tests passing.
+if (mode === 'result') {
+  const viaHandback = event === 'PreToolUse';
+  if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
+  const feat = feature();
+  if (!feat) process.exit(0);
+  // The Stop that follows a counted handback is the same attempt, not a second one.
+  const done = agentId && path.join(stateDir, 'agents', `${agentId}.result`);
+  if (done && fs.existsSync(done)) process.exit(0);
+  const found = [...reportText(viaHandback).matchAll(/^[\s*>#]*RESULT:?[\s*]*(GREEN|RED|STUB)\b/gim)].pop();
+  if (!found) {
+    const ask = 'End your report with a final line that is exactly `RESULT: GREEN`, `RESULT: RED` or `RESULT: STUB`.';
+    const asked = agentId && path.join(stateDir, 'agents', `${agentId}.result-asked`);
+    // Refuse once, so the report gets its result; never twice, so the agent is never gagged.
+    if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(`${ask} Add it and send the report again.`); }
+    if (!viaHandback && !input.stop_hook_active) block(ask);
+  }
+  const result = found ? found[1].toUpperCase() : 'RED';
+  if (done) writeJson(done, { result });
+  const f = retryFile(feat);
+  const prev = readState(f);
+  if (prev === null) {
+    emit({ systemMessage: `speckit-team: implementer reported ${result}, but the retry record ${f} is unreadable; delete it to reset the count.` });
+  }
+  if (result === 'STUB') emit({ systemMessage: `implementer reported STUB for ${feat}; the retry count is unchanged.` });
+  if (result === 'GREEN') {
+    fs.rmSync(f, { force: true });
+    emit({ systemMessage: `implementer reported GREEN for ${feat}; the retry count is reset.` });
+  }
+  const red = [...(redCount(prev, feat) ? prev.red : []), agentId ?? new Date().toISOString()];
+  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  emit({ systemMessage: red.length >= MAX_RED
+    ? `implementer reported RED for ${feat} (${red.length} of ${MAX_RED}): retry limit reached. Route to the architect or the user.`
+    : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
 }
 
 if (mode === 'lane') {
