@@ -21,7 +21,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - [Quick start](#quick-start)
 - [What it looks like](#what-it-looks-like)
 - [The team](#the-team)
-- [Why this architecture](#why-this-architecture)
+- [Why This Architecture Succeeds](#why-this-architecture-succeeds)
 - [How it works](#how-it-works)
 - [Customising](#customising)
 - [Verifying](#verifying)
@@ -157,26 +157,22 @@ edit holds every time, and its rejection message tells the agent what to do inst
 every session so it can route work. These six total about 1,700 characters, roughly 420 tokens.
 Each one says when to use the agent and what it will not do, so routing does not have to guess.
 
-## Why this architecture
+## Why This Architecture Succeeds
 
-- **No guessing at requirements.** Most agent pipelines go wrong at the start: the spec is vague,
-  and the coding agent fills the gaps with guesses. Here product-owner has to return its open
-  questions with recommended answers, `/speckit-team` puts them to you, and nothing is planned
-  until you have approved the spec.
-- **Tests written before the code.** A model that writes tests for code it has just written tends
-  to write tautologies: tests that mock everything and pass regardless. test-writer writes the
-  tests first, against stubs, and has to show each one failing on an assertion. implementer then
-  has to make them pass and cannot edit them. A test that failed before the code existed shows the
-  acceptance criterion became a check the code did not shape.
-- **Circuit breakers.** spec-auditor stands between the plan and the code: a plan that breaks the
-  spec is sent back before any tokens go into tests or code, and any later edit to spec, plan,
-  tasks or constitution voids its PASS. During the build, the [retry limit](#the-retry-limit)
-  stops an implementer after 3 failed attempts in a row and sends the task back to the architect
-  or to you.
-- **Permissions per role, enforced by hooks.** Each agent's file-system lane is checked by a hook
-  on every write and again when it stops, not asked for in its prompt. A rule in a prompt is a
-  request that holds most of the time; a hook that denies the write holds every time, and its
-  message tells the agent what to do instead.
+**Prevents "Garbage In, Garbage Out":** Most agent pipelines fail because the initial spec is
+vague, and the coding agent fills in the blanks with hallucinations. Your product-owner forcing a
+human-in-the-loop Q&A step before architecture ensures the foundation is solid.
+
+**True TDD Validation:** LLMs are notoriously bad at writing tests for code they just wrote; they
+tend to write tautological tests that just mock everything to ensure a pass. Forcing the
+test-writer to write failing tests first proves the agent actually understands the acceptance
+criteria.
+
+**Circuit Breakers:** The spec-auditor acts as a firewall. If the architect designs a plan that
+violates the spec, it gets kicked back before you waste tokens and time generating useless code.
+
+**Role-Based Access Control (RBAC):** Using hooks to enforce file-system permissions per agent is
+the most reliable way to orchestrate multi-agent systems today.
 
 ## How it works
 
