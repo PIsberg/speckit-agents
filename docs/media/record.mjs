@@ -21,12 +21,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
 // Order matters: pipeline needs a clean tree on main, and every tape gets one (see resetDemo).
 const TAPES = ['agents-list', 'guardrail-denial', 'subagent-inline', 'pipeline'];
+// Bash stays unscoped: Spec Kit's skills run its PowerShell or shell scripts, so any allowlist that
+// lets the tapes finish includes an interpreter. The containment is the fixed prompts and the
+// throwaway repo; an unanswered permission prompt would only hang the recording.
 const CLAUDE = "claude --model haiku --setting-sources project,local --strict-mcp-config"
   + " --allowedTools 'Bash Read Write Edit Glob Grep Skill'";
 // vhs on Windows resolves `bash` to WSL, which has neither the env nor claude; pwsh has both.
 const SHELL = process.platform === 'win32' ? 'pwsh' : 'bash';
-// A fixed path, so Claude Code's folder trust survives between runs.
-const work = path.join(os.tmpdir(), 'speckit-agents-demo');
+// A fixed path, so Claude Code's folder trust survives between runs. It is in the home directory,
+// not a shared temp dir: the recorder accepts trust for it, and anyone who could create it first
+// could plant hooks that would then run as you.
+const work = path.join(os.homedir(), '.cache', 'speckit-agents-demo');
 const demo = path.join(work, 'repo');
 
 function fail(msg) {
@@ -43,7 +48,8 @@ const git = (...args) => run('git', ['-c', 'user.name=demo', '-c', 'user.email=d
 
 function buildDemo() {
   fs.rmSync(work, { recursive: true, force: true });
-  fs.mkdirSync(demo, { recursive: true });
+  fs.mkdirSync(work, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(demo);
   git('init', '-q', '-b', 'main');
   // Without --script, specify waits on an interactive picker. Without UTF-8, specify on Windows
   // crashes printing its banner into a pipe (cp1252).
