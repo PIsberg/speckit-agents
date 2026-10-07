@@ -20,6 +20,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - [Install](#install)
 - [Quick start](#quick-start)
 - [The team](#the-team)
+- [Why this architecture](#why-this-architecture)
 - [How it works](#how-it-works)
 - [Customising](#customising)
 - [Verifying](#verifying)
@@ -127,6 +128,27 @@ edit holds every time, and its rejection message tells the agent what to do inst
 **Why each agent has a narrow description.** Claude Code puts every agent's description into
 every session so it can route work. These six total about 1,700 characters, roughly 420 tokens.
 Each one says when to use the agent and what it will not do, so routing does not have to guess.
+
+## Why this architecture
+
+- **No guessing at requirements.** Most agent pipelines go wrong at the start: the spec is vague,
+  and the coding agent fills the gaps with guesses. Here product-owner has to return its open
+  questions with recommended answers, `/speckit-team` puts them to you, and nothing is planned
+  until you have approved the spec.
+- **Tests written before the code.** A model that writes tests for code it has just written tends
+  to write tautologies: tests that mock everything and pass regardless. test-writer writes the
+  tests first, against stubs, and has to show each one failing on an assertion. implementer then
+  has to make them pass and cannot edit them. A test that failed before the code existed shows the
+  acceptance criterion became a check the code did not shape.
+- **Circuit breakers.** spec-auditor stands between the plan and the code: a plan that breaks the
+  spec is sent back before any tokens go into tests or code, and any later edit to spec, plan,
+  tasks or constitution voids its PASS. During the build, the [retry limit](#the-retry-limit)
+  stops an implementer after 3 failed attempts in a row and sends the task back to the architect
+  or to you.
+- **Permissions per role, enforced by hooks.** Each agent's file-system lane is checked by a hook
+  on every write and again when it stops, not asked for in its prompt. A rule in a prompt is a
+  request that holds most of the time; a hook that denies the write holds every time, and its
+  message tells the agent what to do instead.
 
 ## How it works
 
