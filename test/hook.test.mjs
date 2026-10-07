@@ -203,7 +203,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', 'APPROVED', 'REJECTED'], ['lane', 'no-tests']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -231,7 +231,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', 'APPROVED', 'REJECTED'], ['lane', 'no-tests']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -413,4 +413,21 @@ test('a corrupt retry record closes the implementer gate and says why', () => {
   assert.ok(denied(out));
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /unreadable/);
   assert.match(report(dir, 'RESULT: RED', 'i1').systemMessage, /unreadable/);
+});
+
+// Found live on 2026-10-07: spec-gatekeeper sent SubagentHandback({message: 'placeholder'}) in the
+// same turn as a Bash call, so the main session got no verdict and launched a second gatekeeper.
+test('ends: a gatekeeper report without APPROVED or REJECTED is sent back once', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'APPROVED', 'REJECTED'];
+  const out = handback(dir, 'ends', 'placeholder', { agent_id: 'gk1' });
+  assert.ok(denied(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'placeholder' }, agent_id: 'gk2' })));
+  assert.equal(out, null, 'a mode with no words to require decides nothing');
+  const again = run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'placeholder' }, agent_id: 'gk2' });
+  assert.equal(again, null, 'never gags the agent: the second report goes through');
+  assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: '| FR-001 | t:1 | pass |\n\n**APPROVED**' }, agent_id: 'gk3' }), null);
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk3', last_assistant_message: '' }), null, 'the Stop after a good report is quiet');
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done', stop_hook_active: true }), null);
+  assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} }), null, 'other tools pass');
 });

@@ -48,6 +48,6 @@ restore anything that slipped through Bash. If a pattern misses this repo's test
 regex line in `.specify/test-paths`.
 
 ## Report
-For each test: file, the IDs it covers, and its failing output (trimmed) showing the assertion or
-not-implemented failure. Then, each as its own list: missing stubs (path and signature), tests
+One line per test, repo-relative: file:line, the IDs it covers, and the failure message that shows
+the assertion or not-implemented failure (not the full output). Then, each as its own list: missing stubs (path and signature), tests
 you stopped on after 3 rounds, and acceptance scenarios you could not express as a test, and why.

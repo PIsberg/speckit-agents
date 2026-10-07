@@ -18,6 +18,10 @@ send a running or finished agent a new task with SendMessage: it keeps everythin
 the 001 run one architect kept alive across 4 audit rounds grew to 726k tokens of context over 729
 requests; a fresh one starts near 14k.
 
+Every report you receive stays in your context for the rest of the run and is re-read with each
+later request, so each agent's Report section caps its length. Do not ask an agent for more
+detail than that, and do not restate a report to the user in full: summarise it in a line.
+
 A subagent starts with nothing but the prompt you write, so keep every prompt lossy: only what
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
 and answers, or another agent's full report.

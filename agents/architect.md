@@ -49,5 +49,7 @@ findings in your prompt point to.
 You write only under `specs/` and the SPECKIT block of `CLAUDE.md`. A hook rejects anything else.
 
 ## Report
-Artifacts written, the constitution check result, and each decision a human should confirm
-(new dependency, schema change, public API), one line each.
+At most 15 lines, repo-relative paths: artifacts written, the constitution check result, and each
+decision a human should confirm (new dependency, schema change, public API), one line each. On a
+revision, one line per finding: its ID and fixed or not fixed. Do not retell the changes; the diff
+holds them.

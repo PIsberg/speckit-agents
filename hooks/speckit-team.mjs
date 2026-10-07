@@ -12,6 +12,7 @@
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
+//   ends <word>...          SubagentHandback / Stop: the report's last line must be one of the words
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -65,6 +66,7 @@ const WIRED = {
   gate: ['PreToolUse', 'UserPromptExpansion'],
   verdict: ['PreToolUse', 'SubagentStop', 'Stop'],
   result: ['PreToolUse', 'SubagentStop', 'Stop'],
+  ends: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
@@ -323,6 +325,26 @@ if (mode === 'result') {
   emit({ systemMessage: red.length >= MAX_RED
     ? `implementer reported RED for ${feat} (${red.length} of ${MAX_RED}): retry limit reached. Route to the architect or the user.`
     : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
+}
+
+// A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
+// so the agent finishes and resends; never twice, so it is never gagged.
+if (mode === 'ends') {
+  const viaHandback = event === 'PreToolUse';
+  if (!args.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
+  const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
+  if (ok && fs.existsSync(ok)) process.exit(0);
+  const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
+  if (args.includes(last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase())) {
+    if (ok) writeJson(ok, {});
+    process.exit(0);
+  }
+  const ask = `Your report must end with a final line that is exactly one of: ${args.join(', ')}. `
+    + 'Finish the work first, then send the full report.';
+  const asked = agentId && path.join(stateDir, 'agents', `${agentId}.ends-asked`);
+  if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(ask); }
+  if (!viaHandback && !input.stop_hook_active) block(ask);
+  process.exit(0);
 }
 
 if (mode === 'lane') {

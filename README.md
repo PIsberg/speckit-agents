@@ -118,7 +118,7 @@ You can also run one phase at a time by @-mentioning an agent:
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 21 to 36 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 38 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
@@ -169,6 +169,7 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
 | `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
+| `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice) |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
 
@@ -277,6 +278,20 @@ for the IDs its tasks cite instead of reading it whole. These are prompt rules, 
 small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
 peaked at 13k tokens; a feature the size of 001 has not been re-measured.
 
+Two full `/speckit-team` runs of the same small feature (a `sum()` function, 3 slices; Opus
+architect and auditor, Sonnet for the rest and the main session) show where the rest goes. Every
+agent started fresh and peaked at 16k to 49k tokens. The main session is the larger cost: it
+starts at about 41k (Claude Code, your tools and `CLAUDE.md`), and every report it receives stays
+in its context for each later request. Capping each report's length and fixing two bugs (below)
+between the runs gave:
+
+| Run | Agents launched | Main session peak | Tokens read, main / agents | Cost |
+|---|---|---|---|---|
+| before the report limits | 19 | 95.7k | 4.63M / 3.92M | $3.98 |
+| after | 17 | 85.5k | 3.97M / 2.78M | $2.87 |
+
+Runs differ in how many audit rounds they need, so read this as one sample, not a benchmark.
+
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
 
@@ -302,7 +317,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 47 tests: 31 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 48 tests: 32 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -332,6 +347,11 @@ Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku subagents, us
 - one slice (test-writer on T001, then implementer on T002): the tests failed on the stub's
   "not implemented" error, implementer turned them green, each committed only in-lane files, and
   its `RESULT: GREEN` reset the count through the SubagentStop hook
+- two full `/speckit-team` runs of a small feature, all six agents: spec, 1 audit FAIL and a
+  revision, PASS, 3 slices, gatekeeper. They found two bugs, both fixed: a stub-only task was never
+  ticked, so the gatekeeper rejected the feature; and a gatekeeper handed back the report
+  "placeholder" in the same turn as a tool call, so a second gatekeeper had to run. `ends` now
+  refuses such a report once.
 
 Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 did run). Those are covered by the unit tests only.
