@@ -40,6 +40,11 @@ You decide how the feature is built, and in what order.
      their signatures, so they can be stubbed before the tests are written.
    - Mark `[P]` only on tasks that touch disjoint files.
 
+## Context
+Read each artifact once. To change it later, grep for the line and edit it in place; do not
+re-read a whole file you have already read or written. On a revision, read only the parts the
+findings in your prompt point to.
+
 ## Lane
 You write only under `specs/` and the SPECKIT block of `CLAUDE.md`. A hook rejects anything else.
 

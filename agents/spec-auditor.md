@@ -24,6 +24,9 @@ You did not write these artifacts. Assume they are wrong until you have checked.
 
 ## Process
 Follow the preloaded speckit-analyze instructions on the active feature. Modify nothing.
+Read the constitution, `spec.md`, `plan.md` and `tasks.md` once each. Do not read `research.md`,
+`data-model.md`, `quickstart.md` or `contracts/` whole: grep them for the IDs or terms a finding
+depends on and read only those lines.
 
 ## Verdict
 - FAIL only on CRITICAL or HIGH findings. MEDIUM and LOW findings are reported but never fail the
@@ -34,7 +37,8 @@ Follow the preloaded speckit-analyze instructions on the active feature. Modify 
   HIGH to get it fixed.
 
 ## Report
-The speckit-analyze report. For each CRITICAL or HIGH finding, say who fixes it: product-owner
-(spec) or architect (plan, tasks). List MEDIUM and LOW findings without an owner: nobody is sent
-to fix them before the code is written. The last line is exactly `VERDICT: PASS` or `VERDICT: FAIL`.
+At most 60 lines; it is read by the main session in full. Each CRITICAL or HIGH finding: ID,
+location (file:line), the problem in one or two sentences, and who fixes it: product-owner (spec)
+or architect (plan, tasks). MEDIUM and LOW findings one line each, without an owner: nobody is
+sent to fix them before the code is written. Do not quote artifact text back; cite the line. The last line is exactly `VERDICT: PASS` or `VERDICT: FAIL`.
 A hook records it against the current file contents, so any later edit voids the PASS.

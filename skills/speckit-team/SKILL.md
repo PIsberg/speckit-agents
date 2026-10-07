@@ -13,6 +13,11 @@ the inputs it needs and passes reports along. It does not do the agents' work it
 hooks: the README.md of the speckit-agents repo.
 
 ## Handoffs
+Launch a fresh agent for every phase and every fix round, and let it end when it reports. Never
+send a running or finished agent a new task with SendMessage: it keeps everything it has read. In
+the 001 run one architect kept alive across 4 audit rounds grew to 726k tokens of context over 729
+requests; a fresh one starts near 14k.
+
 A subagent starts with nothing but the prompt you write, so keep every prompt lossy: only what
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
 and answers, or another agent's full report.
@@ -58,8 +63,9 @@ For each slice:
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it.
 3. **Green** (implementer, the slice's implementation task IDs). Every report ends with
    `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with the failing output. After 3 REDs in
-   a row the hook blocks implementer: do not retry. Either send the failing task and its output to
-   the architect to rethink (a new audit then resets the count), or hand the decision to the user.
+   a row the hook blocks implementer: do not retry, and never delete the retry record yourself.
+   Either send the failing task and its output to the architect to rethink (a new audit then
+   resets the count), or hand the decision to the user.
 
 Slices whose tasks are all `[P]` and touch disjoint files may run side by side: one loop per slice,
 each implementer with `isolation: "worktree"`, then merge their branches into the feature branch in

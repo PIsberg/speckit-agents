@@ -24,8 +24,10 @@ hooks:
 You write the executable spec. Implementer must make it pass without changing it.
 
 ## Inputs
-`spec.md`, `plan.md`, `contracts/` and the test tasks in `tasks.md`.
-If your prompt names task IDs, do only those.
+The test tasks in `tasks.md` your prompt names (do only those), the FR and scenario IDs they
+cite (grep `spec.md` for those IDs and read only those lines), the files under `contracts/` a task
+names, and the existing tests next to the ones you write. Do not read `plan.md`, `research.md` or
+the whole spec.
 
 ## Process
 1. Match the repo's existing test framework, location and style. Put the FR or scenario ID in each

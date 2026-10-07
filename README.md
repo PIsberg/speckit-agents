@@ -118,7 +118,7 @@ You can also run one phase at a time by @-mentioning an agent:
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 19 to 33 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 21 to 36 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
@@ -259,6 +259,23 @@ agent only what its Inputs section lists, and never the chat, the product owner'
 answers, or another agent's full report. implementer gets the slice's task IDs and test-writer's
 report for them, and its own prompt tells it to read `tasks.md`, the failing tests and the code
 they touch, not `spec.md`, `plan.md`, `research.md` or `data-model.md`. The tests are its spec.
+
+**Context budget.** Measured from the transcripts of the 001 run (2026-10-06 and 2026-10-07):
+
+| Agent run | Requests | Peak context | Cause |
+|---|---|---|---|
+| one architect, sent 6 follow-up tasks across 4 audit rounds | 729 | 726k tokens | kept alive with SendMessage; read `tasks.md` 76 times, `research.md` 49, `plan.md` 40 |
+| product-owner, the same way | 86 | 77k | 9 follow-up tasks |
+| each spec-auditor (4 runs) | 32 to 73 | 121k to 210k | read every artifact whole: 184k to 361k characters of tool results; reports of up to 13k characters |
+| a fresh agent before it reads anything | 1 | 11k to 14k | Claude Code's system prompt, tools and your own `CLAUDE.md` |
+
+So the skill launches a fresh agent for every phase and every fix round, and never sends a new
+task to an old one. The architect reads each artifact once and edits by grep; on a revision it
+reads only what the findings point to. spec-auditor reads the constitution, spec, plan and tasks
+once each, greps the other artifacts, and keeps its report to 60 lines. test-writer greps the spec
+for the IDs its tasks cite instead of reading it whole. These are prompt rules, not hooks. On the
+small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
+peaked at 13k tokens; a feature the size of 001 has not been re-measured.
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
