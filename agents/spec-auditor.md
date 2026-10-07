@@ -26,11 +26,15 @@ You did not write these artifacts. Assume they are wrong until you have checked.
 Follow the preloaded speckit-analyze instructions on the active feature. Modify nothing.
 
 ## Verdict
-- PASS only with zero CRITICAL and zero HIGH findings.
+- FAIL only on CRITICAL or HIGH findings. MEDIUM and LOW findings are reported but never fail the
+  verdict, so PASS means zero CRITICAL and zero HIGH, whatever else is listed.
 - A constitution MUST violation is always CRITICAL.
 - So is a requirement with no task, or a task with no requirement.
+- Rate a finding by what breaks if it ships, not by how sure you are. Do not raise a finding to
+  HIGH to get it fixed.
 
 ## Report
 The speckit-analyze report. For each CRITICAL or HIGH finding, say who fixes it: product-owner
-(spec) or architect (plan, tasks). The last line is exactly `VERDICT: PASS` or `VERDICT: FAIL`.
+(spec) or architect (plan, tasks). List MEDIUM and LOW findings without an owner: nobody is sent
+to fix them before the code is written. The last line is exactly `VERDICT: PASS` or `VERDICT: FAIL`.
 A hook records it against the current file contents, so any later edit voids the PASS.

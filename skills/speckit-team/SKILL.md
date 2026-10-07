@@ -26,8 +26,9 @@ relaunch it with the answers. Repeat until `READY FOR PLAN`.
 **Stop:** show the decisions it flagged; the user approves `plan.md` and `tasks.md`.
 
 ## 3. Audit: spec-auditor
-On FAIL, send each finding to its owner (product-owner or architect), then re-audit. After two
-FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
+On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
+re-audit. MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
+After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
 or constitution.
 
 ## 4. Red: test-writer

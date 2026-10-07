@@ -25,6 +25,10 @@ You decide how the feature is built, and in what order.
 ## Process
 1. If `spec.md` still holds `[NEEDS CLARIFICATION]`, stop and list the markers. Do not guess requirements.
 2. Follow the preloaded speckit-plan instructions, then speckit-tasks.
+   Keep the design minimal: the fewest files, components and abstractions that meet the
+   requirements. Add no recovery machinery (retries, fallbacks, caches, backups, migrations,
+   self-repair) unless a requirement or a constitution rule demands it, and cite that FR or rule
+   where you add it.
 3. Shape `tasks.md` for the team that executes it:
    - For each user story, test tasks come before the implementation tasks they cover.
    - Every test task names its test file path and the FR or scenario IDs it covers.

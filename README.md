@@ -109,8 +109,8 @@ You can also run one phase at a time by @-mentioning an agent:
 | Agent | Spec Kit phase | May write | Hands over | Model |
 |---|---|---|---|---|
 | `product-owner` | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
-| `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md` | opus |
-| `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; PASS means zero CRITICAL and zero HIGH findings | opus |
+| `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
+| `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
 | `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing for the right reason | sonnet |
 | `implementer` | TDD green | anything except test files | committed code with the suite green | sonnet |
 | `spec-gatekeeper` | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
@@ -190,8 +190,9 @@ which lets parallel implementers in worktrees pass the same gate.
 
 `/speckit-team` runs in the main session, because only the main session can talk to you. It
 launches each agent with the inputs it needs and relays the product owner's questions to you. On
-a FAIL or REJECTED, it routes each finding to the agent that owns it, and after two failed audits
-it hands the findings to you. For `[P]` tasks touching disjoint files, it can run several
+a FAIL it routes each CRITICAL and HIGH finding to the agent that owns it; MEDIUM and LOW findings
+are accepted and listed once at hand-over. On a REJECTED it routes each reason the same way. After
+two failed audits it hands the findings to you. For `[P]` tasks touching disjoint files, it can run several
 implementers in separate git worktrees.
 
 ## Customising
@@ -207,6 +208,9 @@ implementers in separate git worktrees.
 - **Models:** edit `model:` in `agents/*.md` and rerun the installer. Use `inherit` to follow the
   session's model.
 - **A stricter or looser PASS:** spec-auditor's "Verdict" section in `agents/spec-auditor.md`.
+  By default only CRITICAL and HIGH findings fail an audit.
+- **How much design the architect adds:** step 2 of `agents/architect.md` asks for the minimal
+  design and no recovery machinery unless a requirement or constitution rule demands it.
 - **Edit the source, not the installed copy.** Installed files carry a
   `speckit-agents: managed by install.mjs` marker, and the next install overwrites them.
 
