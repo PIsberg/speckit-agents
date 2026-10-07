@@ -9,6 +9,9 @@ this file is how to work on it.
 - `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane`.
 - `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill.
 - `install.mjs`: installer (`setup.sh` / `setup.ps1` only check for Node and call it).
+- `docs/media/`: the README's GIFs, the vhs tapes that record them, `record.mjs` that runs the
+  tapes against a scratch Spec Kit repo, and the demo feature in `demo/`. Re-record after changing
+  what an agent or hook shows on screen (README.md, "Developing").
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs.
 
