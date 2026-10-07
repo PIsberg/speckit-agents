@@ -29,9 +29,15 @@ You decide how the feature is built, and in what order.
    requirements. Add no recovery machinery (retries, fallbacks, caches, backups, migrations,
    self-repair) unless a requirement or a constitution rule demands it, and cite that FR or rule
    where you add it.
-3. Shape `tasks.md` for the team that executes it:
-   - For each user story, test tasks come before the implementation tasks they cover.
+3. Shape `tasks.md` for the team that executes it. The team runs one slice at a time (stubs,
+   failing tests, implementation), so:
+   - Break the feature into small slices. Each implementation task is one behaviour that one
+     implementer run can finish, and touches a few files, not a layer of the system.
+   - Each implementation task follows the test tasks that cover it, and the two together form a
+     slice that can be built and tested without the slices after it.
    - Every test task names its test file path and the FR or scenario IDs it covers.
+   - Every implementation task lists the new files, functions or types its tests will call, with
+     their signatures, so they can be stubbed before the tests are written.
    - Mark `[P]` only on tasks that touch disjoint files.
 
 ## Lane

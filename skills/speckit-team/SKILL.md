@@ -31,18 +31,27 @@ re-audit. MEDIUM and LOW findings are accepted: do not route them, and list them
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
 or constitution.
 
-## 4. Red: test-writer
-Check that the report shows failing output for every test before moving on.
+## 4-5. Red and green, one slice at a time
+Work through `tasks.md` one slice at a time: a slice is one implementation task (or a few that
+change the same behaviour) plus the test tasks that cover it. Finish a slice before starting the
+next. Never hand the whole feature to one test-writer or one implementer.
 
-## 5. Green: implementer
-Every implementer report ends with `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with
-the failing output. After 3 REDs in a row the hook blocks implementer: do not retry. Either send
-the failing task and its output to the architect to rethink (a new audit then resets the count),
-or hand the decision to the user.
+For each slice:
+1. **Stubs** (implementer, only if the slice's tests will call a file, function or type that does
+   not exist yet): launch with `stub` and the slice's task IDs. It creates the signatures the
+   architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
+2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. Every
+   test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
+   missing import or module, an undefined name or a compile error is a broken test, not a red
+   one: send it back. If test-writer reports a missing production symbol, run step 1 for it.
+3. **Green** (implementer, the slice's implementation task IDs). Every report ends with
+   `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with the failing output. After 3 REDs in
+   a row the hook blocks implementer: do not retry. Either send the failing task and its output to
+   the architect to rethink (a new audit then resets the count), or hand the decision to the user.
 
-Default: one implementer, all tasks. For `[P]` tasks on disjoint files, launch one implementer
-per task group with `isolation: "worktree"` and its task IDs, then merge their branches into the
-feature branch in task order.
+Slices whose tasks are all `[P]` and touch disjoint files may run side by side: one loop per slice,
+each implementer with `isolation: "worktree"`, then merge their branches into the feature branch in
+task order.
 
 ## 6. Verify: spec-gatekeeper
 On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.

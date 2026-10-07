@@ -7,11 +7,11 @@ implementer cannot touch tests, and nobody writes code until an independent audi
 the spec.
 
 ```
-idea ─► product-owner ─► architect ─► spec-auditor ─► test-writer ─► implementer ─► spec-gatekeeper ─► PR
-        spec.md          plan.md      VERDICT:        failing        code that      APPROVED /
-        + questions      tasks.md     PASS / FAIL     tests (red)    passes (green) REJECTED
-           ▲                ▲              │
-           └── you answer   └── findings routed back on FAIL
+idea ─► product-owner ─► architect ─► spec-auditor ─► per slice: stubs ─► red ─► green ─► spec-gatekeeper ─► PR
+        spec.md          plan.md      VERDICT:        implementer  test-writer  implementer  APPROVED /
+        + questions      tasks.md     PASS / FAIL                                  │         REJECTED
+           ▲                ▲              │                                       │
+           └── you answer   └── findings routed back on FAIL ◄── 3 REDs in a row ──┘
 ```
 
 ## Contents
@@ -94,8 +94,8 @@ Then, in Claude Code:
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
-After that it audits, writes failing tests, implements, verifies and opens a PR, which it does not
-merge.
+After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
+verifies and opens a PR, which it does not merge.
 
 You can also run one phase at a time by @-mentioning an agent:
 
@@ -111,13 +111,13 @@ You can also run one phase at a time by @-mentioning an agent:
 | `product-owner` | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
 | `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
 | `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
-| `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing for the right reason | sonnet |
-| `implementer` | TDD green | anything except test files | committed code with the suite green | sonnet |
+| `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error | sonnet |
+| `implementer` | stubs, TDD green | anything except test files | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
 | `spec-gatekeeper` | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 15 to 25 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 19 to 31 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
@@ -211,8 +211,26 @@ which lets parallel implementers in worktrees pass the same gate.
 launches each agent with the inputs it needs and relays the product owner's questions to you. On
 a FAIL it routes each CRITICAL and HIGH finding to the agent that owns it; MEDIUM and LOW findings
 are accepted and listed once at hand-over. On a REJECTED it routes each reason the same way. After
-two failed audits it hands the findings to you. For `[P]` tasks touching disjoint files, it can run several
-implementers in separate git worktrees.
+two failed audits it hands the findings to you.
+
+After the audit it builds the feature one slice at a time, never in one shot. A slice is one small
+implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
+those slices. For each slice:
+
+1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
+   signatures the task lists, with bodies that only signal "not implemented", and reports
+   `RESULT: STUB`. This is what lets the next step fail cleanly.
+2. **Red.** test-writer writes the slice's tests and loops until each one fails on an assertion
+   or on the stub's not-implemented signal. A test that fails because it does not parse, an
+   import is missing or a name is undefined proves nothing about the behaviour, so test-writer
+   fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
+3. **Green.** implementer makes the slice's tests pass, under the [retry limit](#the-retry-limit).
+
+For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
+own git worktree.
+
+The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
+compile error in an arbitrary language, so the skill checks test-writer's pasted output.
 
 ## Customising
 

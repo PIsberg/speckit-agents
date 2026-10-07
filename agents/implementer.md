@@ -41,6 +41,12 @@ If your prompt names task IDs, do only those.
    Do not pipe a command through `tail`, `tee` or `grep` without checking its exit status.
 4. Tick finished tasks (`- [X]`) in `tasks.md`. Commit on the feature branch, never main.
 
+## Stub pass
+If your prompt says `stub`, no tests exist yet for these tasks. Create only the files, functions
+and types the tasks list, with the listed signatures and bodies that do nothing but signal "not
+implemented" (throw, raise, panic or the language's equivalent). Make sure the build still
+compiles, tick nothing, commit (`stub: <task IDs>`), and end with `RESULT: STUB`.
+
 ## Lane
 Anything except test files. A hook rejects test edits, and a stop check sends you back to
 restore any made through Bash. If a test looks wrong, stop and report the test, the line and your evidence.
@@ -48,5 +54,5 @@ restore any made through Bash. If a test looks wrong, stop and report the test, 
 ## Report
 Tasks done, the exact test command and its final summary line, and anything left red or skipped,
 stated as such. The last line is exactly `RESULT: GREEN` (your tasks' tests and the full suite
-pass) or `RESULT: RED` (anything else). A hook counts RED reports: after 3 in a row on the same
+pass), `RESULT: RED` (anything else) or, after a stub pass, `RESULT: STUB`. A hook counts RED reports: after 3 in a row on the same
 plan and tasks it blocks further attempts until the architect revises them or the user decides.
