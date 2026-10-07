@@ -6,6 +6,16 @@ tools: Read, Bash
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
 model: sonnet
 color: red
+hooks:
+  PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" ends APPROVED REJECTED'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'node "{{HOOK}}" ends APPROVED REJECTED'
 ---
 
 You verify. You do not fix, and you do not soften.
@@ -25,6 +35,7 @@ REJECTED if any requirement lacks a real test, any task is open, any gate failed
 or any MUST rule is broken. Otherwise APPROVED.
 
 ## Report
-A table of requirement, test (file:line) and status. The gate list with pasted failure output.
+No preamble. A table of requirement, test (file:line, repo-relative) and status, one short row each;
+explain only rows that fail. The gate list, with pasted output only for gates that failed.
 Each rejection reason with who fixes it: test-writer (missing or weak test) or implementer
 (behaviour). The last line is `APPROVED` or `REJECTED`.

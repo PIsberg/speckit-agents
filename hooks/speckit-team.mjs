@@ -12,6 +12,7 @@
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
+//   ends <word>...          SubagentHandback / Stop: the report's last line must be one of the words
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -65,6 +66,7 @@ const WIRED = {
   gate: ['PreToolUse', 'UserPromptExpansion'],
   verdict: ['PreToolUse', 'SubagentStop', 'Stop'],
   result: ['PreToolUse', 'SubagentStop', 'Stop'],
+  ends: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
@@ -104,6 +106,19 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
 const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'speckit-team');
+
+// Compare paths the way the file system will resolve them: through symlinks of the part that exists,
+// and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
+function canonical(p) {
+  let base = path.resolve(p); const rest = [];
+  while (!fs.existsSync(base) && path.dirname(base) !== base) { rest.unshift(path.basename(base)); base = path.dirname(base); }
+  try { base = fs.realpathSync.native(base); } catch { /* keep the resolved path */ }
+  const segs = path.join(base, ...rest).split(path.sep).map((s, i) => (i ? s.replace(/[. ]+$/, '') : s));
+  const joined = segs.join('/');
+  return process.platform === 'win32' ? joined.toLowerCase() : joined;
+}
+const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
+const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
 
 function extraTestPatterns() {
   return lines(readOr(path.join(root, '.specify', 'test-paths'), ''))
@@ -182,7 +197,14 @@ if (mode === 'scope') {
   if (given === undefined || given === null || given === '') process.exit(0);
   const file = str(given);
   if (!file) noDecision(`tool_input.file_path is ${Array.isArray(given) ? 'an array' : typeof given}, not a path`);
-  const rel = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/');
+  const target = path.resolve(cwd, file);
+  // Verdicts and retry counts live in the git dir; an agent that could write there could reset its own
+  // limit. Checked before the outside-the-repo exit: a linked worktree's state is in the main checkout.
+  if (inGitDir(target)) {
+    deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
+      + 'Report what you need instead; only the user resets that state.');
+  }
+  const rel = path.relative(root, target).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
   // A prefix ending in / is a directory; anything else must match the whole path.
@@ -226,8 +248,8 @@ if (mode === 'gate') {
     }
     if (redCount(r, feat) >= MAX_RED) {
       deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
-        + 'Stop and report back. The architect rethinks plan.md or tasks.md (the new audit resets the count), '
-        + `or the user decides; to retry unchanged, delete ${retryFile(feat)}.`);
+        + 'Stop and report back; do not try to reset the count. The architect rethinks plan.md or tasks.md '
+        + `(the new audit resets the count), or the user decides, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
     }
   }
   if (agentId && !fs.existsSync(baseFile(agentId))) {
@@ -285,6 +307,9 @@ if (mode === 'result') {
   }
   const result = found ? found[1].toUpperCase() : 'RED';
   if (done) writeJson(done, { result });
+  // An implementer the audit gate stopped never got to work: its RED is not an attempt.
+  const closed = auditProblem();
+  if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
   const f = retryFile(feat);
   const prev = readState(f);
   if (prev === null) {
@@ -300,6 +325,26 @@ if (mode === 'result') {
   emit({ systemMessage: red.length >= MAX_RED
     ? `implementer reported RED for ${feat} (${red.length} of ${MAX_RED}): retry limit reached. Route to the architect or the user.`
     : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
+}
+
+// A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
+// so the agent finishes and resends; never twice, so it is never gagged.
+if (mode === 'ends') {
+  const viaHandback = event === 'PreToolUse';
+  if (!args.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
+  const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
+  if (ok && fs.existsSync(ok)) process.exit(0);
+  const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
+  if (args.includes(last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase())) {
+    if (ok) writeJson(ok, {});
+    process.exit(0);
+  }
+  const ask = `Your report must end with a final line that is exactly one of: ${args.join(', ')}. `
+    + 'Finish the work first, then send the full report.';
+  const asked = agentId && path.join(stateDir, 'agents', `${agentId}.ends-asked`);
+  if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(ask); }
+  if (!viaHandback && !input.stop_hook_active) block(ask);
+  process.exit(0);
 }
 
 if (mode === 'lane') {

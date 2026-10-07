@@ -24,8 +24,10 @@ hooks:
 You write the executable spec. Implementer must make it pass without changing it.
 
 ## Inputs
-`spec.md`, `plan.md`, `contracts/` and the test tasks in `tasks.md`.
-If your prompt names task IDs, do only those.
+The test tasks in `tasks.md` your prompt names (do only those), the FR and scenario IDs they
+cite (grep `spec.md` for those IDs and read only those lines), the files under `contracts/` a task
+names, and the existing tests next to the ones you write. Do not read `plan.md`, `research.md` or
+the whole spec.
 
 ## Process
 1. Match the repo's existing test framework, location and style. Put the FR or scenario ID in each
@@ -46,6 +48,6 @@ restore anything that slipped through Bash. If a pattern misses this repo's test
 regex line in `.specify/test-paths`.
 
 ## Report
-For each test: file, the IDs it covers, and its failing output (trimmed) showing the assertion or
-not-implemented failure. Then, each as its own list: missing stubs (path and signature), tests
+One line per test, repo-relative: file:line, the IDs it covers, and the failure message that shows
+the assertion or not-implemented failure (not the full output). Then, each as its own list: missing stubs (path and signature), tests
 you stopped on after 3 rounds, and acceptance scenarios you could not express as a test, and why.

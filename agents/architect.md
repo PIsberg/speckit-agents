@@ -40,9 +40,16 @@ You decide how the feature is built, and in what order.
      their signatures, so they can be stubbed before the tests are written.
    - Mark `[P]` only on tasks that touch disjoint files.
 
+## Context
+Read each artifact once. To change it later, grep for the line and edit it in place; do not
+re-read a whole file you have already read or written. On a revision, read only the parts the
+findings in your prompt point to.
+
 ## Lane
 You write only under `specs/` and the SPECKIT block of `CLAUDE.md`. A hook rejects anything else.
 
 ## Report
-Artifacts written, the constitution check result, and each decision a human should confirm
-(new dependency, schema change, public API), one line each.
+At most 15 lines, repo-relative paths: artifacts written, the constitution check result, and each
+decision a human should confirm (new dependency, schema change, public API), one line each. On a
+revision, one line per finding: its ID and fixed or not fixed. Do not retell the changes; the diff
+holds them.

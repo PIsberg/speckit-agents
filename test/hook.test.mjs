@@ -78,6 +78,36 @@ test('scope no-tests: implementer cannot touch tests', () => {
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'spec/app_spec.rb')));
 });
 
+// Flagged by a security review on 2026-10-07: implementer's lane (anything but tests) included
+// .git/speckit-team/, so it could delete its own retry record or forge a verdict with Write.
+test('no agent may write the guardrail state under .git/', () => {
+  const { dir } = repo();
+  for (const args of [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'only', 'specs/', 'CLAUDE.md']]) {
+    const out = write(dir, args, '.git/speckit-team/retries/001-demo.json');
+    assert.ok(denied(out), args.join(' '));
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /guardrail state/);
+  }
+  assert.equal(write(dir, ['scope', 'no-tests'], '.github/workflows/ci.yml'), null, '.github is not .git');
+});
+
+// Second review, same day: the guard compared the literal path, and ran after the "outside the
+// repo" early exit, so spellings Windows folds together and a linked worktree's state got through.
+test('the .git/ guard holds for other spellings and from a linked worktree', () => {
+  const { dir, g } = repo();
+  const spellings = ['.git./speckit-team/retries/001-demo.json', '.git/../.git/speckit-team/verdicts/001-demo.json'];
+  if (process.platform === 'win32') spellings.push('.GIT/speckit-team/retries/001-demo.json');
+  for (const f of spellings) assert.ok(denied(write(dir, ['scope', 'no-tests'], f)), f);
+
+  const wt = `${dir}-wt`;
+  g('worktree', 'add', '-q', wt);
+  const out = run(wt, ['scope', 'no-tests'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, '.git', 'speckit-team', 'retries', '001-demo.json') },
+  });
+  assert.ok(denied(out), 'the shared state of the main checkout, written from a worktree');
+  assert.equal(write(wt, ['scope', 'no-tests'], 'src/main/Other.java'), null, 'normal work in the worktree');
+});
+
 test('.specify/test-paths adds repo-specific test patterns', () => {
   const { dir, write: w } = repo();
   assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);
@@ -173,7 +203,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', 'APPROVED', 'REJECTED'], ['lane', 'no-tests']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -201,7 +231,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['lane', 'no-tests']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', 'APPROVED', 'REJECTED'], ['lane', 'no-tests']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -319,6 +349,16 @@ test('three RED results in a row close the gate for implementer, and say where t
   assert.equal(handback(dir, 'gate', 'Stopped by the retry limit.', { agent_id: 'next' }) , null, 'reporting back stays open');
 });
 
+// Found live on 2026-10-07: an implementer stopped by the audit gate reported RED, and that
+// attempt, which never got to work, counted toward the retry limit.
+test('a RED from an implementer the audit gate stopped does not count', () => {
+  const { dir } = repo();
+  assert.match(report(dir, 'Blocked by the gate.\nRESULT: RED', 'g1').systemMessage, /not counted/);
+  pass(dir);
+  for (const id of ['i1', 'i2']) report(dir, 'RESULT: RED', id);
+  assert.equal(implementerTool(dir), null, 'only the 2 REDs made after the PASS count');
+});
+
 test('GREEN resets the count, STUB leaves it alone', () => {
   const { dir } = repo();
   pass(dir);
@@ -373,4 +413,21 @@ test('a corrupt retry record closes the implementer gate and says why', () => {
   assert.ok(denied(out));
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /unreadable/);
   assert.match(report(dir, 'RESULT: RED', 'i1').systemMessage, /unreadable/);
+});
+
+// Found live on 2026-10-07: spec-gatekeeper sent SubagentHandback({message: 'placeholder'}) in the
+// same turn as a Bash call, so the main session got no verdict and launched a second gatekeeper.
+test('ends: a gatekeeper report without APPROVED or REJECTED is sent back once', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'APPROVED', 'REJECTED'];
+  const out = handback(dir, 'ends', 'placeholder', { agent_id: 'gk1' });
+  assert.ok(denied(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'placeholder' }, agent_id: 'gk2' })));
+  assert.equal(out, null, 'a mode with no words to require decides nothing');
+  const again = run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'placeholder' }, agent_id: 'gk2' });
+  assert.equal(again, null, 'never gags the agent: the second report goes through');
+  assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: '| FR-001 | t:1 | pass |\n\n**APPROVED**' }, agent_id: 'gk3' }), null);
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk3', last_assistant_message: '' }), null, 'the Stop after a good report is quiet');
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
+  assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done', stop_hook_active: true }), null);
+  assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} }), null, 'other tools pass');
 });
