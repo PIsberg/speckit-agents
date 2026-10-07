@@ -481,7 +481,8 @@ node docs/media/record.mjs pipeline        # only the named tapes
 node docs/media/record.mjs --setup-only    # build the scratch repo, record nothing
 ```
 
-The script builds a scratch Spec Kit repo in your temp dir with the demo feature in
+The script builds a scratch Spec Kit repo in `~/.cache/speckit-agents-demo` (owner-only, not a
+shared temp dir, because it gets folder trust) with the demo feature in
 `docs/media/demo/`, installs the team into that repo's `.claude/`, and starts Claude Code with
 `--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
 MCP servers stay out of the frame. Look at every GIF before committing it: the session banner can
