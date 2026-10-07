@@ -10,8 +10,8 @@ Set Framerate 12
 Set TypingSpeed 45ms
 Set PlaybackSpeed 4
 
-# Start Claude Code off camera. The second Enter accepts the folder-trust prompt on a first run
-# and does nothing on an empty prompt otherwise.
+# Start Claude Code off camera. record.mjs refuses to run until the folder is trusted, so no trust
+# prompt appears; the second Enter lands on an empty prompt and does nothing.
 Hide
 Type "clear; {{CLAUDE}}"
 Enter

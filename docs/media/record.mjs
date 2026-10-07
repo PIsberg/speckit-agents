@@ -96,6 +96,21 @@ const unknown = wanted.filter((t) => !TAPES.includes(t));
 if (unknown.length) fail(`unknown tape ${unknown.join(', ')}; choose from ${TAPES.join(', ')}`);
 
 buildDemo();
+// The trust prompt defaults to "No, exit": a tape that presses Enter on it quits Claude Code and
+// types its prompt into the shell (found 2026-10-07, two GIFs of PowerShell errors). Trust is the
+// person's decision, so stop here and say how, instead of recording junk.
+function trusted() {
+  try {
+    const projects = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')).projects ?? {};
+    const key = demo.split(path.sep).join('/');
+    return Object.entries(projects).some(([k, v]) => k.toLowerCase() === key.toLowerCase() && v?.hasTrustDialogAccepted);
+  } catch { return false; }
+}
+if (!setupOnly && !trusted()) {
+  fail(`Claude Code does not trust ${demo} yet, so every tape would record its trust prompt.\n`
+    + `Once, in your own terminal: cd "${demo}"; claude   then choose "Yes, I trust this folder" and /exit.\n`
+    + 'Trust is kept for this path across runs, then rerun node docs/media/record.mjs.');
+}
 if (setupOnly) {
   console.log(`record: scratch repo ready at ${demo}`);
   process.exit(0);
