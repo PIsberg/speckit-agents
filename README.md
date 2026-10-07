@@ -20,6 +20,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - [Install](#install)
 - [Quick start](#quick-start)
 - [What it looks like](#what-it-looks-like)
+- [Board mod (experimental)](#board-mod-experimental)
 - [The team](#the-team)
 - [Why This Architecture Succeeds](#why-this-architecture-succeeds)
 - [How it works](#how-it-works)
@@ -132,6 +133,49 @@ write before the file exists, and the denial tells the agent whose lane producti
 questions, and the main session puts them to you: the first of the pipeline's three stops.
 
 ![/speckit-team handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
+
+## Board mod (experimental)
+
+`mods/speckit-board/` is a Claude Code mod (a plugin of function hooks, the early-access plugin
+API of Claude Code 2.1.293) that shows where the active feature stands while the team works. It
+is not installed by `install.mjs`; load it per session:
+
+```sh
+cd <your Spec Kit repo>
+claude --plugin-dir <path to this checkout>/mods/speckit-board
+```
+
+What it draws:
+
+- **A band above the prompt**: the feature, the six phases (spec, plan, tasks, audit, build,
+  verify) as `✓` done, `◐` active, `○` to do, `⊘` blocked, `✗` failed, `↻` stale, a task
+  progress bar, and `RED n/3` once implementer has reported RED on the current plan.
+- **A pane**, opened with `/speckit-board`: the phases, the progress bar, the retry meter, every
+  task of `tasks.md` by section, and the team agents of this session with a spinner and elapsed
+  time while running and their last report word (`VERDICT: PASS`, `RESULT: GREEN`, `APPROVED`)
+  once done. `/speckit-board refresh` re-reads the files; `/speckit-board band` hides or shows the band.
+- **A status line**, `speckit 001-greet · ○ audit · 0/6 tasks`, and toasts when the audit passes,
+  fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
+
+It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
+the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict and retry files under
+`.git/speckit-team/` ([State](#state)). An audit counts as current only while the files' fingerprint
+matches the one recorded with the verdict, computed exactly as `hooks/speckit-team.mjs` does
+(`test/board-mod.test.mjs` holds the two together). The spec-gatekeeper's verdict is not on disk,
+so the mod keeps it from the agent's last message in its own plugin store. It refreshes every 4
+seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
+feature it found or that there is no `.specify/` in the repo it started in, so a loaded mod with
+nothing to show is not mistaken for one that did not load.
+
+It reads files directly rather than the documented activity stream that feature 001 specifies for
+its own view (FR-016), and it covers part of what feature 002 (issue #3) specifies for the rich
+view. Treat it as a working prototype for those two features, not their implementation.
+
+Verified: `claude plugin validate` and `claude plugin test` (12 tests, both run by `npm test`),
+and a headless `claude -p --plugin-dir` run in a scratch Spec Kit repo, which found the feature
+and set the status line. The band and pane have been looked at in one interactive terminal session
+on Windows. Not verified: the team agent tracking (`SubagentStart`/`SubagentStop`) through a live
+pipeline run, and macOS or Linux.
 
 ## The team
 
