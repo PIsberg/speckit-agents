@@ -63,13 +63,17 @@ Options:
 | Flag | Effect |
 |---|---|
 | `--dry-run` | print what would change, write nothing |
-| `--force` | replace same-named agents you wrote yourself (each is backed up as `*.bak-speckit-agents-<time>`) |
+| `--force` | replace same-named agents you wrote yourself (each is kept as `*.bak-speckit-agents` and put back on uninstall) |
 | `--claude-dir DIR` | install into `DIR` instead of `~/.claude` |
-| `--uninstall` | remove everything the installer wrote |
+| `--uninstall` | remove everything the installer wrote, and nothing else |
 
-The installer is idempotent; rerun it after pulling changes. It backs up `settings.json` before
-every change and refuses to touch one that is not valid JSON. It finishes by running the installed
-hook once, so a broken Node setup fails the install instead of silently disabling the guardrails.
+The installer is idempotent; rerun it after pulling changes. It changes `settings.json` in place,
+keeping the file's own indentation and line endings, and updates its gate entries where they stand,
+so a rerun after another tool re-sorted the file changes nothing. The first time it changes your
+settings it keeps one copy of the original as `settings.json.bak-speckit-agents`. It refuses to
+touch a `settings.json` that is not valid JSON, and records what it created in
+`hooks/speckit-agents.install.json`. It finishes by running the installed hook once, so a broken
+Node setup fails the install instead of silently disabling the guardrails.
 
 Restart Claude Code afterwards: agents are loaded at session start.
 
@@ -208,8 +212,8 @@ implementers in separate git worktrees.
 
 ## Verifying
 
-`npm test` runs 21 tests: 14 drive the hook with hook JSON on stdin against throwaway git repos,
-7 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
+`npm test` runs 38 tests: 22 drive the hook with hook JSON on stdin against throwaway git repos,
+16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 
@@ -264,8 +268,15 @@ these six names. Rename yours, or pass `--force` to back it up and replace it.
 
 ## Known limits
 
-- **Hooks fail open.** If Node is missing or the script crashes, the action is allowed. The
-  installer's smoke check and the live check above are the defences.
+- **Hooks fail open.** If Node is missing or the script cannot start, the action is allowed. The
+  installer's smoke check and the live check above are the defences. Input the hook cannot use
+  (not JSON, not an object, an event the mode is not wired for) also lets the action through, but
+  never silently: the hook makes no decision and shows a `speckit-team: ... no decision made`
+  message. The same holds for fields of the wrong type and for any unforeseen error: a safety net
+  turns every crash into no decision plus a `speckit-team: ... internal error` message. One case
+  fails closed instead: a verdict file that cannot be read proves no PASS, so the gate stays shut
+  and says why. Until 2026-10-06 the hook crashed on all of these, which allowed the action
+  without a word.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
 - **Read-only isn't airtight.** spec-auditor and spec-gatekeeper have no Write or Edit tools,
@@ -282,9 +293,22 @@ these six names. Rename yours, or pass `--force` to back it up and replace it.
 node install.mjs --uninstall
 ```
 
-This removes the six agents, the skill, the hook and both `settings.json` entries. It only removes
-files that carry the installer's marker, and leaves any same-named file you wrote alone. Audit
-state stays in each repo's `.git/speckit-team/`, which is safe to delete.
+This removes the six agents, the skill, the hook and both `settings.json` entries, and leaves
+nothing of the installer's behind:
+
+- **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
+  are written back, CRLF and inline arrays included. If something did (another tool, you), that
+  change is kept and only the gates are removed, in the file's own format. Your own empty
+  `"hooks": {}` or event lists are kept. No backup is made at uninstall, and the install-time copy
+  is deleted.
+- **Files:** only files that carry the installer's marker are removed; a same-named file you wrote
+  is left alone. An agent that `--force` replaced is put back.
+- **Directories:** only `agents/`, `hooks/` or `skills/` that the install created, and only if
+  they are empty.
+
+Audit state stays in each repo's `.git/speckit-team/`, which is safe to delete. An install made
+before the record file existed has no record of what it created, so its uninstall keeps every
+directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 ## Developing
 

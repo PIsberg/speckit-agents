@@ -45,7 +45,6 @@ const force = flag('--force');
 // resolves to C:\c\Users\..., the hook crashes, and a crashed hook fails open without a word.
 const hookPath = path.join(claudeDir, 'hooks', HOOK_FILE).split(path.sep).join('/');
 const hookCommand = (mode) => `node "${hookPath}" ${mode}`;
-const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const log = (verb, what) => console.log(`${dryRun ? '[dry-run] ' : ''}${verb.padEnd(10)} ${what}`);
 const read = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
 const ours = (f) => (read(f) ?? '').includes(MARKER);
@@ -84,24 +83,68 @@ try {
   process.exit(1);
 }
 
-function updateSettings(addGates) {
-  const file = settingsFile;
-  const text = settingsText;
-  const hooks = settings.hooks ?? {};
+// What this installer created, so uninstall can remove exactly that and nothing else. It carries
+// the ownership marker like every other file the installer writes.
+const manifestFile = path.join(claudeDir, 'hooks', 'speckit-agents.install.json');
+const BACKUP = '.bak-speckit-agents';
+const manifest = (() => {
+  const text = read(manifestFile);
+  if (text === null || !text.includes(MARKER)) return null;
+  try { return JSON.parse(text); } catch { return null; }
+})();
+const rel = (f) => path.relative(claudeDir, f).split(path.sep).join('/');
+const abs = (r) => path.join(claudeDir, r);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Removing the gates can leave `hooks` or an event list empty, and those are pruned. A user's own
+// empty `"hooks": {}` or `"PreToolUse": []` is not ours to remove: it is put back from the original.
+function keepEmptyContainers(stripped, original) {
+  if (!original?.hooks || typeof original.hooks !== 'object') return stripped;
+  const next = { ...stripped, hooks: { ...(stripped.hooks ?? {}) } };
+  for (const [event, groups] of Object.entries(original.hooks)) {
+    if (Array.isArray(groups) && !groups.length && !next.hooks[event]) next.hooks[event] = [];
+  }
+  return next;
+}
+
+// Keep the file's own formatting: indentation, line endings, trailing newline. A file on one line
+// stays on one line.
+function styleOf(text) {
+  if (text === null) return { indent: 2, eol: '\n', trailing: true };
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const indent = /\n([ \t]+)"/.exec(text)?.[1] ?? (text.trim().includes('\n') ? 2 : 0);
+  return { indent, eol, trailing: /\r?\n$/.test(text) };
+}
+function serialize(obj, { indent, eol, trailing }) {
+  const json = JSON.stringify(obj, null, indent).replace(/\n/g, eol);
+  return trailing ? json + eol : json;
+}
+
+const isGate = (g) => (g.hooks ?? []).some((h) => String(h.command ?? '').includes(HOOK_FILE));
+// Gate entries are updated where they stand: re-appending them would make every rerun after another
+// tool re-sorts settings.json a change.
+function withGates(current, addGates) {
+  const next = JSON.parse(JSON.stringify(current));
+  const hooks = next.hooks ?? {};
   for (const event of Object.keys(hooks)) {
-    hooks[event] = hooks[event].filter((g) => !(g.hooks ?? []).some((h) => String(h.command ?? '').includes(HOOK_FILE)));
+    const wanted = addGates && SETTINGS_GATES.find((g) => g.event === event);
+    let placed = false;
+    hooks[event] = hooks[event].flatMap((g) => {
+      if (!isGate(g)) return [g];
+      if (!wanted || placed) return [];
+      placed = true;
+      return [{ ...g, matcher: wanted.matcher, hooks: [{ ...g.hooks.find((h) => String(h.command ?? '').includes(HOOK_FILE)), type: 'command', command: hookCommand('gate'), timeout: 15 }] }];
+    });
     if (!hooks[event].length) delete hooks[event];
   }
   if (addGates) {
     for (const { event, matcher } of SETTINGS_GATES) {
-      (hooks[event] ??= []).push({ matcher, hooks: [{ type: 'command', command: hookCommand('gate'), timeout: 15 }] });
+      if (!(hooks[event] ?? []).some(isGate)) {
+        (hooks[event] ??= []).push({ matcher, hooks: [{ type: 'command', command: hookCommand('gate'), timeout: 15 }] });
+      }
     }
   }
-  if (Object.keys(hooks).length) settings.hooks = hooks; else delete settings.hooks;
-  const next = `${JSON.stringify(settings, null, 2)}\n`;
-  if (text !== null && JSON.stringify(JSON.parse(text)) === JSON.stringify(settings)) return log('unchanged', file);
-  if (text !== null && !dryRun) fs.copyFileSync(file, `${file}.bak-speckit-agents-${stamp}`);
-  write(file, next);
+  if (Object.keys(hooks).length) next.hooks = hooks; else delete next.hooks;
+  return next;
 }
 
 function have(cmd) {
@@ -109,12 +152,43 @@ function have(cmd) {
 }
 
 if (uninstall) {
+  const m = manifest ?? {};
   for (const { dst } of files()) {
     if (!fs.existsSync(dst)) continue;
     if (!ours(dst)) { log('keep', `${dst} (not installed by speckit-agents)`); continue; }
     remove(dst.endsWith('SKILL.md') ? path.dirname(dst) : dst);
   }
-  updateSettings(false);
+  // Put back what --force replaced.
+  for (const { path: p, backup } of m.forceBackups ?? []) {
+    if (!fs.existsSync(abs(backup)) || (fs.existsSync(abs(p)) && !ours(abs(p)))) continue;
+    log('restore', abs(p));
+    if (!dryRun) fs.renameSync(abs(backup), abs(p));
+  }
+  // Settings: the original bytes when nothing else changed them since install; otherwise the current
+  // settings without the gates, in the file's own format. Never a backup at uninstall.
+  if (settingsText !== null) {
+    const backup = m.settingsBackup && read(abs(m.settingsBackup));
+    let original = null;
+    try { original = backup === null || backup === undefined ? null : JSON.parse(backup); } catch { original = null; }
+    const stripped = keepEmptyContainers(withGates(settings, false), original);
+    if (original !== null && same(original, stripped)) {
+      if (backup === settingsText) log('unchanged', settingsFile); else write(settingsFile, backup);
+    } else if (m.createdSettings && same(stripped, {})) {
+      remove(settingsFile);
+    } else if (!same(stripped, settings)) {
+      write(settingsFile, serialize(stripped, styleOf(settingsText)));
+    }
+    if (m.settingsBackup) remove(abs(m.settingsBackup));
+  }
+  remove(manifestFile);
+  // Only directories this installer created, and only once empty.
+  for (const d of m.createdDirs ?? []) {
+    try {
+      if (fs.readdirSync(abs(d)).length) { log('keep', `${abs(d)} (not empty)`); continue; }
+      log('remove', abs(d));
+      if (!dryRun) fs.rmdirSync(abs(d));
+    } catch { /* already gone */ }
+  }
   console.log('\nUninstalled. Per-repo audit state stays in each repo\'s .git/speckit-team/ (safe to delete).');
   process.exit(0);
 }
@@ -125,23 +199,49 @@ if (major < 18) {
   process.exit(1);
 }
 
-const collisions = files().filter(({ dst }) => fs.existsSync(dst) && !ours(dst));
+const collisions = [...files().map(({ dst }) => dst), manifestFile].filter((dst) => fs.existsSync(dst) && !ours(dst));
 if (collisions.length && !force) {
   console.error('ERROR: these files exist and were not installed by speckit-agents:');
-  for (const { dst } of collisions) console.error(`  ${dst}`);
-  console.error('Rename your own agents, or rerun with --force to back them up (.bak-speckit-agents-<time>) and replace them.');
+  for (const dst of collisions) console.error(`  ${dst}`);
+  console.error(`Rename your own agents, or rerun with --force to back them up (*${BACKUP}) and replace them.`);
   process.exit(1);
 }
 
 console.log(`Installing the Spec Kit agent team into ${claudeDir}\n`);
+// Recorded before anything is written: which of these directories this install creates.
+const createdDirs = [...new Set([...(manifest?.createdDirs ?? []),
+  ...['agents', 'hooks', 'skills'].filter((d) => !fs.existsSync(abs(d)))])];
+const forceBackups = [...(manifest?.forceBackups ?? [])];
 for (const { src, dst } of files()) {
-  if (collisions.some((c) => c.dst === dst)) {
-    log('backup', `${dst} -> ${path.basename(dst)}.bak-speckit-agents-${stamp}`);
-    if (!dryRun) fs.copyFileSync(dst, `${dst}.bak-speckit-agents-${stamp}`);
+  if (collisions.includes(dst)) {
+    log('backup', `${dst} -> ${path.basename(dst)}${BACKUP}`);
+    if (!dryRun) fs.copyFileSync(dst, `${dst}${BACKUP}`);
+    forceBackups.push({ path: rel(dst), backup: rel(`${dst}${BACKUP}`) });
   }
   write(dst, fs.readFileSync(path.join(SRC, src), 'utf8').replaceAll('{{HOOK}}', hookPath));
 }
-updateSettings(true);
+
+// One backup of the user's own settings, taken the first time this installer changes them, kept
+// under a fixed name and removed again on uninstall.
+const nextSettings = withGates(settings, true);
+let settingsBackup = manifest?.settingsBackup ?? null;
+if (same(nextSettings, settings) && settingsText !== null) {
+  log('unchanged', settingsFile);
+} else {
+  if (settingsText !== null && !settingsBackup) {
+    settingsBackup = `settings.json${BACKUP}`;
+    log('backup', `${settingsFile} -> ${settingsBackup}`);
+    if (!dryRun) fs.writeFileSync(abs(settingsBackup), settingsText);
+  }
+  write(settingsFile, serialize(nextSettings, styleOf(settingsText)));
+}
+write(manifestFile, `${JSON.stringify({
+  managedBy: MARKER,
+  createdDirs,
+  createdSettings: manifest?.createdSettings ?? settingsText === null,
+  settingsBackup,
+  forceBackups,
+}, null, 2)}\n`);
 
 if (!dryRun) {
   // Run the installed hook the way Claude Code will. Outside a Spec Kit repo it must exit 0 silently.
