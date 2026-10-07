@@ -285,6 +285,9 @@ if (mode === 'result') {
   }
   const result = found ? found[1].toUpperCase() : 'RED';
   if (done) writeJson(done, { result });
+  // An implementer the audit gate stopped never got to work: its RED is not an attempt.
+  const closed = auditProblem();
+  if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
   const f = retryFile(feat);
   const prev = readState(f);
   if (prev === null) {

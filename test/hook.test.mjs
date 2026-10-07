@@ -319,6 +319,16 @@ test('three RED results in a row close the gate for implementer, and say where t
   assert.equal(handback(dir, 'gate', 'Stopped by the retry limit.', { agent_id: 'next' }) , null, 'reporting back stays open');
 });
 
+// Found live on 2026-10-07: an implementer stopped by the audit gate reported RED, and that
+// attempt, which never got to work, counted toward the retry limit.
+test('a RED from an implementer the audit gate stopped does not count', () => {
+  const { dir } = repo();
+  assert.match(report(dir, 'Blocked by the gate.\nRESULT: RED', 'g1').systemMessage, /not counted/);
+  pass(dir);
+  for (const id of ['i1', 'i2']) report(dir, 'RESULT: RED', id);
+  assert.equal(implementerTool(dir), null, 'only the 2 REDs made after the PASS count');
+});
+
 test('GREEN resets the count, STUB leaves it alone', () => {
   const { dir } = repo();
   pass(dir);

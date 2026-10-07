@@ -191,7 +191,8 @@ and the full suite pass), `RESULT: RED` (anything else) or `RESULT: STUB` (the s
 pass described under [The pipeline skill](#the-pipeline-skill)). The `result` hook counts them per
 feature: GREEN resets the count, STUB leaves it, RED adds one, and a report that still has no
 `RESULT:` line after one request counts as RED. A handback and the Stop that follows it are one
-attempt, not two.
+attempt, not two. A report made while the audit gate is closed is not counted: that implementer
+never got to work.
 
 After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
 and says why. The count belongs to the plan and tasks it was made on (the audit fingerprint), so
@@ -283,7 +284,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 44 tests: 28 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 45 tests: 29 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -305,8 +306,17 @@ Live results on 2026-10-06 (Claude Code 2.1.291, Windows 11, Haiku subagents):
 - implementer's first `Bash` call before an audit: denied by the gate
 - spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
 
-Not yet exercised live: test-writer, implementer's test-file denial, the lane checks, and the retry limit (`result` and `gate retries`, added 2026-10-07). Those
-are covered by the unit tests only.
+Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku subagents, user-level install):
+
+- implementer before an audit: its `Bash` call denied by `gate retries`, and its RED not counted
+- 3 implementer runs ending `RESULT: RED`: counted once each, 3 IDs in the retry record
+- a fourth implementer run: its `Bash` call denied with the retry-limit message, its report still delivered
+- one slice (test-writer on T001, then implementer on T002): the tests failed on the stub's
+  "not implemented" error, implementer turned them green, each committed only in-lane files, and
+  its `RESULT: GREEN` reset the count through the SubagentStop hook
+
+Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
+did run). Those are covered by the unit tests only.
 
 ## Troubleshooting
 
