@@ -12,6 +12,18 @@ The main session orchestrates: it holds the conversation with the user, launches
 the inputs it needs and passes reports along. It does not do the agents' work itself. Team and
 hooks: the README.md of the speckit-agents repo.
 
+## Handoffs
+A subagent starts with nothing but the prompt you write, so keep every prompt lossy: only what
+that agent's Inputs section lists. Never paste this conversation, the product owner's questions
+and answers, or another agent's full report.
+- architect: the feature directory and, on a revision, the findings it owns.
+- spec-auditor: the feature directory.
+- test-writer: the slice's test task IDs.
+- implementer: the slice's task IDs plus test-writer's report for them (test files and failing
+  output, trimmed); on a relaunch, the failing output of the last attempt instead. For a stub
+  pass, `stub` and the task IDs.
+- spec-gatekeeper: the feature directory.
+
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --ai claude`.
 - `.specify/memory/constitution.md` holds real rules, not the template. If not, stop: `/speckit-constitution`.

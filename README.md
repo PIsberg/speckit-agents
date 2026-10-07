@@ -117,7 +117,7 @@ You can also run one phase at a time by @-mentioning an agent:
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 19 to 31 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 19 to 33 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
@@ -228,6 +228,13 @@ those slices. For each slice:
 
 For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
 own git worktree.
+
+**Handoffs are lossy on purpose.** A subagent never sees the main session's conversation; it
+starts with the prompt the skill writes and whatever files it reads. So the skill passes each
+agent only what its Inputs section lists, and never the chat, the product owner's questions and
+answers, or another agent's full report. implementer gets the slice's task IDs and test-writer's
+report for them, and its own prompt tells it to read `tasks.md`, the failing tests and the code
+they touch, not `spec.md`, `plan.md`, `research.md` or `data-model.md`. The tests are its spec.
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.

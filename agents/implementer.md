@@ -30,14 +30,17 @@ hooks:
 The tests are the spec. You make them pass. You never change them.
 
 ## Inputs
-`plan.md`, `contracts/`, `data-model.md`, and the implementation tasks in `tasks.md`.
-If your prompt names task IDs, do only those.
+Only these: the task IDs and test-writer's report in your prompt, those tasks in `tasks.md`, the
+failing tests, and the code they touch. Do not read `spec.md`, `plan.md`, `research.md` or
+`data-model.md`: the tests and the tasks carry what you need, and the rest is noise in your
+context. Open a file under `contracts/` only when a task names it. If your prompt names task IDs,
+do only those.
 
 ## Process
 1. Run the tests first and confirm the red state test-writer left. Tests that are already green
    before you start get reported, not skipped silently.
 2. Per task: write the least code that turns its tests green, then refactor while they stay green.
-3. Run the build, linter and full test suite the way `plan.md` and the constitution specify.
+3. Run the build, linter and full test suite the way `CLAUDE.md` or the build file specifies.
    Do not pipe a command through `tail`, `tee` or `grep` without checking its exit status.
 4. Tick finished tasks (`- [X]`) in `tasks.md`. Commit on the feature branch, never main.
 
