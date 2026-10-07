@@ -90,6 +90,24 @@ test('no agent may write the guardrail state under .git/', () => {
   assert.equal(write(dir, ['scope', 'no-tests'], '.github/workflows/ci.yml'), null, '.github is not .git');
 });
 
+// Second review, same day: the guard compared the literal path, and ran after the "outside the
+// repo" early exit, so spellings Windows folds together and a linked worktree's state got through.
+test('the .git/ guard holds for other spellings and from a linked worktree', () => {
+  const { dir, g } = repo();
+  const spellings = ['.git./speckit-team/retries/001-demo.json', '.git/../.git/speckit-team/verdicts/001-demo.json'];
+  if (process.platform === 'win32') spellings.push('.GIT/speckit-team/retries/001-demo.json');
+  for (const f of spellings) assert.ok(denied(write(dir, ['scope', 'no-tests'], f)), f);
+
+  const wt = `${dir}-wt`;
+  g('worktree', 'add', '-q', wt);
+  const out = run(wt, ['scope', 'no-tests'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Write',
+    tool_input: { file_path: path.join(dir, '.git', 'speckit-team', 'retries', '001-demo.json') },
+  });
+  assert.ok(denied(out), 'the shared state of the main checkout, written from a worktree');
+  assert.equal(write(wt, ['scope', 'no-tests'], 'src/main/Other.java'), null, 'normal work in the worktree');
+});
+
 test('.specify/test-paths adds repo-specific test patterns', () => {
   const { dir, write: w } = repo();
   assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);

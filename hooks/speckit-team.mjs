@@ -105,6 +105,19 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
 }
 const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'speckit-team');
 
+// Compare paths the way the file system will resolve them: through symlinks of the part that exists,
+// and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
+function canonical(p) {
+  let base = path.resolve(p); const rest = [];
+  while (!fs.existsSync(base) && path.dirname(base) !== base) { rest.unshift(path.basename(base)); base = path.dirname(base); }
+  try { base = fs.realpathSync.native(base); } catch { /* keep the resolved path */ }
+  const segs = path.join(base, ...rest).split(path.sep).map((s, i) => (i ? s.replace(/[. ]+$/, '') : s));
+  const joined = segs.join('/');
+  return process.platform === 'win32' ? joined.toLowerCase() : joined;
+}
+const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
+const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
+
 function extraTestPatterns() {
   return lines(readOr(path.join(root, '.specify', 'test-paths'), ''))
     .map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => new RegExp(l));
@@ -182,14 +195,16 @@ if (mode === 'scope') {
   if (given === undefined || given === null || given === '') process.exit(0);
   const file = str(given);
   if (!file) noDecision(`tool_input.file_path is ${Array.isArray(given) ? 'an array' : typeof given}, not a path`);
-  const rel = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/');
-  if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
-  const [rule, ...prefixes] = args;
-  // Verdicts and retry counts live under .git/; an agent that could write there could reset its own limit.
-  if (rel === '.git' || rel.startsWith('.git/')) {
-    deny(`${who} may not write ${rel}: .git/ holds the team's guardrail state (verdicts, retry counts). `
+  const target = path.resolve(cwd, file);
+  // Verdicts and retry counts live in the git dir; an agent that could write there could reset its own
+  // limit. Checked before the outside-the-repo exit: a linked worktree's state is in the main checkout.
+  if (inGitDir(target)) {
+    deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
       + 'Report what you need instead; only the user resets that state.');
   }
+  const rel = path.relative(root, target).split(path.sep).join('/');
+  if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
+  const [rule, ...prefixes] = args;
   // A prefix ending in / is a directory; anything else must match the whole path.
   if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
     deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `

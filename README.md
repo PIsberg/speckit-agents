@@ -162,7 +162,7 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files |
-| every `scope` rule | all four writing agents | writing under `.git/`, where verdicts and retry counts live |
+| every `scope` rule | all four writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
@@ -302,7 +302,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 46 tests: 30 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 47 tests: 31 drive the hook with hook JSON on stdin against throwaway git repos,
 16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
@@ -390,9 +390,9 @@ these six names. Rename yours, or pass `--force` to back it up and replace it.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
 - **Read-only isn't airtight.** spec-auditor and spec-gatekeeper have no Write or Edit tools,
-  but Bash could still write a file. Likewise the `.git/` guard stops `Write` and `Edit`, not
-  `rm` through Bash, and in a linked worktree the state sits outside the worktree, where the scope
-  hooks do not look.
+  but Bash could still write a file. Likewise the git-directory guard stops `Write` and `Edit`
+  (in any spelling Windows folds together, through symlinks, and from a linked worktree), not `rm`
+  through Bash.
 - **Subagents can't ask you questions.** product-owner returns its questions, and the main
   session asks them.
 - **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will
