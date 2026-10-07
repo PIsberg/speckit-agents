@@ -19,6 +19,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - [Requirements](#requirements)
 - [Install](#install)
 - [Quick start](#quick-start)
+- [What it looks like](#what-it-looks-like)
 - [The team](#the-team)
 - [Why this architecture](#why-this-architecture)
 - [How it works](#how-it-works)
@@ -104,6 +105,33 @@ You can also run one phase at a time by @-mentioning an agent:
 @agent-spec-auditor audit the active feature
 @agent-implementer do T007 and T008
 ```
+
+## What it looks like
+
+Real sessions in a scratch Spec Kit repo, with Haiku standing in for every agent's model, so
+your runs will word things differently. The three recordings that wait on agents are sped up 2x
+or 4x. `node docs/media/record.mjs` records them again (see [Developing](#developing)).
+
+**The team in `/agents`.** The six agents as Claude Code lists them, then the `@agent-`
+typeahead you use to call one directly.
+
+![The /agents menu listing the six speckit-agents, then the @agent- typeahead](docs/media/agents-list.gif)
+
+**A subagent at work.** `@agent-spec-auditor` audits a feature inside the main session: the
+collapsed progress view, the full transcript with Ctrl+O, then the `VERDICT:` it hands back,
+which a hook records for the implementation gate.
+
+![spec-auditor running inline, expanded with Ctrl+O, ending in a VERDICT line](docs/media/subagent-inline.gif)
+
+**A guardrail firing.** architect is told to write `src/greet.js`. Its scope hook denies the
+write before the file exists, and the denial tells the agent whose lane production code is in.
+
+![architect's Write to src/greet.js denied by the scope hook](docs/media/guardrail-denial.gif)
+
+**The pipeline.** `/speckit-team` launches product-owner, which writes the spec and returns its
+questions, and the main session puts them to you: the first of the pipeline's three stops.
+
+![/speckit-team handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 
 ## The team
 
@@ -446,3 +474,19 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 See `CLAUDE.md`. In short: edit `agents/`, `hooks/`, `skills/` or `install.mjs`, run `npm test`,
 rerun the installer, and do the live check if you touched how a hook is wired.
+
+The GIFs under [What it looks like](#what-it-looks-like) come from the
+[vhs](https://github.com/charmbracelet/vhs) tapes in `docs/media/`. To record them again, with
+vhs, `specify`, `claude` and git on your PATH:
+
+```sh
+node docs/media/record.mjs                 # all four; makes live Haiku calls
+node docs/media/record.mjs pipeline        # only the named tapes
+node docs/media/record.mjs --setup-only    # build the scratch repo, record nothing
+```
+
+The script builds a scratch Spec Kit repo in your temp dir with the demo feature in
+`docs/media/demo/`, installs the team into that repo's `.claude/`, and starts Claude Code with
+`--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
+MCP servers stay out of the frame. Look at every GIF before committing it: the session banner can
+still show account details.
