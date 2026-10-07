@@ -13,7 +13,7 @@ this file is how to work on it.
   `install.test.mjs` installs into throwaway config dirs.
 
 ## Verify
-- `npm test`: all suites, no network, about 90 s on Windows (45 tests, 2026-10-07).
+- `npm test`: all suites, no network, about 90 s on Windows (46 tests, 2026-10-07).
 - Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
   matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
 

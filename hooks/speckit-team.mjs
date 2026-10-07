@@ -185,6 +185,11 @@ if (mode === 'scope') {
   const rel = path.relative(root, path.resolve(cwd, file)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
+  // Verdicts and retry counts live under .git/; an agent that could write there could reset its own limit.
+  if (rel === '.git' || rel.startsWith('.git/')) {
+    deny(`${who} may not write ${rel}: .git/ holds the team's guardrail state (verdicts, retry counts). `
+      + 'Report what you need instead; only the user resets that state.');
+  }
   // A prefix ending in / is a directory; anything else must match the whole path.
   if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
     deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
@@ -226,8 +231,8 @@ if (mode === 'gate') {
     }
     if (redCount(r, feat) >= MAX_RED) {
       deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
-        + 'Stop and report back. The architect rethinks plan.md or tasks.md (the new audit resets the count), '
-        + `or the user decides; to retry unchanged, delete ${retryFile(feat)}.`);
+        + 'Stop and report back; do not try to reset the count. The architect rethinks plan.md or tasks.md '
+        + `(the new audit resets the count), or the user decides, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
     }
   }
   if (agentId && !fs.existsSync(baseFile(agentId))) {

@@ -78,6 +78,18 @@ test('scope no-tests: implementer cannot touch tests', () => {
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'spec/app_spec.rb')));
 });
 
+// Flagged by a security review on 2026-10-07: implementer's lane (anything but tests) included
+// .git/speckit-team/, so it could delete its own retry record or forge a verdict with Write.
+test('no agent may write the guardrail state under .git/', () => {
+  const { dir } = repo();
+  for (const args of [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'only', 'specs/', 'CLAUDE.md']]) {
+    const out = write(dir, args, '.git/speckit-team/retries/001-demo.json');
+    assert.ok(denied(out), args.join(' '));
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /guardrail state/);
+  }
+  assert.equal(write(dir, ['scope', 'no-tests'], '.github/workflows/ci.yml'), null, '.github is not .git');
+});
+
 test('.specify/test-paths adds repo-specific test patterns', () => {
   const { dir, write: w } = repo();
   assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);
