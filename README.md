@@ -305,7 +305,7 @@ Live results on 2026-10-06 (Claude Code 2.1.291, Windows 11, Haiku subagents):
 - implementer's first `Bash` call before an audit: denied by the gate
 - spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
 
-Not yet exercised live: test-writer, implementer's test-file denial, and the lane checks. Those
+Not yet exercised live: test-writer, implementer's test-file denial, the lane checks, and the retry limit (`result` and `gate retries`, added 2026-10-07). Those
 are covered by the unit tests only.
 
 ## Troubleshooting
@@ -316,6 +316,13 @@ through and nothing tells you. Check that `node` is on the PATH Claude Code sees
 commands written with `$HOME` expanded to `/c/Users/...`, which `node` on Windows resolves to
 `C:\c\Users\...`. The installer therefore writes a quoted absolute path. Do not hand-edit it into
 `$HOME` or `~`.
+
+If the agents come from a project's `.claude/` (an install with `--claude-dir <repo>/.claude`)
+rather than your user directory, Claude Code skips their frontmatter hooks until that folder has
+been trusted, and says so only in the debug log: `Skipping frontmatter hooks for agent
+'implementer': the folder its definition file came from is not trusted`. Open Claude Code in that
+folder once and accept the trust dialog. Seen on Claude Code 2.1.292, where the scratch repo's
+implementer ran Bash with no audit recorded and the gate never fired.
 
 **An agent cannot report back, or a verdict is never recorded.** Subagents in an interactive
 session report through the `SubagentHandback` tool, not their last message. A hook that matches
