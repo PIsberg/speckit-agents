@@ -9,6 +9,11 @@ color: yellow
 skills:
   - speckit-analyze
 hooks:
+  PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" verdict'
   Stop:
     - hooks:
         - type: command

@@ -141,6 +141,8 @@ if (mode === 'gate') {
   // A typed /speckit-implement fires UserPromptExpansion, not UserPromptSubmit or PreToolUse(Skill).
   const typed = event === 'UserPromptExpansion';
   if (typed && !/(^|:)speckit[-.]implement$/.test(input.command_name || '')) process.exit(0);
+  // Reporting back is not work. Gating SubagentHandback leaves a blocked agent unable to say so.
+  if (event === 'PreToolUse' && input.tool_name === 'SubagentHandback') process.exit(0);
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
     const ti = input.tool_input || {};
     if (!/(^|:)speckit[-.]implement$/.test(ti.skill_name || ti.skill || ti.name || '')) process.exit(0);
@@ -158,16 +160,32 @@ if (mode === 'gate') {
   process.exit(0);
 }
 
+// Two ways a report arrives: as the SubagentHandback tool's message (PreToolUse, the normal case in
+// interactive sessions) or as the agent's last message (SubagentStop, e.g. under claude -p).
 if (mode === 'verdict') {
-  const found = [...lastAssistantText().matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
-  if (!found) {
-    if (input.stop_hook_active) process.exit(0);
-    block('End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.');
-  }
+  const viaHandback = event === 'PreToolUse';
+  if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
+  const text = viaHandback ? String(input.tool_input?.message ?? '') : lastAssistantText();
+  const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
   const feat = feature();
+  const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
+  if (!found) {
+    if (viaHandback) {
+      // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
+      const asked = input.agent_id && path.join(stateDir, 'agents', `${input.agent_id}.verdict-asked`);
+      if (!asked || fs.existsSync(asked)) process.exit(0);
+      writeJson(asked, {});
+      deny(`${ask} Add it and send the report again.`);
+    }
+    const prev = feat && JSON.parse(readOr(verdictFile(feat), 'null'));
+    if (input.stop_hook_active || (prev && input.agent_id && prev.agent_id === input.agent_id)) process.exit(0);
+    block(ask);
+  }
   if (!feat) process.exit(0);
   const verdict = found[1].toUpperCase();
-  writeJson(verdictFile(feat), { verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
+  writeJson(verdictFile(feat), {
+    verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: input.agent_id ?? null,
+  });
   emit({ systemMessage: `spec-auditor recorded VERDICT: ${verdict} for ${feat}` });
 }
 
