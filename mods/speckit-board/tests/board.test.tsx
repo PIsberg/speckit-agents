@@ -179,6 +179,23 @@ test('the verdict recorded as the auditor stops shows at once', async ($, on) =>
   expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ build (1/3) · 1/3 tasks · RED 1/3')
 })
 
+// The poll, a turn's end and an agent's start or stop each refresh. A refresh in one event read the
+// board as it was before the others wrote it, so a change was announced once per event.
+test('a change seen by refreshes in several events is announced once', async ($, on) => {
+  const seen = await world(on)
+  const verdict = `${ROOT}/.git/speckit-team/verdicts/001-x.json`
+  delete seen.files[verdict]
+  on('classic.SubagentStart', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  seen.files[verdict] = JSON.stringify({ verdict: 'PASS', fingerprint: seen.fp })
+  await Promise.all([
+    $.command.run({ command: 'speckit-board', args: 'refresh' } as never),
+    $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'test-writer' } as never),
+    $.classic.SubagentStart({ agent_id: 'a2', agent_type: 'implementer' } as never),
+  ])
+  expect(seen.toasts.filter(t => t.startsWith('Audit PASS'))).toHaveLength(1)
+})
+
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })

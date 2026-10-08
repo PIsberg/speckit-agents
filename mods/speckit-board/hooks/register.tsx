@@ -105,11 +105,18 @@ function statusLine(b: SpeckitBoard | null): string | undefined {
   return `speckit ${b.feature} · ${where} · ${done}/${b.tasks.length} tasks${b.red ? ` · RED ${b.red}/${b.maxRed}` : ''}`
 }
 
+// The poll, turn ends and agent events each refresh. A refresh in one event does not see the board
+// another event's refresh stored, so each compared the files with the same old board and announced
+// the same change. It compares with the board this module last wrote instead; with the stored one
+// only after a reload, which starts module variables over.
+let shown: SpeckitBoard | null | undefined
+
 async function refresh($: EngineInterface) {
   if (!repo) return
   const next = await snapshot($, repo)
-  const before = await read($, board)
+  const before = shown === undefined ? await read($, board) : shown
   if (JSON.stringify(before) === JSON.stringify(next)) return
+  shown = next
   await update($, board, () => next)
   if (next) announce($, before, next)
   $.ui.status(statusLine(next))
