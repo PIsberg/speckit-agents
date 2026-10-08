@@ -205,7 +205,9 @@ What it draws:
   section, the part a short terminal cuts off. `/speckit-board refresh` re-reads the files;
   `/speckit-board band` hides or shows the band.
 - **A status line**, `speckit 001-greet · ○ audit · 0/6 tasks`, and toasts when the audit passes,
-  fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
+  fails or goes stale, the retry limit is reached or the retry record cannot be read (the gate then
+  blocks implementer, and build shows `✗ retry record unreadable`), every task is ticked, or
+  spec-gatekeeper approves.
 
 It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
 the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict, retry and gatekeeper files under
@@ -237,7 +239,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (22 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (24 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
@@ -496,7 +498,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 `npm test` runs 72 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 22 tests under `claude plugin test`). They prove the logic. They cannot prove that
+twin, then `claude plugin validate` and its own 24 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 

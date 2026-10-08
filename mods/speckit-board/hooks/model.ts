@@ -83,6 +83,8 @@ export type BoardInputs = {
   verdict: Verdict
   fingerprint: string
   red: number
+  // The retry record exists but is not JSON: the gate then denies implementer until it is deleted.
+  isRetryUnreadable?: boolean
   gate: string | undefined
   // When the hook recorded the gate word (ISO time); absent for a word from the plugin store.
   gateAt?: string
@@ -129,9 +131,11 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
       ? phase('build', list.length ? 'blocked' : 'todo', list.length ? 'gate closed' : '')
       : i.red >= MAX_RED
         ? phase('build', 'failed', 'retry limit')
-        : runs('test-writer') || runs('implementer') || done > 0
-          ? phase('build', 'active', progress)
-          : phase('build', 'todo', progress)
+        : i.isRetryUnreadable
+          ? phase('build', 'failed', 'retry record unreadable')
+            : runs('test-writer') || runs('implementer') || done > 0
+            ? phase('build', 'active', progress)
+            : phase('build', 'todo', progress)
 
   // The gatekeeper judged the files the audit passed. Once those change, or a later audit passes
   // new ones, its word is about old files. ISO times compare as strings.

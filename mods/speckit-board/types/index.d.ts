@@ -18,6 +18,8 @@ export type SpeckitBoard = {
   tasks: SpeckitTask[]
   red: number
   maxRed: number
+  // The retry record cannot be read, so the gate blocks implementer whatever `red` says.
+  isRetryUnreadable: boolean
   fingerprint: string
 }
 

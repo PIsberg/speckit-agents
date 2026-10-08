@@ -50,6 +50,14 @@ test('build fails at the retry limit and completes when every task is ticked', (
   expect(states({ ...passed, gate: 'APPROVED' })).toMatchObject({ verify: 'done' })
 })
 
+test('an unreadable retry record stops the build, as the gate stops implementer', () => {
+  // The hook denies implementer when it cannot read the record; the board read it as no REDs.
+  const passed = { ...base, verdict: { verdict: 'PASS', fingerprint: 'fp' } }
+  const build = derivePhases({ ...passed, isRetryUnreadable: true }).find(p => p.id === 'build')
+  expect(build).toMatchObject({ state: 'failed', note: 'retry record unreadable' })
+  expect(states({ ...passed, isRetryUnreadable: true, tasks: parseTasks('- [x] T001 a') })).toMatchObject({ build: 'done' })
+})
+
 test('a running team agent marks its phase active', () => {
   expect(states({ ...base, plan: undefined, tasks: undefined, running: ['architect'] }))
     .toMatchObject({ plan: 'active', tasks: 'active' })

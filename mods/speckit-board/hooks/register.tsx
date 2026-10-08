@@ -61,6 +61,7 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   const verdict = await readJson($, `${at.stateDir}/verdicts/${name}.json`) as Parameters<typeof derivePhases>[0]['verdict']
   const retries = await readJson($, `${at.stateDir}/retries/${name}.json`) as Parameters<typeof redCount>[0]
   const red = redCount(retries, fp)
+  const isRetryUnreadable = retries === null
   // The word the hook's `ends` check recorded, so verify updates whether or not this mod saw the
   // gatekeeper stop; the store holds what it saw, for a hook from before that record existed.
   const ends = await readJson($, `${at.stateDir}/ends/${name}.json`) as { word?: unknown, at?: unknown } | null | undefined
@@ -72,12 +73,13 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   return {
     feature: name,
     phases: derivePhases({
-      spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red,
+      spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
       gate: typeof gate === 'string' ? gate : undefined, gateAt, running,
     }),
     tasks: tasks ?? [],
     red,
     maxRed: MAX_RED,
+    isRetryUnreadable,
     fingerprint: fp,
   }
 }
@@ -91,7 +93,11 @@ function announce($: EngineInterface, before: SpeckitBoard | null, after: Specki
     if (p.id === 'audit' && p.state === 'done') $.ui.toast('Audit PASS: the implementation gate is open')
     if (p.id === 'audit' && p.state === 'failed') $.ui.toast(`Audit ${p.note}: route CRITICAL/HIGH findings to their owners`)
     if (p.id === 'audit' && p.state === 'stale') $.ui.toast('Spec, plan or tasks changed after the PASS: re-audit before building')
-    if (p.id === 'build' && p.state === 'failed') $.ui.toast(`RED ${after.red} of ${after.maxRed}: retry limit reached`)
+    if (p.id === 'build' && p.state === 'failed') {
+      $.ui.toast(after.isRetryUnreadable
+        ? 'The retry record is unreadable: the gate blocks implementer until it is deleted'
+        : `RED ${after.red} of ${after.maxRed}: retry limit reached`)
+    }
     if (p.id === 'build' && p.state === 'done') $.ui.toast(`All ${after.tasks.length} tasks done`)
     if (p.id === 'verify' && p.state === 'done') $.ui.toast('spec-gatekeeper APPROVED: ready for the PR')
   }
@@ -281,7 +287,11 @@ export const register: Register = on => {
             <Text color={b.red >= b.maxRed ? 'error' : b.red ? 'warning' : 'subtle'}>
               {'●'.repeat(b.red) + '○'.repeat(Math.max(0, b.maxRed - b.red))}
             </Text>
-            <Text dimColor>{b.red ? `RED ${b.red} of ${b.maxRed} on this plan` : 'no REDs on this plan'}</Text>
+            <Text dimColor>
+              {b.isRetryUnreadable
+                ? 'retry record unreadable: implementer is blocked until it is deleted'
+                : b.red ? `RED ${b.red} of ${b.maxRed} on this plan` : 'no REDs on this plan'}
+            </Text>
           </Box>
         </Box>
 

@@ -24,7 +24,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   }
   const toasts: string[] = []
   const status: (string | undefined)[] = []
-  mock.clock(on, { now: 1_000_000 })
+  const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on)
   // git answers only inside the repo, as the real one does.
   on('process.run', (_$, e) => ({ value: posix(e.init?.cwd ?? '').startsWith(ROOT)
@@ -46,7 +46,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   })
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
-  return { toasts, status, files, fp }
+  return { toasts, status, files, fp, clock }
 }
 
 // The engine hands fs hooks the platform's spelling (C:\repo\.specify on Windows).
@@ -194,6 +194,20 @@ test('a change seen by refreshes in several events is announced once', async ($,
     $.classic.SubagentStart({ agent_id: 'a2', agent_type: 'implementer' } as never),
   ])
   expect(seen.toasts.filter(t => t.startsWith('Audit PASS'))).toHaveLength(1)
+})
+
+// The gate denies implementer while the retry record cannot be read; the board said "no REDs".
+test('an unreadable retry record shows the build stopped', async ($, on) => {
+  const seen = await world(on, { [`${ROOT}/.git/speckit-team/retries/001-x.json`]: '{"red": [' })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ✗ build (retry record unreadable) · 1/3 tasks')
+  const ui = await $.ui.mount({
+    plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+    viewport: { columns: 140, rows: 40 },
+    props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: /^retry record unreadable/ })).toBeDefined()
+  await ui.unmount()
 })
 
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
