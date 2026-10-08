@@ -19,6 +19,7 @@ type Repo = { root: string; stateDir: string }
 // Found again on every load: a reload starts module variables over.
 let repo: Repo | null = null
 let ticker: { cancel: () => void } | null = null
+const handbacks = new Map<string, string>()
 
 function readText($: EngineInterface, path: string): Promise<string | undefined> {
   return $.fs.read(path).catch(() => undefined)
@@ -159,10 +160,21 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A backgrounded agent (an @-mention in an interactive session) reports through the SubagentHandback
+  // tool: its last message is that call, not the report, so SubagentStop has nothing to read. The
+  // report is kept from the call, as hooks/speckit-team.mjs reads it, keyed by the agent's id.
+  on('tool.call', { tool: 'SubagentHandback' }, async ($, e, next) => {
+    const { agentId, message } = e as { agentId?: string, message?: unknown }
+    if (agentId && typeof message === 'string') handbacks.set(agentId, message)
+    return next(e)
+  })
+
   on('classic.SubagentStop', async ($, e, next) => {
     const role = teamRole(e.agent_type)
+    const report = handbacks.get(e.agent_id)
+    handbacks.delete(e.agent_id)
     if (role) {
-      const outcome = outcomeOf(role, e.last_assistant_message ?? '')
+      const outcome = outcomeOf(role, report ?? '') || outcomeOf(role, e.last_assistant_message ?? '')
       const now = await $.clock.now()
       await update($, agents, list => list.map(a =>
         (a.id === e.agent_id ? { ...a, isRunning: false, outcome, endedAt: now } : a)))

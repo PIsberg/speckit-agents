@@ -126,6 +126,22 @@ test('the pane puts the running team agent and its controls before the task list
   }
 })
 
+// A backgrounded agent (how an interactive session runs an @-mentioned one) reports through the
+// SubagentHandback tool. Its last message is that call, so SubagentStop carries no report: live,
+// the pane said "done" for a spec-auditor that had handed back VERDICT: PASS.
+test('an agent that reports through SubagentHandback gets its outcome from the report', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  on('tool.call', { tool: 'SubagentHandback' }, () => ({ result: 'delivered' }))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.tool.call({ tool: 'SubagentHandback', agentId: 'a1', message: 'Findings ...\n\nVERDICT: PASS' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: '' } as never)
+  expect(seen.toasts).toContain('spec-auditor finished: PASS')
+})
+
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
