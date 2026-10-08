@@ -61,6 +61,24 @@ test('scope only: planning agents write specs and CLAUDE.md, nothing else', () =
   assert.equal(write(dir, only, path.join('..', 'outside-repo.txt')), null, 'paths outside the repo are not its business');
 });
 
+// The repo reached through another name for the same folder: a symlink (macOS's /var is
+// /private/var), a Windows junction, an 8.3 short name (C:\Users\RUNNER~1). git reports the real
+// path, Claude Code passes the one it was given; compared unresolved, every file looked outside the
+// repo and every lane let it through. Found by CI on macOS and Windows.
+test('scope holds when the repo is reached through a symlink or junction', () => {
+  const { dir } = repo();
+  const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sklink-')), 'repo link');
+  fs.symlinkSync(dir, link, 'junction');
+  const only = ['scope', 'only', 'specs/', 'CLAUDE.md'];
+  assert.ok(denied(write(link, only, 'src/main/App.java')), 'cwd and file both through the link');
+  assert.ok(denied(run(dir, only, { hook_event_name: 'PreToolUse', tool_name: 'Write',
+    tool_input: { file_path: path.join(link, 'src', 'main', 'App.java') } })), 'only the file through the link');
+  assert.equal(write(link, only, `${FEAT}/plan.md`), null);
+  assert.equal(write(link, only, 'CLAUDE.md'), null);
+  assert.ok(denied(write(link, ['scope', 'tests'], 'src/main/App.java')));
+  assert.ok(denied(write(link, ['scope', 'no-tests'], 'src/test/java/AppTest.java')));
+});
+
 test('scope tests: test-writer writes test files and tasks.md only', () => {
   const { dir } = repo();
   for (const f of ['src/test/java/AppTest.java', 'tests/test_app.py', 'web/app.test.ts', 'pkg/app_test.go', `${FEAT}/tasks.md`]) {

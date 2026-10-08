@@ -109,11 +109,15 @@ const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--g
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
-function canonical(p) {
+// real() resolves symlinks, junctions and 8.3 short names of the part that exists.
+function real(p) {
   let base = path.resolve(p); const rest = [];
   while (!fs.existsSync(base) && path.dirname(base) !== base) { rest.unshift(path.basename(base)); base = path.dirname(base); }
   try { base = fs.realpathSync.native(base); } catch { /* keep the resolved path */ }
-  const segs = path.join(base, ...rest).split(path.sep).map((s, i) => (i ? s.replace(/[. ]+$/, '') : s));
+  return path.join(base, ...rest);
+}
+function canonical(p) {
+  const segs = real(p).split(path.sep).map((s, i) => (i ? s.replace(/[. ]+$/, '') : s));
   const joined = segs.join('/');
   return process.platform === 'win32' ? joined.toLowerCase() : joined;
 }
@@ -204,7 +208,9 @@ if (mode === 'scope') {
     deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
       + 'Report what you need instead; only the user resets that state.');
   }
-  const rel = path.relative(root, target).split(path.sep).join('/');
+  // Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
+  // and a symlinked or short-named way into the repo must not read as outside it.
+  const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
   // A prefix ending in / is a directory; anything else must match the whole path.

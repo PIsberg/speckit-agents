@@ -268,6 +268,12 @@ mode exits immediately and allows the action, so installing at user level costs 
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
 
+A `scope` rule judges a path by where it really is: the repo and the file are both resolved through
+symlinks, Windows junctions and 8.3 short names before they are compared. Paths outside the repo
+are not the rule's business. Until 2026-10-08 the comparison used the path as given, so a repo
+reached by another name (macOS's `/var` is `/private/var`, a short-named Windows profile such as
+`C:\Users\RUNNER~1`) made every file look outside it, and every lane let the write through.
+
 ### The audit gate
 
 When spec-auditor reports, a hook reads the last `VERDICT:` line from the report and stores it
