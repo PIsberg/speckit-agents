@@ -131,8 +131,15 @@ function extraTestPatterns() {
 const isTest = (rel) => [...TEST_PATTERNS, ...extraTestPatterns()].some((re) => re.test(rel));
 const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel));
 
+// The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
+// joined under the root as-is it named four missing files, and that fingerprint never went stale.
+// Anything that is not a path inside the repo is no feature, which keeps the gate closed.
 function feature() {
-  try { return JSON.parse(readOr(path.join(root, '.specify', 'feature.json'), '')).feature_directory; } catch { return null; }
+  let dir;
+  try { dir = str(JSON.parse(readOr(path.join(root, '.specify', 'feature.json'), '')).feature_directory); } catch { return null; }
+  if (!dir) return null;
+  const rel = path.relative(real(root), real(path.resolve(root, dir))).split(path.sep).join('/');
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : null;
 }
 
 // Ticking a task checkbox must not invalidate the audit, so checkbox state is normalised away.
@@ -155,7 +162,7 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 
 function auditProblem() {
   const feat = feature();
-  if (!feat) return 'no active feature in .specify/feature.json';
+  if (!feat) return 'no active feature: .specify/feature.json has no feature_directory inside the repo';
   const v = readState(verdictFile(feat));
   if (v === undefined) return `spec-auditor has not passed ${feat}`;
   // Fail closed: a verdict that cannot be read proves no PASS.

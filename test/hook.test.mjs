@@ -151,6 +151,30 @@ test('gate blocks implementation until a PASS verdict on the current artifacts',
   assert.match(run(dir, ['gate'], tool).hookSpecificOutput.permissionDecisionReason, /changed after the audit/);
 });
 
+// Spec Kit's scripts accept an absolute feature_directory. The hook joined it under the repo root,
+// hashed four missing files, and an audit of "<missing>" stayed valid through any edit to the spec.
+test('an absolute feature_directory is the same feature: editing the spec still closes the gate', () => {
+  const { dir, write: w } = repo();
+  const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };
+  w('.specify/feature.json', JSON.stringify({ feature_directory: path.join(dir, FEAT) }));
+  pass(dir);
+  assert.equal(run(dir, ['gate'], tool), null);
+  w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work.\nFR-002 added later.\n');
+  assert.match(run(dir, ['gate'], tool)?.hookSpecificOutput?.permissionDecisionReason ?? '', /changed after the audit/);
+});
+
+// A feature_directory that is not a string crashed the gate, and a crashed gate lets the action through.
+test('a feature_directory that is not a path in the repo closes the gate', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  for (const feature_directory of [7, [FEAT], {}, null, '', path.join(os.tmpdir(), 'elsewhere')]) {
+    w('.specify/feature.json', JSON.stringify({ feature_directory }));
+    const out = run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} });
+    assert.ok(denied(out), JSON.stringify(feature_directory));
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /feature\.json/);
+  }
+});
+
 test('gate on a typed /speckit-implement and on the Skill tool, nothing else', () => {
   const { dir } = repo();
   // A typed /command never reaches UserPromptSubmit or PreToolUse; it fires UserPromptExpansion.

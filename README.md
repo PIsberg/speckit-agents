@@ -308,7 +308,9 @@ The gate recomputes the fingerprint on every check. Any edit to those four files
 voids it, so the auditor has to look again. Task checkboxes are normalised before hashing, so
 ticking `- [X]` while implementing does not.
 
-The active feature comes from `.specify/feature.json`, which Spec Kit maintains.
+The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
+`feature_directory` may be relative to the repo or absolute; either way it must name a folder
+inside the repo, or the gate stays closed.
 
 ### The retry limit
 
