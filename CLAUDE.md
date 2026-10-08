@@ -27,17 +27,21 @@ this file is how to work on it.
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
   fingerprint against the hook's and runs `claude plugin validate` and `claude plugin test` on it
   (skipped, not passed, without a `claude` executable on PATH); `usage.test.mjs` runs
-  `tools/usage.mjs` on a synthetic transcript.
+  `tools/usage.mjs` on a synthetic transcript; `e2e.test.mjs` runs the real `claude -p` against a
+  fake Anthropic API on localhost and counts the model requests that reach it (no login, $0;
+  skipped without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network, 63 s on Windows (76 tests, 2026-10-08; the four installer tests
-  that run the real `claude plugin` take most of it).
+- `npm test`: all suites, no network beyond localhost, 91 s on Windows (79 tests, 2026-10-08; the
+  four installer tests that run the real `claude plugin` and the three e2e tests take most of it).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing. On Linux it then runs `tsc`
   on the board mod (README.md, "Verifying", has the local command).
-- Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
-  matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
+- Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does so only for the typed
+  `/speckit-implement` gate. After changing any other hook command, event or matcher, install and
+  run a live check in a scratch Spec Kit repo (README.md, "Verifying"). A new guardrail that fires
+  before any model call gets a case in `e2e.test.mjs`.
 
 ## Rules
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;
