@@ -24,7 +24,7 @@ You own what the feature must do. How it is built belongs to the architect.
 - `.specify/memory/constitution.md`.
 
 ## Process
-1. If `.specify/` is missing, stop and report that the repo needs `specify init --here --ai claude`.
+1. If `.specify/` is missing, stop and report that the repo needs `specify init --here --integration claude`.
 2. New feature: follow the preloaded speckit-specify instructions with the idea as the argument.
    Existing feature: edit its `spec.md` in place.
 3. Write the answers or findings from your prompt into the spec, the way speckit-clarify records

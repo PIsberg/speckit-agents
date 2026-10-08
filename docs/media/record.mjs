@@ -53,7 +53,7 @@ function buildDemo() {
   git('init', '-q', '-b', 'main');
   // Without --script, specify waits on an interactive picker. Without UTF-8, specify on Windows
   // crashes printing its banner into a pipe (cp1252).
-  run('specify', ['init', '--here', '--ai', 'claude', '--force', '--ignore-agent-tools',
+  run('specify', ['init', '--here', '--integration', 'claude', '--force', '--ignore-agent-tools',
     '--script', process.platform === 'win32' ? 'ps' : 'sh'],
   { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
   run(process.execPath, [path.join(repo, 'install.mjs'), '--claude-dir', path.join(demo, '.claude')]);
