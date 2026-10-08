@@ -374,6 +374,26 @@ test('a corrupt agent start record makes the lane check say it could not run', (
   assert.match(out?.systemMessage ?? '', /lane/);
 });
 
+// git diff against a commit that does not resolve fails, and a failed diff read as "nothing changed":
+// an edited test file passed the lane check without a word.
+test('a start commit git cannot find makes the lane check say it could not run', () => {
+  const { dir, write: w, g } = repo();
+  w('src/test/java/AppTest.java', 'class AppTest {}\n');
+  g('add', '-A'); g('commit', '-qm', 'test');
+  fs.mkdirSync(path.join(stateDir(dir), 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'x2.json'), JSON.stringify({ sha: '0123456789abcdef0123456789abcdef01234567', dirty: [] }));
+  w('src/test/java/AppTest.java', 'class AppTest { /* weakened */ }\n');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x2' });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /lane check could not run.*0123456789ab/);
+
+  const leak = path.join(dir, 'leak.txt');
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'x3.json'), JSON.stringify({ sha: `--output=${leak}`, dirty: [] }));
+  const opt = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x3' });
+  assert.match(opt?.systemMessage ?? '', /start record is incomplete/);
+  assert.equal(fs.existsSync(leak), false, 'a sha that looks like an option never reaches git');
+});
+
 test('an unwritable state directory never crashes a hook, and is reported', () => {
   const { dir } = repo();
   fs.writeFileSync(stateDir(dir), 'not a directory');

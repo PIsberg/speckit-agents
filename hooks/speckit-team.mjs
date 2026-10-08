@@ -396,10 +396,15 @@ if (mode === 'lane') {
     if (base === null) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is unreadable.` });
     process.exit(0);
   }
-  if (typeof base.sha !== 'string' || !Array.isArray(base.dirty)) {
+  // Only a hex commit id reaches git's argument list: "--output=..." would be read as an option.
+  if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) {
     emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
   }
   if (testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
+  // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
+  if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) {
+    emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start commit ${base.sha.slice(0, 12)} is not in this repo.` });
+  }
   const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
   if (outside.length && !input.stop_hook_active) {
     block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
