@@ -84,6 +84,8 @@ export type BoardInputs = {
   fingerprint: string
   red: number
   gate: string | undefined
+  // When the hook recorded the gate word (ISO time); absent for a word from the plugin store.
+  gateAt?: string
   running: readonly string[]
 }
 
@@ -127,13 +129,18 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
           ? phase('build', 'active', progress)
           : phase('build', 'todo', progress)
 
-  const verify = i.gate === 'APPROVED'
-    ? phase('verify', 'done', 'approved')
-    : runs('spec-gatekeeper')
-      ? phase('verify', 'active')
-      : i.gate === 'REJECTED'
-        ? phase('verify', 'failed', 'rejected')
-        : phase('verify', 'todo')
+  // The gatekeeper judged the files the audit passed. Once those change, or a later audit passes
+  // new ones, its word is about old files. ISO times compare as strings.
+  const auditAt = v && typeof v === 'object' && typeof v.at === 'string' ? v.at : undefined
+  const verify = runs('spec-gatekeeper')
+    ? phase('verify', 'active')
+    : i.gate !== 'APPROVED' && i.gate !== 'REJECTED'
+      ? phase('verify', 'todo')
+      : audit.state !== 'done' || (i.gateAt !== undefined && auditAt !== undefined && i.gateAt < auditAt)
+        ? phase('verify', 'stale', 'audit changed')
+        : i.gate === 'APPROVED'
+          ? phase('verify', 'done', 'approved')
+          : phase('verify', 'failed', 'rejected')
 
   return [spec, plan, tasks, audit, build, verify]
 }

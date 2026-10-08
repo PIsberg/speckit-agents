@@ -63,16 +63,17 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   const red = redCount(retries, fp)
   // The word the hook's `ends` check recorded, so verify updates whether or not this mod saw the
   // gatekeeper stop; the store holds what it saw, for a hook from before that record existed.
-  const ends = await readJson($, `${at.stateDir}/ends/${name}.json`) as { word?: unknown } | null | undefined
-  const gate = ends && (ends.word === 'APPROVED' || ends.word === 'REJECTED')
-    ? ends.word : await $.store.get(`gate:${feature}`)
+  const ends = await readJson($, `${at.stateDir}/ends/${name}.json`) as { word?: unknown, at?: unknown } | null | undefined
+  const recorded = ends && (ends.word === 'APPROVED' || ends.word === 'REJECTED') ? ends : undefined
+  const gate = recorded ? recorded.word : await $.store.get(`gate:${feature}`)
+  const gateAt = recorded && typeof recorded.at === 'string' ? recorded.at : undefined
   const running = (await read($, agents)).filter(a => a.isRunning).map(a => a.type)
 
   return {
     feature: name,
     phases: derivePhases({
       spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red,
-      gate: typeof gate === 'string' ? gate : undefined, running,
+      gate: typeof gate === 'string' ? gate : undefined, gateAt, running,
     }),
     tasks: tasks ?? [],
     red,

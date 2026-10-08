@@ -193,7 +193,9 @@ handed back through `SubagentHandback` (how an interactive session's background 
 or else from its last message, as the hook reads it. The verify step reads the
 spec-gatekeeper's word from the file the hook's `ends` check writes once it accepts the report,
 so it updates even when the mod was reloaded or not loaded while the gatekeeper ran; it falls back
-to the word the mod saw at the agent's stop, kept in its plugin store. It refreshes every 4
+to the word the mod saw at the agent's stop, kept in its plugin store. That word counts only
+while the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
+because the gatekeeper judged files that have since changed. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
 feature it found or that there is no `.specify/` in the repo it started in, so a loaded mod with
 nothing to show is not mistaken for one that did not load.
