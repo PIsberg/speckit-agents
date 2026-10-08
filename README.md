@@ -69,6 +69,8 @@ Options:
 | `--force` | replace same-named agents you wrote yourself (each is kept as `*.bak-speckit-agents` and put back on uninstall) |
 | `--claude-dir DIR` | install into `DIR` instead of `~/.claude` |
 | `--uninstall` | remove everything the installer wrote, and nothing else |
+| `--board` | also install the experimental [board mod](#board-mod-experimental); later reruns keep it |
+| `--no-board` | remove the board mod and keep the team |
 
 The installer is idempotent; rerun it after pulling changes. It changes `settings.json` in place,
 keeping the file's own indentation and line endings, and updates its gate entries where they stand,
@@ -137,8 +139,29 @@ questions, and the main session puts them to you: the first of the pipeline's th
 ## Board mod (experimental)
 
 `mods/speckit-board/` is a Claude Code mod (a plugin of function hooks, the early-access plugin
-API of Claude Code 2.1.293) that shows where the active feature stands while the team works. It
-is not installed by `install.mjs`; load it per session:
+API of Claude Code 2.1.293) that shows where the active feature stands while the team works. The
+installer adds it on request:
+
+```sh
+node install.mjs --board        # install it, for every repo and session
+git pull                        # update it: then /reload-plugins, or start a new session
+node install.mjs --no-board     # remove it, keep the team
+```
+
+`--board` hands the work to Claude Code's own plugin commands, in the same config directory:
+`claude plugin marketplace add <this checkout>` (the repo root holds
+`.claude-plugin/marketplace.json`, a marketplace named `speckit-agents`) and
+`claude plugin install speckit-board@speckit-agents --scope user`. Because the marketplace is a
+folder, Claude Code reads the mod from `mods/speckit-board/` in place rather than from a copy, so
+an update is a `git pull` with no reinstall; `claude plugin list` shows the folder as `Read from:`.
+The installer remembers the board, so a plain rerun keeps it, and `--uninstall` removes it with
+the team. It removes the `speckit-agents` marketplace only if it added it. The board is read
+from the checkout the installer last ran from, as the team's files are copied from it: after
+moving the checkout, or to run the board from another clone or worktree, rerun the installer
+there and it points the board at that folder.
+
+To try it for one session without installing it, load it from the folder instead. Loading it
+both ways at once has not been tried; run `--no-board` first.
 
 ```sh
 cd <your Spec Kit repo>
@@ -174,8 +197,12 @@ view. Treat it as a working prototype for those two features, not their implemen
 Verified: `claude plugin validate` and `claude plugin test` (12 tests, both run by `npm test`),
 and a headless `claude -p --plugin-dir` run in a scratch Spec Kit repo, which found the feature
 and set the status line. The band and pane have been looked at in one interactive terminal session
-on Windows. Not verified: the team agent tracking (`SubagentStart`/`SubagentStop`) through a live
-pipeline run, and macOS or Linux.
+on Windows. `--board`, a rerun, `--no-board` and `--uninstall` run the real `claude plugin`
+commands against throwaway config dirs in `test/install.test.mjs`, which checks that the mod is
+read from this checkout and that uninstall restores `settings.json` byte for byte. Not verified:
+that an installed board draws in a live session (only `--plugin-dir` loads were looked at), the
+team agent tracking (`SubagentStart`/`SubagentStop`) through a live pipeline run, and macOS or
+Linux.
 
 ## The team
 
@@ -505,6 +532,10 @@ nothing of the installer's behind:
   is left alone. An agent that `--force` replaced is put back.
 - **Directories:** only `agents/`, `hooks/` or `skills/` that the install created, and only if
   they are empty.
+- **The board mod**, if `--board` installed it: removed with `claude plugin uninstall`, and the
+  `speckit-agents` marketplace with it when the installer added it. Claude Code's own state for it
+  (under `plugins/`) is Claude Code's to keep. Without `claude` on PATH the uninstall warns, prints
+  the two commands to run by hand, and removes the rest.
 
 Audit state stays in each repo's `.git/speckit-team/`, which is safe to delete. An install made
 before the record file existed has no record of what it created, so its uninstall keeps every

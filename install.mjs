@@ -6,6 +6,8 @@
 //   node install.mjs --dry-run       print what would change, write nothing
 //   node install.mjs --force         overwrite same-named agents it did not install (backs them up)
 //   node install.mjs --claude-dir D  target D instead of $CLAUDE_CONFIG_DIR or ~/.claude
+//   node install.mjs --board         also install the speckit-board mod; later reruns keep it
+//   node install.mjs --no-board      remove the speckit-board mod, keep the team
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,7 +29,8 @@ const SETTINGS_GATES = [
 const argv = process.argv.slice(2);
 const flag = (f) => argv.includes(f);
 if (flag('--help') || flag('-h')) {
-  console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 9).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
+  console.log(lines.slice(1, lines.findIndex((l) => l.startsWith('import'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
   process.exit(0);
 }
 const dirArg = argv.indexOf('--claude-dir');
@@ -39,6 +42,12 @@ const claudeDir = path.resolve(dirArg >= 0 ? argv[dirArg + 1] : process.env.CLAU
 const dryRun = flag('--dry-run');
 const uninstall = flag('--uninstall');
 const force = flag('--force');
+const boardFlag = flag('--board');
+const noBoard = flag('--no-board');
+if (boardFlag && noBoard) {
+  console.error('ERROR: --board and --no-board contradict each other.');
+  process.exit(1);
+}
 
 // Hooks run in Git Bash or PowerShell on Windows and sh elsewhere. A quoted absolute path with forward
 // slashes works in all three. $HOME does not: Git Bash expands it to /c/Users/..., which node.exe
@@ -74,14 +83,18 @@ function files() {
 
 // Parsed before anything is written, so a bad settings.json never leaves a half install behind.
 const settingsFile = path.join(claudeDir, 'settings.json');
-const settingsText = read(settingsFile);
-let settings;
-try {
-  settings = settingsText === null ? {} : JSON.parse(settingsText);
-} catch (e) {
-  console.error(`ERROR: ${settingsFile} is not valid JSON (${e.message}). Fix it, or add the gates by hand (README.md).`);
-  process.exit(1);
+let settingsText, settings;
+// Read again after a `claude plugin` command, which changes settings.json itself.
+function readSettings() {
+  settingsText = read(settingsFile);
+  try {
+    settings = settingsText === null ? {} : JSON.parse(settingsText);
+  } catch (e) {
+    console.error(`ERROR: ${settingsFile} is not valid JSON (${e.message}). Fix it, or add the gates by hand (README.md).`);
+    process.exit(1);
+  }
 }
+readSettings();
 
 // What this installer created, so uninstall can remove exactly that and nothing else. It carries
 // the ownership marker like every other file the installer writes.
@@ -151,8 +164,95 @@ function have(cmd) {
   return spawnSync(`${cmd} --version`, { encoding: 'utf8', shell: true, stdio: 'ignore' }).status === 0;
 }
 
+// The board mod is a Claude Code plugin, so Claude Code's own plugin commands install it, into the
+// same config directory. This checkout is its marketplace (.claude-plugin/marketplace.json) and the
+// entry a relative path, so Claude Code reads the mod from mods/speckit-board in place: a git pull
+// reaches every session at its next start or /reload-plugins, with nothing to reinstall.
+const BOARD = 'speckit-board@speckit-agents';
+const MARKETPLACE = 'speckit-agents';
+function claude(...args) {
+  const opts = { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: claudeDir } };
+  // An npm-installed claude on Windows is claude.cmd, which only a shell runs. Quoted, a checkout
+  // path with spaces stays one argument; Windows paths cannot hold a double quote.
+  const r = process.platform === 'win32'
+    ? spawnSync(['claude', ...args].map((a) => `"${a}"`).join(' '), { ...opts, shell: true })
+    : spawnSync('claude', args, opts);
+  return { ok: r.status === 0, stdout: r.stdout ?? '', said: `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() || r.error?.message || `exit ${r.status}` };
+}
+function claudeList(...args) {
+  const r = claude('plugin', ...args, 'list', '--json');
+  try { return r.ok ? JSON.parse(r.stdout) : null; } catch { return null; }
+}
+const NO_CLAUDE = '`claude plugin` did not run. Is Claude Code on PATH?';
+
+// Returns whether this installer added the marketplace, and an error if a step failed.
+function installBoard(addedBefore) {
+  const markets = claudeList('marketplace');
+  if (!markets) return { added: addedBefore, error: NO_CLAUDE };
+  let added = addedBefore;
+  let market = markets.find((m) => m.name === MARKETPLACE);
+  // Ours but read from another checkout (this one moved, or a second clone or worktree ran
+  // --board): the board follows the checkout the installer runs from, as the team's files do.
+  const samePath = (a, b) => process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+  const repoint = Boolean(market && addedBefore && market.source === 'directory' && !samePath(market.path, SRC));
+  if (repoint) {
+    const r = removeBoard(true);
+    if (r.error) return { added, error: r.error };
+    market = undefined;
+  }
+  if (!market) {
+    log('install', `marketplace ${MARKETPLACE} (${SRC})`);
+    if (!dryRun) {
+      const r = claude('plugin', 'marketplace', 'add', SRC);
+      if (!r.ok) return { added, error: r.said };
+    }
+    added = true;
+  }
+  // A dry run removed nothing, so the list would still show what a real run replaces.
+  const installed = !(dryRun && repoint) && (claudeList() ?? []).find((p) => p.id === BOARD && p.scope === 'user');
+  if (installed) {
+    log('unchanged', `${BOARD} (read from ${installed.readFromFolder ?? installed.installPath})`);
+    return { added };
+  }
+  log('install', BOARD);
+  if (!dryRun) {
+    const r = claude('plugin', 'install', BOARD, '--scope', 'user');
+    if (!r.ok) return { added, error: r.said };
+  }
+  return { added };
+}
+
+// Removes the mod, and the marketplace when this installer added it.
+function removeBoard(addedBefore) {
+  const plugins = claudeList();
+  if (!plugins) return { added: addedBefore, error: NO_CLAUDE };
+  if (plugins.some((p) => p.id === BOARD && p.scope === 'user')) {
+    log('remove', BOARD);
+    if (!dryRun) {
+      const r = claude('plugin', 'uninstall', BOARD, '--scope', 'user');
+      if (!r.ok) return { added: addedBefore, error: r.said };
+    }
+  }
+  if (addedBefore && (claudeList('marketplace') ?? []).some((m) => m.name === MARKETPLACE)) {
+    log('remove', `marketplace ${MARKETPLACE}`);
+    if (!dryRun) {
+      const r = claude('plugin', 'marketplace', 'remove', MARKETPLACE);
+      if (!r.ok) return { added: addedBefore, error: r.said };
+    }
+  }
+  return { added: false };
+}
+const boardByHand = `remove it by hand: claude plugin uninstall ${BOARD}, then claude plugin marketplace remove ${MARKETPLACE}`;
+
 if (uninstall) {
   const m = manifest ?? {};
+  const hadBoard = Boolean(m.board || m.addedMarketplace);
+  if (hadBoard) {
+    // A warning, not a stop: removing the team must not depend on Claude Code being on PATH.
+    const { error } = removeBoard(Boolean(m.addedMarketplace));
+    if (error) console.log(`WARNING: the board mod was not removed (${error}); ${boardByHand}.`);
+    readSettings();
+  }
   for (const { dst } of files()) {
     if (!fs.existsSync(dst)) continue;
     if (!ours(dst)) { log('keep', `${dst} (not installed by speckit-agents)`); continue; }
@@ -171,6 +271,11 @@ if (uninstall) {
     let original = null;
     try { original = backup === null || backup === undefined ? null : JSON.parse(backup); } catch { original = null; }
     const stripped = keepEmptyContainers(withGates(settings, false), original);
+    // `claude plugin uninstall` and `marketplace remove` leave these keys behind as `{}`.
+    for (const key of hadBoard ? ['enabledPlugins', 'extraKnownMarketplaces'] : []) {
+      const v = stripped[key];
+      if (v && typeof v === 'object' && !Object.keys(v).length && original?.[key] === undefined) delete stripped[key];
+    }
     if (original !== null && same(original, stripped)) {
       if (backup === settingsText) log('unchanged', settingsFile); else write(settingsFile, backup);
     } else if (m.createdSettings && same(stripped, {})) {
@@ -235,12 +340,22 @@ if (same(nextSettings, settings) && settingsText !== null) {
   }
   write(settingsFile, serialize(nextSettings, styleOf(settingsText)));
 }
+
+// After the settings are written: the plugin commands add their own keys to the same file.
+const wantBoard = !noBoard && (boardFlag || Boolean(manifest?.board));
+const addedBefore = Boolean(manifest?.addedMarketplace);
+const boardResult = wantBoard ? installBoard(addedBefore)
+  : noBoard ? removeBoard(addedBefore)
+  : { added: addedBefore };
 write(manifestFile, `${JSON.stringify({
   managedBy: MARKER,
   createdDirs,
   createdSettings: manifest?.createdSettings ?? settingsText === null,
   settingsBackup,
   forceBackups,
+  // The intent, kept when a step failed, so the next rerun tries again.
+  board: wantBoard,
+  addedMarketplace: boardResult.added,
 }, null, 2)}\n`);
 
 if (!dryRun) {
@@ -259,8 +374,15 @@ const missing = [['git', 'required by every hook'], ['claude', 'Claude Code itse
   .filter(([cmd]) => !have(cmd));
 for (const [cmd, why] of missing) console.log(`WARNING: \`${cmd}\` not found on PATH (${why}).`);
 
+if (boardResult.error) {
+  console.error(`\nERROR: the team is installed, the board mod is not ${noBoard ? 'removed' : 'installed'}:\n${boardResult.error}`);
+  console.error(noBoard ? `Rerun with --no-board, or ${boardByHand}.` : 'Rerun the installer once that is fixed; it remembers the board.');
+  process.exit(1);
+}
+
 console.log(`
 Done. Next:
   1. Restart Claude Code (agents load at session start).
   2. In a repo: specify init --here --ai claude, then fill in /speckit-constitution.
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...`);
+if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');
