@@ -214,7 +214,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (18 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (19 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
@@ -231,10 +231,15 @@ Team agent tracking, the same day, with real agents on Haiku. Headless, while
 ran as a background agent and the pane showed `spec-auditor running 19s` with the spinner, then
 `✓ spec-auditor PASS`. That run found two bugs, fixed: the agent rows were drawn below the task
 list and cut off, and a background agent's word was missing because its report arrives through
-`SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`. Not
-seen live: a `RESULT: RED` moving the retry meter (the count comes from the hook's retry file,
-covered by the mod's tests; #18), and any session on macOS or Linux, where CI runs only the
-tests (#19).
+`SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`.
+On 2026-10-08 (Claude Code 2.1.294, user-level install, board by `--plugin-dir`, recorded with
+vhs): after a real `@agent-spec-auditor` PASS and `@agent-spec-gatekeeper` APPROVED in headless
+sessions, a new interactive session showed `✓ verify` from the hook's `ends` record alone, and
+two `RESULT: RED` stops fed to the installed `result` hook moved the band to `RED 1/3`, then
+`RED 2/3`, with the pane's meter at `●●○`. That run found a bug, fixed: a spec approved in
+conversation keeps Spec Kit's `Draft` status, so the board named `spec, draft` as the current
+step of a verified feature; a plan now counts as the spec's approval. Not seen live: any session
+on macOS or Linux, where CI runs only the tests (#19).
 
 ## The team
 
@@ -461,7 +466,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 `npm test` runs 70 tests: 41 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 18 tests under `claude plugin test`). They prove the logic. They cannot prove that
+twin, then `claude plugin validate` and its own 19 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 

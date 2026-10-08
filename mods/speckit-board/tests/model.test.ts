@@ -95,3 +95,12 @@ test('a verify word counts only while the audit it followed is current', () => {
   expect(states({ ...reaudited, gate: 'APPROVED', gateAt: '2026-10-08T11:00:00.000Z' })).toMatchObject({ verify: 'stale' })
   expect(states({ ...reaudited, gate: 'APPROVED', gateAt: '2026-10-08T13:00:00.000Z' })).toMatchObject({ verify: 'done' })
 })
+
+test('a draft spec counts as approved once a plan exists', () => {
+  // /speckit-team approves the spec in conversation, so spec.md keeps the template's Draft status;
+  // the board then named "spec, draft" as the current step of a fully verified feature.
+  const draft = '**Status**: Draft'
+  expect(states({ ...base, spec: draft, plan: undefined, tasks: undefined })).toMatchObject({ spec: 'active' })
+  expect(states({ ...base, spec: draft })).toMatchObject({ spec: 'done' })
+  expect(derivePhases({ ...base, spec: draft }).find(p => p.id === 'spec')?.note).toBe('')
+})

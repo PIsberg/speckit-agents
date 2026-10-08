@@ -95,11 +95,15 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
   const runs = (role: string) => i.running.includes(role)
   const idle = (role: string): SpeckitPhaseState => (runs(role) ? 'active' : 'todo')
 
+  // /speckit-team approves the spec in conversation and never edits its Status line, so a plan
+  // (which the architect writes only after that approval) also counts as the spec being approved.
   const spec = i.spec === undefined
     ? phase('spec', idle('product-owner'))
     : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
       ? phase('spec', 'done', 'approved')
-      : phase('spec', 'active', 'draft')
+      : i.plan !== undefined
+        ? phase('spec', 'done')
+        : phase('spec', 'active', 'draft')
   const plan = i.plan === undefined ? phase('plan', idle('architect')) : phase('plan', 'done')
   const tasks = i.tasks === undefined
     ? phase('tasks', idle('architect'))
