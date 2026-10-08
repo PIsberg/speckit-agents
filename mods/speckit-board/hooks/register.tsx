@@ -133,17 +133,18 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Claude Code shows a command's answer after the plugin's name, so the texts do not repeat it.
   on('command.run', { command: 'speckit-board' }, async ($, e) => {
-    if (!repo) return { text: 'speckit-board: no .specify/ in this repository.' }
+    if (!repo) return { text: 'no .specify/ in this repository.' }
     const arg = e.args.trim()
     if (arg === 'band') {
       const hidden = await update($, isBandHidden, h => !h)
-      return { text: `speckit-board: band ${hidden ? 'hidden' : 'shown'}.` }
+      return { text: `band ${hidden ? 'hidden' : 'shown'}.` }
     }
     await refresh($)
-    if (arg === 'refresh') return { text: 'speckit-board: refreshed.' }
+    if (arg === 'refresh') return { text: 'refreshed.' }
     const opened = await $.ui.open({ id: PANE, title: 'Spec Kit' })
-    return { text: opened.isPlaced ? 'speckit-board: pane opened.' : 'speckit-board: widen the terminal to see the pane.' }
+    return { text: opened.isPlaced ? 'pane opened.' : 'widen the terminal to see the pane.' }
   })
 
   on('classic.SubagentStart', async ($, e, next) => {

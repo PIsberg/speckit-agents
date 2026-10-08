@@ -71,7 +71,8 @@ test('the band shows the feature, every phase and the RED count', async ($, on) 
     await ui.press({ key: 'hide' })
     expect(await ui.find({ type: 'Text', text: 'RED 1/3' })).toBeUndefined()
     const shown = await $.command.run({ command: 'speckit-board', args: 'band' } as never)
-    expect(shown).toMatchObject({ text: 'speckit-board: band shown.' })
+    // Claude Code puts the plugin's name before a command's answer itself.
+    expect(shown).toMatchObject({ text: 'band shown.' })
     expect(await ui.find({ type: 'Text', text: 'RED 1/3' })).toBeDefined()
     await ui.unmount()
   }
