@@ -41,6 +41,11 @@ You decide how the feature is built, and in what order.
    - Every implementation task lists the new files, functions and types its tests will call, with
      their signatures, so they can be stubbed before the tests exist.
    - Mark `[P]` only on tasks whose files are disjoint.
+4. Before you report, check every MUST rule in the constitution against what you wrote: name the
+   task that delivers it, or the plan line that shows it does not apply to this feature. A rule
+   your Constitution Check marks PASS with no task behind it is a CRITICAL audit finding. In all
+   three full runs measured (2026-10-07 and 2026-10-08), the first audit failed on exactly that,
+   and the fix cost a second architect and a second auditor.
 
 ## Context
 Read each artifact once. To change one later, grep for the line and edit it in place rather than
