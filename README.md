@@ -76,7 +76,8 @@ The installer is idempotent; rerun it after pulling changes. It changes `setting
 keeping the file's own indentation and line endings, and updates its gate entries where they stand,
 so a rerun after another tool re-sorted the file changes nothing. The first time it changes your
 settings it keeps one copy of the original as `settings.json.bak-speckit-agents`. It refuses to
-touch a `settings.json` that is not valid JSON, and records what it created in
+touch a `settings.json` that is not valid JSON or not a settings object (an array, or a `hooks`
+entry that is not a list of objects), and stops before writing anything. It records what it created in
 `hooks/speckit-agents.install.json`. It finishes by running the installed hook once, so a broken
 Node setup fails the install instead of silently disabling the guardrails.
 
@@ -93,12 +94,15 @@ specify init --here --ai claude
 Then, in Claude Code:
 
 ```
-/speckit-constitution   (once per repo: the rules every phase is checked against)
 /speckit-team Let users export their reading list as CSV
 ```
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
+In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
+template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
+and asks you to approve it, a fourth stop, then writes it with `speckit-constitution` and commits
+it on the feature branch, not on main. You can still run `/speckit-constitution` yourself beforehand.
 After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
 verifies and opens a PR, which it does not merge.
 
@@ -184,13 +188,17 @@ What it draws:
   fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
 
 It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
-the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict and retry files under
+the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict, retry and gatekeeper files under
 `.git/speckit-team/` ([State](#state)). An audit counts as current only while the files' fingerprint
 matches the one recorded with the verdict, computed exactly as `hooks/speckit-team.mjs` does
 (`test/board-mod.test.mjs` holds the two together). An agent's report word comes from what it
 handed back through `SubagentHandback` (how an interactive session's background agents report),
-or else from its last message, as the hook reads it. The spec-gatekeeper's verdict is not on
-disk, so the mod keeps it in its own plugin store. It refreshes every 4
+or else from its last message, as the hook reads it. The verify step reads the
+spec-gatekeeper's word from the file the hook's `ends` check writes once it accepts the report,
+so it updates even when the mod was reloaded or not loaded while the gatekeeper ran; it falls back
+to the word the mod saw at the agent's stop, kept in its plugin store. That word counts only
+while the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
+because the gatekeeper judged files that have since changed. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
 feature it found or that there is no `.specify/` in the repo it started in, so a loaded mod with
 nothing to show is not mistaken for one that did not load.
@@ -206,7 +214,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (14 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (19 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
@@ -223,10 +231,15 @@ Team agent tracking, the same day, with real agents on Haiku. Headless, while
 ran as a background agent and the pane showed `spec-auditor running 19s` with the spinner, then
 `✓ spec-auditor PASS`. That run found two bugs, fixed: the agent rows were drawn below the task
 list and cut off, and a background agent's word was missing because its report arrives through
-`SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`. Not
-seen live: a `RESULT: RED` moving the retry meter (the count comes from the hook's retry file,
-covered by the mod's tests; #18), and any session on macOS or Linux, where CI runs only the
-tests (#19).
+`SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`.
+On 2026-10-08 (Claude Code 2.1.294, user-level install, board by `--plugin-dir`, recorded with
+vhs): after a real `@agent-spec-auditor` PASS and `@agent-spec-gatekeeper` APPROVED in headless
+sessions, a new interactive session showed `✓ verify` from the hook's `ends` record alone, and
+two `RESULT: RED` stops fed to the installed `result` hook moved the band to `RED 1/3`, then
+`RED 2/3`, with the pane's meter at `●●○`. That run found a bug, fixed: a spec approved in
+conversation keeps Spec Kit's `Draft` status, so the board named `spec, draft` as the current
+step of a verified feature; a plan now counts as the spec's approval. Not seen live: any session
+on macOS or Linux, where CI runs only the tests (#19).
 
 ## The team
 
@@ -236,7 +249,7 @@ tests (#19).
 | `architect` | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
 | `spec-auditor` | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
 | `test-writer` | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error | sonnet |
-| `implementer` | stubs, TDD green | anything except test files | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
+| `implementer` | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
 | `spec-gatekeeper` | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
@@ -280,7 +293,7 @@ mode exits immediately and allows the action, so installing at user level costs 
 |---|---|---|
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
 | `scope tests` | test-writer: same | writing production code |
-| `scope no-tests` | implementer: same | writing test files |
+| `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | every `scope` rule | all four writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
@@ -288,7 +301,7 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
 | `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
-| `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice) |
+| `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
 
@@ -308,7 +321,9 @@ The gate recomputes the fingerprint on every check. Any edit to those four files
 voids it, so the auditor has to look again. Task checkboxes are normalised before hashing, so
 ticking `- [X]` while implementing does not.
 
-The active feature comes from `.specify/feature.json`, which Spec Kit maintains.
+The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
+`feature_directory` may be relative to the repo or absolute; either way it must name a folder
+inside the repo, or the gate stays closed.
 
 ### The retry limit
 
@@ -351,7 +366,8 @@ Plus every regex line in the repo's `.specify/test-paths` (see below).
 
 ### State
 
-Verdicts, retry counts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
+Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
+`$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, `agents/`).
 That is inside `.git`, so it is never committed, and it is shared by every worktree of the repo,
 which lets parallel implementers in worktrees pass the same gate.
 
@@ -378,6 +394,11 @@ those slices. For each slice:
 
 For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
 own git worktree.
+
+When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
+straight away, in the foreground, without asking: between the stops above it never waits for you.
+A task still unticked at that point (a final test run, say) becomes one more implementer slice,
+and the ticks made while building never void the audit.
 
 **Handoffs are lossy on purpose.** A subagent never sees the main session's conversation; it
 starts with the prompt the skill writes and whatever files it reads. So the skill passes each
@@ -423,7 +444,8 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 ## Customising
 
 - **Test layout the patterns miss:** add one JavaScript regex per line to `.specify/test-paths`
-  in that repo. Lines starting with `#` are comments.
+  in that repo. Lines starting with `#` are comments. A line that is not a valid regex stops
+  test-writer and implementer from writing anything until it is fixed, and the message names it.
 
   ```
   # golden files are tests too
@@ -442,8 +464,9 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 48 tests: 32 drive the hook with hook JSON on stdin against throwaway git repos,
-16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
+`npm test` runs 70 tests: 41 drive the hook with hook JSON on stdin against throwaway git repos,
+24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
+twin, then `claude plugin validate` and its own 19 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 
@@ -517,6 +540,10 @@ rethinking: send the failing task to the architect and re-audit, which resets th
 without changes, delete the file the message names.
 
 **An agent is blocked writing a legitimate test file.** Add a pattern to `.specify/test-paths`.
+
+**"may not write ... until the test patterns can be read".** A line in `.specify/test-paths` is
+not a valid JavaScript regex. Fix the line the message names; until then the test lanes cannot
+tell a test from production code, so they refuse every write.
 
 **Install fails with "not installed by speckit-agents".** You already have an agent with one of
 these six names. Rename yours, or pass `--force` to back it up and replace it.

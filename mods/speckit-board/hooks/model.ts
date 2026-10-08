@@ -12,6 +12,29 @@ export const TEAM = ['product-owner', 'architect', 'spec-auditor', 'test-writer'
 export const teamRole = (agentType: string): string | undefined =>
   TEAM.find(role => agentType === role || agentType.endsWith(`:${role}`))
 
+// The active feature as feature() in speckit-team.mjs reads it: repo-relative with forward slashes, or
+// '' when it is not a path inside the repo. The fingerprint hashes the path with the text, so an
+// absolute feature_directory left as given would disagree with the gate. Unlike the hook, this does
+// not resolve symlinks.
+export function featureDir(raw: unknown, root: string): string {
+  if (typeof raw !== 'string' || !raw) return ''
+  const slash = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const top = slash(root)
+  let rel = slash(raw)
+  if (rel.startsWith('/') || /^[A-Za-z]:\//.test(rel)) {
+    const fold = /^[A-Za-z]:\//.test(top) ? (p: string) => p.toLowerCase() : (p: string) => p
+    if (!fold(rel).startsWith(`${fold(top)}/`)) return ''
+    rel = rel.slice(top.length + 1)
+  }
+  const segs: string[] = []
+  for (const s of rel.split('/')) {
+    if (s === '' || s === '.') continue
+    if (s !== '..') segs.push(s)
+    else if (!segs.pop()) return ''
+  }
+  return segs.join('/')
+}
+
 export const fingerprintFiles = (feature: string): string[] => [
   '.specify/memory/constitution.md', `${feature}/spec.md`, `${feature}/plan.md`, `${feature}/tasks.md`,
 ]
@@ -61,6 +84,8 @@ export type BoardInputs = {
   fingerprint: string
   red: number
   gate: string | undefined
+  // When the hook recorded the gate word (ISO time); absent for a word from the plugin store.
+  gateAt?: string
   running: readonly string[]
 }
 
@@ -70,11 +95,15 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
   const runs = (role: string) => i.running.includes(role)
   const idle = (role: string): SpeckitPhaseState => (runs(role) ? 'active' : 'todo')
 
+  // /speckit-team approves the spec in conversation and never edits its Status line, so a plan
+  // (which the architect writes only after that approval) also counts as the spec being approved.
   const spec = i.spec === undefined
     ? phase('spec', idle('product-owner'))
     : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
       ? phase('spec', 'done', 'approved')
-      : phase('spec', 'active', 'draft')
+      : i.plan !== undefined
+        ? phase('spec', 'done')
+        : phase('spec', 'active', 'draft')
   const plan = i.plan === undefined ? phase('plan', idle('architect')) : phase('plan', 'done')
   const tasks = i.tasks === undefined
     ? phase('tasks', idle('architect'))
@@ -104,13 +133,18 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
           ? phase('build', 'active', progress)
           : phase('build', 'todo', progress)
 
-  const verify = i.gate === 'APPROVED'
-    ? phase('verify', 'done', 'approved')
-    : runs('spec-gatekeeper')
-      ? phase('verify', 'active')
-      : i.gate === 'REJECTED'
-        ? phase('verify', 'failed', 'rejected')
-        : phase('verify', 'todo')
+  // The gatekeeper judged the files the audit passed. Once those change, or a later audit passes
+  // new ones, its word is about old files. ISO times compare as strings.
+  const auditAt = v && typeof v === 'object' && typeof v.at === 'string' ? v.at : undefined
+  const verify = runs('spec-gatekeeper')
+    ? phase('verify', 'active')
+    : i.gate !== 'APPROVED' && i.gate !== 'REJECTED'
+      ? phase('verify', 'todo')
+      : audit.state !== 'done' || (i.gateAt !== undefined && auditAt !== undefined && i.gateAt < auditAt)
+        ? phase('verify', 'stale', 'audit changed')
+        : i.gate === 'APPROVED'
+          ? phase('verify', 'done', 'approved')
+          : phase('verify', 'failed', 'rejected')
 
   return [spec, plan, tasks, audit, build, verify]
 }

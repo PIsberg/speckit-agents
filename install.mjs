@@ -93,6 +93,28 @@ function readSettings() {
     console.error(`ERROR: ${settingsFile} is not valid JSON (${e.message}). Fix it, or add the gates by hand (README.md).`);
     process.exit(1);
   }
+  // Valid JSON of the wrong shape crashed withGates after the agents were written, or, as an array,
+  // dropped the gates without a word.
+  const problem = settingsShapeProblem(settings);
+  if (problem) {
+    console.error(`ERROR: ${settingsFile} is not a settings object (${problem}). Fix it, or add the gates by hand (README.md).`);
+    process.exit(1);
+  }
+}
+function settingsShapeProblem(s) {
+  const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v);
+  const isObject = (v) => kind(v) === 'object';
+  if (!isObject(s)) return `the file holds ${kind(s)}`;
+  if (s.hooks === undefined) return null;
+  if (!isObject(s.hooks)) return `"hooks" is ${kind(s.hooks)}`;
+  for (const [event, groups] of Object.entries(s.hooks)) {
+    if (!Array.isArray(groups)) return `"hooks.${event}" is ${kind(groups)}, not a list`;
+    if (!groups.every(isObject)) return `"hooks.${event}" holds an entry that is not an object`;
+    if (!groups.every((g) => g.hooks === undefined || (Array.isArray(g.hooks) && g.hooks.every(isObject)))) {
+      return `"hooks.${event}" holds an entry whose "hooks" is not a list of objects`;
+    }
+  }
+  return null;
 }
 readSettings();
 
@@ -385,6 +407,6 @@ if (boardResult.error) {
 console.log(`
 Done. Next:
   1. Restart Claude Code (agents load at session start).
-  2. In a repo: specify init --here --ai claude, then fill in /speckit-constitution.
+  2. In a repo: specify init --here --ai claude (/speckit-team drafts the constitution with you).
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...`);
 if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');

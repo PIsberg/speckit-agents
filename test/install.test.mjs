@@ -138,6 +138,21 @@ test('a settings.json that is not JSON is left alone', () => {
   assert.deepEqual(fs.readdirSync(dir), ['settings.json'], 'no half install: fail before writing anything');
 });
 
+// JSON of the wrong shape parsed fine, then either crashed the installer with a TypeError after the
+// agents were written, or (an array) went through with the gates silently left out.
+test('a settings.json that is JSON but not settings is left alone too', () => {
+  for (const text of ['null', '[]', '"x"', '{"hooks":[]}', '{"hooks":{"PreToolUse":{}}}', '{"hooks":{"PreToolUse":[null]}}',
+    '{"hooks":{"PreToolUse":[{"hooks":{}}]}}', '{"hooks":{"PreToolUse":[{"hooks":[null]}]}}']) {
+    const dir = claudeDir(text);
+    const r = install(dir);
+    assert.equal(r.status, 1, `${text}: ${r.stdout}`);
+    assert.match(r.stderr, /settings\.json/, text);
+    assert.doesNotMatch(r.stderr, /TypeError/, text);
+    assert.equal(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'), text);
+    assert.deepEqual(fs.readdirSync(dir), ['settings.json'], `${text}: no half install`);
+  }
+});
+
 // Uninstall leaves the config as it found it (SC-009 as the owner decided on 2026-10-06): the same
 // settings, in their own formatting, and no file or directory of the installer's left behind.
 test('install then uninstall into an empty config dir leaves it empty', () => {

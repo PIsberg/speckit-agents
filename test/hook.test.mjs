@@ -113,7 +113,8 @@ test('no agent may write the guardrail state under .git/', () => {
 test('the .git/ guard holds for other spellings and from a linked worktree', () => {
   const { dir, g } = repo();
   const spellings = ['.git./speckit-team/retries/001-demo.json', '.git/../.git/speckit-team/verdicts/001-demo.json'];
-  if (process.platform === 'win32') spellings.push('.GIT/speckit-team/retries/001-demo.json');
+  // Any case-insensitive file system, not only Windows: macOS's default APFS volume is one too.
+  if (fs.existsSync(path.join(dir, '.GIT'))) spellings.push('.GIT/speckit-team/retries/001-demo.json');
   for (const f of spellings) assert.ok(denied(write(dir, ['scope', 'no-tests'], f)), f);
 
   const wt = `${dir}-wt`;
@@ -126,11 +127,53 @@ test('the .git/ guard holds for other spellings and from a linked worktree', () 
   assert.equal(write(wt, ['scope', 'no-tests'], 'src/main/Other.java'), null, 'normal work in the worktree');
 });
 
+// implementer's lane was "anything but tests", which included .specify/: pointing feature.json at
+// another audited feature reset its retry count, and test-paths decides what its lane is.
+test('implementer may not write the Spec Kit config under .specify/', () => {
+  const { dir, write: w } = repo();
+  for (const f of ['.specify/feature.json', '.specify/test-paths', '.specify/memory/constitution.md']) {
+    const out = write(dir, ['scope', 'no-tests'], f);
+    assert.ok(denied(out), f);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /\.specify\//, f);
+  }
+  assert.equal(write(dir, ['scope', 'no-tests'], `${FEAT}/tasks.md`), null, 'ticking tasks is still allowed');
+  assert.equal(write(dir, ['scope', 'no-tests'], '.specifyx/notes.md'), null, 'only the .specify folder itself');
+
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'sp1' });
+  w('.specify/feature.json', JSON.stringify({ feature_directory: 'specs/000-old' }));
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'sp1' });
+  assert.equal(out?.decision, 'block', 'a Bash write to .specify/ is caught at stop');
+  assert.match(out.reason, /\.specify\/feature\.json/);
+});
+
 test('.specify/test-paths adds repo-specific test patterns', () => {
   const { dir, write: w } = repo();
   assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);
   w('.specify/test-paths', '# golden files\n^checks/\n');
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'checks/golden.txt')));
+});
+
+// A line that was not a valid regex crashed scope, and a crashed hook lets the write through: one typo
+// in test-paths, or one written there by implementer, opened every test file to it.
+test('an invalid .specify/test-paths line closes the test lanes and names the line', () => {
+  const { dir, write: w, g } = repo();
+  w('.specify/test-paths', '^checks/\n\n(unclosed\n');
+  for (const [args, f] of [[['scope', 'no-tests'], 'src/test/java/AppTest.java'], [['scope', 'no-tests'], 'src/main/App.java'],
+    [['scope', 'tests'], 'src/test/java/AppTest.java']]) {
+    const out = write(dir, args, f);
+    assert.ok(denied(out), `${args.join(' ')} ${f}`);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /test-paths line 3 .*\(unclosed/);
+  }
+  assert.equal(write(dir, ['scope', 'only', 'specs/'], `${FEAT}/plan.md`), null, 'scope only does not use test patterns');
+
+  g('add', '-A'); g('commit', '-qm', 'bad pattern');
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'tp1' });
+  w('src/test/java/AppTest.java', 'class AppTest {}\n');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'tp1' });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /lane check could not run.*test-paths line 3/);
 });
 
 test('gate blocks implementation until a PASS verdict on the current artifacts', () => {
@@ -149,6 +192,30 @@ test('gate blocks implementation until a PASS verdict on the current artifacts',
 
   w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work.\nFR-002 added later.\n');
   assert.match(run(dir, ['gate'], tool).hookSpecificOutput.permissionDecisionReason, /changed after the audit/);
+});
+
+// Spec Kit's scripts accept an absolute feature_directory. The hook joined it under the repo root,
+// hashed four missing files, and an audit of "<missing>" stayed valid through any edit to the spec.
+test('an absolute feature_directory is the same feature: editing the spec still closes the gate', () => {
+  const { dir, write: w } = repo();
+  const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };
+  w('.specify/feature.json', JSON.stringify({ feature_directory: path.join(dir, FEAT) }));
+  pass(dir);
+  assert.equal(run(dir, ['gate'], tool), null);
+  w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work.\nFR-002 added later.\n');
+  assert.match(run(dir, ['gate'], tool)?.hookSpecificOutput?.permissionDecisionReason ?? '', /changed after the audit/);
+});
+
+// A feature_directory that is not a string crashed the gate, and a crashed gate lets the action through.
+test('a feature_directory that is not a path in the repo closes the gate', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  for (const feature_directory of [7, [FEAT], {}, null, '', path.join(os.tmpdir(), 'elsewhere')]) {
+    w('.specify/feature.json', JSON.stringify({ feature_directory }));
+    const out = run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} });
+    assert.ok(denied(out), JSON.stringify(feature_directory));
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /feature\.json/);
+  }
 });
 
 test('gate on a typed /speckit-implement and on the Skill tool, nothing else', () => {
@@ -277,6 +344,18 @@ test('mistyped fields never crash a hook', () => {
   for (const cwd of [7, {}]) run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd });
 });
 
+// A non-string last message crashed verdict and ends, so a report that never ended in its word was let
+// through. A non-string transcript path went to readFileSync, which reads a number as a file descriptor.
+test('a last message or transcript path that is not a string counts as no report', () => {
+  const { dir } = repo();
+  for (const extra of [{ last_assistant_message: 7 }, { last_assistant_message: ['VERDICT: PASS'] }, { agent_transcript_path: 0 }]) {
+    const stop = { hook_event_name: 'SubagentStop', ...extra };
+    assert.equal(run(dir, ['ends', 'APPROVED', 'REJECTED'], stop)?.decision, 'block', `ends ${JSON.stringify(extra)}`);
+    assert.equal(run(dir, ['verdict'], stop)?.decision, 'block', `verdict ${JSON.stringify(extra)}`);
+  }
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'verdicts', '001-demo.json')), false, 'no verdict recorded');
+});
+
 test('a corrupt verdict file closes the gate and says why', () => {
   const { dir } = repo();
   fs.mkdirSync(path.join(stateDir(dir), 'verdicts'), { recursive: true });
@@ -293,6 +372,26 @@ test('a corrupt agent start record makes the lane check say it could not run', (
   const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x1' });
   assert.ok(!decided(out));
   assert.match(out?.systemMessage ?? '', /lane/);
+});
+
+// git diff against a commit that does not resolve fails, and a failed diff read as "nothing changed":
+// an edited test file passed the lane check without a word.
+test('a start commit git cannot find makes the lane check say it could not run', () => {
+  const { dir, write: w, g } = repo();
+  w('src/test/java/AppTest.java', 'class AppTest {}\n');
+  g('add', '-A'); g('commit', '-qm', 'test');
+  fs.mkdirSync(path.join(stateDir(dir), 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'x2.json'), JSON.stringify({ sha: '0123456789abcdef0123456789abcdef01234567', dirty: [] }));
+  w('src/test/java/AppTest.java', 'class AppTest { /* weakened */ }\n');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x2' });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /lane check could not run.*0123456789ab/);
+
+  const leak = path.join(dir, 'leak.txt');
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'x3.json'), JSON.stringify({ sha: `--output=${leak}`, dirty: [] }));
+  const opt = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'x3' });
+  assert.match(opt?.systemMessage ?? '', /start record is incomplete/);
+  assert.equal(fs.existsSync(leak), false, 'a sha that looks like an option never reaches git');
 });
 
 test('an unwritable state directory never crashes a hook, and is reported', () => {
@@ -333,6 +432,21 @@ test('lane check catches writes that bypassed Edit, including via Bash', () => {
   start('t1');
   w('src/main/Sneaky.java', 'class Sneaky {}\n');
   assert.equal(stop('t1', 'tests')?.decision, 'block', 'test-writer may not add production code');
+});
+
+// git diff detects renames by default and then names only the new path, so moving a failing test out
+// of the test tree (git mv, or delete plus create) passed the lane check as one new production file.
+test('lane check catches a test moved out of the test tree', () => {
+  const { dir, write: w, g } = repo();
+  w('src/test/java/AppTest.java', 'class AppTest {\n  void t() { assert false; }\n}\n');
+  g('add', '-A'); g('commit', '-qm', 'test');
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'mv1' });
+  g('mv', 'src/test/java/AppTest.java', 'src/main/AppTest.txt');
+  g('commit', '-qm', 'moved');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'mv1' });
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /src\/test\/java\/AppTest\.java/);
 });
 
 test('lane check ignores files that were already dirty when the agent started', () => {
@@ -448,4 +562,22 @@ test('ends: a gatekeeper report without APPROVED or REJECTED is sent back once',
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done', stop_hook_active: true }), null);
   assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} }), null, 'other tools pass');
+});
+
+// The gatekeeper's word was kept only in the board mod's memory of the SubagentStop it saw, so a
+// board that missed it (reloaded, or not loaded when verification ran) never showed verify done.
+// It is now on disk next to the audit verdict, which the board reads the same way.
+test('ends records the accepted final word for the active feature', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'APPROVED', 'REJECTED'];
+  const recorded = () => JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'ends', '001-demo.json'), 'utf8'));
+  run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'not done' });
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'ends', '001-demo.json')), false, 'a refused report records nothing');
+
+  run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'FR-001 untested\n\n**REJECTED**' }, agent_id: 'gk1' });
+  assert.equal(recorded().word, 'REJECTED');
+  assert.equal(recorded().agent_id, 'gk1');
+
+  run(dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk2', last_assistant_message: 'all covered\nAPPROVED' });
+  assert.equal(recorded().word, 'APPROVED', 'a later run replaces the word');
 });

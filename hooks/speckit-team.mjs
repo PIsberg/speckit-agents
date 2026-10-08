@@ -6,7 +6,7 @@
 //
 //   scope only <prefix>...  PreToolUse Write/Edit: allow only paths under these prefixes
 //   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
-//   scope no-tests          PreToolUse Write/Edit: allow anything except test files
+//   scope no-tests          PreToolUse Write/Edit: allow anything except test files and .specify/
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
@@ -30,6 +30,9 @@ const TEST_PATTERNS = [
   /Tests?\.swift$/,
 ];
 const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
+// Spec Kit's config is in no agent's code lane: feature.json picks the feature the gate and the retry
+// count are kept for, and test-paths decides what counts as a test.
+const SPECKIT_CONFIG = /^\.specify\//;
 // Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
 const MAX_RED = 3;
 
@@ -124,15 +127,29 @@ function canonical(p) {
 const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
 const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
 
-function extraTestPatterns() {
-  return lines(readOr(path.join(root, '.specify', 'test-paths'), ''))
-    .map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => new RegExp(l));
-}
-const isTest = (rel) => [...TEST_PATTERNS, ...extraTestPatterns()].some((re) => re.test(rel));
-const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel));
+// Read once per run. A line that is not a valid regex leaves the test lanes undecidable: scope denies
+// and lane says it could not run, instead of crashing, which would let every write through.
+const testPaths = (() => {
+  const patterns = [...TEST_PATTERNS]; const bad = [];
+  readOr(path.join(root, '.specify', 'test-paths'), '').split('\n').forEach((l, i) => {
+    const t = l.trim();
+    if (!t || t.startsWith('#')) return;
+    try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
+  });
+  return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
+})();
+const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 
+// The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
+// joined under the root as-is it named four missing files, and that fingerprint never went stale.
+// Anything that is not a path inside the repo is no feature, which keeps the gate closed.
 function feature() {
-  try { return JSON.parse(readOr(path.join(root, '.specify', 'feature.json'), '')).feature_directory; } catch { return null; }
+  let dir;
+  try { dir = str(JSON.parse(readOr(path.join(root, '.specify', 'feature.json'), '')).feature_directory); } catch { return null; }
+  if (!dir) return null;
+  const rel = path.relative(real(root), real(path.resolve(root, dir))).split(path.sep).join('/');
+  return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : null;
 }
 
 // Ticking a task checkbox must not invalidate the audit, so checkbox state is normalised away.
@@ -149,13 +166,14 @@ function fingerprint(feat) {
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
+const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
 // REDs count only against the plan and tasks they were made on: a revision starts from zero.
 const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array.isArray(r.red) ? r.red.length : 0);
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
 
 function auditProblem() {
   const feat = feature();
-  if (!feat) return 'no active feature in .specify/feature.json';
+  if (!feat) return 'no active feature: .specify/feature.json has no feature_directory inside the repo';
   const v = readState(verdictFile(feat));
   if (v === undefined) return `spec-auditor has not passed ${feat}`;
   // Fail closed: a verdict that cannot be read proves no PASS.
@@ -167,9 +185,11 @@ function auditProblem() {
   return null;
 }
 
+// No rename detection: a rename is listed by its new path only, and a test moved out of the test tree
+// would read as one new production file.
 function changedSince(base) {
   return [...new Set([
-    ...lines(git(root, 'diff', '--name-only', base)),
+    ...lines(git(root, 'diff', '--no-renames', '--name-only', base)),
     ...lines(git(root, 'ls-files', '--others', '--exclude-standard')),
   ])];
 }
@@ -181,8 +201,10 @@ const reportText = (viaHandback) => (viaHandback
   ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText());
 
 function lastAssistantText() {
-  if (input.last_assistant_message) return input.last_assistant_message;
-  const entries = lines(readOr(input.agent_transcript_path || '', '')).reverse();
+  const last = str(input.last_assistant_message);
+  if (last) return last;
+  // A number would reach readFileSync as a file descriptor, so only a string is a path.
+  const entries = lines(readOr(str(input.agent_transcript_path) ?? '', '')).reverse();
   for (const l of entries) {
     try {
       const m = JSON.parse(l).message;
@@ -213,6 +235,10 @@ if (mode === 'scope') {
   const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
+  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
+    deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
+      + 'Report this to the user, who fixes the file; do not edit it yourself.');
+  }
   // A prefix ending in / is a directory; anything else must match the whole path.
   if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
     deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
@@ -221,6 +247,10 @@ if (mode === 'scope') {
   if (rule === 'tests' && !inLane('tests', rel)) {
     deny(`${who} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
       + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
+  }
+  if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
+    deny(`${who} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
+      + 'Report what should change instead.');
   }
   if (rule === 'no-tests' && !inLane('no-tests', rel)) {
     deny(`${who} may not change tests: ${rel} is part of the executable spec. `
@@ -341,8 +371,13 @@ if (mode === 'ends') {
   const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
   const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
-  if (args.includes(last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase())) {
+  const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+  if (args.includes(word)) {
     if (ok) writeJson(ok, {});
+    // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
+    // gatekeeper's word from the same place whether or not it saw the agent stop.
+    const feat = feature();
+    if (feat) writeJson(endsFile(feat), { word, feature: feat, at: new Date().toISOString(), agent_id: agentId });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${args.join(', ')}. `
@@ -361,8 +396,14 @@ if (mode === 'lane') {
     if (base === null) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is unreadable.` });
     process.exit(0);
   }
-  if (typeof base.sha !== 'string' || !Array.isArray(base.dirty)) {
+  // Only a hex commit id reaches git's argument list: "--output=..." would be read as an option.
+  if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) {
     emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
+  }
+  if (testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
+  // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
+  if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) {
+    emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start commit ${base.sha.slice(0, 12)} is not in this repo.` });
   }
   const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
   if (outside.length && !input.stop_hook_active) {

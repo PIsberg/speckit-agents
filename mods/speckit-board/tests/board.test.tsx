@@ -148,3 +148,21 @@ test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on
   // The terminal names the plugin before a toast itself.
   expect(seen.toasts.at(-1)).toBe('no .specify/ in the git repo at /elsewhere; nothing to show')
 })
+
+// The board saw no agent stop here: the gatekeeper's word comes only from the file the hook wrote.
+for (const [word, glyph, color] of [['APPROVED', '✓', 'success'], ['REJECTED', '✗', 'error']] as const) {
+  test(`the verify step shows a recorded ${word} without seeing the agent stop`, async ($, on) => {
+    await world(on, {
+      [`${ROOT}/${FEATURE}/tasks.md`]: TASKS.replace(/- \[ \]/g, '- [x]'),
+      [`${ROOT}/.git/speckit-team/ends/001-x.json`]: JSON.stringify({ word, feature: FEATURE }),
+    })
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({
+      plugin: 'speckit-board', surface: 'terminal', ...BAND,
+      viewport: { columns: 140, rows: 40 },
+      props: { hasSurvey: false, bodyColumns: 135 },
+    } as never)
+    expect((await ui.find({ type: 'Text', text: `${glyph} verify` }))?.props.color).toBe(color)
+    await ui.unmount()
+  })
+}

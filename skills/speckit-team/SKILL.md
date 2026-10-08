@@ -33,14 +33,33 @@ and answers, or another agent's full report.
   pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory.
 
+## Pace
+Wait for the user only where a step says **Stop:**, or where it says to hand something to the
+user. Everywhere else, launch the next agent as soon as the report you need is in: do not ask
+whether to go on, and do not end your turn between steps.
+
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --ai claude`.
-- `.specify/memory/constitution.md` holds real rules, not the template. If not, stop: `/speckit-constitution`.
 - The working tree is clean. If not, ask before going on.
+- `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
+  (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
+
+## 0b. Constitution (only while it is the template)
+The constitution is the user's rules: draft them, never decide them.
+1. Read only what the repo already states as rules: `CLAUDE.md` or `AGENTS.md`, the README's
+   contributing or development section, the build file, the CI workflow. Draft 3 to 6 principles,
+   each one testable rule (MUST or SHOULD) with the file it comes from. Mark a rule you inferred
+   rather than read as inferred.
+2. Show the draft and ask with AskUserQuestion: use it as drafted (recommended), or change it
+   (the user's answer is the change).
+3. Invoke the `speckit-constitution` skill with the approved principles as its arguments. Do not
+   commit it here: step 1 creates the feature branch, and it is committed there.
+**Stop:** the approval in 2. Then go on to step 1 without asking again.
 
 ## 1. Spec: product-owner
 Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then
-relaunch it with the answers. Repeat until `READY FOR PLAN`.
+relaunch it with the answers. Repeat until `READY FOR PLAN`. If step 0b wrote the constitution,
+commit it now, on the feature branch product-owner's speckit-specify created, never on main or master.
 **Stop:** the user reviews `spec.md`.
 
 ## 2. Plan and tasks: architect
@@ -50,7 +69,8 @@ relaunch it with the answers. Repeat until `READY FOR PLAN`.
 On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
 re-audit. MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
-or constitution.
+or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
+while building never call for a re-audit.
 
 ## 4-5. Red and green, one slice at a time
 Work through `tasks.md` one slice at a time: a slice is one implementation task (or a few that
@@ -76,7 +96,10 @@ each implementer with `isolation: "worktree"`, then merge their branches into th
 task order.
 
 ## 6. Verify: spec-gatekeeper
-On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
+Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
+A task still unticked then (a final test run, a docs task no slice took) is one more slice: launch
+implementer for it, and verify after its GREEN. Hand to the user only a task no agent can do.
+Launch the gatekeeper in the foreground, so its report ends the step, not a later turn. On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
