@@ -1,6 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
-import { derivePhases, fingerprint, outcomeOf, parseTasks, redCount, teamRole } from '../hooks/model'
+import { derivePhases, featureDir, fingerprint, outcomeOf, parseTasks, redCount, teamRole } from '../hooks/model'
 import type { BoardInputs } from '../hooks/model'
 
 test('fingerprint matches speckit-team.mjs byte for byte', async () => {
@@ -68,4 +68,15 @@ test('report outcomes and team roles', () => {
   expect(outcomeOf('product-owner', 'q\n**READY FOR PLAN**')).toBe('READY FOR PLAN')
   expect(teamRole('speckit-agents:architect')).toBe('architect')
   expect(teamRole('Explore')).toBeUndefined()
+})
+
+test('the feature is read as the hook reads it: repo-relative, or none', () => {
+  // The hook hashes the path with the text, so an absolute path left as given named another fingerprint.
+  expect(featureDir('specs/001-x', 'C:/r')).toBe('specs/001-x')
+  expect(featureDir('./specs/001-x/', '/r')).toBe('specs/001-x')
+  expect(featureDir('/r/specs/001-x', '/r')).toBe('specs/001-x')
+  expect(featureDir(String.raw`C:\R\specs\001-x`, 'C:/r')).toBe('specs/001-x')
+  for (const raw of [7, ['specs/001-x'], null, '', '/elsewhere/specs/001-x', '../specs/001-x', '/r']) {
+    expect(featureDir(raw, '/r')).toBe('')
+  }
 })

@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { SpeckitAgent, SpeckitBoard, SpeckitPhase } from '../types'
 import {
-  COLOR, GLYPH, MAX_RED, MISSING, SPINNER, bar, current, derivePhases, fingerprint,
+  COLOR, GLYPH, MAX_RED, MISSING, SPINNER, bar, current, derivePhases, featureDir, fingerprint,
   fingerprintFiles, outcomeOf, parseTasks, redCount, since, teamRole,
 } from './model'
 
@@ -41,10 +41,13 @@ async function findRepo($: EngineInterface, cwd: string): Promise<Repo | null> {
   return common ? { root, stateDir: `${common}/speckit-team` } : null
 }
 
+async function activeFeature($: EngineInterface, root: string): Promise<string> {
+  const meta = await readJson($, `${root}/.specify/feature.json`)
+  return featureDir(meta && typeof meta === 'object' ? (meta as { feature_directory?: unknown }).feature_directory : undefined, root)
+}
+
 async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | null> {
-  const meta = await readJson($, `${at.root}/.specify/feature.json`)
-  const feature = meta && typeof meta === 'object' && 'feature_directory' in meta
-    ? String(meta.feature_directory) : ''
+  const feature = await activeFeature($, at.root)
   if (!feature) return null
   const name = feature.split('/').pop() ?? feature
 
@@ -180,8 +183,8 @@ export const register: Register = on => {
         (a.id === e.agent_id ? { ...a, isRunning: false, outcome, endedAt: now } : a)))
       const b = await read($, board)
       if (role === 'spec-gatekeeper' && b && (outcome === 'APPROVED' || outcome === 'REJECTED')) {
-        const feature = (await readJson($, `${repo?.root}/.specify/feature.json`)) as { feature_directory?: string } | undefined
-        if (feature?.feature_directory) await $.store.set(`gate:${feature.feature_directory}`, outcome)
+        const feature = repo ? await activeFeature($, repo.root) : ''
+        if (feature) await $.store.set(`gate:${feature}`, outcome)
       }
       $.ui.toast(`${role} finished${outcome ? `: ${outcome}` : ''}`)
       await keepTicking($)

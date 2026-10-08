@@ -12,6 +12,29 @@ export const TEAM = ['product-owner', 'architect', 'spec-auditor', 'test-writer'
 export const teamRole = (agentType: string): string | undefined =>
   TEAM.find(role => agentType === role || agentType.endsWith(`:${role}`))
 
+// The active feature as feature() in speckit-team.mjs reads it: repo-relative with forward slashes, or
+// '' when it is not a path inside the repo. The fingerprint hashes the path with the text, so an
+// absolute feature_directory left as given would disagree with the gate. Unlike the hook, this does
+// not resolve symlinks.
+export function featureDir(raw: unknown, root: string): string {
+  if (typeof raw !== 'string' || !raw) return ''
+  const slash = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '')
+  const top = slash(root)
+  let rel = slash(raw)
+  if (rel.startsWith('/') || /^[A-Za-z]:\//.test(rel)) {
+    const fold = /^[A-Za-z]:\//.test(top) ? (p: string) => p.toLowerCase() : (p: string) => p
+    if (!fold(rel).startsWith(`${fold(top)}/`)) return ''
+    rel = rel.slice(top.length + 1)
+  }
+  const segs: string[] = []
+  for (const s of rel.split('/')) {
+    if (s === '' || s === '.') continue
+    if (s !== '..') segs.push(s)
+    else if (!segs.pop()) return ''
+  }
+  return segs.join('/')
+}
+
 export const fingerprintFiles = (feature: string): string[] => [
   '.specify/memory/constitution.md', `${feature}/spec.md`, `${feature}/plan.md`, `${feature}/tasks.md`,
 ]
