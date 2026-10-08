@@ -211,7 +211,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (17 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (18 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
