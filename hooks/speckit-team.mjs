@@ -166,6 +166,7 @@ function fingerprint(feat) {
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
+const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
 // REDs count only against the plan and tasks they were made on: a revision starts from zero.
 const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array.isArray(r.red) ? r.red.length : 0);
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
@@ -370,8 +371,13 @@ if (mode === 'ends') {
   const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
   const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
-  if (args.includes(last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase())) {
+  const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+  if (args.includes(word)) {
     if (ok) writeJson(ok, {});
+    // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
+    // gatekeeper's word from the same place whether or not it saw the agent stop.
+    const feat = feature();
+    if (feat) writeJson(endsFile(feat), { word, feature: feat, at: new Date().toISOString(), agent_id: agentId });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${args.join(', ')}. `

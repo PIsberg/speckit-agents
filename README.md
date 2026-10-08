@@ -289,7 +289,7 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
 | `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
-| `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice) |
+| `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
 
@@ -354,7 +354,8 @@ Plus every regex line in the repo's `.specify/test-paths` (see below).
 
 ### State
 
-Verdicts, retry counts and per-agent start points live in `$(git rev-parse --git-common-dir)/speckit-team/`.
+Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
+`$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, `agents/`).
 That is inside `.git`, so it is never committed, and it is shared by every worktree of the repo,
 which lets parallel implementers in worktrees pass the same gate.
 

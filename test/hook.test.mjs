@@ -543,3 +543,21 @@ test('ends: a gatekeeper report without APPROVED or REJECTED is sent back once',
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done', stop_hook_active: true }), null);
   assert.equal(run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {} }), null, 'other tools pass');
 });
+
+// The gatekeeper's word was kept only in the board mod's memory of the SubagentStop it saw, so a
+// board that missed it (reloaded, or not loaded when verification ran) never showed verify done.
+// It is now on disk next to the audit verdict, which the board reads the same way.
+test('ends records the accepted final word for the active feature', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'APPROVED', 'REJECTED'];
+  const recorded = () => JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'ends', '001-demo.json'), 'utf8'));
+  run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'not done' });
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'ends', '001-demo.json')), false, 'a refused report records nothing');
+
+  run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'FR-001 untested\n\n**REJECTED**' }, agent_id: 'gk1' });
+  assert.equal(recorded().word, 'REJECTED');
+  assert.equal(recorded().agent_id, 'gk1');
+
+  run(dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk2', last_assistant_message: 'all covered\nAPPROVED' });
+  assert.equal(recorded().word, 'APPROVED', 'a later run replaces the word');
+});
