@@ -195,8 +195,10 @@ const reportText = (viaHandback) => (viaHandback
   ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText());
 
 function lastAssistantText() {
-  if (input.last_assistant_message) return input.last_assistant_message;
-  const entries = lines(readOr(input.agent_transcript_path || '', '')).reverse();
+  const last = str(input.last_assistant_message);
+  if (last) return last;
+  // A number would reach readFileSync as a file descriptor, so only a string is a path.
+  const entries = lines(readOr(str(input.agent_transcript_path) ?? '', '')).reverse();
   for (const l of entries) {
     try {
       const m = JSON.parse(l).message;

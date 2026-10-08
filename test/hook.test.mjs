@@ -323,6 +323,18 @@ test('mistyped fields never crash a hook', () => {
   for (const cwd of [7, {}]) run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', cwd });
 });
 
+// A non-string last message crashed verdict and ends, so a report that never ended in its word was let
+// through. A non-string transcript path went to readFileSync, which reads a number as a file descriptor.
+test('a last message or transcript path that is not a string counts as no report', () => {
+  const { dir } = repo();
+  for (const extra of [{ last_assistant_message: 7 }, { last_assistant_message: ['VERDICT: PASS'] }, { agent_transcript_path: 0 }]) {
+    const stop = { hook_event_name: 'SubagentStop', ...extra };
+    assert.equal(run(dir, ['ends', 'APPROVED', 'REJECTED'], stop)?.decision, 'block', `ends ${JSON.stringify(extra)}`);
+    assert.equal(run(dir, ['verdict'], stop)?.decision, 'block', `verdict ${JSON.stringify(extra)}`);
+  }
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'verdicts', '001-demo.json')), false, 'no verdict recorded');
+});
+
 test('a corrupt verdict file closes the gate and says why', () => {
   const { dir } = repo();
   fs.mkdirSync(path.join(stateDir(dir), 'verdicts'), { recursive: true });
