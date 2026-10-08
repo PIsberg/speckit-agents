@@ -553,15 +553,24 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 76 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
+`npm test` runs 79 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`), and 4 run
-`tools/usage.mjs` on a synthetic transcript. CI also
+twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`), 4 run
+`tools/usage.mjs` on a synthetic transcript, and 3 are end-to-end (below). CI also
 type-checks the mod; to do it locally, load the mod once (`claude --plugin-dir mods/speckit-board`
 lays `.claude-plugin/types/` and `tsconfig.json`), then run
-`npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`. They prove the logic. They cannot prove that
-Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
-hook command, an event name or a matcher, check it live in a scratch repo:
+`npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`. They prove the logic. Most of them cannot prove that
+Claude Code fires a hook, which is where all three serious bugs in this project were.
+
+The end-to-end tests in `test/e2e.test.mjs` can, for the guardrail that fires before any model
+call. They install the team into a throwaway config dir, start the real Claude Code with
+`claude -p` in a throwaway Spec Kit repo, and point it at a fake Anthropic API on localhost, so
+they need no login and cost nothing. A typed `/speckit-implement` must reach the fake API zero
+times with no audit recorded and after `spec.md` changes behind a PASS, and at least once with a
+current PASS. With the `UserPromptExpansion` gate removed from `install.mjs`, the two blocking
+cases fail with "1 model requests". Every other guardrail fires only after a model has asked for a
+tool; covering those end to end is #45, and a full pipeline run with real models is #46. Until
+then, after changing a hook command, an event name or a matcher, check it live in a scratch repo:
 
 ```sh
 mkdir /tmp/sk && cd /tmp/sk && git init && specify init --here --integration claude
