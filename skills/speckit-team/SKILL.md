@@ -52,13 +52,14 @@ The constitution is the user's rules: draft them, never decide them.
    rather than read as inferred.
 2. Show the draft and ask with AskUserQuestion: use it as drafted (recommended), or change it
    (the user's answer is the change).
-3. Invoke the `speckit-constitution` skill with the approved principles as its arguments, then
-   commit `.specify/` on the current branch.
+3. Invoke the `speckit-constitution` skill with the approved principles as its arguments. Do not
+   commit it here: step 1 creates the feature branch, and it is committed there.
 **Stop:** the approval in 2. Then go on to step 1 without asking again.
 
 ## 1. Spec: product-owner
 Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then
-relaunch it with the answers. Repeat until `READY FOR PLAN`.
+relaunch it with the answers. Repeat until `READY FOR PLAN`. If step 0b wrote the constitution,
+commit it now, on the feature branch product-owner's speckit-specify created, never on main or master.
 **Stop:** the user reviews `spec.md`.
 
 ## 2. Plan and tasks: architect

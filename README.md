@@ -101,8 +101,8 @@ Then, in Claude Code:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
 In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
 template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
-and asks you to approve it, a fourth stop, then writes it with `speckit-constitution`. You can
-still run `/speckit-constitution` yourself beforehand.
+and asks you to approve it, a fourth stop, then writes it with `speckit-constitution` and commits
+it on the feature branch, not on main. You can still run `/speckit-constitution` yourself beforehand.
 After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
 verifies and opens a PR, which it does not merge.
 
