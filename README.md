@@ -220,7 +220,8 @@ handed back through `SubagentHandback` (how an interactive session's background 
 or else from its last message, as the hook reads it. An agent counts as finished only once the
 team's own stop checks, which run after the mod, have let it stop: one they send back to add its
 verdict or restore its lane keeps its spinner, and the verdict, RED or gatekeeper word they record
-as it stops shows at once rather than at the next poll. An agent that is stopped or fails may end
+as it stops shows at once rather than at the next poll. Claude Code adds an agent's frontmatter
+Stop hooks as session hooks, and live they still ran inside the mod's `next()` (see Verified). An agent that is stopped or fails may end
 without a `SubagentStop` (not yet seen live either way), so the 4-second poll also reads Claude
 Code's own agent list and ends a row the list calls `killed` or `failed`, with that as its word.
 The verify step reads the spec-gatekeeper's word from the file the hook's `ends` check writes once
@@ -275,7 +276,15 @@ step of a verified feature; a plan now counts as the spec's approval. On Linux, 
 clone of this checkout): with a PASS and an APPROVED fed to the installed `verdict` and
 `ends --record` hooks, a headless `claude -p "/speckit-board refresh"` emitted `ui_status`
 `speckit 001-greet · ◐ build (1/2) · 1/2 tasks` and the startup `ui_toast`, then, with the
-last task ticked, `✓ verified · 2/2 tasks`, at $0. Not seen live: an interactive session on
+last task ticked, `✓ verified · 2/2 tasks`, at $0. A blocked stop, the same day on Windows
+(Claude Code 2.1.294, Haiku, board by `--plugin-dir`, the debug log read for order): a
+spec-auditor told to leave out its `VERDICT` line once was refused by the `verdict` hook, and the
+mod's `classic.SubagentStop` settled after that block with no toast and the status still
+`◐ audit`; when it added the line, `spec-auditor finished: PASS` came 7 ms after the hook
+recorded the verdict. That held for a foreground agent, a background one in a headless session
+(which still reports through SubagentStop), and an interactive `@agent-spec-auditor`, where the
+hook denied the first `SubagentHandback` and the toast came 0.5 s after the second (#31).
+Not seen live: an interactive session on
 Linux (band, pane, agent rows; that Claude Code stopped at first-run login) and any session on
 macOS (#19).
 
