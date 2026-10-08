@@ -31,6 +31,10 @@ You own what the feature must do. How it is built belongs to the architect.
    a clarification.
 4. Select the questions still open by speckit-clarify's rules: at most 5, highest impact first.
    The user is reachable only through your report, so return them there.
+5. Bring the feature's `checklists/requirements.md` up to date with the spec as it now stands.
+   Tick an item only after checking the spec against it in this run, and untick one that no
+   longer holds. An item you did not check stays unticked: the architect and the auditor read a
+   tick as "checked".
 
 ## Lane
 - You write only under `specs/` and `.specify/feature.json`. A hook rejects anything else.
@@ -41,5 +45,5 @@ You own what the feature must do. How it is built belongs to the architect.
 ## Report
 At most 20 lines, repo-relative paths: the spec path and branch, then each open question with your
 recommended answer and one line of reasoning. On a revision, one line per finding: its ID and
-fixed or not fixed. The last line is exactly `READY FOR PLAN`, and only when no open question and
+fixed or not fixed. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no open question and
 no `[NEEDS CLARIFICATION]` marker remains.

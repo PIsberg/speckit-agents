@@ -577,7 +577,12 @@ Later the same day, with the team installed into the scratch repo's own `.claude
   `[NEEDS CLARIFICATION]` markers, each question with a recommended answer, and no
   `READY FOR PLAN`. Relaunched with the answers, it wrote them into a `## Clarifications` session,
   replaced the 3 markers with requirements, asked nothing new and ended `READY FOR PLAN`. It also
-  ticked all 16 checklist items without checking them, and said so (#38). $0.19 per round.
+  ticked the checklist's markers item and reported all 16 items ticked, while saying it had not
+  re-read them (#38; the other 15 were ticked by speckit-specify's own validation in the first
+  round). $0.19 per round. With step 5 added to its prompt, a rerun of the second round made the
+  same one tick, backed by a grep that found 0 markers, and its report gave the checklist line
+  ("16 of 16 items are ticked. I checked each against the spec in this run"). Its reads were of
+  the spec and checklist before its edits; no tool call re-checked the 15 unchanged items.
 - `/speckit-team` from step 4 on `docs/media/demo`'s 001-greet (audit already PASS): implementer
   on the setup task, a stub pass ending `RESULT: STUB`, then 2 slices of test-writer and
   implementer, then the docs task and spec-gatekeeper `APPROVED`. Both test-writers ended `RED`
