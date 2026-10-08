@@ -258,8 +258,14 @@ sessions, a new interactive session showed `✓ verify` from the hook's `ends` r
 two `RESULT: RED` stops fed to the installed `result` hook moved the band to `RED 1/3`, then
 `RED 2/3`, with the pane's meter at `●●○`. That run found a bug, fixed: a spec approved in
 conversation keeps Spec Kit's `Draft` status, so the board named `spec, draft` as the current
-step of a verified feature; a plan now counts as the spec's approval. Not seen live: any session
-on macOS or Linux, where CI runs only the tests (#19).
+step of a verified feature; a plan now counts as the spec's approval. On Linux, 2026-10-08
+(Ubuntu 22.04 under WSL 2, Claude Code 2.1.294, Node 22.20.0, `node install.mjs --board` from a
+clone of this checkout): with a PASS and an APPROVED fed to the installed `verdict` and
+`ends --record` hooks, a headless `claude -p "/speckit-board refresh"` emitted `ui_status`
+`speckit 001-greet · ◐ build (1/2) · 1/2 tasks` and the startup `ui_toast`, then, with the
+last task ticked, `✓ verified · 2/2 tasks`, at $0. Not seen live: an interactive session on
+Linux (band, pane, agent rows; that Claude Code stopped at first-run login) and any session on
+macOS (#19).
 
 ## The team
 
