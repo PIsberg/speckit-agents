@@ -254,7 +254,7 @@ on macOS or Linux, where CI runs only the tests (#19).
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 38 lines on
+not say: its inputs, its lane, and the shape of its report. Those bodies are 26 to 38 lines on
 purpose.
 
 **Why the prompts are short.** A long prompt dilutes the rules that matter, and a rule in prose
