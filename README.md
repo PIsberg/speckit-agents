@@ -106,7 +106,10 @@ specify init --here --integration claude
 
 Keep `--integration claude`: without it, Spec Kit asks which assistant to set up, or, when it
 cannot ask, sets up GitHub Copilot, and the team then finds none of Spec Kit's skills. Spec Kit
-0.10 removed the older `--ai claude` spelling.
+0.10 removed the older `--ai claude` spelling. On Spec Kit 1.x you can add `--extension git` to
+have Spec Kit name and create each feature branch; without it, `/speckit-team` creates the branch
+itself after the spec is written. (Spec Kit 0.8 installs that extension by default and rejects
+the flag.)
 
 Then, in Claude Code:
 
