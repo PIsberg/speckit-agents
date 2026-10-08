@@ -407,6 +407,6 @@ if (boardResult.error) {
 console.log(`
 Done. Next:
   1. Restart Claude Code (agents load at session start).
-  2. In a repo: specify init --here --ai claude (/speckit-team drafts the constitution with you).
+  2. In a repo: specify init --here --integration claude (/speckit-team drafts the constitution with you).
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...`);
 if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');

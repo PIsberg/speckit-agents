@@ -39,7 +39,7 @@ user. Everywhere else, launch the next agent as soon as the report you need is i
 whether to go on, and do not end your turn between steps.
 
 ## 0. Preconditions
-- `.specify/` exists. If not, stop: the user runs `specify init --here --ai claude`.
+- `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
 - The working tree is clean. If not, ask before going on.
 - `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
   (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.

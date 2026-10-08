@@ -38,7 +38,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 | [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291) | `claude --version` |
 | Node 18+ | every hook is a Node script | `node --version` |
 | git | the hooks use it to find the repo and diff an agent's work | `git --version` |
-| Spec Kit (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11) |
+| Spec Kit (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11; `init` also on 1.1.2) |
 | [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
 
 uv is not preinstalled on macOS or Windows. Install it, then Spec Kit:
@@ -101,8 +101,12 @@ Restart Claude Code afterwards: agents are loaded at session start.
 In a repository:
 
 ```sh
-specify init --here --ai claude
+specify init --here --integration claude
 ```
+
+Keep `--integration claude`: without it, Spec Kit asks which assistant to set up, or, when it
+cannot ask, sets up GitHub Copilot, and the team then finds none of Spec Kit's skills. Spec Kit
+0.10 removed the older `--ai claude` spelling.
 
 Then, in Claude Code:
 
@@ -484,7 +488,7 @@ Claude Code fires a hook, which is where all three serious bugs in this project 
 hook command, an event name or a matcher, check it live in a scratch repo:
 
 ```sh
-mkdir /tmp/sk && cd /tmp/sk && git init && specify init --here --ai claude
+mkdir /tmp/sk && cd /tmp/sk && git init && specify init --here --integration claude
 # commit, then, with no audit recorded:
 MSYS_NO_PATHCONV=1 claude -p "/speckit-implement" --output-format json
 ```
