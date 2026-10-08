@@ -277,7 +277,8 @@ clone of this checkout): with a PASS and an APPROVED fed to the installed `verdi
 `ends --record` hooks, a headless `claude -p "/speckit-board refresh"` emitted `ui_status`
 `speckit 001-greet · ◐ build (1/2) · 1/2 tasks` and the startup `ui_toast`, then, with the
 last task ticked, `✓ verified · 2/2 tasks`, at $0. A blocked stop, the same day on Windows
-(Claude Code 2.1.294, Haiku, board by `--plugin-dir`, the debug log read for order): a
+(Claude Code 2.1.294, main session on Haiku, spec-auditor on its own Opus, board by
+`--plugin-dir`, the debug log read for order): a
 spec-auditor told to leave out its `VERDICT` line once was refused by the `verdict` hook, and the
 mod's `classic.SubagentStop` settled after that block with no toast and the status still
 `◐ audit`; when it added the line, `spec-auditor finished: PASS` came 7 ms after the hook
@@ -568,7 +569,10 @@ initialised by Spec Kit 1.1.2 without `--extension git`):
   feature branch itself; `main` kept only the initial commit. About $3.30.
 
 Later the same day, with the team installed into the scratch repo's own `.claude/` by
-`docs/media/record.mjs --setup-only` (headless, `--setting-sources project,local`):
+`docs/media/record.mjs --setup-only` (headless, `--setting-sources project,local`). The main
+session ran on Haiku and each agent on its frontmatter model (spec-auditor Opus, the others
+Sonnet), as the debug log's requests show: `CLAUDE_CODE_SUBAGENT_MODEL=haiku` did not override
+an agent's `model:` line (#39).
 
 - test-writer told to hand back the bare report "placeholder", the failure seen in the run above:
   refused by `ends RED BLOCKED` with "Your report must end with a final line that is exactly one
