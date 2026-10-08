@@ -172,7 +172,9 @@ export const register: Register = on => {
       return next(e)
     }
     await refresh($)
-    $.clock.every(POLL_MS, () => { void poll($) })
+    // Nothing awaits the poll: one still running when the mod reloads or unloads has its calls
+    // refused, and the next poll, if there is one, reads everything again.
+    $.clock.every(POLL_MS, () => { poll($).catch(() => undefined) })
     await keepTicking($)
     const b = await read($, board)
     $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })

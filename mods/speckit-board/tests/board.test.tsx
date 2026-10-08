@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { AgentInfo, On } from 'claude-code'
+import type { MockClock } from 'claude-code/testing'
 
 import { fingerprint, fingerprintFiles } from '../hooks/model'
 
@@ -33,7 +34,10 @@ async function world(on: On, extra: Record<string, string> = {}) {
     : { exitCode: 128, stderr: 'fatal: not a git repository', isStdoutTruncated: false, isStderrTruncated: false, stdout: '' },
   }))
   on('fs.exists', (_$, e) => ({ value: posix(e.path) === `${ROOT}/.specify` }))
-  on('fs.read', (_$, e) => {
+  // A real read takes time. Without it here, tests that let the poll run passed on Windows and
+  // Linux and failed only on the slower macOS runner in CI; with it, they fail on any machine.
+  on('fs.read', async (_$, e) => {
+    await new Promise(r => setTimeout(r, 5))
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
   })
@@ -47,6 +51,17 @@ async function world(on: On, extra: Record<string, string> = {}) {
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
   return { toasts, status, files, fp, clock }
+}
+
+// The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
+// slow runner (macOS in CI) that came before the poll's file reads were back. Moves the clock, then
+// waits, bounded, until the board shows what the test expects; the assertion after it says if not.
+async function poll(clock: MockClock, ms: number, isThere: () => boolean | Promise<boolean>) {
+  await clock.advance(ms)
+  for (let i = 0; i < 200 && !(await isThere()); i++) {
+    await clock.settle()
+    await new Promise(r => setTimeout(r, 10))
+  }
 }
 
 // The engine hands fs hooks the platform's spelling (C:\repo\.specify on Windows).
@@ -211,8 +226,9 @@ test('a finished agent\'s age keeps counting', async ($, on) => {
     props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
   } as never)
   expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 0s ago')
-  await seen.clock.advance(120_000)
-  expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 2m 0s ago')
+  const age = async () => (await ui.find({ type: 'Text', text: /ago$/ }))?.text
+  await poll(seen.clock, 120_000, async () => (await age()) === 'PASS · 2m 0s ago')
+  expect(await age()).toBe('PASS · 2m 0s ago')
   await ui.unmount()
 })
 
@@ -228,11 +244,12 @@ for (const status of ['killed', 'failed'] as const) {
     await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
     await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
     listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status: 'running' }]
-    await seen.clock.advance(4000)
+    await poll(seen.clock, 4000, () => true)
     expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ audit · 1/3 tasks · RED 1/3')
     listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status }]
-    await seen.clock.advance(4000)
-    expect(seen.status.at(-1)).toBe('speckit 001-x · ○ audit · 1/3 tasks · RED 1/3')
+    const ended = 'speckit 001-x · ○ audit · 1/3 tasks · RED 1/3'
+    await poll(seen.clock, 4000, () => seen.status.at(-1) === ended)
+    expect(seen.status.at(-1)).toBe(ended)
     const ui = await $.ui.mount({
       plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
       viewport: { columns: 140, rows: 40 },
@@ -266,9 +283,10 @@ test('revising the files after a FAIL asks for a re-audit', async ($, on) => {
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   expect(seen.status.at(-1)).toBe('speckit 001-x · ✗ audit (FAIL) · 1/3 tasks · RED 1/3')
   seen.files[`${ROOT}/${FEATURE}/plan.md`] = '# Plan, revised'
-  await seen.clock.advance(4000)
   // The revision also starts the RED count over, as the hook's does.
-  expect(seen.status.at(-1)).toBe('speckit 001-x · ↻ audit (edited since FAIL) · 1/3 tasks')
+  const stale = 'speckit 001-x · ↻ audit (edited since FAIL) · 1/3 tasks'
+  await poll(seen.clock, 4000, () => seen.status.at(-1) === stale)
+  expect(seen.status.at(-1)).toBe(stale)
   expect(seen.toasts).toContain('Spec, plan or tasks changed since FAIL: re-audit before building')
 })
 
