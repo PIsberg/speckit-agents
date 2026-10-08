@@ -161,9 +161,11 @@ export function outcomeOf(role: string | undefined, report: string): string {
   const last = (re: RegExp) => [...report.matchAll(re)].pop()?.[1]?.toUpperCase()
   if (role === 'spec-auditor') return last(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim) ?? ''
   if (role === 'implementer') return last(/^[\s*>#]*RESULT:?[\s*]*(GREEN|RED|STUB)\b/gim) ?? ''
-  if (role === 'spec-gatekeeper') return last(/\b(APPROVED|REJECTED)\b/gi) ?? ''
-  const line = report.trim().split('\n').pop() ?? ''
-  return line.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').slice(0, 40)
+  const line = (report.trim().split('\n').pop() ?? '').replace(/^[\s*>#`]+|[\s*`.]+$/g, '')
+  // Only a last line that is the word itself, as the hook's `ends` check accepts it: anywhere in the
+  // text, "not approved" read as an approval.
+  if (role === 'spec-gatekeeper') return /^(APPROVED|REJECTED)$/i.test(line) ? line.toUpperCase() : ''
+  return line.slice(0, 40)
 }
 
 export const GLYPH: Record<SpeckitPhaseState, string> = {

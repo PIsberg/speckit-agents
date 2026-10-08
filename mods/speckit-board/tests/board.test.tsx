@@ -243,6 +243,21 @@ for (const status of ['killed', 'failed'] as const) {
   })
 }
 
+// The ends check lets a second stop through without a word and records nothing. The board took
+// "approved" from anywhere in that report, kept it as the gatekeeper's word and showed verify done.
+test('a gatekeeper report without its word does not approve', async ($, on) => {
+  const seen = await world(on, { [`${ROOT}/${FEATURE}/tasks.md`]: TASKS.replace(/- \[ \]/g, '- [x]') })
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'g1', agent_type: 'spec-gatekeeper' } as never)
+  await $.classic.SubagentStop({ agent_id: 'g1', agent_type: 'spec-gatekeeper', stop_hook_active: true,
+    agent_transcript_path: '', last_assistant_message: 'Not approved: T004 has no test.\n\nNext: add the test' } as never)
+  expect(seen.toasts).toContain('spec-gatekeeper finished')
+  expect(seen.toasts).not.toContain('spec-gatekeeper APPROVED: ready for the PR')
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ○ verify · 3/3 tasks · RED 1/3')
+})
+
 // After a FAIL the architect revises the plan. The board kept showing the old FAIL as failed, on files
 // nobody had audited yet; what they want is the next audit.
 test('revising the files after a FAIL asks for a re-audit', async ($, on) => {

@@ -86,6 +86,13 @@ test('report outcomes and team roles', () => {
   expect(teamRole('Explore')).toBeUndefined()
 })
 
+test('the gatekeeper\'s word is its last line, as the ends check reads it', () => {
+  // The hook accepts only a last line that is exactly the word; the board took any "approved" in the text.
+  expect(outcomeOf('spec-gatekeeper', 'Not approved: T004 has no test.\n\nNext: add the test')).toBe('')
+  expect(outcomeOf('spec-gatekeeper', 'T004 is untested, so this is not APPROVED.\n\n**REJECTED**')).toBe('REJECTED')
+  expect(outcomeOf('spec-gatekeeper', 'All requirements tested.\n\nApproved.')).toBe('APPROVED')
+})
+
 test('the feature is read as the hook reads it: repo-relative, or none', () => {
   // The hook hashes the path with the text, so an absolute path left as given named another fingerprint.
   expect(featureDir('specs/001-x', 'C:/r')).toBe('specs/001-x')

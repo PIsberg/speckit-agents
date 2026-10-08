@@ -223,9 +223,11 @@ verdict or restore its lane keeps its spinner, and the verdict, RED or gatekeepe
 as it stops shows at once rather than at the next poll. An agent that is stopped or fails may end
 without a `SubagentStop` (not yet seen live either way), so the 4-second poll also reads Claude
 Code's own agent list and ends a row the list calls `killed` or `failed`, with that as its word.
-The verify step reads the spec-gatekeeper's word from the file the hook's `ends` check writes once it accepts the report,
-so it updates even when the mod was reloaded or not loaded while the gatekeeper ran; it falls back
-to the word the mod saw at the agent's stop, kept in its plugin store. That word counts only
+The verify step reads the spec-gatekeeper's word from the file the hook's `ends` check writes once
+it accepts the report, so it updates even when the mod was reloaded or not loaded while the
+gatekeeper ran; it falls back to the word the mod saw at the agent's stop, kept in its plugin
+store, and that only from a last line that is exactly `APPROVED` or `REJECTED`, the line `ends`
+accepts. That word counts only
 while the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
 because the gatekeeper judged files that have since changed. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
@@ -243,7 +245,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (29 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (31 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
@@ -502,7 +504,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 `npm test` runs 72 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 29 tests under `claude plugin test`). They prove the logic. They cannot prove that
+twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 
