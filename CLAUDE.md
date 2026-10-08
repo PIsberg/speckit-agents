@@ -30,7 +30,8 @@ this file is how to work on it.
   that run the real `claude plugin` take 37 s of it).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
-  tests that need `claude` fail instead of skip when it is missing.
+  tests that need `claude` fail instead of skip when it is missing. On Linux it then runs `tsc`
+  on the board mod (README.md, "Verifying", has the local command).
 - Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
   matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
 

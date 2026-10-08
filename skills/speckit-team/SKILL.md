@@ -27,7 +27,9 @@ that agent's Inputs section lists. Never paste this conversation, the product ow
 and answers, or another agent's full report.
 - architect: the feature directory and, on a revision, the findings it owns.
 - spec-auditor: the feature directory.
-- test-writer: the slice's test task IDs.
+- test-writer: the slice's test task IDs. It ticks them in `tasks.md` itself once they are red:
+  do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
+  implementer launch only to tick them.
 - implementer: the slice's task IDs plus test-writer's report for them (test files and failing
   output, trimmed); on a relaunch, the failing output of the last attempt instead. For a stub
   pass, `stub` and the task IDs.
@@ -86,7 +88,8 @@ For each slice:
    not exist yet): launch with `stub` and the slice's task IDs. It creates the signatures the
    architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
 2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. It ends
-   `RED` or `BLOCKED`; on `BLOCKED`, act on the entries it lists. Every
+   `RED` or `BLOCKED`, and on `RED` the slice's test tasks are ticked; on `BLOCKED`, act on the
+   entries it lists. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it.

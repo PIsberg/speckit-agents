@@ -33,6 +33,13 @@ export type SpeckitAgent = {
 }
 
 declare module 'claude-code' {
+  // SubagentHandback is the internal tool a backgrounded agent reports through. The tool list Claude
+  // Code lays beside the mod (claude-code-tools) leaves it out, so a matcher naming it did not
+  // type-check (#33). Only `message`, the report, is read; hooks/speckit-team.mjs reads the same field.
+  interface BuiltinToolInputs {
+    SubagentHandback: { message: string }
+  }
+
   interface PluginState {
     'speckit-board': {
       board: SpeckitBoard | null

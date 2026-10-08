@@ -211,7 +211,7 @@ export const register: Register = on => {
   // tool: its last message is that call, not the report, so SubagentStop has nothing to read. The
   // report is kept from the call, as hooks/speckit-team.mjs reads it, keyed by the agent's id.
   on('tool.call', { tool: 'SubagentHandback' }, async ($, e, next) => {
-    const { agentId, message } = e as { agentId?: string, message?: unknown }
+    const { agentId, message } = e
     if (agentId && typeof message === 'string') handbacks.set(agentId, message)
     return next(e)
   })

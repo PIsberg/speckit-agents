@@ -35,3 +35,14 @@ jobs:
       - run: npm test
         env:
           SPECKIT_REQUIRE_CLAUDE: '1'
+      # Neither `claude plugin validate` nor `claude plugin test` type-checks the mod, and the types
+      # it checks against (.claude-plugin/types, tsconfig.json) are laid only when a session loads it.
+      # A headless session needs no login to load it: it exits 1 at the model call, after the types
+      # are laid, so its status is not the gate; the tsconfig check after it is.
+      - name: Type-check the board mod (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-types" claude --plugin-dir mods/speckit-board -p "/speckit-board refresh" > /dev/null || true
+          test -f mods/speckit-board/tsconfig.json
+          npx -y -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
