@@ -225,7 +225,8 @@ ran as a background agent and the pane showed `spec-auditor running 19s` with th
 list and cut off, and a background agent's word was missing because its report arrives through
 `SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`. Not
 seen live: a `RESULT: RED` moving the retry meter (the count comes from the hook's retry file,
-covered by the mod's tests), and any session on macOS or Linux, where CI runs only the tests.
+covered by the mod's tests; #18), and any session on macOS or Linux, where CI runs only the
+tests (#19).
 
 ## The team
 
