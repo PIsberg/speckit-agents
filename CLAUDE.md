@@ -19,15 +19,19 @@ this file is how to work on it.
   `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`. It is a prototype for
   features 001 and 002, retired once 001's view ships (owner decision, #11): do not build 001 or
   002 on it, and do not change 001's spec for it (README.md, "Board mod").
+- `tools/usage.mjs`: input tokens of a recorded session and its agents, from the transcript, counted
+  once per API response. Measure a change to the skill or an agent with it before and after
+  (README.md, "Developing").
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs (its board tests run the real
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
   fingerprint against the hook's and runs `claude plugin validate` and `claude plugin test` on it
-  (skipped, not passed, without a `claude` executable on PATH).
+  (skipped, not passed, without a `claude` executable on PATH); `usage.test.mjs` runs
+  `tools/usage.mjs` on a synthetic transcript.
 
 ## Verify
-- `npm test`: all suites, no network, 67 s on Windows (72 tests, 2026-10-08; the four installer tests
-  that run the real `claude plugin` take 37 s of it).
+- `npm test`: all suites, no network, 63 s on Windows (76 tests, 2026-10-08; the four installer tests
+  that run the real `claude plugin` take most of it).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing. On Linux it then runs `tsc`

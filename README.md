@@ -452,7 +452,7 @@ For `[P]` slices touching disjoint files, it can run several loops at once, each
 own git worktree.
 
 When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
-straight away, in the foreground, without asking: between the stops above it never waits for you.
+straight away, without asking: between the stops above it never waits for you.
 A task still unticked at that point (a final test run, say) becomes one more implementer slice,
 and the ticks made while building never void the audit.
 
@@ -480,17 +480,39 @@ for the IDs its tasks cite instead of reading it whole. These are prompt rules, 
 small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
 peaked at 13k tokens; a feature the size of 001 has not been re-measured.
 
-Two full `/speckit-team` runs of the same small feature (a `sum()` function, 3 slices; Opus
-architect and auditor, Sonnet for the rest and the main session) show where the rest goes. Every
-agent started fresh and peaked at 16k to 49k tokens. The main session is the larger cost: it
-starts at about 41k (Claude Code, your tools and `CLAUDE.md`), and every report it receives stays
-in its context for each later request. Capping each report's length and fixing two bugs (below)
-between the runs gave:
+Three full headless `/speckit-team` runs of the same small feature (a `sum()` function; Opus
+architect and auditor, Sonnet for the rest and the main session) show where the rest goes. The
+input figures come from `tools/usage.mjs` ([Developing](#developing)), whose per-model totals
+match the `modelUsage` that `claude -p` reported for all three runs. Every agent started fresh and
+peaked at 12k to 49k tokens. The main session is the larger cost: each of its requests re-reads its
+whole context, which starts at 32k to 42k (Claude Code, your tools and `CLAUDE.md`) and keeps every
+report it receives.
 
-| Run | Agents launched | Main session peak | Tokens read, main / agents | Cost |
-|---|---|---|---|---|
-| before the report limits | 19 | 95.7k | 4.63M / 3.92M | $3.98 |
-| after | 17 | 85.5k | 3.97M / 2.78M | $2.87 |
+| Run | Agents launched | Main session: requests, peak, input | Main-session requests that only waited | Agents' input | Cost |
+|---|---|---|---|---|---|
+| 2026-10-07, before the report limits | 19, background | 43, 96k, 2.96M | 19, 1.31M (44%) | 2.10M | $3.98 |
+| 2026-10-07, after them | 15, background | 36, 86k, 2.29M | 15, 0.95M (41%) | 1.48M | $2.87 |
+| 2026-10-08, foreground launches | 11, foreground | 17, 49k, 0.69M | none | 1.04M | $1.90 |
+
+Between the first two runs, each report's length was capped and two bugs were fixed (below). An
+earlier version of this table summed usage per transcript line, but Claude Code writes one
+response as several lines, so its token figures were 1.6 to 1.7 times too high (4.63M and 3.97M
+for the main session).
+
+A background launch returns only a receipt, and the main session then spent a request that did
+nothing but wait for the agent, re-reading its whole context to do so. So the skill launches every
+agent in the foreground, and the report comes back as the Agent tool's result: 1.5 main-session
+requests per agent instead of 2.4, and 63k of main-session input per agent instead of 153k. The
+third run is not a clean comparison, though. It ran on Claude Code 2.1.294 instead of 2.1.292,
+with the team installed in the scratch repo and `--setting-sources project,local
+--strict-mcp-config`, so its first request was 32k rather than 42k; it launched 11 agents rather
+than 15; and the skill had also gained #37 and #38. The waiting requests explain 0.95M of the
+main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
+
+While a foreground agent runs, the main session waits for it, so in an interactive session it
+answers what you type only after the agent reports. Between the stops listed above the
+skill never waits for you anyway. Agents for `[P]` slices are launched together in one message
+so that they still run side by side, but no live run has had `[P]` slices yet (#40).
 
 Runs differ in how many audit rounds they need, so read this as one sample, not a benchmark.
 
@@ -520,9 +542,10 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 72 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
-24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`). CI also
+`npm test` runs 76 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
+24 run the installer against throwaway config dirs, 5 check the board mod (its fingerprint
+twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`), and 4 run
+`tools/usage.mjs` on a synthetic transcript. CI also
 type-checks the mod; to do it locally, load the mod once (`claude --plugin-dir mods/speckit-board`
 lays `.claude-plugin/types/` and `tsconfig.json`), then run
 `npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`. They prove the logic. They cannot prove that
@@ -718,3 +741,16 @@ shared temp dir, because it gets folder trust) with the demo feature in
 `--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
 MCP servers stay out of the frame. Look at every GIF before committing it: the session banner can
 still show account details.
+
+To see what a run cost in tokens, point `tools/usage.mjs` at its main-session transcript (under
+`~/.claude/projects/<project>/`); it reads the session's agents from `<session>/subagents/` next to it:
+
+```sh
+node tools/usage.mjs ~/.claude/projects/<project>/<session>.jsonl
+```
+
+It prints the main session's input, how many agents it launched in the foreground and the
+background, the requests that only waited for a background agent, each agent's input and peak, and
+the input per model. That last part matches the `modelUsage` input fields of
+`claude -p --output-format json` exactly (checked against both runs in
+[Context budget](#the-pipeline-skill)). Output tokens are left out, because transcripts undercount them.
