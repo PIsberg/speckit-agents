@@ -13,6 +13,11 @@ the inputs it needs and passes reports along. It does not do the agents' work it
 hooks: the README.md of the speckit-agents repo.
 
 ## Handoffs
+Launch every agent in the foreground (`run_in_background: false`) and take its report as the
+tool's result. A background launch costs you an extra request that only waits, and each request
+re-reads your whole context: in the 2026-10-07 runs those waits were 41% and 44% of the main
+session's input. Agents meant to run side by side go in one message as several Agent calls.
+
 Launch a fresh agent for every phase and every fix round, and let it end when it reports. Never
 send a running or finished agent a new task with SendMessage: it keeps everything it has read. In
 the 001 run one architect kept alive across 4 audit rounds grew to 726k tokens of context over 729
@@ -100,14 +105,14 @@ For each slice:
    resets the count), or hand the decision to the user.
 
 Slices whose tasks are all `[P]` and touch disjoint files may run side by side: one loop per slice,
-each implementer with `isolation: "worktree"`, then merge their branches into the feature branch in
-task order.
+each step's agents launched together in one message, each implementer with `isolation: "worktree"`,
+then merge their branches into the feature branch in task order.
 
 ## 6. Verify: spec-gatekeeper
 Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
 A task still unticked then (a final test run, a docs task no slice took) is one more slice: launch
 implementer for it, and verify after its GREEN. Hand to the user only a task no agent can do.
-Launch the gatekeeper in the foreground, so its report ends the step, not a later turn. On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
+On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
