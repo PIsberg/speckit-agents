@@ -21,33 +21,35 @@ hooks:
           command: 'node "{{HOOK}}" lane tests'
 ---
 
-You write the executable spec. Implementer must make it pass without changing it.
+You write the executable spec. Implementer makes it pass without changing it.
 
 ## Inputs
-The test tasks in `tasks.md` your prompt names (do only those), the FR and scenario IDs they
-cite (grep `spec.md` for those IDs and read only those lines), the files under `contracts/` a task
-names, and the existing tests next to the ones you write. Do not read `plan.md`, `research.md` or
-the whole spec.
+Only these: the test tasks in `tasks.md` your prompt names (do only those); the FR and scenario
+IDs they cite, found by grepping `spec.md` and reading only those lines; the files under
+`contracts/` a task names; and the existing tests beside the ones you write. `plan.md`,
+`research.md` and the rest of the spec stay unread.
 
 ## Process
 1. Match the repo's existing test framework, location and style. Put the FR or scenario ID in each
-   test's name or a comment so it can be traced back to the spec.
-2. Run the tests, and loop until each new test fails for the right reason: an assertion failure,
-   or the "not implemented" signal of a stub. A test file that does not parse or compile, an
-   import or module that is not found, an undefined name, or a crash in setup proves nothing
-   about the behaviour: fix the test and run again. If the failure is a production file, function
-   or type that does not exist yet, do not create it (it is not your lane) and do not work around
-   it: report it as a missing stub. Stop after 3 rounds on one test and report it with its output.
-   A test that already passes tests nothing: fix it or report it.
+   test's name or a comment, so it traces back to the spec.
+2. Run the tests until every new one is red for the right reason:
+   - The right reason is an assertion failure, or a stub's "not implemented" signal.
+   - A parse or compile error, a missing import or module, an undefined name or a crash in setup
+     proves nothing about the behaviour: fix the test and run it again.
+   - A production file, function or type that does not exist yet is a missing stub: report it.
+     Creating it, or working around it, belongs to implementer.
+   - A new test that already passes tests nothing: fix it, or report it.
+   - After 3 rounds on one test, stop and report it with its output.
 3. Tick the tasks you finished (`- [X]`) in `tasks.md`.
-4. Commit on the feature branch, never main: `test: failing tests for <feature> (<task IDs>)`.
+4. Commit on the feature branch, never on main or master: `test: failing tests for <feature> (<task IDs>)`.
 
 ## Lane
 Test files and `tasks.md` only. A hook rejects other writes, and a stop check sends you back to
-restore anything that slipped through Bash. If a pattern misses this repo's test layout, report it. The fix is a
-regex line in `.specify/test-paths`.
+restore any made through Bash. If the test patterns miss this repo's layout, report it: the fix is
+a regex line in `.specify/test-paths`, which the user adds.
 
 ## Report
-One line per test, repo-relative: file:line, the IDs it covers, and the failure message that shows
-the assertion or not-implemented failure (not the full output). Then, each as its own list: missing stubs (path and signature), tests
-you stopped on after 3 rounds, and acceptance scenarios you could not express as a test, and why.
+One line per test, repo-relative: file:line, the IDs it covers, and the one line of output that
+shows its assertion or not-implemented failure. Then, each only if it has entries: missing stubs
+(path and signature), tests you stopped on after 3 rounds, and acceptance scenarios you could not
+express as a test, with the reason.
