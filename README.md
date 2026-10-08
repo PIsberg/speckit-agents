@@ -160,8 +160,10 @@ from the checkout the installer last ran from, as the team's files are copied fr
 moving the checkout, or to run the board from another clone or worktree, rerun the installer
 there and it points the board at that folder.
 
-To try it for one session without installing it, load it from the folder instead. Loading it
-both ways at once has not been tried; run `--no-board` first.
+To try it for one session without installing it, load it from the folder instead. If it is
+installed as well, the `--plugin-dir` copy replaces the installed one for that session (Claude
+Code logs `Plugin "speckit-board" from --plugin-dir overrides installed version`), so it never
+runs twice.
 
 ```sh
 cd <your Spec Kit repo>
@@ -194,15 +196,17 @@ It reads files directly rather than the documented activity stream that feature 
 its own view (FR-016), and it covers part of what feature 002 (issue #3) specifies for the rich
 view. Treat it as a working prototype for those two features, not their implementation.
 
-Verified: `claude plugin validate` and `claude plugin test` (12 tests, both run by `npm test`),
-and a headless `claude -p --plugin-dir` run in a scratch Spec Kit repo, which found the feature
-and set the status line. The band and pane have been looked at in one interactive terminal session
-on Windows. `--board`, a rerun, `--no-board` and `--uninstall` run the real `claude plugin`
-commands against throwaway config dirs in `test/install.test.mjs`, which checks that the mod is
-read from this checkout and that uninstall restores `settings.json` byte for byte. Not verified:
-that an installed board draws in a live session (only `--plugin-dir` loads were looked at), the
-team agent tracking (`SubagentStart`/`SubagentStop`) through a live pipeline run, and macOS or
-Linux.
+Verified: `claude plugin validate` and `claude plugin test` (12 tests, both run by `npm test`, in
+CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
+`claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
+that the mod is read from this checkout and that uninstall restores `settings.json` byte for
+byte. On Windows, 2026-10-08, with the board installed from this checkout and no `--plugin-dir`:
+a headless `claude -p "/speckit-board refresh"` in a scratch Spec Kit repo set the status line,
+raised the startup toast and answered the command, and an interactive session (recorded with vhs)
+drew the band, the status line and, after `/speckit-board`, the pane. An edit to
+`mods/speckit-board/` reached the installed board at the next session start with no reinstall.
+Not verified: the team agent tracking (`SubagentStart`/`SubagentStop`) through a live pipeline
+run, and a live session on macOS or Linux.
 
 ## The team
 
