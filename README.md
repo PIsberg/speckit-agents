@@ -76,7 +76,8 @@ The installer is idempotent; rerun it after pulling changes. It changes `setting
 keeping the file's own indentation and line endings, and updates its gate entries where they stand,
 so a rerun after another tool re-sorted the file changes nothing. The first time it changes your
 settings it keeps one copy of the original as `settings.json.bak-speckit-agents`. It refuses to
-touch a `settings.json` that is not valid JSON, and records what it created in
+touch a `settings.json` that is not valid JSON or not a settings object (an array, or a `hooks`
+entry that is not a list of objects), and stops before writing anything. It records what it created in
 `hooks/speckit-agents.install.json`. It finishes by running the installed hook once, so a broken
 Node setup fails the install instead of silently disabling the guardrails.
 
