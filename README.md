@@ -593,7 +593,9 @@ an agent's `model:` line (#39).
   with one failure line per test (4, then 2); every implementer ended `RESULT: GREEN` with the
   suite's counts, and the `result` hook reset the retry count each time. The orchestrator told
   test-writer not to tick its tasks, so an extra implementer ran only to tick them (#37).
-  $0.36, 3.5 minutes.
+  $0.36, 3.5 minutes. With the skill saying test-writer ticks its own tasks, a rerun told each
+  test-writer to tick its task once red; both did, and the run needed 8 agent launches instead of
+  9, still ending `APPROVED`. $0.33.
 
 Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 did run). Those are covered by the unit tests only.
