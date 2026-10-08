@@ -197,3 +197,102 @@ test('uninstall puts back an agent that --force replaced', () => {
   assert.equal(fs.readFileSync(mine, 'utf8'), '---\nname: architect\ndescription: my own\n---\n');
   assert.deepEqual(fs.readdirSync(path.join(dir, 'agents')), ['architect.md']);
 });
+
+test('--help lists every flag, --board and --no-board included', () => {
+  const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  for (const f of ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board']) assert.match(r.stdout, new RegExp(`${f}\\b`));
+  assert.doesNotMatch(r.stdout, /^import/m);
+});
+
+test('--board and --no-board together are refused before anything is written', () => {
+  const dir = claudeDir();
+  const r = install(dir, '--board', '--no-board');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /contradict/);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+// The board goes in through `claude plugin`. With no claude on PATH the team still installs, the
+// run fails naming the board, and uninstall warns and still removes the team.
+test('--board without Claude Code installs the team, fails, and uninstall still cleans up', () => {
+  const dir = claudeDir();
+  const env = { ...process.env, PATH: path.dirname(process.execPath) };
+  const run = (...args) => spawnSync(process.execPath, [INSTALL, '--claude-dir', dir, ...args], { encoding: 'utf8', env });
+  const i = run('--board');
+  assert.equal(i.status, 1, i.stdout + i.stderr);
+  assert.match(i.stderr, /the team is installed, the board mod is not installed/);
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'architect.md')));
+  const u = run('--uninstall');
+  assert.equal(u.status, 0, u.stdout + u.stderr);
+  assert.match(u.stdout, /WARNING: the board mod was not removed/);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+// Real `claude plugin` runs against the throwaway config dir. Spawned without a shell, so a missing
+// claude, or an npm-installed claude.cmd, reports these skipped, not passed.
+const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
+const noClaude = spawnSync('claude', ['--version']).status === 0 ? false : 'no claude executable on PATH';
+const boardIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'list', '--json').stdout).find((p) => p.id === 'speckit-board@speckit-agents');
+const marketsIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'marketplace', 'list', '--json').stdout).map((m) => m.name);
+
+test('--board installs the mod read from this checkout; reruns keep it; --no-board removes it', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  const i = install(dir, '--board');
+  assert.equal(i.status, 0, i.stdout + i.stderr);
+  const board = boardIn(dir);
+  assert.equal(board?.scope, 'user');
+  assert.equal(path.resolve(board.readFromFolder), path.resolve(path.dirname(INSTALL), 'mods', 'speckit-board'));
+
+  const again = install(dir);
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.match(again.stdout, /unchanged\s+speckit-board@speckit-agents/);
+
+  const off = install(dir, '--no-board');
+  assert.equal(off.status, 0, off.stdout + off.stderr);
+  assert.equal(boardIn(dir), undefined);
+  assert.ok(!marketsIn(dir).includes('speckit-agents'));
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'architect.md')), 'the team stays');
+  const later = install(dir);
+  assert.equal(later.status, 0, later.stdout + later.stderr);
+  assert.equal(boardIn(dir), undefined, 'a rerun after --no-board does not bring it back');
+});
+
+test('uninstall removes the board and its marketplace and restores settings byte for byte', { skip: noClaude }, () => {
+  // Not `model`: Claude Code rewrites "opus" to "opus[1m]" whenever a `claude` command touches it.
+  const text = '{\n    "env": {\n        "A": "1"\n    }\n}\n';
+  const dir = claudeDir(text);
+  assert.equal(install(dir, '--board').status, 0);
+  assert.ok(boardIn(dir));
+  const u = install(dir, '--uninstall');
+  assert.equal(u.status, 0, u.stdout + u.stderr);
+  assert.equal(boardIn(dir), undefined);
+  assert.ok(!marketsIn(dir).includes('speckit-agents'));
+  assert.equal(bytes(dir).toString('utf8'), text);
+  assert.deepEqual(backups(dir), []);
+});
+
+test('--board from another checkout points the board at that checkout', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  assert.equal(install(dir, '--board').status, 0);
+  // A second checkout (a clone, a worktree, or this one moved) with what the installer reads.
+  const other = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skagents-checkout-')), 'other checkout');
+  for (const p of ['install.mjs', 'agents', 'hooks', 'skills', '.claude-plugin', path.join('mods', 'speckit-board')]) {
+    fs.cpSync(path.join(path.dirname(INSTALL), p), path.join(other, p), { recursive: true });
+  }
+  const r = spawnSync(process.execPath, [path.join(other, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(path.resolve(boardIn(dir).readFromFolder).toLowerCase(), path.resolve(other, 'mods', 'speckit-board').toLowerCase());
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.equal(boardIn(dir), undefined);
+  assert.ok(!marketsIn(dir).includes('speckit-agents'));
+});
+
+test('a marketplace the user added is not removed with the board', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  assert.equal(claudeIn(dir, 'plugin', 'marketplace', 'add', path.dirname(INSTALL)).status, 0);
+  assert.equal(install(dir, '--board').status, 0);
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.equal(boardIn(dir), undefined);
+  assert.ok(marketsIn(dir).includes('speckit-agents'));
+});

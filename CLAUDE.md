@@ -13,16 +13,19 @@ this file is how to work on it.
   tapes against a scratch Spec Kit repo, and the demo feature in `demo/`. Re-record after changing
   what an agent or hook shows on screen (README.md, "Developing").
 - `mods/speckit-board/`: an experimental Claude Code mod (function hooks, TypeScript run as source)
-  that draws the pipeline's state. Not installed by `install.mjs`; loaded with `claude --plugin-dir`.
-  Its own tests are `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`.
+  that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
+  this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
+  `claude --plugin-dir` loads it for one session. Its own tests are
+  `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`.
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
-  `install.test.mjs` installs into throwaway config dirs; `board-mod.test.mjs` checks the mod's
+  `install.test.mjs` installs into throwaway config dirs (its board tests run the real
+  `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
   fingerprint against the hook's and runs `claude plugin validate` and `claude plugin test` on it
   (skipped, not passed, without a `claude` executable on PATH).
 
 ## Verify
-- `npm test`: all suites, no network, 22 s on Windows (51 tests, 2026-10-08; 90 s was measured for
-  48 on 2026-10-07).
+- `npm test`: all suites, no network, 56 s on Windows (60 tests, 2026-10-08; the four installer tests
+  that run the real `claude plugin` take 38 s of it).
 - Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
   matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
 

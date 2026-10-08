@@ -1,0 +1,8 @@
+{
+  "name": "speckit-agents",
+  "owner": { "name": "Peter Isberg" },
+  "description": "Claude Code mods that go with the speckit-agents team.",
+  "plugins": [
+    { "name": "speckit-board", "source": "./mods/speckit-board" }
+  ]
+}
