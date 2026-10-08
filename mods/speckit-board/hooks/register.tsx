@@ -253,22 +253,7 @@ export const register: Register = on => {
           </Box>
         </Box>
 
-        <Box flexDirection="column">
-          {sections.map(section => (
-            <Box key={`sec:${section}`} flexDirection="column">
-              <Text bold dimColor>{section}</Text>
-              {b.tasks.filter(t => t.section === section).map(t => (
-                <Text wrap="truncate-end" dimColor={t.isDone}>
-                  <Text color={t.isDone ? 'success' : 'subtle'}>{t.isDone ? ' ✓ ' : ' ○ '}</Text>
-                  <Text bold={!t.isDone}>{t.id}</Text>
-                  {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
-                  {` ${t.text}`}
-                </Text>
-              ))}
-            </Box>
-          ))}
-        </Box>
-
+        {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         <Box flexDirection="column">
           <Text bold>Team</Text>
           {team.length === 0 && <Text dimColor> no team agent has run this session</Text>}
@@ -289,6 +274,22 @@ export const register: Register = on => {
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />
           <Button key="band" label="toggle band" hotkey="t" onPress={() => update($, isBandHidden, h => !h)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+        </Box>
+
+        <Box flexDirection="column">
+          {sections.map(section => (
+            <Box key={`sec:${section}`} flexDirection="column">
+              <Text bold dimColor>{section}</Text>
+              {b.tasks.filter(t => t.section === section).map(t => (
+                <Text wrap="truncate-end" dimColor={t.isDone}>
+                  <Text color={t.isDone ? 'success' : 'subtle'}>{t.isDone ? ' ✓ ' : ' ○ '}</Text>
+                  <Text bold={!t.isDone}>{t.id}</Text>
+                  {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
+                  {` ${t.text}`}
+                </Text>
+              ))}
+            </Box>
+          ))}
         </Box>
       </Box>
     )

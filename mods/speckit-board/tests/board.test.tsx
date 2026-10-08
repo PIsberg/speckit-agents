@@ -102,6 +102,30 @@ test('the pane lists tasks by phase, the retry meter and its controls', async ($
   }
 })
 
+// A pane taller than the terminal is cut off at the bottom. In a live session the Team rows and the
+// buttons, drawn after six tasks, were already out of view; a real feature has dozens of tasks.
+// The live parts come first and the task list, the longest, last.
+test('the pane puts the running team agent and its controls before the task list', async ($, on) => {
+  await world(on)
+  on('classic.SubagentStart', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({
+      plugin: 'speckit-board', surface, component: 'Pane', requestId: 'speckit-board',
+      viewport: { columns: 140, rows: 40 },
+      props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+    } as never)
+    const drawn = await ui.findAll({})
+    const at = (match: (el: { type: string, key: string | undefined, text?: string }) => boolean) => drawn.findIndex(match)
+    const firstTask = at(el => el.type === 'Text' && el.text === 'Phase 1: Setup')
+    expect(firstTask).toBeGreaterThan(-1)
+    expect(at(el => el.type === 'Text' && el.text === 'spec-auditor')).toBeLessThan(firstTask)
+    expect(at(el => el.type === 'Button' && el.key === 'close')).toBeLessThan(firstTask)
+    await ui.unmount()
+  }
+})
+
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
