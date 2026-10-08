@@ -242,6 +242,8 @@ const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8',
 const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 const boardIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'list', '--json').stdout).find((p) => p.id === 'speckit-board@speckit-agents');
 const marketsIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'marketplace', 'list', '--json').stdout).map((m) => m.name);
+// Claude Code reports a folder by its real path: macOS's temp dir /var/... comes back as /private/var/....
+const sameFolder = (a, b) => assert.equal(fs.realpathSync.native(a).toLowerCase(), fs.realpathSync.native(b).toLowerCase());
 
 test('--board installs the mod read from this checkout; reruns keep it; --no-board removes it', { skip: noClaude }, () => {
   const dir = claudeDir();
@@ -249,7 +251,7 @@ test('--board installs the mod read from this checkout; reruns keep it; --no-boa
   assert.equal(i.status, 0, i.stdout + i.stderr);
   const board = boardIn(dir);
   assert.equal(board?.scope, 'user');
-  assert.equal(path.resolve(board.readFromFolder), path.resolve(path.dirname(INSTALL), 'mods', 'speckit-board'));
+  sameFolder(board.readFromFolder, path.join(path.dirname(INSTALL), 'mods', 'speckit-board'));
 
   const again = install(dir);
   assert.equal(again.status, 0, again.stdout + again.stderr);
@@ -289,7 +291,7 @@ test('--board from another checkout points the board at that checkout', { skip: 
   }
   const r = spawnSync(process.execPath, [path.join(other, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(path.resolve(boardIn(dir).readFromFolder).toLowerCase(), path.resolve(other, 'mods', 'speckit-board').toLowerCase());
+  sameFolder(boardIn(dir).readFromFolder, path.join(other, 'mods', 'speckit-board'));
   assert.equal(install(dir, '--uninstall').status, 0);
   assert.equal(boardIn(dir), undefined);
   assert.ok(!marketsIn(dir).includes('speckit-agents'));
