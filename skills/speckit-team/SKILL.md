@@ -69,7 +69,8 @@ commit it now, on the feature branch product-owner's speckit-specify created, ne
 On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
 re-audit. MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
-or constitution.
+or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
+while building never call for a re-audit.
 
 ## 4-5. Red and green, one slice at a time
 Work through `tasks.md` one slice at a time: a slice is one implementation task (or a few that
@@ -95,9 +96,10 @@ each implementer with `isolation: "worktree"`, then merge their branches into th
 task order.
 
 ## 6. Verify: spec-gatekeeper
-Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked;
-if a task is still unticked, name it to the user instead. Launch it in the foreground, so its
-report ends the step, not a later turn. On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
+Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
+A task still unticked then (a final test run, a docs task no slice took) is one more slice: launch
+implementer for it, and verify after its GREEN. Hand to the user only a task no agent can do.
+Launch the gatekeeper in the foreground, so its report ends the step, not a later turn. On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.

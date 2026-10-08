@@ -392,6 +392,8 @@ own git worktree.
 
 When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
 straight away, in the foreground, without asking: between the stops above it never waits for you.
+A task still unticked at that point (a final test run, say) becomes one more implementer slice,
+and the ticks made while building never void the audit.
 
 **Handoffs are lossy on purpose.** A subagent never sees the main session's conversation; it
 starts with the prompt the skill writes and whatever files it reads. So the skill passes each
