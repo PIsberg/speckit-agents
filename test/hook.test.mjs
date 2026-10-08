@@ -1,4 +1,4 @@
-// Run: npm test (or node --test test/)
+// Run: npm test (or node --test "test/*.test.mjs")
 // Drives speckit-team.mjs exactly as Claude Code does: hook JSON on stdin, decision on stdout.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

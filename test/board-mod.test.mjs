@@ -1,4 +1,4 @@
-// Run: npm test (or node --test test/)
+// Run: npm test (or node --test "test/*.test.mjs")
 // The speckit-board mod (mods/speckit-board) reads the hook's verdict and retry files and
 // recomputes the hook's fingerprint to tell a fresh PASS from a stale one. These tests hold the
 // two copies of that algorithm together, and run the mod's own gates where Claude Code is on PATH.

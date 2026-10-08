@@ -4,7 +4,7 @@
   "private": true,
   "description": "A Claude Code subagent team for GitHub Spec Kit, with the rules enforced by hooks.",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test \"test/*.test.mjs\"",
     "setup": "node install.mjs"
   },
   "engines": {
