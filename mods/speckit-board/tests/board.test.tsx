@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { AgentInfo, On } from 'claude-code'
 
 import { fingerprint, fingerprintFiles } from '../hooks/model'
 
@@ -215,6 +215,33 @@ test('a finished agent\'s age keeps counting', async ($, on) => {
   expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 2m 0s ago')
   await ui.unmount()
 })
+
+// The board learned of an agent's end only from SubagentStop. One that is stopped or fails ends
+// without a report, and its row and phase stayed running for the rest of the session.
+for (const status of ['killed', 'failed'] as const) {
+  test(`an agent the engine lists as ${status} stops running on the board`, async ($, on) => {
+    const seen = await world(on)
+    delete seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`]
+    let listed: AgentInfo[] = []
+    on('agent.list', () => ({ value: listed }))
+    on('classic.SubagentStart', () => ({}))
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status: 'running' }]
+    await seen.clock.advance(4000)
+    expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ audit · 1/3 tasks · RED 1/3')
+    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status }]
+    await seen.clock.advance(4000)
+    expect(seen.status.at(-1)).toBe('speckit 001-x · ○ audit · 1/3 tasks · RED 1/3')
+    const ui = await $.ui.mount({
+      plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+      viewport: { columns: 140, rows: 40 },
+      props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+    } as never)
+    expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe(`${status} · 0s ago`)
+    await ui.unmount()
+  })
+}
 
 // After a FAIL the architect revises the plan. The board kept showing the old FAIL as failed, on files
 // nobody had audited yet; what they want is the next audit.

@@ -128,9 +128,26 @@ async function refresh($: EngineInterface) {
   $.ui.status(statusLine(next))
 }
 
+// An agent that is stopped or fails ends with no SubagentStop to say so, and would show running for
+// the rest of the session. The engine's own list settles it. A completed one is left to its
+// SubagentStop, which the team's stop checks may still block.
+const ENDED_UNREPORTED = new Set(['killed', 'failed'])
+async function settleEnded($: EngineInterface) {
+  if (!(await read($, agents)).some(a => a.isRunning)) return
+  const ended = new Map((await $.agent.list().catch(() => []))
+    .filter(a => ENDED_UNREPORTED.has(a.status)).map(a => [a.id, a.status]))
+  if (!ended.size) return
+  const now = await $.clock.now()
+  await update($, agents, list => list.map(a => (a.isRunning && ended.has(a.id)
+    ? { ...a, isRunning: false, outcome: a.outcome || (ended.get(a.id) ?? ''), endedAt: now }
+    : a)))
+  await keepTicking($)
+}
+
 // A finished agent's "2m ago" changes with no file or agent changing, so the poll redraws while
 // there are agent rows; keepTicking's one-second ticker is for the spinners.
 async function poll($: EngineInterface) {
+  await settleEnded($)
   await refresh($)
   if ((await read($, agents)).length) $.ui.invalidate('ui.render')
 }
