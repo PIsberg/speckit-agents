@@ -52,7 +52,7 @@ compiles. Tick a task only if it asks for nothing but these stubs, commit (`stub
 and end with `RESULT: STUB`.
 
 ## Lane
-Anything except test files. A hook rejects test edits, and a stop check sends you back to
+Anything except test files and `.specify/`. A hook rejects edits to either, and a stop check sends you back to
 restore any made through Bash. If a test looks wrong, stop and report the test, the line and your evidence.
 
 ## Report

@@ -126,6 +126,26 @@ test('the .git/ guard holds for other spellings and from a linked worktree', () 
   assert.equal(write(wt, ['scope', 'no-tests'], 'src/main/Other.java'), null, 'normal work in the worktree');
 });
 
+// implementer's lane was "anything but tests", which included .specify/: pointing feature.json at
+// another audited feature reset its retry count, and test-paths decides what its lane is.
+test('implementer may not write the Spec Kit config under .specify/', () => {
+  const { dir, write: w } = repo();
+  for (const f of ['.specify/feature.json', '.specify/test-paths', '.specify/memory/constitution.md']) {
+    const out = write(dir, ['scope', 'no-tests'], f);
+    assert.ok(denied(out), f);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /\.specify\//, f);
+  }
+  assert.equal(write(dir, ['scope', 'no-tests'], `${FEAT}/tasks.md`), null, 'ticking tasks is still allowed');
+  assert.equal(write(dir, ['scope', 'no-tests'], '.specifyx/notes.md'), null, 'only the .specify folder itself');
+
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'sp1' });
+  w('.specify/feature.json', JSON.stringify({ feature_directory: 'specs/000-old' }));
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'sp1' });
+  assert.equal(out?.decision, 'block', 'a Bash write to .specify/ is caught at stop');
+  assert.match(out.reason, /\.specify\/feature\.json/);
+});
+
 test('.specify/test-paths adds repo-specific test patterns', () => {
   const { dir, write: w } = repo();
   assert.equal(write(dir, ['scope', 'no-tests'], 'checks/golden.txt'), null);

@@ -30,6 +30,9 @@ const TEST_PATTERNS = [
   /Tests?\.swift$/,
 ];
 const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
+// Spec Kit's config is in no agent's code lane: feature.json picks the feature the gate and the retry
+// count are kept for, and test-paths decides what counts as a test.
+const SPECKIT_CONFIG = /^\.specify\//;
 // Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
 const MAX_RED = 3;
 
@@ -136,7 +139,7 @@ const testPaths = (() => {
   return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
 })();
 const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
-const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel));
+const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
 // joined under the root as-is it named four missing files, and that fingerprint never went stale.
@@ -241,6 +244,10 @@ if (mode === 'scope') {
   if (rule === 'tests' && !inLane('tests', rel)) {
     deny(`${who} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
       + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
+  }
+  if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
+    deny(`${who} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
+      + 'Report what should change instead.');
   }
   if (rule === 'no-tests' && !inLane('no-tests', rel)) {
     deny(`${who} may not change tests: ${rel} is part of the executable spec. `
