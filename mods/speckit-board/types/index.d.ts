@@ -26,6 +26,9 @@ export type SpeckitBoard = {
 export type SpeckitAgent = {
   id: string
   type: string
+  // What the Agent call said the task was, from Claude Code's agent list; absent on an agent recorded
+  // before a reload of an older version of the mod.
+  description?: string
   isRunning: boolean
   outcome: string
   startedAt: number
@@ -45,6 +48,8 @@ declare module 'claude-code' {
       board: SpeckitBoard | null
       agents: SpeckitAgent[]
       isBandHidden: boolean
+      // The pane lists every task, not only the sections under way.
+      isAllTasksShown: boolean
     }
   }
 }

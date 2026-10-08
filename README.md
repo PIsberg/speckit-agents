@@ -197,18 +197,43 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 
 What it draws:
 
+![The board while implementer runs: the pane docked beside the transcript, the band above the prompt and the status line under it](docs/media/board.png)
+
 - **A band above the prompt**: the feature, the six phases (spec, plan, tasks, audit, build,
   verify) as `✓` done, `◐` active, `○` to do, `⊘` blocked, `✗` failed, `↻` stale, a task
-  progress bar, and `RED n/3` once implementer has reported RED on the current plan.
-- **A pane**, opened with `/speckit-board`: the phases, the progress bar, the retry meter, the
-  team agents of this session with a spinner and elapsed time while running and their report word
-  (`PASS`, `GREEN`, `APPROVED`) and how long ago once done, redrawn every 4 seconds, the buttons,
-  and last every task of `tasks.md` by section, the part a short terminal cuts off.
-  `/speckit-board refresh` re-reads the files; `/speckit-board band` hides or shows the band.
-- **A status line**, `speckit 001-greet · ○ audit · 0/6 tasks`, and toasts when the audit passes,
-  fails or goes stale, the retry limit is reached or the retry record cannot be read (the gate then
-  blocks implementer, and build shows `✗ retry record unreadable`), every task is ticked, or
-  spec-gatekeeper approves.
+  progress bar, `RED n/3` once implementer has reported RED on the current plan, and the team
+  agent at work with a spinner and its running time. It stays one row: where the row is short it
+  drops, in this order, the other phases' names, the bar, the buttons and the other phases' glyphs.
+  The current phase keeps its name.
+- **A pane**, opened with `/speckit-board` or the band's `board` button:
+  - the next step: while building, the next open task of `tasks.md`; otherwise what the pipeline
+    needs (`spec-auditor: audit spec, plan and tasks`, `re-audit: spec, plan or tasks changed`,
+    `ready for the PR`), or which team agent it is waiting for;
+  - the six phases, one a row with its note (`approved`, `PASS`, `edited since PASS`), the build
+    row with the progress bar and the retry meter;
+  - the team agents of this session, running ones first, each name in its agent file's color, with
+    the task its Agent call described: a spinner and the running time while it runs, then its
+    report word, how long it took and how long ago it ended. The word is green with `✓` when it is
+    the one the role should end on (`PASS`, `GREEN`, `APPROVED`, a test-writer's `RED`), red with
+    `✗` when not (`FAIL`, an implementer's `RED`, `BLOCKED`, `REJECTED`, `killed`, `failed`), and
+    dim otherwise. The latest six show, and the rest are counted;
+  - the buttons, and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
+    A finished section, and one not started past the next task, folds to its title and count, and
+    `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
+    Code draws inline code.
+
+  Inline above the prompt the pane asks for the rows it draws, rather than the third of the
+  terminal it gets unasked. `/speckit-board refresh` re-reads the files; `/speckit-board band`
+  hides or shows the band; `/speckit-board status` answers with the board as text (the status
+  line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well
+  and the model reads. The command runs at once, also during a turn: `/speckit-team` runs its agents
+  in the foreground, so a whole pipeline is one turn, and a command that waited for the turn opened
+  the board only once the run was over.
+- **A status line**, `001-greet · ○ audit · 0/6 tasks` after the plugin's name, which Claude Code
+  puts first, and toasts when the audit passes, fails or goes stale, the retry limit is reached or
+  the retry record cannot be read (the gate then blocks implementer, and build shows
+  `✗ retry record unreadable`), every task is ticked, spec-gatekeeper approves, or another feature
+  becomes the active one.
 
 It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
 the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict, retry and gatekeeper files under
@@ -229,7 +254,8 @@ The verify step reads the spec-gatekeeper's word from the file the hook's `ends`
 it accepts the report, so it updates even when the mod was reloaded or not loaded while the
 gatekeeper ran; it falls back to the word the mod saw at the agent's stop, kept in its plugin
 store, and that only from a last line that is exactly `APPROVED` or `REJECTED`, the line `ends`
-accepts. That word counts only
+accepts. The store is the user's, shared by every repository, so the word is kept per repository
+and with the time it was given, as the hook's record is. Either word counts only
 while the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
 because the gatekeeper judged files that have since changed. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
@@ -243,11 +269,12 @@ features, not their implementation: its layout (phase track, task progress, retr
 rows with their report word) is input to feature 002's spec, and the mod is retired once feature
 001's view ships. Until then it is kept working and installable, and feature 001's spec is not
 changed for it, so FR-016 binds 001's own view and not this mod. Retiring it means removing
-`mods/speckit-board/`, the repo's `.claude-plugin/marketplace.json`, `--board`/`--no-board` and
-the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
+`mods/speckit-board/`, the repo's `.claude-plugin/marketplace.json`, `--board`/`--no-board`,
+the fingerprint and color twins in `test/board-mod.test.mjs`, and the board tape, its staging in
+`record.mjs` and its screenshot in `docs/media/`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (31 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (52 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside it
 (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
@@ -296,6 +323,23 @@ error"), again with no `SubagentStop`, and the poll ended its row 1.8 s later, w
 session was still inside a tool call (#35). Not seen live: an interactive session on
 Linux (band, pane, agent rows; that Claude Code stopped at first-run login), and any session on
 macOS (#19).
+
+On 2026-10-08 and 09 (Claude Code 2.1.295, Windows 11, board by `--plugin-dir` in a scratch Spec Kit
+repo with the demo feature staged mid-build, recorded with vhs, the main session and two stand-in
+agents on Haiku): the band, the pane docked in fullscreen and inline above the prompt, the status
+line, and the agent rows with each agent's task and its role's color, as in the screenshot above.
+`/speckit-board` typed while a turn ran a 25-second Bash command opened the pane during the turn;
+the version before `immediate` queued it until the turn ended. A headless
+`claude -p "/speckit-board status"` printed the board as text at 0 turns and $0. The session
+before this change found a bug, fixed: the plugin store kept the gatekeeper's word under the
+feature's path alone, so the scratch repo showed `✓ verify` from an `APPROVED` kept for another
+repository's `specs/001-greet`, though no gatekeeper had run there and its audit was newer. It also
+showed what the change redraws: the pane's phase track broke mid-row in a pane docked 60 columns
+wide, beside the dock the band drew bare glyphs, every finished agent got a green `✓` whatever its
+word, and the status line read `speckit-board: speckit 001-greet · ◐ build (3/6) · 3/6 tasks`.
+The session after it found two more, fixed before the screenshot: a team row wrapped its word
+(`runnin`, `g`) in the docked pane, and at about 70 columns the band kept `[ board ]` but dropped
+the other phases' glyphs.
 
 ## The team
 
@@ -549,7 +593,11 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 - **Models:** edit `model:` in `agents/*.md` and rerun the installer. Use `inherit` to follow the
   session's model.
-- **More or fewer implementer attempts:** `MAX_RED` in `hooks/speckit-team.mjs` (default 3).
+- **Agent colors:** `color:` in `agents/*.md`. The board mod draws each role in the same color
+  from its own copy, `ROLE_COLOR` in `mods/speckit-board/hooks/model.ts`; change both (`npm test`
+  checks that they agree).
+- **More or fewer implementer attempts:** `MAX_RED` in `hooks/speckit-team.mjs` (default 3), and
+  `MAX_RED` in `mods/speckit-board/hooks/model.ts`, which the board's retry meter counts to.
 - **A stricter or looser PASS:** spec-auditor's "Verdict" section in `agents/spec-auditor.md`.
   By default only CRITICAL and HIGH findings fail an audit.
 - **How much design the architect adds:** step 2 of `agents/architect.md` asks for the minimal
@@ -559,9 +607,10 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 79 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
-24 run the installer against throwaway config dirs, 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`), 4 run
+`npm test` runs 81 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
+24 run the installer against throwaway config dirs, 7 check the board mod (its fingerprint,
+retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under
+`claude plugin test`), 4 run
 `tools/usage.mjs` on a synthetic transcript, and 3 are end-to-end (below). CI also
 type-checks the mod; to do it locally, load the mod once (`claude --plugin-dir mods/speckit-board`
 lays `.claude-plugin/types/` and `tsconfig.json`), then run
@@ -751,22 +800,27 @@ CI runs `npm test` on Linux, macOS and Windows for every pull request
 See `CLAUDE.md`. In short: edit `agents/`, `hooks/`, `skills/` or `install.mjs`, run `npm test`,
 rerun the installer, and do the live check if you touched how a hook is wired.
 
-The GIFs under [What it looks like](#what-it-looks-like) come from the
-[vhs](https://github.com/charmbracelet/vhs) tapes in `docs/media/`. To record them again, with
-vhs, `specify`, `claude` and git on your PATH:
+The GIFs under [What it looks like](#what-it-looks-like) and the board's screenshot under
+[Board mod](#board-mod-experimental) come from the [vhs](https://github.com/charmbracelet/vhs)
+tapes in `docs/media/`. To record them again, with vhs, `specify`, `claude` and git on your PATH:
 
 ```sh
-node docs/media/record.mjs                 # all four; makes live Haiku calls
-node docs/media/record.mjs pipeline        # only the named tapes
+node docs/media/record.mjs                 # all five; makes live Haiku calls
+node docs/media/record.mjs pipeline board  # only the named tapes
 node docs/media/record.mjs --setup-only    # build the scratch repo, record nothing
 ```
 
 The script builds a scratch Spec Kit repo in `~/.cache/speckit-agents-demo` (owner-only, not a
-shared temp dir, because it gets folder trust) with the demo feature in
+shared temp dir, because it gets folder trust; deleted and rebuilt on every run, and
+`SPECKIT_DEMO_DIR` names another folder) with the demo feature in
 `docs/media/demo/`, installs the team into that repo's `.claude/`, and starts Claude Code with
 `--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
-MCP servers stay out of the frame. Look at every GIF before committing it: the session banner can
-still show account details.
+MCP servers stay out of the frame. The `board` tape loads the board from this checkout with
+`--plugin-dir`, in fullscreen so the pane docks, after staging the demo feature mid-build: three
+tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-writer and
+implementer for stand-ins that only report, so its agent rows cost two short Haiku runs. Look at
+every GIF and screenshot before committing it: the session banner and the usage line can still
+show account details.
 
 To see what a run cost in tokens, point `tools/usage.mjs` at its main-session transcript (under
 `~/.claude/projects/<project>/`); it reads the session's agents from `<session>/subagents/` next to it:
