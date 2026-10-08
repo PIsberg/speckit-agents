@@ -570,6 +570,18 @@ Later the same day, with the team installed into the scratch repo's own `.claude
 - test-writer told to hand back the bare report "placeholder", the failure seen in the run above:
   refused by `ends RED BLOCKED` with "Your report must end with a final line that is exactly one
   of: RED, BLOCKED", then accepted when it reported `BLOCKED` with its reason. $0.03.
+- product-owner on the vague idea "reminders, so people stop forgetting things": a spec with 3
+  `[NEEDS CLARIFICATION]` markers, each question with a recommended answer, and no
+  `READY FOR PLAN`. Relaunched with the answers, it wrote them into a `## Clarifications` session,
+  replaced the 3 markers with requirements, asked nothing new and ended `READY FOR PLAN`. It also
+  ticked all 16 checklist items without checking them, and said so (#38). $0.19 per round.
+- `/speckit-team` from step 4 on `docs/media/demo`'s 001-greet (audit already PASS): implementer
+  on the setup task, a stub pass ending `RESULT: STUB`, then 2 slices of test-writer and
+  implementer, then the docs task and spec-gatekeeper `APPROVED`. Both test-writers ended `RED`
+  with one failure line per test (4, then 2); every implementer ended `RESULT: GREEN` with the
+  suite's counts, and the `result` hook reset the retry count each time. The orchestrator told
+  test-writer not to tick its tasks, so an extra implementer ran only to tick them (#37).
+  $0.36, 3.5 minutes.
 
 Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 did run). Those are covered by the unit tests only.
