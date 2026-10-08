@@ -413,6 +413,21 @@ test('lane check catches writes that bypassed Edit, including via Bash', () => {
   assert.equal(stop('t1', 'tests')?.decision, 'block', 'test-writer may not add production code');
 });
 
+// git diff detects renames by default and then names only the new path, so moving a failing test out
+// of the test tree (git mv, or delete plus create) passed the lane check as one new production file.
+test('lane check catches a test moved out of the test tree', () => {
+  const { dir, write: w, g } = repo();
+  w('src/test/java/AppTest.java', 'class AppTest {\n  void t() { assert false; }\n}\n');
+  g('add', '-A'); g('commit', '-qm', 'test');
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'mv1' });
+  g('mv', 'src/test/java/AppTest.java', 'src/main/AppTest.txt');
+  g('commit', '-qm', 'moved');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'mv1' });
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /src\/test\/java\/AppTest\.java/);
+});
+
 test('lane check ignores files that were already dirty when the agent started', () => {
   const { dir, write: w } = repo();
   pass(dir);

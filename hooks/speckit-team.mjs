@@ -184,9 +184,11 @@ function auditProblem() {
   return null;
 }
 
+// No rename detection: a rename is listed by its new path only, and a test moved out of the test tree
+// would read as one new production file.
 function changedSince(base) {
   return [...new Set([
-    ...lines(git(root, 'diff', '--name-only', base)),
+    ...lines(git(root, 'diff', '--no-renames', '--name-only', base)),
     ...lines(git(root, 'ls-files', '--others', '--exclude-standard')),
   ])];
 }
