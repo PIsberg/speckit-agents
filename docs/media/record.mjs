@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Records the agent-view GIFs in README.md. Each tape drives a real Claude Code session (Haiku,
-// main session and subagents) in a throwaway Spec Kit repo, so a run costs a little and the
-// output differs from run to run. Needs vhs, specify, claude and git on PATH.
+// main session and subagents: the scratch copies of the agents are set to `model: haiku`) in a
+// throwaway Spec Kit repo, so a run costs a little and the output differs from run to run.
+// Needs vhs, specify, claude and git on PATH.
 //
 //   node docs/media/record.mjs                  all tapes
 //   node docs/media/record.mjs pipeline         only the named tapes
@@ -57,6 +58,13 @@ function buildDemo() {
     '--script', process.platform === 'win32' ? 'ps' : 'sh'],
   { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } });
   run(process.execPath, [path.join(repo, 'install.mjs'), '--claude-dir', path.join(demo, '.claude')]);
+  // An agent's `model:` line beats CLAUDE_CODE_SUBAGENT_MODEL, so the scratch copies are switched
+  // to Haiku here; with the env var alone the agents ran on Opus and Sonnet (#39).
+  const agents = path.join(demo, '.claude', 'agents');
+  for (const f of fs.readdirSync(agents).filter((n) => n.endsWith('.md'))) {
+    const file = path.join(agents, f);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/^model: .*$/m, 'model: haiku'));
+  }
   const src = path.join(here, 'demo');
   fs.copyFileSync(path.join(src, 'constitution.md'), path.join(demo, '.specify', 'memory', 'constitution.md'));
   const feat = path.join(demo, 'specs', '001-greet');
@@ -83,9 +91,7 @@ function record(name) {
     .replaceAll('{{CLAUDE}}', CLAUDE);
   const file = path.join(work, `${name}.tape`);
   fs.writeFileSync(file, tape);
-  const r = spawnSync('vhs', [file], {
-    cwd: demo, stdio: 'inherit', env: { ...process.env, CLAUDE_CODE_SUBAGENT_MODEL: 'haiku' },
-  });
+  const r = spawnSync('vhs', [file], { cwd: demo, stdio: 'inherit' });
   return r.status === 0 ? 'recorded' : `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
 }
 

@@ -135,9 +135,9 @@ You can also run one phase at a time by @-mentioning an agent:
 
 ## What it looks like
 
-Real sessions in a scratch Spec Kit repo, with Haiku standing in for every agent's model, so
-your runs will word things differently. The three recordings that wait on agents are sped up 2x
-or 4x. `node docs/media/record.mjs` records them again (see [Developing](#developing)).
+Real sessions in a scratch Spec Kit repo, the main session on Haiku (`record.mjs` now puts every
+agent on Haiku too; before #39 they ran on their own models), so your runs will word things
+differently. The three recordings that wait on agents are sped up 2x or 4x. `node docs/media/record.mjs` records them again (see [Developing](#developing)).
 
 **The team in `/agents`.** The six agents as Claude Code lists them, then the `@agent-`
 typeahead you use to call one directly.
@@ -256,7 +256,7 @@ a headless `claude -p "/speckit-board refresh"` in a scratch Spec Kit repo set t
 raised the startup toast and answered the command, and an interactive session (recorded with vhs)
 drew the band, the status line and, after `/speckit-board`, the pane. An edit to
 `mods/speckit-board/` reached the installed board at the next session start with no reinstall.
-Team agent tracking, the same day, with real agents on Haiku. Headless, while
+Team agent tracking, the same day, with real agents (main session on Haiku). Headless, while
 `@agent-spec-auditor` ran the status line read `◐ audit`, and when it stopped the mod toasted
 `spec-auditor finished: PASS`, then `Audit PASS` once the hook had recorded the verdict;
 `@agent-spec-gatekeeper` went `◐ verify`, then `spec-gatekeeper finished: APPROVED` and
@@ -539,14 +539,14 @@ Expect `"num_turns":0` and `"total_cost_usd":0`, meaning the gate stopped it bef
 call. (`MSYS_NO_PATHCONV=1` matters only in Git Bash, which otherwise rewrites `/speckit-implement`
 into `C:/Program Files/Git/speckit-implement`.)
 
-Live results on 2026-10-06 (Claude Code 2.1.291, Windows 11, Haiku subagents):
+Live results on 2026-10-06 (Claude Code 2.1.291, Windows 11, Haiku main session):
 
 - typed `/speckit-implement` with no audit: blocked at 0 turns, $0
 - architect's `Write` to `src/`: denied, file not created
 - implementer's first `Bash` call before an audit: denied by the gate
 - spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
 
-Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku subagents, user-level install):
+Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku main session, user-level install):
 
 - implementer before an audit: its `Bash` call denied by `gate retries`, and its RED not counted
 - 3 implementer runs ending `RESULT: RED`: counted once each, 3 IDs in the retry record
@@ -560,7 +560,7 @@ Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku subagents, us
   "placeholder" in the same turn as a tool call, so a second gatekeeper had to run. `ends` now
   refuses such a report once.
 
-Live results on 2026-10-08 (Claude Code 2.1.294, Windows 11, Haiku, user-level install, a repo
+Live results on 2026-10-08 (Claude Code 2.1.294, Windows 11, Haiku main session, user-level install, a repo
 initialised by Spec Kit 1.1.2 without `--extension git`):
 
 - one full `/speckit-team` run of a small feature: constitution drafted and approved, 3 product
