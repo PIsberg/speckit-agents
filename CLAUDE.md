@@ -26,7 +26,7 @@ this file is how to work on it.
   (skipped, not passed, without a `claude` executable on PATH).
 
 ## Verify
-- `npm test`: all suites, no network, 46 s on Windows (61 tests, 2026-10-08; the four installer tests
+- `npm test`: all suites, no network, 43 s on Windows (66 tests, 2026-10-08; the four installer tests
   that run the real `claude plugin` take 38 s of it).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
