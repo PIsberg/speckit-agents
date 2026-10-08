@@ -39,8 +39,21 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 | Node 18+ | every hook is a Node script | `node --version` |
 | git | the hooks use it to find the repo and diff an agent's work | `git --version` |
 | Spec Kit (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11) |
+| [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
 
-Install Spec Kit with `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git`.
+uv is not preinstalled on macOS or Windows. Install it, then Spec Kit:
+
+```sh
+# macOS (or: brew install uv) and Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows, in PowerShell (or: winget install --id=astral-sh.uv)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+```
+
+Spec Kit needs Python 3.11 or newer; uv downloads one if the machine has none. Open a new
+terminal after installing uv so `uv` and `specify` are on `PATH`.
 
 ## Install
 

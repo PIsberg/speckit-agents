@@ -394,7 +394,7 @@ if (!dryRun) {
 }
 
 const missing = [['git', 'required by every hook'], ['claude', 'Claude Code itself'],
-  ['specify', 'per repo: uv tool install specify-cli --from git+https://github.com/github/spec-kit.git']]
+  ['specify', 'per repo: uv tool install specify-cli --from git+https://github.com/github/spec-kit.git; uv itself: README.md, Requirements']]
   .filter(([cmd]) => !have(cmd));
 for (const [cmd, why] of missing) console.log(`WARNING: \`${cmd}\` not found on PATH (${why}).`);
 
