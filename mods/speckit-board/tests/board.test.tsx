@@ -105,5 +105,6 @@ test('the pane lists tasks by phase, the retry meter and its controls', async ($
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
-  expect(seen.toasts.at(-1)).toBe('speckit-board: no .specify/ in the git repo at /elsewhere; nothing to show')
+  // The terminal names the plugin before a toast itself.
+  expect(seen.toasts.at(-1)).toBe('no .specify/ in the git repo at /elsewhere; nothing to show')
 })

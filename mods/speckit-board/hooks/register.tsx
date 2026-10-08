@@ -122,14 +122,14 @@ export const register: Register = on => {
     repo = await findRepo($, e.cwd)
     // Say so either way: a board that draws nothing is indistinguishable from one that never loaded.
     if (!repo) {
-      $.ui.toast(`speckit-board: no .specify/ in the git repo at ${e.cwd}; nothing to show`, { timeoutMs: 8000 })
+      $.ui.toast(`no .specify/ in the git repo at ${e.cwd}; nothing to show`, { timeoutMs: 8000 })
       return next(e)
     }
     await refresh($)
     $.clock.every(POLL_MS, () => { void refresh($) })
     await keepTicking($)
     const b = await read($, board)
-    $.ui.toast(b ? `speckit-board: ${b.feature}. /speckit-board opens the board` : 'speckit-board: no active feature in .specify/feature.json', { timeoutMs: 8000 })
+    $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })
     return next(e)
   })
 
