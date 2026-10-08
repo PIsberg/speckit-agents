@@ -6,7 +6,7 @@
 //
 //   scope only <prefix>...  PreToolUse Write/Edit: allow only paths under these prefixes
 //   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
-//   scope no-tests          PreToolUse Write/Edit: allow anything except test files
+//   scope no-tests          PreToolUse Write/Edit: allow anything except test files and .specify/
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
