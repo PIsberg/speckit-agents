@@ -58,6 +58,14 @@ test('an unreadable retry record stops the build, as the gate stops implementer'
   expect(states({ ...passed, isRetryUnreadable: true, tasks: parseTasks('- [x] T001 a') })).toMatchObject({ build: 'done' })
 })
 
+test('a FAIL on files since revised asks for a re-audit, not a fix', () => {
+  // After a FAIL the architect revises; the board kept the old FAIL as the state of files nobody had audited.
+  const audit = (v: BoardInputs['verdict']) => derivePhases({ ...base, verdict: v }).find(p => p.id === 'audit')
+  expect(audit({ verdict: 'FAIL', fingerprint: 'fp' })).toMatchObject({ state: 'failed', note: 'FAIL' })
+  expect(audit({ verdict: 'FAIL', fingerprint: 'old' })).toMatchObject({ state: 'stale', note: 'edited since FAIL' })
+  expect(states({ ...base, verdict: { verdict: 'FAIL', fingerprint: 'old' } })).toMatchObject({ build: 'blocked' })
+})
+
 test('a running team agent marks its phase active', () => {
   expect(states({ ...base, plan: undefined, tasks: undefined, running: ['architect'] }))
     .toMatchObject({ plan: 'active', tasks: 'active' })

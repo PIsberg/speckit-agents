@@ -111,15 +111,18 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
     ? phase('tasks', idle('architect'))
     : phase('tasks', 'done', `${i.tasks.length} tasks`)
 
+  // A verdict on files since changed is about files nobody has audited, a FAIL as much as a PASS:
+  // they want a new audit, not the FAIL's findings fixed again.
   const v = i.verdict
+  const said = v && typeof v === 'object' ? String(v.verdict ?? '?') : ''
   const audit = v === undefined
     ? phase('audit', idle('spec-auditor'))
     : v === null || typeof v !== 'object'
       ? phase('audit', 'failed', 'unreadable')
-      : v.verdict !== 'PASS'
-        ? phase('audit', runs('spec-auditor') ? 'active' : 'failed', String(v.verdict ?? '?'))
-        : v.fingerprint !== i.fingerprint
-          ? phase('audit', runs('spec-auditor') ? 'active' : 'stale', 'edited since PASS')
+      : v.fingerprint !== i.fingerprint
+        ? phase('audit', runs('spec-auditor') ? 'active' : 'stale', `edited since ${said}`)
+        : v.verdict !== 'PASS'
+          ? phase('audit', runs('spec-auditor') ? 'active' : 'failed', said)
           : phase('audit', 'done', 'PASS')
 
   const list = i.tasks ?? []

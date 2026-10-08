@@ -196,6 +196,20 @@ test('a change seen by refreshes in several events is announced once', async ($,
   expect(seen.toasts.filter(t => t.startsWith('Audit PASS'))).toHaveLength(1)
 })
 
+// After a FAIL the architect revises the plan. The board kept showing the old FAIL as failed, on files
+// nobody had audited yet; what they want is the next audit.
+test('revising the files after a FAIL asks for a re-audit', async ($, on) => {
+  const seen = await world(on)
+  seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`] = JSON.stringify({ verdict: 'FAIL', fingerprint: seen.fp })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ✗ audit (FAIL) · 1/3 tasks · RED 1/3')
+  seen.files[`${ROOT}/${FEATURE}/plan.md`] = '# Plan, revised'
+  await seen.clock.advance(4000)
+  // The revision also starts the RED count over, as the hook's does.
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ↻ audit (edited since FAIL) · 1/3 tasks')
+  expect(seen.toasts).toContain('Spec, plan or tasks changed since FAIL: re-audit before building')
+})
+
 // The gate denies implementer while the retry record cannot be read; the board said "no REDs".
 test('an unreadable retry record shows the build stopped', async ($, on) => {
   const seen = await world(on, { [`${ROOT}/.git/speckit-team/retries/001-x.json`]: '{"red": [' })

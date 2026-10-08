@@ -92,7 +92,7 @@ function announce($: EngineInterface, before: SpeckitBoard | null, after: Specki
     if (!old || old.state === p.state) continue
     if (p.id === 'audit' && p.state === 'done') $.ui.toast('Audit PASS: the implementation gate is open')
     if (p.id === 'audit' && p.state === 'failed') $.ui.toast(`Audit ${p.note}: route CRITICAL/HIGH findings to their owners`)
-    if (p.id === 'audit' && p.state === 'stale') $.ui.toast('Spec, plan or tasks changed after the PASS: re-audit before building')
+    if (p.id === 'audit' && p.state === 'stale') $.ui.toast(`Spec, plan or tasks ${p.note.replace(/^edited/, 'changed')}: re-audit before building`)
     if (p.id === 'build' && p.state === 'failed') {
       $.ui.toast(after.isRetryUnreadable
         ? 'The retry record is unreadable: the gate blocks implementer until it is deleted'
