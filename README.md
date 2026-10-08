@@ -38,7 +38,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 | [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291) | `claude --version` |
 | Node 18+ | every hook is a Node script | `node --version` |
 | git | the hooks use it to find the repo and diff an agent's work | `git --version` |
-| Spec Kit (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11; `init` also on 1.1.2) |
+| Spec Kit (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11 and 1.1.2) |
 | [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
 
 uv is not preinstalled on macOS or Windows. Install it, then Spec Kit:
@@ -106,7 +106,10 @@ specify init --here --integration claude
 
 Keep `--integration claude`: without it, Spec Kit asks which assistant to set up, or, when it
 cannot ask, sets up GitHub Copilot, and the team then finds none of Spec Kit's skills. Spec Kit
-0.10 removed the older `--ai claude` spelling.
+0.10 removed the older `--ai claude` spelling. On Spec Kit 1.x you can add `--extension git` to
+have Spec Kit name and create each feature branch; without it, `/speckit-team` creates the branch
+itself after the spec is written. (Spec Kit 0.8 installs that extension by default and rejects
+the flag.)
 
 Then, in Claude Code:
 
@@ -517,6 +520,14 @@ Live results on 2026-10-07 (Claude Code 2.1.292, Windows 11, Haiku subagents, us
   ticked, so the gatekeeper rejected the feature; and a gatekeeper handed back the report
   "placeholder" in the same turn as a tool call, so a second gatekeeper had to run. `ends` now
   refuses such a report once.
+
+Live results on 2026-10-08 (Claude Code 2.1.294, Windows 11, Haiku, user-level install, a repo
+initialised by Spec Kit 1.1.2 without `--extension git`):
+
+- one full `/speckit-team` run of a small feature: constitution drafted and approved, 3 product
+  questions answered, spec, plan, audit PASS recorded by the hook, 5 slices, spec-gatekeeper
+  APPROVED with its word in the `ends` record. With no git extension, the skill created the
+  feature branch itself; `main` kept only the initial commit. About $3.30.
 
 Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 did run). Those are covered by the unit tests only.

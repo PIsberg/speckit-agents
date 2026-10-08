@@ -58,8 +58,12 @@ The constitution is the user's rules: draft them, never decide them.
 
 ## 1. Spec: product-owner
 Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then
-relaunch it with the answers. Repeat until `READY FOR PLAN`. If step 0b wrote the constitution,
-commit it now, on the feature branch product-owner's speckit-specify created, never on main or master.
+relaunch it with the answers. Repeat until `READY FOR PLAN`.
+Then make sure the work is on a feature branch. Spec Kit's git extension creates one during
+speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
+If you are still on main or master, create the branch yourself, named after the feature directory
+(`git switch -c <its basename>`); uncommitted work moves with it. Commit `spec.md`, and the
+constitution if step 0b wrote it, on that branch.
 **Stop:** the user reviews `spec.md`.
 
 ## 2. Plan and tasks: architect
