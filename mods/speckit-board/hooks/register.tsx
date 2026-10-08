@@ -61,6 +61,7 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   const verdict = await readJson($, `${at.stateDir}/verdicts/${name}.json`) as Parameters<typeof derivePhases>[0]['verdict']
   const retries = await readJson($, `${at.stateDir}/retries/${name}.json`) as Parameters<typeof redCount>[0]
   const red = redCount(retries, fp)
+  const isRetryUnreadable = retries === null
   // The word the hook's `ends` check recorded, so verify updates whether or not this mod saw the
   // gatekeeper stop; the store holds what it saw, for a hook from before that record existed.
   const ends = await readJson($, `${at.stateDir}/ends/${name}.json`) as { word?: unknown, at?: unknown } | null | undefined
@@ -72,12 +73,13 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   return {
     feature: name,
     phases: derivePhases({
-      spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red,
+      spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
       gate: typeof gate === 'string' ? gate : undefined, gateAt, running,
     }),
     tasks: tasks ?? [],
     red,
     maxRed: MAX_RED,
+    isRetryUnreadable,
     fingerprint: fp,
   }
 }
@@ -90,8 +92,12 @@ function announce($: EngineInterface, before: SpeckitBoard | null, after: Specki
     if (!old || old.state === p.state) continue
     if (p.id === 'audit' && p.state === 'done') $.ui.toast('Audit PASS: the implementation gate is open')
     if (p.id === 'audit' && p.state === 'failed') $.ui.toast(`Audit ${p.note}: route CRITICAL/HIGH findings to their owners`)
-    if (p.id === 'audit' && p.state === 'stale') $.ui.toast('Spec, plan or tasks changed after the PASS: re-audit before building')
-    if (p.id === 'build' && p.state === 'failed') $.ui.toast(`RED ${after.red} of ${after.maxRed}: retry limit reached`)
+    if (p.id === 'audit' && p.state === 'stale') $.ui.toast(`Spec, plan or tasks ${p.note.replace(/^edited/, 'changed')}: re-audit before building`)
+    if (p.id === 'build' && p.state === 'failed') {
+      $.ui.toast(after.isRetryUnreadable
+        ? 'The retry record is unreadable: the gate blocks implementer until it is deleted'
+        : `RED ${after.red} of ${after.maxRed}: retry limit reached`)
+    }
     if (p.id === 'build' && p.state === 'done') $.ui.toast(`All ${after.tasks.length} tasks done`)
     if (p.id === 'verify' && p.state === 'done') $.ui.toast('spec-gatekeeper APPROVED: ready for the PR')
   }
@@ -105,17 +111,48 @@ function statusLine(b: SpeckitBoard | null): string | undefined {
   return `speckit ${b.feature} · ${where} · ${done}/${b.tasks.length} tasks${b.red ? ` · RED ${b.red}/${b.maxRed}` : ''}`
 }
 
+// The poll, turn ends and agent events each refresh. A refresh in one event does not see the board
+// another event's refresh stored, so each compared the files with the same old board and announced
+// the same change. It compares with the board this module last wrote instead; with the stored one
+// only after a reload, which starts module variables over.
+let shown: SpeckitBoard | null | undefined
+
 async function refresh($: EngineInterface) {
   if (!repo) return
   const next = await snapshot($, repo)
-  const before = await read($, board)
+  const before = shown === undefined ? await read($, board) : shown
   if (JSON.stringify(before) === JSON.stringify(next)) return
+  shown = next
   await update($, board, () => next)
   if (next) announce($, before, next)
   $.ui.status(statusLine(next))
 }
 
-// Spinners and elapsed times move only while an agent of the team runs.
+// An agent that is stopped or fails ends with no SubagentStop to say so, and would show running for
+// the rest of the session. The engine's own list settles it. A completed one is left to its
+// SubagentStop, which the team's stop checks may still block.
+const ENDED_UNREPORTED = new Set(['killed', 'failed'])
+async function settleEnded($: EngineInterface) {
+  if (!(await read($, agents)).some(a => a.isRunning)) return
+  const ended = new Map((await $.agent.list().catch(() => []))
+    .filter(a => ENDED_UNREPORTED.has(a.status)).map(a => [a.id, a.status]))
+  if (!ended.size) return
+  const now = await $.clock.now()
+  await update($, agents, list => list.map(a => (a.isRunning && ended.has(a.id)
+    ? { ...a, isRunning: false, outcome: a.outcome || (ended.get(a.id) ?? ''), endedAt: now }
+    : a)))
+  await keepTicking($)
+}
+
+// A finished agent's "2m ago" changes with no file or agent changing, so the poll redraws while
+// there are agent rows; keepTicking's one-second ticker is for the spinners.
+async function poll($: EngineInterface) {
+  await settleEnded($)
+  await refresh($)
+  if ((await read($, agents)).length) $.ui.invalidate('ui.render')
+}
+
+// Spinners and running times move every second only while an agent of the team runs.
 async function keepTicking($: EngineInterface) {
   const isBusy = (await read($, agents)).some(a => a.isRunning)
   if (isBusy && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
@@ -135,7 +172,9 @@ export const register: Register = on => {
       return next(e)
     }
     await refresh($)
-    $.clock.every(POLL_MS, () => { void refresh($) })
+    // Nothing awaits the poll: one still running when the mod reloads or unloads has its calls
+    // refused, and the next poll, if there is one, reads everything again.
+    $.clock.every(POLL_MS, () => { poll($).catch(() => undefined) })
     await keepTicking($)
     const b = await read($, board)
     $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })
@@ -177,7 +216,12 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // The team's stop checks are settings hooks, which run beneath every mod. So the agent's end is
+  // read after them: one that blocks sends the agent back to work, and the verdict, RED or
+  // gatekeeper word they record is on disk only once they have run.
   on('classic.SubagentStop', async ($, e, next) => {
+    const result = await next(e)
+    if (result?.block) return result
     const role = teamRole(e.agent_type)
     const report = handbacks.get(e.agent_id)
     handbacks.delete(e.agent_id)
@@ -195,7 +239,7 @@ export const register: Register = on => {
       await keepTicking($)
       await refresh($)
     }
-    return next(e)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -269,7 +313,11 @@ export const register: Register = on => {
             <Text color={b.red >= b.maxRed ? 'error' : b.red ? 'warning' : 'subtle'}>
               {'●'.repeat(b.red) + '○'.repeat(Math.max(0, b.maxRed - b.red))}
             </Text>
-            <Text dimColor>{b.red ? `RED ${b.red} of ${b.maxRed} on this plan` : 'no REDs on this plan'}</Text>
+            <Text dimColor>
+              {b.isRetryUnreadable
+                ? 'retry record unreadable: implementer is blocked until it is deleted'
+                : b.red ? `RED ${b.red} of ${b.maxRed} on this plan` : 'no REDs on this plan'}
+            </Text>
           </Box>
         </Box>
 

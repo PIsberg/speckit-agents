@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { AgentInfo, On } from 'claude-code'
+import type { MockClock } from 'claude-code/testing'
 
 import { fingerprint, fingerprintFiles } from '../hooks/model'
 
@@ -24,7 +25,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   }
   const toasts: string[] = []
   const status: (string | undefined)[] = []
-  mock.clock(on, { now: 1_000_000 })
+  const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on)
   // git answers only inside the repo, as the real one does.
   on('process.run', (_$, e) => ({ value: posix(e.init?.cwd ?? '').startsWith(ROOT)
@@ -33,7 +34,10 @@ async function world(on: On, extra: Record<string, string> = {}) {
     : { exitCode: 128, stderr: 'fatal: not a git repository', isStdoutTruncated: false, isStderrTruncated: false, stdout: '' },
   }))
   on('fs.exists', (_$, e) => ({ value: posix(e.path) === `${ROOT}/.specify` }))
-  on('fs.read', (_$, e) => {
+  // A real read takes time. Without it here, tests that let the poll run passed on Windows and
+  // Linux and failed only on the slower macOS runner in CI; with it, they fail on any machine.
+  on('fs.read', async (_$, e) => {
+    await new Promise(r => setTimeout(r, 5))
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
   })
@@ -46,7 +50,18 @@ async function world(on: On, extra: Record<string, string> = {}) {
   })
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
-  return { toasts, status }
+  return { toasts, status, files, fp, clock }
+}
+
+// The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
+// slow runner (macOS in CI) that came before the poll's file reads were back. Moves the clock, then
+// waits, bounded, until the board shows what the test expects; the assertion after it says if not.
+async function poll(clock: MockClock, ms: number, isThere: () => boolean | Promise<boolean>) {
+  await clock.advance(ms)
+  for (let i = 0; i < 200 && !(await isThere()); i++) {
+    await clock.settle()
+    await new Promise(r => setTimeout(r, 10))
+  }
 }
 
 // The engine hands fs hooks the platform's spelling (C:\repo\.specify on Windows).
@@ -140,6 +155,153 @@ test('an agent that reports through SubagentHandback gets its outcome from the r
   await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
     agent_transcript_path: '', last_assistant_message: '' } as never)
   expect(seen.toasts).toContain('spec-auditor finished: PASS')
+})
+
+// The team's stop checks are settings hooks, beneath every mod. One that blocks sends the agent back
+// to work: the board said it had finished, stopped its spinner and set the audit back to todo while
+// it still ran.
+test('an agent whose stop the team hook blocks still shows running', async ($, on) => {
+  const seen = await world(on)
+  delete seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`]
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({ block: 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.' }))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  const stop = await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'findings, no verdict yet' } as never)
+  expect(stop?.block).toMatch(/VERDICT/)
+  expect(seen.toasts.filter(t => t.startsWith('spec-auditor finished'))).toEqual([])
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ audit · 1/3 tasks · RED 1/3')
+})
+
+// The verdict hook records the audit as the agent stops, beneath the mod: read before it ran, the
+// board showed the old audit until the next poll, after the agent's own "finished: PASS" toast.
+test('the verdict recorded as the auditor stops shows at once', async ($, on) => {
+  const seen = await world(on)
+  const verdict = `${ROOT}/.git/speckit-team/verdicts/001-x.json`
+  delete seen.files[verdict]
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => {
+    seen.files[verdict] = JSON.stringify({ verdict: 'PASS', fingerprint: seen.fp })
+    return {}
+  })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'VERDICT: PASS' } as never)
+  expect(seen.toasts).toContain('spec-auditor finished: PASS')
+  expect(seen.toasts).toContain('Audit PASS: the implementation gate is open')
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ build (1/3) · 1/3 tasks · RED 1/3')
+})
+
+// The poll, a turn's end and an agent's start or stop each refresh. A refresh in one event read the
+// board as it was before the others wrote it, so a change was announced once per event.
+test('a change seen by refreshes in several events is announced once', async ($, on) => {
+  const seen = await world(on)
+  const verdict = `${ROOT}/.git/speckit-team/verdicts/001-x.json`
+  delete seen.files[verdict]
+  on('classic.SubagentStart', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  seen.files[verdict] = JSON.stringify({ verdict: 'PASS', fingerprint: seen.fp })
+  await Promise.all([
+    $.command.run({ command: 'speckit-board', args: 'refresh' } as never),
+    $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'test-writer' } as never),
+    $.classic.SubagentStart({ agent_id: 'a2', agent_type: 'implementer' } as never),
+  ])
+  expect(seen.toasts.filter(t => t.startsWith('Audit PASS'))).toHaveLength(1)
+})
+
+// The clock redrew the pane only while an agent ran, so the last agent to stop kept "0s ago" for good.
+test('a finished agent\'s age keeps counting', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'VERDICT: PASS' } as never)
+  const ui = await $.ui.mount({
+    plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+    viewport: { columns: 140, rows: 40 },
+    props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+  } as never)
+  expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 0s ago')
+  const age = async () => (await ui.find({ type: 'Text', text: /ago$/ }))?.text
+  await poll(seen.clock, 120_000, async () => (await age()) === 'PASS · 2m 0s ago')
+  expect(await age()).toBe('PASS · 2m 0s ago')
+  await ui.unmount()
+})
+
+// The board learned of an agent's end only from SubagentStop. One that is stopped or fails ends
+// without a report, and its row and phase stayed running for the rest of the session.
+for (const status of ['killed', 'failed'] as const) {
+  test(`an agent the engine lists as ${status} stops running on the board`, async ($, on) => {
+    const seen = await world(on)
+    delete seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`]
+    let listed: AgentInfo[] = []
+    on('agent.list', () => ({ value: listed }))
+    on('classic.SubagentStart', () => ({}))
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status: 'running' }]
+    await poll(seen.clock, 4000, () => true)
+    expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ audit · 1/3 tasks · RED 1/3')
+    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status }]
+    const ended = 'speckit 001-x · ○ audit · 1/3 tasks · RED 1/3'
+    await poll(seen.clock, 4000, () => seen.status.at(-1) === ended)
+    expect(seen.status.at(-1)).toBe(ended)
+    const ui = await $.ui.mount({
+      plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+      viewport: { columns: 140, rows: 40 },
+      props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+    } as never)
+    expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe(`${status} · 0s ago`)
+    await ui.unmount()
+  })
+}
+
+// The ends check lets a second stop through without a word and records nothing. The board took
+// "approved" from anywhere in that report, kept it as the gatekeeper's word and showed verify done.
+test('a gatekeeper report without its word does not approve', async ($, on) => {
+  const seen = await world(on, { [`${ROOT}/${FEATURE}/tasks.md`]: TASKS.replace(/- \[ \]/g, '- [x]') })
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'g1', agent_type: 'spec-gatekeeper' } as never)
+  await $.classic.SubagentStop({ agent_id: 'g1', agent_type: 'spec-gatekeeper', stop_hook_active: true,
+    agent_transcript_path: '', last_assistant_message: 'Not approved: T004 has no test.\n\nNext: add the test' } as never)
+  expect(seen.toasts).toContain('spec-gatekeeper finished')
+  expect(seen.toasts).not.toContain('spec-gatekeeper APPROVED: ready for the PR')
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ○ verify · 3/3 tasks · RED 1/3')
+})
+
+// After a FAIL the architect revises the plan. The board kept showing the old FAIL as failed, on files
+// nobody had audited yet; what they want is the next audit.
+test('revising the files after a FAIL asks for a re-audit', async ($, on) => {
+  const seen = await world(on)
+  seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`] = JSON.stringify({ verdict: 'FAIL', fingerprint: seen.fp })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ✗ audit (FAIL) · 1/3 tasks · RED 1/3')
+  seen.files[`${ROOT}/${FEATURE}/plan.md`] = '# Plan, revised'
+  // The revision also starts the RED count over, as the hook's does.
+  const stale = 'speckit 001-x · ↻ audit (edited since FAIL) · 1/3 tasks'
+  await poll(seen.clock, 4000, () => seen.status.at(-1) === stale)
+  expect(seen.status.at(-1)).toBe(stale)
+  expect(seen.toasts).toContain('Spec, plan or tasks changed since FAIL: re-audit before building')
+})
+
+// The gate denies implementer while the retry record cannot be read; the board said "no REDs".
+test('an unreadable retry record shows the build stopped', async ($, on) => {
+  const seen = await world(on, { [`${ROOT}/.git/speckit-team/retries/001-x.json`]: '{"red": [' })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ✗ build (retry record unreadable) · 1/3 tasks')
+  const ui = await $.ui.mount({
+    plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+    viewport: { columns: 140, rows: 40 },
+    props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+  } as never)
+  expect(await ui.find({ type: 'Text', text: /^retry record unreadable/ })).toBeDefined()
+  await ui.unmount()
 })
 
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {

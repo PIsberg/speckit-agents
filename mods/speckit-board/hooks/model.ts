@@ -83,6 +83,8 @@ export type BoardInputs = {
   verdict: Verdict
   fingerprint: string
   red: number
+  // The retry record exists but is not JSON: the gate then denies implementer until it is deleted.
+  isRetryUnreadable?: boolean
   gate: string | undefined
   // When the hook recorded the gate word (ISO time); absent for a word from the plugin store.
   gateAt?: string
@@ -109,15 +111,18 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
     ? phase('tasks', idle('architect'))
     : phase('tasks', 'done', `${i.tasks.length} tasks`)
 
+  // A verdict on files since changed is about files nobody has audited, a FAIL as much as a PASS:
+  // they want a new audit, not the FAIL's findings fixed again.
   const v = i.verdict
+  const said = v && typeof v === 'object' ? String(v.verdict ?? '?') : ''
   const audit = v === undefined
     ? phase('audit', idle('spec-auditor'))
     : v === null || typeof v !== 'object'
       ? phase('audit', 'failed', 'unreadable')
-      : v.verdict !== 'PASS'
-        ? phase('audit', runs('spec-auditor') ? 'active' : 'failed', String(v.verdict ?? '?'))
-        : v.fingerprint !== i.fingerprint
-          ? phase('audit', runs('spec-auditor') ? 'active' : 'stale', 'edited since PASS')
+      : v.fingerprint !== i.fingerprint
+        ? phase('audit', runs('spec-auditor') ? 'active' : 'stale', `edited since ${said}`)
+        : v.verdict !== 'PASS'
+          ? phase('audit', runs('spec-auditor') ? 'active' : 'failed', said)
           : phase('audit', 'done', 'PASS')
 
   const list = i.tasks ?? []
@@ -129,9 +134,11 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
       ? phase('build', list.length ? 'blocked' : 'todo', list.length ? 'gate closed' : '')
       : i.red >= MAX_RED
         ? phase('build', 'failed', 'retry limit')
-        : runs('test-writer') || runs('implementer') || done > 0
-          ? phase('build', 'active', progress)
-          : phase('build', 'todo', progress)
+        : i.isRetryUnreadable
+          ? phase('build', 'failed', 'retry record unreadable')
+            : runs('test-writer') || runs('implementer') || done > 0
+            ? phase('build', 'active', progress)
+            : phase('build', 'todo', progress)
 
   // The gatekeeper judged the files the audit passed. Once those change, or a later audit passes
   // new ones, its word is about old files. ISO times compare as strings.
@@ -154,9 +161,11 @@ export function outcomeOf(role: string | undefined, report: string): string {
   const last = (re: RegExp) => [...report.matchAll(re)].pop()?.[1]?.toUpperCase()
   if (role === 'spec-auditor') return last(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim) ?? ''
   if (role === 'implementer') return last(/^[\s*>#]*RESULT:?[\s*]*(GREEN|RED|STUB)\b/gim) ?? ''
-  if (role === 'spec-gatekeeper') return last(/\b(APPROVED|REJECTED)\b/gi) ?? ''
-  const line = report.trim().split('\n').pop() ?? ''
-  return line.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').slice(0, 40)
+  const line = (report.trim().split('\n').pop() ?? '').replace(/^[\s*>#`]+|[\s*`.]+$/g, '')
+  // Only a last line that is the word itself, as the hook's `ends` check accepts it: anywhere in the
+  // text, "not approved" read as an approval.
+  if (role === 'spec-gatekeeper') return /^(APPROVED|REJECTED)$/i.test(line) ? line.toUpperCase() : ''
+  return line.slice(0, 40)
 }
 
 export const GLYPH: Record<SpeckitPhaseState, string> = {

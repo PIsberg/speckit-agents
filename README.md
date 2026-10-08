@@ -201,22 +201,33 @@ What it draws:
   progress bar, and `RED n/3` once implementer has reported RED on the current plan.
 - **A pane**, opened with `/speckit-board`: the phases, the progress bar, the retry meter, the
   team agents of this session with a spinner and elapsed time while running and their report word
-  (`PASS`, `GREEN`, `APPROVED`) once done, the buttons, and last every task of `tasks.md` by
-  section, the part a short terminal cuts off. `/speckit-board refresh` re-reads the files;
-  `/speckit-board band` hides or shows the band.
+  (`PASS`, `GREEN`, `APPROVED`) and how long ago once done, redrawn every 4 seconds, the buttons,
+  and last every task of `tasks.md` by section, the part a short terminal cuts off.
+  `/speckit-board refresh` re-reads the files; `/speckit-board band` hides or shows the band.
 - **A status line**, `speckit 001-greet · ○ audit · 0/6 tasks`, and toasts when the audit passes,
-  fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
+  fails or goes stale, the retry limit is reached or the retry record cannot be read (the gate then
+  blocks implementer, and build shows `✗ retry record unreadable`), every task is ticked, or
+  spec-gatekeeper approves.
 
 It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
 the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict, retry and gatekeeper files under
 `.git/speckit-team/` ([State](#state)). An audit counts as current only while the files' fingerprint
 matches the one recorded with the verdict, computed exactly as `hooks/speckit-team.mjs` does
-(`test/board-mod.test.mjs` holds the two together). An agent's report word comes from what it
+(`test/board-mod.test.mjs` holds the two together). A verdict on files since changed, a FAIL as
+much as a PASS, shows `↻` (stale): those files have not been audited, and what they need is the
+next audit. An agent's report word comes from what it
 handed back through `SubagentHandback` (how an interactive session's background agents report),
-or else from its last message, as the hook reads it. The verify step reads the
-spec-gatekeeper's word from the file the hook's `ends` check writes once it accepts the report,
-so it updates even when the mod was reloaded or not loaded while the gatekeeper ran; it falls back
-to the word the mod saw at the agent's stop, kept in its plugin store. That word counts only
+or else from its last message, as the hook reads it. An agent counts as finished only once the
+team's own stop checks, which run after the mod, have let it stop: one they send back to add its
+verdict or restore its lane keeps its spinner, and the verdict, RED or gatekeeper word they record
+as it stops shows at once rather than at the next poll. An agent that is stopped or fails may end
+without a `SubagentStop` (not yet seen live either way), so the 4-second poll also reads Claude
+Code's own agent list and ends a row the list calls `killed` or `failed`, with that as its word.
+The verify step reads the spec-gatekeeper's word from the file the hook's `ends` check writes once
+it accepts the report, so it updates even when the mod was reloaded or not loaded while the
+gatekeeper ran; it falls back to the word the mod saw at the agent's stop, kept in its plugin
+store, and that only from a last line that is exactly `APPROVED` or `REJECTED`, the line `ends`
+accepts. That word counts only
 while the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
 because the gatekeeper judged files that have since changed. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
@@ -234,7 +245,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (19 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (31 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
@@ -493,7 +504,7 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 `npm test` runs 72 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 19 tests under `claude plugin test`). They prove the logic. They cannot prove that
+twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 

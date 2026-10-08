@@ -50,6 +50,22 @@ test('build fails at the retry limit and completes when every task is ticked', (
   expect(states({ ...passed, gate: 'APPROVED' })).toMatchObject({ verify: 'done' })
 })
 
+test('an unreadable retry record stops the build, as the gate stops implementer', () => {
+  // The hook denies implementer when it cannot read the record; the board read it as no REDs.
+  const passed = { ...base, verdict: { verdict: 'PASS', fingerprint: 'fp' } }
+  const build = derivePhases({ ...passed, isRetryUnreadable: true }).find(p => p.id === 'build')
+  expect(build).toMatchObject({ state: 'failed', note: 'retry record unreadable' })
+  expect(states({ ...passed, isRetryUnreadable: true, tasks: parseTasks('- [x] T001 a') })).toMatchObject({ build: 'done' })
+})
+
+test('a FAIL on files since revised asks for a re-audit, not a fix', () => {
+  // After a FAIL the architect revises; the board kept the old FAIL as the state of files nobody had audited.
+  const audit = (v: BoardInputs['verdict']) => derivePhases({ ...base, verdict: v }).find(p => p.id === 'audit')
+  expect(audit({ verdict: 'FAIL', fingerprint: 'fp' })).toMatchObject({ state: 'failed', note: 'FAIL' })
+  expect(audit({ verdict: 'FAIL', fingerprint: 'old' })).toMatchObject({ state: 'stale', note: 'edited since FAIL' })
+  expect(states({ ...base, verdict: { verdict: 'FAIL', fingerprint: 'old' } })).toMatchObject({ build: 'blocked' })
+})
+
 test('a running team agent marks its phase active', () => {
   expect(states({ ...base, plan: undefined, tasks: undefined, running: ['architect'] }))
     .toMatchObject({ plan: 'active', tasks: 'active' })
@@ -68,6 +84,13 @@ test('report outcomes and team roles', () => {
   expect(outcomeOf('product-owner', 'q\n**READY FOR PLAN**')).toBe('READY FOR PLAN')
   expect(teamRole('speckit-agents:architect')).toBe('architect')
   expect(teamRole('Explore')).toBeUndefined()
+})
+
+test('the gatekeeper\'s word is its last line, as the ends check reads it', () => {
+  // The hook accepts only a last line that is exactly the word; the board took any "approved" in the text.
+  expect(outcomeOf('spec-gatekeeper', 'Not approved: T004 has no test.\n\nNext: add the test')).toBe('')
+  expect(outcomeOf('spec-gatekeeper', 'T004 is untested, so this is not APPROVED.\n\n**REJECTED**')).toBe('REJECTED')
+  expect(outcomeOf('spec-gatekeeper', 'All requirements tested.\n\nApproved.')).toBe('APPROVED')
 })
 
 test('the feature is read as the hook reads it: repo-relative, or none', () => {
