@@ -46,7 +46,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   })
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
-  return { toasts, status }
+  return { toasts, status, files, fp }
 }
 
 // The engine hands fs hooks the platform's spelling (C:\repo\.specify on Windows).
@@ -140,6 +140,43 @@ test('an agent that reports through SubagentHandback gets its outcome from the r
   await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
     agent_transcript_path: '', last_assistant_message: '' } as never)
   expect(seen.toasts).toContain('spec-auditor finished: PASS')
+})
+
+// The team's stop checks are settings hooks, beneath every mod. One that blocks sends the agent back
+// to work: the board said it had finished, stopped its spinner and set the audit back to todo while
+// it still ran.
+test('an agent whose stop the team hook blocks still shows running', async ($, on) => {
+  const seen = await world(on)
+  delete seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`]
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({ block: 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.' }))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  const stop = await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'findings, no verdict yet' } as never)
+  expect(stop?.block).toMatch(/VERDICT/)
+  expect(seen.toasts.filter(t => t.startsWith('spec-auditor finished'))).toEqual([])
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ audit · 1/3 tasks · RED 1/3')
+})
+
+// The verdict hook records the audit as the agent stops, beneath the mod: read before it ran, the
+// board showed the old audit until the next poll, after the agent's own "finished: PASS" toast.
+test('the verdict recorded as the auditor stops shows at once', async ($, on) => {
+  const seen = await world(on)
+  const verdict = `${ROOT}/.git/speckit-team/verdicts/001-x.json`
+  delete seen.files[verdict]
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => {
+    seen.files[verdict] = JSON.stringify({ verdict: 'PASS', fingerprint: seen.fp })
+    return {}
+  })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'VERDICT: PASS' } as never)
+  expect(seen.toasts).toContain('spec-auditor finished: PASS')
+  expect(seen.toasts).toContain('Audit PASS: the implementation gate is open')
+  expect(seen.status.at(-1)).toBe('speckit 001-x · ◐ build (1/3) · 1/3 tasks · RED 1/3')
 })
 
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {

@@ -177,7 +177,12 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // The team's stop checks are settings hooks, which run beneath every mod. So the agent's end is
+  // read after them: one that blocks sends the agent back to work, and the verdict, RED or
+  // gatekeeper word they record is on disk only once they have run.
   on('classic.SubagentStop', async ($, e, next) => {
+    const result = await next(e)
+    if (result?.block) return result
     const role = teamRole(e.agent_type)
     const report = handbacks.get(e.agent_id)
     handbacks.delete(e.agent_id)
@@ -195,7 +200,7 @@ export const register: Register = on => {
       await keepTicking($)
       await refresh($)
     }
-    return next(e)
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
