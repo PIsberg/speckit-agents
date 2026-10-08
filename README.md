@@ -480,10 +480,10 @@ for the IDs its tasks cite instead of reading it whole. These are prompt rules, 
 small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
 peaked at 13k tokens; a feature the size of 001 has not been re-measured.
 
-Three full headless `/speckit-team` runs of the same small feature (a `sum()` function; Opus
+Four full headless `/speckit-team` runs of the same small feature (a `sum()` function; Opus
 architect and auditor, Sonnet for the rest and the main session) show where the rest goes. The
 input figures come from `tools/usage.mjs` ([Developing](#developing)), whose per-model totals
-match the `modelUsage` that `claude -p` reported for all three runs. Every agent started fresh and
+match the `modelUsage` that `claude -p` reported for all four runs. Every agent started fresh and
 peaked at 12k to 49k tokens. The main session is the larger cost: each of its requests re-reads its
 whole context, which starts at 32k to 42k (Claude Code, your tools and `CLAUDE.md`) and keeps every
 report it receives.
@@ -493,6 +493,7 @@ report it receives.
 | 2026-10-07, before the report limits | 19, background | 43, 96k, 2.96M | 19, 1.31M (44%) | 2.10M | $3.98 |
 | 2026-10-07, after them | 15, background | 36, 86k, 2.29M | 15, 0.95M (41%) | 1.48M | $2.87 |
 | 2026-10-08, foreground launches | 11, foreground | 17, 49k, 0.69M | none | 1.04M | $1.90 |
+| 2026-10-08, architect checks the constitution | 12, foreground | 19, 54k, 0.83M | none | 0.99M | $1.83 |
 
 Between the first two runs, each report's length was capped and two bugs were fixed (below). An
 earlier version of this table summed usage per transcript line, but Claude Code writes one
@@ -508,6 +509,16 @@ with the team installed in the scratch repo and `--setting-sources project,local
 --strict-mcp-config`, so its first request was 32k rather than 42k; it launched 11 agents rather
 than 15; and the skill had also gained #37 and #38. The waiting requests explain 0.95M of the
 main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
+
+In each of the first three runs the first audit failed on the same CRITICAL finding: the plan's
+Constitution Check marked rule VIII (the docs say what was verified live, what only by unit test,
+what not at all) as PASS, and no task delivered it. The fix took a second architect and a second
+auditor, both on Opus. So the architect now checks every MUST rule against its tasks before it
+reports (step 4 of `agents/architect.md`). In the fourth run it added a docs slice for rule VIII
+itself, the first audit passed, and Opus cost $0.79 instead of $1.11. The total fell only from
+$1.90 to $1.83, because that architect planned 8 tasks instead of 5 and Sonnet's share grew by
+$0.24. One run each, on one constitution: how often the check saves a round elsewhere is not
+measured.
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the
@@ -752,5 +763,5 @@ node tools/usage.mjs ~/.claude/projects/<project>/<session>.jsonl
 It prints the main session's input, how many agents it launched in the foreground and the
 background, the requests that only waited for a background agent, each agent's input and peak, and
 the input per model. That last part matches the `modelUsage` input fields of
-`claude -p --output-format json` exactly (checked against both runs in
+`claude -p --output-format json` exactly (checked against all four runs in
 [Context budget](#the-pipeline-skill)). Output tokens are left out, because transcripts undercount them.
