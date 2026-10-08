@@ -457,8 +457,9 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 ## Verifying
 
-`npm test` runs 48 tests: 32 drive the hook with hook JSON on stdin against throwaway git repos,
-16 run the installer against throwaway config dirs. They prove the logic. They cannot prove that
+`npm test` runs 70 tests: 41 drive the hook with hook JSON on stdin against throwaway git repos,
+24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
+twin, then `claude plugin validate` and its own 18 tests under `claude plugin test`). They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 
