@@ -564,6 +564,13 @@ initialised by Spec Kit 1.1.2 without `--extension git`):
   APPROVED with its word in the `ends` record. With no git extension, the skill created the
   feature branch itself; `main` kept only the initial commit. About $3.30.
 
+Later the same day, with the team installed into the scratch repo's own `.claude/` by
+`docs/media/record.mjs --setup-only` (headless, `--setting-sources project,local`):
+
+- test-writer told to hand back the bare report "placeholder", the failure seen in the run above:
+  refused by `ends RED BLOCKED` with "Your report must end with a final line that is exactly one
+  of: RED, BLOCKED", then accepted when it reported `BLOCKED` with its reason. $0.03.
+
 Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 did run). Those are covered by the unit tests only.
 
