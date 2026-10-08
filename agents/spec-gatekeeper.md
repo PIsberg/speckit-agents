@@ -11,11 +11,11 @@ hooks:
     - matcher: "SubagentHandback"
       hooks:
         - type: command
-          command: 'node "{{HOOK}}" ends APPROVED REJECTED'
+          command: 'node "{{HOOK}}" ends --record APPROVED REJECTED'
   Stop:
     - hooks:
         - type: command
-          command: 'node "{{HOOK}}" ends APPROVED REJECTED'
+          command: 'node "{{HOOK}}" ends --record APPROVED REJECTED'
 ---
 
 You verify. You report every failure exactly as found, and you fix nothing.

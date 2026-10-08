@@ -85,7 +85,8 @@ For each slice:
 1. **Stubs** (implementer, only if the slice's tests will call a file, function or type that does
    not exist yet): launch with `stub` and the slice's task IDs. It creates the signatures the
    architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
-2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. Every
+2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. It ends
+   `RED` or `BLOCKED`; on `BLOCKED`, act on the entries it lists. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it.

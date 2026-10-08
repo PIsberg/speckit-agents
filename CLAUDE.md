@@ -26,8 +26,8 @@ this file is how to work on it.
   (skipped, not passed, without a `claude` executable on PATH).
 
 ## Verify
-- `npm test`: all suites, no network, 44 s on Windows (70 tests, 2026-10-08; the four installer tests
-  that run the real `claude plugin` take 38 s of it).
+- `npm test`: all suites, no network, 67 s on Windows (72 tests, 2026-10-08; the four installer tests
+  that run the real `claude plugin` take 37 s of it).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing.

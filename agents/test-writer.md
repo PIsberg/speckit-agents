@@ -11,6 +11,10 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" gate'
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" ends RED BLOCKED'
     - matcher: "Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
@@ -19,6 +23,8 @@ hooks:
     - hooks:
         - type: command
           command: 'node "{{HOOK}}" lane tests'
+        - type: command
+          command: 'node "{{HOOK}}" ends RED BLOCKED'
 ---
 
 You write the executable spec. Implementer makes it pass without changing it.
@@ -51,5 +57,7 @@ a regex line in `.specify/test-paths`, which the user adds.
 ## Report
 One line per test, repo-relative: file:line, the IDs it covers, and the one line of output that
 shows its assertion or not-implemented failure. Then, each only if it has entries: missing stubs
-(path and signature), tests you stopped on after 3 rounds, and acceptance scenarios you could not
-express as a test, with the reason.
+(path and signature), tests that already pass, tests you stopped on after 3 rounds, and acceptance
+scenarios you could not express as a test, with the reason. The last line is exactly `RED` when
+every new test fails for the right reason, or `BLOCKED` when any of those lists has an entry, on
+its own; a hook sends back a report that ends otherwise.
