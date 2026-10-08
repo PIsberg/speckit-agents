@@ -185,13 +185,15 @@ What it draws:
   fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
 
 It reads what the guardrails already keep, so it cannot disagree with the gate: `.specify/feature.json`,
-the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict and retry files under
+the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict, retry and gatekeeper files under
 `.git/speckit-team/` ([State](#state)). An audit counts as current only while the files' fingerprint
 matches the one recorded with the verdict, computed exactly as `hooks/speckit-team.mjs` does
 (`test/board-mod.test.mjs` holds the two together). An agent's report word comes from what it
 handed back through `SubagentHandback` (how an interactive session's background agents report),
-or else from its last message, as the hook reads it. The spec-gatekeeper's verdict is not on
-disk, so the mod keeps it in its own plugin store. It refreshes every 4
+or else from its last message, as the hook reads it. The verify step reads the
+spec-gatekeeper's word from the file the hook's `ends` check writes once it accepts the report,
+so it updates even when the mod was reloaded or not loaded while the gatekeeper ran; it falls back
+to the word the mod saw at the agent's stop, kept in its plugin store. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
 feature it found or that there is no `.specify/` in the repo it started in, so a loaded mod with
 nothing to show is not mistaken for one that did not load.
@@ -207,7 +209,7 @@ changed for it, so FR-016 binds 001's own view and not this mod. Retiring it mea
 the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
 working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (14 tests, both run by `npm test`, in
+Verified: `claude plugin validate` and `claude plugin test` (17 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
