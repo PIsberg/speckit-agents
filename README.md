@@ -119,9 +119,10 @@ Then, in Claude Code:
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
-In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
-template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
-and asks you to approve it, a fourth stop, then writes it with `speckit-constitution` and commits
+If `tasks.md` has two or more `[P]` slices that touch disjoint files, that last stop also asks
+whether to build them side by side or one at a time. In a repo whose constitution (the rules
+every phase is checked against) is still Spec Kit's template, it first drafts one from what the
+repo already states (`CLAUDE.md`, the build file, CI) and asks you to approve it, a fourth stop, then writes it with `speckit-constitution` and commits
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself beforehand.
 After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
 verifies and opens a PR, which it does not merge.
@@ -449,7 +450,11 @@ those slices. For each slice:
 3. **Green.** implementer makes the slice's tests pass, under the [retry limit](#the-retry-limit).
 
 For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
-own git worktree.
+own git worktree, merged back into the feature branch in task order. It does so only if you say so
+at the plan stop, and it recommends one at a time until a live run has confirmed side-by-side
+launches (#40). Side by side saves wall-clock time, not tokens: every slice gets its own
+test-writer and implementer either way, plus a few main-session requests for the merges, and
+several agents then draw on your usage limits at once.
 
 When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
 straight away, without asking: between the stops above it never waits for you.
@@ -522,8 +527,9 @@ measured.
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the
-skill never waits for you anyway. Agents for `[P]` slices are launched together in one message
-so that they still run side by side, but no live run has had `[P]` slices yet (#40).
+skill never waits for you anyway. When you choose side by side, agents for `[P]` slices are
+launched together in one message so that they still run side by side, but no live run has had
+`[P]` slices yet (#40).
 
 Runs differ in how many audit rounds they need, so read this as one sample, not a benchmark.
 

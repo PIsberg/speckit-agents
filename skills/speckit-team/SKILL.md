@@ -75,6 +75,11 @@ constitution if step 0b wrote it, on that branch.
 
 ## 2. Plan and tasks: architect
 **Stop:** show the decisions it flagged; the user approves `plan.md` and `tasks.md`.
+If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
+same stop, with AskUserQuestion, whether to build them one at a time (recommended: no live run has confirmed
+side-by-side launches yet) or side by side. Say why it matters: side by side is faster but no
+cheaper, since every slice gets its own agents either way, and it runs several agents against the
+user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
 On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
@@ -104,7 +109,8 @@ For each slice:
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
-Slices whose tasks are all `[P]` and touch disjoint files may run side by side: one loop per slice,
+Only if the user chose side by side in step 2, slices whose tasks are all `[P]` and touch disjoint
+files run side by side: one loop per slice,
 each step's agents launched together in one message, each implementer with `isolation: "worktree"`,
 then merge their branches into the feature branch in task order.
 
