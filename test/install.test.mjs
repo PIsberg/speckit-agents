@@ -1,4 +1,4 @@
-// Run: npm test (or node --test test/)
+// Run: npm test (or node --test "test/*.test.mjs")
 // Installs into throwaway Claude config dirs (with a space in the path) and checks what lands there.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -213,11 +213,17 @@ test('--board and --no-board together are refused before anything is written', (
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
-// The board goes in through `claude plugin`. With no claude on PATH the team still installs, the
-// run fails naming the board, and uninstall warns and still removes the team.
-test('--board without Claude Code installs the team, fails, and uninstall still cleans up', () => {
+// The board goes in through `claude plugin`. When that fails (no claude, a broken one) the team
+// still installs, the run fails naming the board, and uninstall warns and still removes the team.
+// A claude that always fails goes first on PATH: CI's setup-node folder holds node and the real
+// claude side by side, so trimming PATH to node's folder does not take claude away.
+test('--board with a failing Claude Code installs the team, fails, and uninstall still cleans up', () => {
   const dir = claudeDir();
-  const env = { ...process.env, PATH: path.dirname(process.execPath) };
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'skbin-'));
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'claude.cmd'), '@exit /b 1\r\n');
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  const env = { ...process.env, [pathKey]: `${bin}${path.delimiter}${process.env[pathKey]}` };
   const run = (...args) => spawnSync(process.execPath, [INSTALL, '--claude-dir', dir, ...args], { encoding: 'utf8', env });
   const i = run('--board');
   assert.equal(i.status, 1, i.stdout + i.stderr);
@@ -230,11 +236,14 @@ test('--board without Claude Code installs the team, fails, and uninstall still 
 });
 
 // Real `claude plugin` runs against the throwaway config dir. Spawned without a shell, so a missing
-// claude, or an npm-installed claude.cmd, reports these skipped, not passed.
+// claude, or an npm-installed claude.cmd, reports these skipped, not passed, except in CI, where
+// SPECKIT_REQUIRE_CLAUDE=1 makes them run and fail.
 const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
-const noClaude = spawnSync('claude', ['--version']).status === 0 ? false : 'no claude executable on PATH';
+const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 const boardIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'list', '--json').stdout).find((p) => p.id === 'speckit-board@speckit-agents');
 const marketsIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'marketplace', 'list', '--json').stdout).map((m) => m.name);
+// Claude Code reports a folder by its real path: macOS's temp dir /var/... comes back as /private/var/....
+const sameFolder = (a, b) => assert.equal(fs.realpathSync.native(a).toLowerCase(), fs.realpathSync.native(b).toLowerCase());
 
 test('--board installs the mod read from this checkout; reruns keep it; --no-board removes it', { skip: noClaude }, () => {
   const dir = claudeDir();
@@ -242,7 +251,7 @@ test('--board installs the mod read from this checkout; reruns keep it; --no-boa
   assert.equal(i.status, 0, i.stdout + i.stderr);
   const board = boardIn(dir);
   assert.equal(board?.scope, 'user');
-  assert.equal(path.resolve(board.readFromFolder), path.resolve(path.dirname(INSTALL), 'mods', 'speckit-board'));
+  sameFolder(board.readFromFolder, path.join(path.dirname(INSTALL), 'mods', 'speckit-board'));
 
   const again = install(dir);
   assert.equal(again.status, 0, again.stdout + again.stderr);
@@ -282,7 +291,7 @@ test('--board from another checkout points the board at that checkout', { skip: 
   }
   const r = spawnSync(process.execPath, [path.join(other, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(path.resolve(boardIn(dir).readFromFolder).toLowerCase(), path.resolve(other, 'mods', 'speckit-board').toLowerCase());
+  sameFolder(boardIn(dir).readFromFolder, path.join(other, 'mods', 'speckit-board'));
   assert.equal(install(dir, '--uninstall').status, 0);
   assert.equal(boardIn(dir), undefined);
   assert.ok(!marketsIn(dir).includes('speckit-agents'));

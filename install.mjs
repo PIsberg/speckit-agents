@@ -193,7 +193,9 @@ function installBoard(addedBefore) {
   let market = markets.find((m) => m.name === MARKETPLACE);
   // Ours but read from another checkout (this one moved, or a second clone or worktree ran
   // --board): the board follows the checkout the installer runs from, as the team's files do.
-  const samePath = (a, b) => process.platform === 'win32' ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b);
+  // Real paths, so a checkout under a symlinked folder (macOS's /var) is not re-pointed every rerun.
+  const realOf = (p) => { try { return fs.realpathSync.native(p); } catch { return path.resolve(p); } };
+  const samePath = (a, b) => process.platform === 'win32' ? realOf(a).toLowerCase() === realOf(b).toLowerCase() : realOf(a) === realOf(b);
   const repoint = Boolean(market && addedBefore && market.source === 'directory' && !samePath(market.path, SRC));
   if (repoint) {
     const r = removeBoard(true);

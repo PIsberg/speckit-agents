@@ -1,0 +1,37 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The board mod's plugin API and `claude plugin test` start at 2.1.293. No login is needed:
+      # the tests only validate, test and install plugins in throwaway config dirs.
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code@2.1.293
+      # npm's Windows shim is claude.cmd, which the tests spawn without a shell. Put the binary
+      # itself on PATH so they run instead of skipping.
+      - name: Put the claude binary on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "$(npm root -g)/@anthropic-ai/claude-code/bin" >> "$GITHUB_PATH"
+      - run: claude --version
+      # SPECKIT_REQUIRE_CLAUDE turns "no claude on PATH" from a skip into a failure.
+      - run: npm test
+        env:
+          SPECKIT_REQUIRE_CLAUDE: '1'

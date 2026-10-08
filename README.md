@@ -160,8 +160,10 @@ from the checkout the installer last ran from, as the team's files are copied fr
 moving the checkout, or to run the board from another clone or worktree, rerun the installer
 there and it points the board at that folder.
 
-To try it for one session without installing it, load it from the folder instead. Loading it
-both ways at once has not been tried; run `--no-board` first.
+To try it for one session without installing it, load it from the folder instead. If it is
+installed as well, the `--plugin-dir` copy replaces the installed one for that session (Claude
+Code logs `Plugin "speckit-board" from --plugin-dir overrides installed version`), so it never
+runs twice.
 
 ```sh
 cd <your Spec Kit repo>
@@ -173,10 +175,11 @@ What it draws:
 - **A band above the prompt**: the feature, the six phases (spec, plan, tasks, audit, build,
   verify) as `✓` done, `◐` active, `○` to do, `⊘` blocked, `✗` failed, `↻` stale, a task
   progress bar, and `RED n/3` once implementer has reported RED on the current plan.
-- **A pane**, opened with `/speckit-board`: the phases, the progress bar, the retry meter, every
-  task of `tasks.md` by section, and the team agents of this session with a spinner and elapsed
-  time while running and their last report word (`VERDICT: PASS`, `RESULT: GREEN`, `APPROVED`)
-  once done. `/speckit-board refresh` re-reads the files; `/speckit-board band` hides or shows the band.
+- **A pane**, opened with `/speckit-board`: the phases, the progress bar, the retry meter, the
+  team agents of this session with a spinner and elapsed time while running and their report word
+  (`PASS`, `GREEN`, `APPROVED`) once done, the buttons, and last every task of `tasks.md` by
+  section, the part a short terminal cuts off. `/speckit-board refresh` re-reads the files;
+  `/speckit-board band` hides or shows the band.
 - **A status line**, `speckit 001-greet · ○ audit · 0/6 tasks`, and toasts when the audit passes,
   fails or goes stale, the retry limit is reached, every task is ticked, or spec-gatekeeper approves.
 
@@ -184,25 +187,46 @@ It reads what the guardrails already keep, so it cannot disagree with the gate: 
 the feature's `spec.md`, `plan.md` and `tasks.md`, and the verdict and retry files under
 `.git/speckit-team/` ([State](#state)). An audit counts as current only while the files' fingerprint
 matches the one recorded with the verdict, computed exactly as `hooks/speckit-team.mjs` does
-(`test/board-mod.test.mjs` holds the two together). The spec-gatekeeper's verdict is not on disk,
-so the mod keeps it from the agent's last message in its own plugin store. It refreshes every 4
+(`test/board-mod.test.mjs` holds the two together). An agent's report word comes from what it
+handed back through `SubagentHandback` (how an interactive session's background agents report),
+or else from its last message, as the hook reads it. The spec-gatekeeper's verdict is not on
+disk, so the mod keeps it in its own plugin store. It refreshes every 4
 seconds, after each turn, and when a team agent starts or stops. On startup it toasts either the
 feature it found or that there is no `.specify/` in the repo it started in, so a loaded mod with
 nothing to show is not mistaken for one that did not load.
 
 It reads files directly rather than the documented activity stream that feature 001 specifies for
 its own view (FR-016), and it covers part of what feature 002 (issue #3) specifies for the rich
-view. Treat it as a working prototype for those two features, not their implementation.
+view. The owner decided on 2026-10-08 (issue #11) that it stays a working prototype for those two
+features, not their implementation: its layout (phase track, task progress, retry meter, agent
+rows with their report word) is input to feature 002's spec, and the mod is retired once feature
+001's view ships. Until then it is kept working and installable, and feature 001's spec is not
+changed for it, so FR-016 binds 001's own view and not this mod. Retiring it means removing
+`mods/speckit-board/`, the repo's `.claude-plugin/marketplace.json`, `--board`/`--no-board` and
+the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
+working for one release after that, so existing installs can still remove it.
 
-Verified: `claude plugin validate` and `claude plugin test` (12 tests, both run by `npm test`),
-and a headless `claude -p --plugin-dir` run in a scratch Spec Kit repo, which found the feature
-and set the status line. The band and pane have been looked at in one interactive terminal session
-on Windows. `--board`, a rerun, `--no-board` and `--uninstall` run the real `claude plugin`
-commands against throwaway config dirs in `test/install.test.mjs`, which checks that the mod is
-read from this checkout and that uninstall restores `settings.json` byte for byte. Not verified:
-that an installed board draws in a live session (only `--plugin-dir` loads were looked at), the
-team agent tracking (`SubagentStart`/`SubagentStop`) through a live pipeline run, and macOS or
-Linux.
+Verified: `claude plugin validate` and `claude plugin test` (14 tests, both run by `npm test`, in
+CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
+`claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
+that the mod is read from this checkout and that uninstall restores `settings.json` byte for
+byte. On Windows, 2026-10-08, with the board installed from this checkout and no `--plugin-dir`:
+a headless `claude -p "/speckit-board refresh"` in a scratch Spec Kit repo set the status line,
+raised the startup toast and answered the command, and an interactive session (recorded with vhs)
+drew the band, the status line and, after `/speckit-board`, the pane. An edit to
+`mods/speckit-board/` reached the installed board at the next session start with no reinstall.
+Team agent tracking, the same day, with real agents on Haiku. Headless, while
+`@agent-spec-auditor` ran the status line read `◐ audit`, and when it stopped the mod toasted
+`spec-auditor finished: PASS`, then `Audit PASS` once the hook had recorded the verdict;
+`@agent-spec-gatekeeper` went `◐ verify`, then `spec-gatekeeper finished: APPROVED` and
+`✓ verified`, which a new session still showed. Interactive, with the pane open, spec-auditor
+ran as a background agent and the pane showed `spec-auditor running 19s` with the spinner, then
+`✓ spec-auditor PASS`. That run found two bugs, fixed: the agent rows were drawn below the task
+list and cut off, and a background agent's word was missing because its report arrives through
+`SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`. Not
+seen live: a `RESULT: RED` moving the retry meter (the count comes from the hook's retry file,
+covered by the mod's tests; #18), and any session on macOS or Linux, where CI runs only the
+tests (#19).
 
 ## The team
 
@@ -267,6 +291,12 @@ mode exits immediately and allows the action, so installing at user level costs 
 | `ends APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice) |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active.
+
+A `scope` rule judges a path by where it really is: the repo and the file are both resolved through
+symlinks, Windows junctions and 8.3 short names before they are compared. Paths outside the repo
+are not the rule's business. Until 2026-10-08 the comparison used the path as given, so a repo
+reached by another name (macOS's `/var` is `/private/var`, a short-named Windows profile such as
+`C:\Users\RUNNER~1`) made every file look outside it, and every lane let the write through.
 
 ### The audit gate
 
@@ -542,6 +572,9 @@ before the record file existed has no record of what it created, so its uninstal
 directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 ## Developing
+
+CI runs `npm test` on Linux, macOS and Windows for every pull request
+(`.github/workflows/test.yml`).
 
 See `CLAUDE.md`. In short: edit `agents/`, `hooks/`, `skills/` or `install.mjs`, run `npm test`,
 rerun the installer, and do the live check if you touched how a hook is wired.

@@ -19,6 +19,7 @@ type Repo = { root: string; stateDir: string }
 // Found again on every load: a reload starts module variables over.
 let repo: Repo | null = null
 let ticker: { cancel: () => void } | null = null
+const handbacks = new Map<string, string>()
 
 function readText($: EngineInterface, path: string): Promise<string | undefined> {
   return $.fs.read(path).catch(() => undefined)
@@ -122,28 +123,29 @@ export const register: Register = on => {
     repo = await findRepo($, e.cwd)
     // Say so either way: a board that draws nothing is indistinguishable from one that never loaded.
     if (!repo) {
-      $.ui.toast(`speckit-board: no .specify/ in the git repo at ${e.cwd}; nothing to show`, { timeoutMs: 8000 })
+      $.ui.toast(`no .specify/ in the git repo at ${e.cwd}; nothing to show`, { timeoutMs: 8000 })
       return next(e)
     }
     await refresh($)
     $.clock.every(POLL_MS, () => { void refresh($) })
     await keepTicking($)
     const b = await read($, board)
-    $.ui.toast(b ? `speckit-board: ${b.feature}. /speckit-board opens the board` : 'speckit-board: no active feature in .specify/feature.json', { timeoutMs: 8000 })
+    $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })
     return next(e)
   })
 
+  // Claude Code shows a command's answer after the plugin's name, so the texts do not repeat it.
   on('command.run', { command: 'speckit-board' }, async ($, e) => {
-    if (!repo) return { text: 'speckit-board: no .specify/ in this repository.' }
+    if (!repo) return { text: 'no .specify/ in this repository.' }
     const arg = e.args.trim()
     if (arg === 'band') {
       const hidden = await update($, isBandHidden, h => !h)
-      return { text: `speckit-board: band ${hidden ? 'hidden' : 'shown'}.` }
+      return { text: `band ${hidden ? 'hidden' : 'shown'}.` }
     }
     await refresh($)
-    if (arg === 'refresh') return { text: 'speckit-board: refreshed.' }
+    if (arg === 'refresh') return { text: 'refreshed.' }
     const opened = await $.ui.open({ id: PANE, title: 'Spec Kit' })
-    return { text: opened.isPlaced ? 'speckit-board: pane opened.' : 'speckit-board: widen the terminal to see the pane.' }
+    return { text: opened.isPlaced ? 'pane opened.' : 'widen the terminal to see the pane.' }
   })
 
   on('classic.SubagentStart', async ($, e, next) => {
@@ -158,10 +160,21 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // A backgrounded agent (an @-mention in an interactive session) reports through the SubagentHandback
+  // tool: its last message is that call, not the report, so SubagentStop has nothing to read. The
+  // report is kept from the call, as hooks/speckit-team.mjs reads it, keyed by the agent's id.
+  on('tool.call', { tool: 'SubagentHandback' }, async ($, e, next) => {
+    const { agentId, message } = e as { agentId?: string, message?: unknown }
+    if (agentId && typeof message === 'string') handbacks.set(agentId, message)
+    return next(e)
+  })
+
   on('classic.SubagentStop', async ($, e, next) => {
     const role = teamRole(e.agent_type)
+    const report = handbacks.get(e.agent_id)
+    handbacks.delete(e.agent_id)
     if (role) {
-      const outcome = outcomeOf(role, e.last_assistant_message ?? '')
+      const outcome = outcomeOf(role, report ?? '') || outcomeOf(role, e.last_assistant_message ?? '')
       const now = await $.clock.now()
       await update($, agents, list => list.map(a =>
         (a.id === e.agent_id ? { ...a, isRunning: false, outcome, endedAt: now } : a)))
@@ -252,22 +265,7 @@ export const register: Register = on => {
           </Box>
         </Box>
 
-        <Box flexDirection="column">
-          {sections.map(section => (
-            <Box key={`sec:${section}`} flexDirection="column">
-              <Text bold dimColor>{section}</Text>
-              {b.tasks.filter(t => t.section === section).map(t => (
-                <Text wrap="truncate-end" dimColor={t.isDone}>
-                  <Text color={t.isDone ? 'success' : 'subtle'}>{t.isDone ? ' ✓ ' : ' ○ '}</Text>
-                  <Text bold={!t.isDone}>{t.id}</Text>
-                  {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
-                  {` ${t.text}`}
-                </Text>
-              ))}
-            </Box>
-          ))}
-        </Box>
-
+        {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         <Box flexDirection="column">
           <Text bold>Team</Text>
           {team.length === 0 && <Text dimColor> no team agent has run this session</Text>}
@@ -288,6 +286,22 @@ export const register: Register = on => {
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />
           <Button key="band" label="toggle band" hotkey="t" onPress={() => update($, isBandHidden, h => !h)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+        </Box>
+
+        <Box flexDirection="column">
+          {sections.map(section => (
+            <Box key={`sec:${section}`} flexDirection="column">
+              <Text bold dimColor>{section}</Text>
+              {b.tasks.filter(t => t.section === section).map(t => (
+                <Text wrap="truncate-end" dimColor={t.isDone}>
+                  <Text color={t.isDone ? 'success' : 'subtle'}>{t.isDone ? ' ✓ ' : ' ○ '}</Text>
+                  <Text bold={!t.isDone}>{t.id}</Text>
+                  {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
+                  {` ${t.text}`}
+                </Text>
+              ))}
+            </Box>
+          ))}
         </Box>
       </Box>
     )

@@ -16,7 +16,9 @@ this file is how to work on it.
   that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
   this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
   `claude --plugin-dir` loads it for one session. Its own tests are
-  `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`.
+  `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`. It is a prototype for
+  features 001 and 002, retired once 001's view ships (owner decision, #11): do not build 001 or
+  002 on it, and do not change 001's spec for it (README.md, "Board mod").
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs (its board tests run the real
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
@@ -24,8 +26,11 @@ this file is how to work on it.
   (skipped, not passed, without a `claude` executable on PATH).
 
 ## Verify
-- `npm test`: all suites, no network, 56 s on Windows (60 tests, 2026-10-08; the four installer tests
+- `npm test`: all suites, no network, 46 s on Windows (61 tests, 2026-10-08; the four installer tests
   that run the real `claude plugin` take 38 s of it).
+- CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
+  push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
+  tests that need `claude` fail instead of skip when it is missing.
 - Unit tests cannot prove Claude Code fires a hook. After changing a hook command, an event or a
   matcher, install and run a live check in a scratch Spec Kit repo (README.md, "Verifying").
 

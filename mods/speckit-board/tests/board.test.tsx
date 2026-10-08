@@ -71,7 +71,8 @@ test('the band shows the feature, every phase and the RED count', async ($, on) 
     await ui.press({ key: 'hide' })
     expect(await ui.find({ type: 'Text', text: 'RED 1/3' })).toBeUndefined()
     const shown = await $.command.run({ command: 'speckit-board', args: 'band' } as never)
-    expect(shown).toMatchObject({ text: 'speckit-board: band shown.' })
+    // Claude Code puts the plugin's name before a command's answer itself.
+    expect(shown).toMatchObject({ text: 'band shown.' })
     expect(await ui.find({ type: 'Text', text: 'RED 1/3' })).toBeDefined()
     await ui.unmount()
   }
@@ -101,8 +102,49 @@ test('the pane lists tasks by phase, the retry meter and its controls', async ($
   }
 })
 
+// A pane taller than the terminal is cut off at the bottom. In a live session the Team rows and the
+// buttons, drawn after six tasks, were already out of view; a real feature has dozens of tasks.
+// The live parts come first and the task list, the longest, last.
+test('the pane puts the running team agent and its controls before the task list', async ($, on) => {
+  await world(on)
+  on('classic.SubagentStart', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({
+      plugin: 'speckit-board', surface, component: 'Pane', requestId: 'speckit-board',
+      viewport: { columns: 140, rows: 40 },
+      props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+    } as never)
+    const drawn = await ui.findAll({})
+    const at = (match: (el: { type: string, key: string | undefined, text?: string }) => boolean) => drawn.findIndex(match)
+    const firstTask = at(el => el.type === 'Text' && el.text === 'Phase 1: Setup')
+    expect(firstTask).toBeGreaterThan(-1)
+    expect(at(el => el.type === 'Text' && el.text === 'spec-auditor')).toBeLessThan(firstTask)
+    expect(at(el => el.type === 'Button' && el.key === 'close')).toBeLessThan(firstTask)
+    await ui.unmount()
+  }
+})
+
+// A backgrounded agent (how an interactive session runs an @-mentioned one) reports through the
+// SubagentHandback tool. Its last message is that call, so SubagentStop carries no report: live,
+// the pane said "done" for a spec-auditor that had handed back VERDICT: PASS.
+test('an agent that reports through SubagentHandback gets its outcome from the report', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  on('tool.call', { tool: 'SubagentHandback' }, () => ({ result: 'delivered' }))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.tool.call({ tool: 'SubagentHandback', agentId: 'a1', message: 'Findings ...\n\nVERDICT: PASS' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: '' } as never)
+  expect(seen.toasts).toContain('spec-auditor finished: PASS')
+})
+
 test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
-  expect(seen.toasts.at(-1)).toBe('speckit-board: no .specify/ in the git repo at /elsewhere; nothing to show')
+  // The terminal names the plugin before a toast itself.
+  expect(seen.toasts.at(-1)).toBe('no .specify/ in the git repo at /elsewhere; nothing to show')
 })
