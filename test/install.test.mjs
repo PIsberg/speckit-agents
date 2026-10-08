@@ -213,11 +213,17 @@ test('--board and --no-board together are refused before anything is written', (
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
-// The board goes in through `claude plugin`. With no claude on PATH the team still installs, the
-// run fails naming the board, and uninstall warns and still removes the team.
-test('--board without Claude Code installs the team, fails, and uninstall still cleans up', () => {
+// The board goes in through `claude plugin`. When that fails (no claude, a broken one) the team
+// still installs, the run fails naming the board, and uninstall warns and still removes the team.
+// A claude that always fails goes first on PATH: CI's setup-node folder holds node and the real
+// claude side by side, so trimming PATH to node's folder does not take claude away.
+test('--board with a failing Claude Code installs the team, fails, and uninstall still cleans up', () => {
   const dir = claudeDir();
-  const env = { ...process.env, PATH: path.dirname(process.execPath) };
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'skbin-'));
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'claude.cmd'), '@exit /b 1\r\n');
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  const env = { ...process.env, [pathKey]: `${bin}${path.delimiter}${process.env[pathKey]}` };
   const run = (...args) => spawnSync(process.execPath, [INSTALL, '--claude-dir', dir, ...args], { encoding: 'utf8', env });
   const i = run('--board');
   assert.equal(i.status, 1, i.stdout + i.stderr);
