@@ -246,7 +246,8 @@ the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board
 working for one release after that, so existing installs can still remove it.
 
 Verified: `claude plugin validate` and `claude plugin test` (31 tests, both run by `npm test`, in
-CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
+CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside it
+(a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and `--uninstall` run the real
 `claude plugin` commands against throwaway config dirs in `test/install.test.mjs`, which checks
 that the mod is read from this checkout and that uninstall restores `settings.json` byte for
 byte. On Windows, 2026-10-08, with the board installed from this checkout and no `--plugin-dir`:
@@ -504,7 +505,10 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 
 `npm test` runs 72 tests: 43 drive the hook with hook JSON on stdin against throwaway git repos,
 24 run the installer against throwaway config dirs, and 5 check the board mod (its fingerprint
-twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`). They prove the logic. They cannot prove that
+twin, then `claude plugin validate` and its own 31 tests under `claude plugin test`). CI also
+type-checks the mod; to do it locally, load the mod once (`claude --plugin-dir mods/speckit-board`
+lays `.claude-plugin/types/` and `tsconfig.json`), then run
+`npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`. They prove the logic. They cannot prove that
 Claude Code fires a hook, which is where all three serious bugs in this project were. After changing a
 hook command, an event name or a matcher, check it live in a scratch repo:
 

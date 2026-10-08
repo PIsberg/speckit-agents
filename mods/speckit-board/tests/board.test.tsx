@@ -4,6 +4,9 @@ import type { MockClock } from 'claude-code/testing'
 
 import { fingerprint, fingerprintFiles } from '../hooks/model'
 
+// The runtime has it; the tsconfig Claude Code lays beside the mod loads no DOM or Node types.
+declare function setTimeout(callback: (value?: unknown) => void, ms: number): unknown
+
 const ROOT = '/repo'
 const FEATURE = 'specs/001-x'
 const TASKS = '## Phase 1: Setup\n- [x] T001 Create package.json\n## Phase 2: Story\n- [ ] T002 [P] Test greet\n- [ ] T003 Implement greet\n'
