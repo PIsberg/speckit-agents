@@ -543,6 +543,9 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 ## Developing
 
+CI runs `npm test` on Linux, macOS and Windows for every pull request
+(`.github/workflows/test.yml`).
+
 See `CLAUDE.md`. In short: edit `agents/`, `hooks/`, `skills/` or `install.mjs`, run `npm test`,
 rerun the installer, and do the live check if you touched how a hook is wired.
 

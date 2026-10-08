@@ -38,9 +38,10 @@ test('the hook records the fingerprint the board mod pins', () => {
 });
 
 // Spawned without a shell, so a checkout path with spaces stays one argument. An npm-installed
-// claude.cmd cannot be spawned that way: the tests then report skipped, not passed.
+// claude.cmd cannot be spawned that way: the tests then report skipped, not passed. CI sets
+// SPECKIT_REQUIRE_CLAUDE=1, so there a missing claude fails them instead.
 const claude = (...args) => spawnSync('claude', args, { encoding: 'utf8' });
-const noClaude = claude('--version').status === 0 ? false : 'no claude executable on PATH';
+const noClaude = claude('--version').status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 
 test('claude plugin validate accepts the board mod', { skip: noClaude }, () => {
   const r = claude('plugin', 'validate', MOD);

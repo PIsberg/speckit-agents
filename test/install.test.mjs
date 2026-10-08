@@ -230,9 +230,10 @@ test('--board without Claude Code installs the team, fails, and uninstall still 
 });
 
 // Real `claude plugin` runs against the throwaway config dir. Spawned without a shell, so a missing
-// claude, or an npm-installed claude.cmd, reports these skipped, not passed.
+// claude, or an npm-installed claude.cmd, reports these skipped, not passed, except in CI, where
+// SPECKIT_REQUIRE_CLAUDE=1 makes them run and fail.
 const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
-const noClaude = spawnSync('claude', ['--version']).status === 0 ? false : 'no claude executable on PATH';
+const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 const boardIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'list', '--json').stdout).find((p) => p.id === 'speckit-board@speckit-agents');
 const marketsIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'marketplace', 'list', '--json').stdout).map((m) => m.name);
 
