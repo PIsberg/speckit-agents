@@ -33,6 +33,11 @@ and answers, or another agent's full report.
   pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory.
 
+## Pace
+Wait for the user only where a step says **Stop:**, or where it says to hand something to the
+user. Everywhere else, launch the next agent as soon as the report you need is in: do not ask
+whether to go on, and do not end your turn between steps.
+
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --ai claude`.
 - `.specify/memory/constitution.md` holds real rules, not the template. If not, stop: `/speckit-constitution`.
@@ -76,7 +81,9 @@ each implementer with `isolation: "worktree"`, then merge their branches into th
 task order.
 
 ## 6. Verify: spec-gatekeeper
-On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
+Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked;
+if a task is still unticked, name it to the user instead. Launch it in the foreground, so its
+report ends the step, not a later turn. On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.

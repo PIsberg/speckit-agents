@@ -385,6 +385,9 @@ those slices. For each slice:
 For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
 own git worktree.
 
+When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
+straight away, in the foreground, without asking: between the stops above it never waits for you.
+
 **Handoffs are lossy on purpose.** A subagent never sees the main session's conversation; it
 starts with the prompt the skill writes and whatever files it reads. So the skill passes each
 agent only what its Inputs section lists, and never the chat, the product owner's questions and
