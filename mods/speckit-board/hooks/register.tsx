@@ -128,7 +128,14 @@ async function refresh($: EngineInterface) {
   $.ui.status(statusLine(next))
 }
 
-// Spinners and elapsed times move only while an agent of the team runs.
+// A finished agent's "2m ago" changes with no file or agent changing, so the poll redraws while
+// there are agent rows; keepTicking's one-second ticker is for the spinners.
+async function poll($: EngineInterface) {
+  await refresh($)
+  if ((await read($, agents)).length) $.ui.invalidate('ui.render')
+}
+
+// Spinners and running times move every second only while an agent of the team runs.
 async function keepTicking($: EngineInterface) {
   const isBusy = (await read($, agents)).some(a => a.isRunning)
   if (isBusy && !ticker) ticker = $.clock.every(1000, () => $.ui.invalidate('ui.render'))
@@ -148,7 +155,7 @@ export const register: Register = on => {
       return next(e)
     }
     await refresh($)
-    $.clock.every(POLL_MS, () => { void refresh($) })
+    $.clock.every(POLL_MS, () => { void poll($) })
     await keepTicking($)
     const b = await read($, board)
     $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })

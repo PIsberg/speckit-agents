@@ -196,6 +196,26 @@ test('a change seen by refreshes in several events is announced once', async ($,
   expect(seen.toasts.filter(t => t.startsWith('Audit PASS'))).toHaveLength(1)
 })
 
+// The clock redrew the pane only while an agent ran, so the last agent to stop kept "0s ago" for good.
+test('a finished agent\'s age keeps counting', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
+  await $.classic.SubagentStop({ agent_id: 'a1', agent_type: 'spec-auditor', stop_hook_active: false,
+    agent_transcript_path: '', last_assistant_message: 'VERDICT: PASS' } as never)
+  const ui = await $.ui.mount({
+    plugin: 'speckit-board', surface: 'terminal', component: 'Pane', requestId: 'speckit-board',
+    viewport: { columns: 140, rows: 40 },
+    props: { title: 'Spec Kit', isFocused: false, bodyColumns: 60, placement: 'dock' },
+  } as never)
+  expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 0s ago')
+  await seen.clock.advance(120_000)
+  expect((await ui.find({ type: 'Text', text: /ago$/ }))?.text).toBe('PASS · 2m 0s ago')
+  await ui.unmount()
+})
+
 // After a FAIL the architect revises the plan. The board kept showing the old FAIL as failed, on files
 // nobody had audited yet; what they want is the next audit.
 test('revising the files after a FAIL asks for a re-audit', async ($, on) => {
