@@ -16,7 +16,9 @@ this file is how to work on it.
   that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
   this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
   `claude --plugin-dir` loads it for one session. Its own tests are
-  `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`.
+  `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`. It is a prototype for
+  features 001 and 002, retired once 001's view ships (owner decision, #11): do not build 001 or
+  002 on it, and do not change 001's spec for it (README.md, "Board mod").
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs (its board tests run the real
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's

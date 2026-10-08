@@ -197,7 +197,14 @@ nothing to show is not mistaken for one that did not load.
 
 It reads files directly rather than the documented activity stream that feature 001 specifies for
 its own view (FR-016), and it covers part of what feature 002 (issue #3) specifies for the rich
-view. Treat it as a working prototype for those two features, not their implementation.
+view. The owner decided on 2026-10-08 (issue #11) that it stays a working prototype for those two
+features, not their implementation: its layout (phase track, task progress, retry meter, agent
+rows with their report word) is input to feature 002's spec, and the mod is retired once feature
+001's view ships. Until then it is kept working and installable, and feature 001's spec is not
+changed for it, so FR-016 binds 001's own view and not this mod. Retiring it means removing
+`mods/speckit-board/`, the repo's `.claude-plugin/marketplace.json`, `--board`/`--no-board` and
+the fingerprint twin in `test/board-mod.test.mjs`; `--uninstall` and `--no-board` should keep
+working for one release after that, so existing installs can still remove it.
 
 Verified: `claude plugin validate` and `claude plugin test` (14 tests, both run by `npm test`, in
 CI on Linux, macOS and Windows). `--board`, a rerun, `--no-board` and `--uninstall` run the real
