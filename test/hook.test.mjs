@@ -113,7 +113,8 @@ test('no agent may write the guardrail state under .git/', () => {
 test('the .git/ guard holds for other spellings and from a linked worktree', () => {
   const { dir, g } = repo();
   const spellings = ['.git./speckit-team/retries/001-demo.json', '.git/../.git/speckit-team/verdicts/001-demo.json'];
-  if (process.platform === 'win32') spellings.push('.GIT/speckit-team/retries/001-demo.json');
+  // Any case-insensitive file system, not only Windows: macOS's default APFS volume is one too.
+  if (fs.existsSync(path.join(dir, '.GIT'))) spellings.push('.GIT/speckit-team/retries/001-demo.json');
   for (const f of spellings) assert.ok(denied(write(dir, ['scope', 'no-tests'], f)), f);
 
   const wt = `${dir}-wt`;
