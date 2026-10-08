@@ -12,7 +12,8 @@
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
-//   ends <word>...          SubagentHandback / Stop: the report's last line must be one of the words
+//   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
+//                           --record keeps the accepted word for the feature (spec-gatekeeper's)
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -367,20 +368,23 @@ if (mode === 'result') {
 // so the agent finishes and resends; never twice, so it is never gagged.
 if (mode === 'ends') {
   const viaHandback = event === 'PreToolUse';
-  if (!args.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
+  const record = args[0] === '--record';
+  const words = record ? args.slice(1) : args;
+  if (!words.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
   const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
   const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
   const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
-  if (args.includes(word)) {
+  if (words.includes(word)) {
     if (ok) writeJson(ok, {});
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
-    // gatekeeper's word from the same place whether or not it saw the agent stop.
-    const feat = feature();
+    // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
+    // test-writer's RED after a REJECTED would otherwise read as the gatekeeper's word.
+    const feat = record && feature();
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at: new Date().toISOString(), agent_id: agentId });
     process.exit(0);
   }
-  const ask = `Your report must end with a final line that is exactly one of: ${args.join(', ')}. `
+  const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
     + 'Finish the work first, then send the full report.';
   const asked = agentId && path.join(stateDir, 'agents', `${agentId}.ends-asked`);
   if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(ask); }
