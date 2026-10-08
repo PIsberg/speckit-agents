@@ -40,8 +40,21 @@ whether to go on, and do not end your turn between steps.
 
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --ai claude`.
-- `.specify/memory/constitution.md` holds real rules, not the template. If not, stop: `/speckit-constitution`.
 - The working tree is clean. If not, ask before going on.
+- `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
+  (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
+
+## 0b. Constitution (only while it is the template)
+The constitution is the user's rules: draft them, never decide them.
+1. Read only what the repo already states as rules: `CLAUDE.md` or `AGENTS.md`, the README's
+   contributing or development section, the build file, the CI workflow. Draft 3 to 6 principles,
+   each one testable rule (MUST or SHOULD) with the file it comes from. Mark a rule you inferred
+   rather than read as inferred.
+2. Show the draft and ask with AskUserQuestion: use it as drafted (recommended), or change it
+   (the user's answer is the change).
+3. Invoke the `speckit-constitution` skill with the approved principles as its arguments, then
+   commit `.specify/` on the current branch.
+**Stop:** the approval in 2. Then go on to step 1 without asking again.
 
 ## 1. Spec: product-owner
 Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then

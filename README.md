@@ -94,12 +94,15 @@ specify init --here --ai claude
 Then, in Claude Code:
 
 ```
-/speckit-constitution   (once per repo: the rules every phase is checked against)
 /speckit-team Let users export their reading list as CSV
 ```
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 to answer the product owner's questions, to approve the spec, and to approve the plan and tasks.
+In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
+template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
+and asks you to approve it, a fourth stop, then writes it with `speckit-constitution`. You can
+still run `/speckit-constitution` yourself beforehand.
 After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
 verifies and opens a PR, which it does not merge.
 
