@@ -221,9 +221,8 @@ or else from its last message, as the hook reads it. An agent counts as finished
 team's own stop checks, which run after the mod, have let it stop: one they send back to add its
 verdict or restore its lane keeps its spinner, and the verdict, RED or gatekeeper word they record
 as it stops shows at once rather than at the next poll. Claude Code adds an agent's frontmatter
-Stop hooks as session hooks, and live they still ran inside the mod's `next()` (see Verified). An agent that is stopped ends
-without a `SubagentStop` (seen live; one that fails is assumed to, not yet seen), so the 4-second
-poll also reads Claude Code's own agent list and ends a row the list calls `killed` or `failed`,
+Stop hooks as session hooks, and live they still ran inside the mod's `next()` (see Verified). An agent that is stopped or fails ends
+without a `SubagentStop` (both seen live), so the 4-second poll also reads Claude Code's own agent list and ends a row the list calls `killed` or `failed`,
 with that as its word.
 The verify step reads the spec-gatekeeper's word from the file the hook's `ends` check writes once
 it accepts the report, so it updates even when the mod was reloaded or not loaded while the
@@ -288,7 +287,11 @@ hook denied the first `SubagentHandback` and the toast came 0.5 s after the seco
 A stopped agent, the same setup: a background spec-auditor stopped with `TaskStop` 1.3 s in ended
 `exitPath=cancelled`, its task `killed`, with no `SubagentStop` (the mod's handler never ran and
 the agent's session hooks were cleared unrun); the poll's agent-list check ended its row 0.1 s
-later, which a poll can take up to 4 s to do (#32). Not seen live: an agent that fails, an interactive session on
+later, which a poll can take up to 4 s to do (#32). A failed agent: a localhost proxy set as
+`ANTHROPIC_BASE_URL` answered every spec-auditor request after its first with a 400, which is not
+retried; the agent ended `exitPath=error`, its task `failed` ("Agent terminated early due to an API
+error"), again with no `SubagentStop`, and the poll ended its row 1.8 s later, while the main
+session was still inside a tool call (#35). Not seen live: an interactive session on
 Linux (band, pane, agent rows; that Claude Code stopped at first-run login), and any session on
 macOS (#19).
 
