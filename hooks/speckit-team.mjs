@@ -124,11 +124,18 @@ function canonical(p) {
 const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
 const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
 
-function extraTestPatterns() {
-  return lines(readOr(path.join(root, '.specify', 'test-paths'), ''))
-    .map((l) => l.trim()).filter((l) => l && !l.startsWith('#')).map((l) => new RegExp(l));
-}
-const isTest = (rel) => [...TEST_PATTERNS, ...extraTestPatterns()].some((re) => re.test(rel));
+// Read once per run. A line that is not a valid regex leaves the test lanes undecidable: scope denies
+// and lane says it could not run, instead of crashing, which would let every write through.
+const testPaths = (() => {
+  const patterns = [...TEST_PATTERNS]; const bad = [];
+  readOr(path.join(root, '.specify', 'test-paths'), '').split('\n').forEach((l, i) => {
+    const t = l.trim();
+    if (!t || t.startsWith('#')) return;
+    try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
+  });
+  return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
+})();
+const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
 const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel));
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
@@ -220,6 +227,10 @@ if (mode === 'scope') {
   const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
+  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
+    deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
+      + 'Report this to the user, who fixes the file; do not edit it yourself.');
+  }
   // A prefix ending in / is a directory; anything else must match the whole path.
   if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
     deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
@@ -371,6 +382,7 @@ if (mode === 'lane') {
   if (typeof base.sha !== 'string' || !Array.isArray(base.dirty)) {
     emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
   }
+  if (testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
   const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
   if (outside.length && !input.stop_hook_active) {
     block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `

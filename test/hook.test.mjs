@@ -133,6 +133,28 @@ test('.specify/test-paths adds repo-specific test patterns', () => {
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'checks/golden.txt')));
 });
 
+// A line that was not a valid regex crashed scope, and a crashed hook lets the write through: one typo
+// in test-paths, or one written there by implementer, opened every test file to it.
+test('an invalid .specify/test-paths line closes the test lanes and names the line', () => {
+  const { dir, write: w, g } = repo();
+  w('.specify/test-paths', '^checks/\n\n(unclosed\n');
+  for (const [args, f] of [[['scope', 'no-tests'], 'src/test/java/AppTest.java'], [['scope', 'no-tests'], 'src/main/App.java'],
+    [['scope', 'tests'], 'src/test/java/AppTest.java']]) {
+    const out = write(dir, args, f);
+    assert.ok(denied(out), `${args.join(' ')} ${f}`);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /test-paths line 3 .*\(unclosed/);
+  }
+  assert.equal(write(dir, ['scope', 'only', 'specs/'], `${FEAT}/plan.md`), null, 'scope only does not use test patterns');
+
+  g('add', '-A'); g('commit', '-qm', 'bad pattern');
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'tp1' });
+  w('src/test/java/AppTest.java', 'class AppTest {}\n');
+  const out = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'tp1' });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /lane check could not run.*test-paths line 3/);
+});
+
 test('gate blocks implementation until a PASS verdict on the current artifacts', () => {
   const { dir, write: w } = repo();
   const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };

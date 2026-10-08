@@ -425,7 +425,8 @@ compile error in an arbitrary language, so the skill checks test-writer's pasted
 ## Customising
 
 - **Test layout the patterns miss:** add one JavaScript regex per line to `.specify/test-paths`
-  in that repo. Lines starting with `#` are comments.
+  in that repo. Lines starting with `#` are comments. A line that is not a valid regex stops
+  test-writer and implementer from writing anything until it is fixed, and the message names it.
 
   ```
   # golden files are tests too
@@ -519,6 +520,10 @@ rethinking: send the failing task to the architect and re-audit, which resets th
 without changes, delete the file the message names.
 
 **An agent is blocked writing a legitimate test file.** Add a pattern to `.specify/test-paths`.
+
+**"may not write ... until the test patterns can be read".** A line in `.specify/test-paths` is
+not a valid JavaScript regex. Fix the line the message names; until then the test lanes cannot
+tell a test from production code, so they refuse every write.
 
 **Install fails with "not installed by speckit-agents".** You already have an agent with one of
 these six names. Rename yours, or pass `--force` to back it up and replace it.
