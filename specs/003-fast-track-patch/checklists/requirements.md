@@ -31,4 +31,5 @@
 
 ## Notes
 
+- Re-checked 2026-10-10 after adding the Threat Model section and the 2026-10-10 clarification: all items above still hold. The new section names no technology beyond the owner's own examples of evasion routes (aliases, scripts), has one verifiable criterion (README known-limits list), and no [NEEDS CLARIFICATION] marker was added.
 - Mentions of the repo's own hook script and installer name its deliverables, not a technology choice.

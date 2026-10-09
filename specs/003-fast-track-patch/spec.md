@@ -19,6 +19,10 @@
 - Q: Are binary production files allowed on the fast track? → A: No. Any added or modified binary production file stops the run with the `/speckit-team` escalation message. Renamed and deleted production files still count as files touched.
 - Q: Are the budget-stop requirements one or two? → A: One. FR-006 now covers the stop (no commit, no pull request, work stays uncommitted, message with counts and limits, never starts `/speckit-team`); FR-008 is removed and the other ids are not renumbered.
 
+### Session 2026-10-10
+
+- Q: Which adversary does the fast track guard against, given two audit rounds kept finding shell routes around the hooks? → A: An agent that overreaches by mistake or drifts out of scope, not one that deliberately evades the hooks through the shell. Evasion routes are listed as known limits in the README and are not defects of this feature. FR-006 and FR-007 apply within this threat model (see "Threat Model").
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Make a trivial change without the full pipeline (Priority: P1)
@@ -154,6 +158,13 @@ Before work starts, the developer is told whether the request looks like a small
 - The protected list in FR-007 is the minimum; the planner may add paths, and a developer cannot override it per run.
 - Merging stays with the developer; the fast track never merges.
 - The issue's alternative of relaxing the audit gate for a lone implementer (issue point 4) is out of scope; `/speckit-team`'s gates stay as they are.
+
+## Threat Model
+
+- **Guarded against (MUST be caught, as the requirements say)**: an agent that overreaches by mistake or drifts out of scope. That means writing protected files (FR-007), growing past the budget (FR-005, FR-006), committing or opening a pull request before the checks passed (FR-002), and sweeping in the developer's uncommitted work.
+- **Not guarded against**: an agent that deliberately evades the hooks through the shell. That means git aliases, scripts or package scripts that push or commit, writes outside the repository and the Claude config directory, and network access. These gaps are not defects of this feature. The README MUST list them as known limits.
+- **Effect on requirements**: where FR-006 or FR-007 says "MUST" about catching a change made "by other means" (for example a shell command), it applies to the routes inside the guarded-against case, not to deliberate evasion.
+- **Verification**: a reviewer can read the README's known-limits list and find each "not guarded against" item named in it.
 
 ## Out of Scope
 

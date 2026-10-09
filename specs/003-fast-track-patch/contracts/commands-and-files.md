@@ -5,24 +5,39 @@ names are things users type and other tools can find.
 
 ## `/speckit-patch <change>`
 
-File: `skills/speckit-patch/SKILL.md`, installed to `<claude dir>/skills/speckit-patch/SKILL.md`.
-Frontmatter: `name: speckit-patch`, `argument-hint: "<small change>"`,
+File: `skills/speckit-patch/SKILL.md`, installed to `<claude dir>/skills/speckit-patch/SKILL.md`,
+with `{{HOOK}}` replaced by the installed hook's absolute path (the installer already does this for
+every file it writes). Frontmatter: `name: speckit-patch`, `argument-hint: "<small change>"`,
 `disable-model-invocation: true`, and the marker comment line.
 
-Steps the skill gives the main session:
+Steps the skill gives the main session (research R15; owner decision of 2026-10-09, plan.md
+decision 14):
 
 1. Preconditions: `.specify/` exists, or stop (the fast track's hooks are inactive without it).
    If the working tree is dirty, list the files, say they will not be counted or committed, and ask
    before going on. The same foreground-launch check as `/speckit-team` step 0.
-2. Launch `patcher` once, in the foreground, with the change as given, and nothing else.
-3. Relay the report in at most 5 lines: what changed, the size against the budget, the test outcome,
-   the PR link.
-   - `DONE`: watch the PR's CI per the git rules in `CLAUDE.md`; on red, report it to the user (no
-     automatic fix round).
-   - `FAILED`: say which test failed or that tests were not run; no PR exists.
+2. Before launching: note `git rev-parse HEAD` (the start) and `git hash-object -- "{{HOOK}}"` (the
+   installed hook's hash); create the branch with `git switch -c patch/<slug>` from the current
+   commit, and say what that commit is if it is not on `main` or `master`.
+3. Launch `patcher` once, in the foreground, with the change as given, and nothing else.
+4. On `DONE` with the report stating the existing tests passed, commit only when every check holds:
+   `git hash-object -- "{{HOOK}}"` equals the noted hash; `git rev-parse HEAD` equals the start;
+   `git branch --show-current` is `patch/<slug>`; `$(git rev-parse --git-dir)/speckit-team/patch-accepted.json`
+   exists and its `sha` equals the start. Then `git add -- <each path in untracked>` and
+   `git commit -m "<message>" -- <each path in files>` (every path quoted; never `git add -A`, never
+   `git commit -a`), `git push -u origin patch/<slug>` (never `--force`), and `gh pr create` if
+   there is a GitHub remote. Watch the PR's CI per the git rules in `CLAUDE.md`; on red, report it to
+   the user (no automatic fix round). If a check fails: commit nothing and report the run as
+   `FAILED`, say which check failed, and that the work is uncommitted in the working tree. A missing
+   accepted record is such a check; one cause is a settings file in the config directory changed
+   during the run, which the hook's message names (contracts/hook-cli.md, message C; plan.md
+   decision 15 point 5).
+5. Relay the outcome in at most 5 lines: what changed, the size against the budget, the test
+   outcome, the PR link.
+   - `FAILED`: say which test failed or that tests were not run; no commit, no PR.
    - `ESCALATE`: say why, that the work is uncommitted in the working tree, and that
      `/speckit-team` is the way on. Never start `/speckit-team`.
-4. Never merge.
+6. Never merge.
 
 ## `/speckit-triage <request>`
 
@@ -44,7 +59,7 @@ Frontmatter:
 
 ```yaml
 name: patcher
-description: <one sentence: the fast track for small changes, one pass, budget 30 production lines and 2 files, protected paths denied; use through /speckit-patch; not for features>
+description: <one sentence: the fast track for small changes, one pass, budget 30 production lines and 2 files, protected paths denied, changes the working tree only; use through /speckit-patch; not for features>
 tools: Read, Write, Edit, Bash
 model: sonnet
 color: cyan
@@ -74,22 +89,21 @@ Body sections (Inputs, Process, Lane, Report), carrying these rules:
 
 - Inputs: the change in the prompt, the code it touches, and `CLAUDE.md`, the CI workflow or the
   build file for the test command. No `specs/` artifacts.
-- Process: note `git status --short` first, those files are not yours: never edit, move, delete,
-  stage or commit them (a hook denies a write to one and stops the run if one changes or is
-  committed; research R14); `git switch -c patch/<slug>`
-  from the current commit and say what that commit is if it is not on `main` or `master`; for a
-  change in behaviour, write a regression test first and show it failing (FR-004; typos, comments,
-  docs and config values with no behaviour are exempt); make the change; run the existing tests and
-  check the command's own exit status; move or rename a file only with `git mv` (a plain `mv`
-  counts as a deleted and a new file against the budget); only if they passed, stage your own files by name (never
-  `git add -A` or `git commit -a`), commit once, push the branch and open a PR with `gh pr create` if there is a GitHub
-  remote (FR-002). Never merge. Never start `/speckit-team`.
-- Lane: everything except the protected paths; at most 30 changed production lines (a modified
-  line counts once) and 2 production files, tests and docs not counted, no binary production file. A hook enforces both.
-  When a hook stops you for the budget, commit nothing and report `ESCALATE`.
+- Process: note `git status --short` first, those files are not yours: never edit, move or delete
+  them (a hook denies a write to one and stops the run if one changes; research R14); you work on
+  the branch `/speckit-patch` created; for a change in behaviour, write a regression test first and
+  show it failing (FR-004; typos, comments, docs and config values with no behaviour are exempt);
+  make the change; move or rename a file only with `git mv` (a plain `mv` counts as a deleted and a
+  new file against the budget); run the existing tests and check the command's own exit status.
+  Never commit, never push, never run `gh`, never switch branch: a hook denies them, and
+  `/speckit-patch` commits your files after the end-of-run check accepts the run (research R15).
+  Never merge. Never start `/speckit-team`.
+- Lane: the working tree, everything except the protected paths; at most 30 changed production
+  lines (a modified line counts once) and 2 production files, tests and docs not counted, no binary
+  production file. A hook enforces both. When a hook stops you for the budget, report `ESCALATE`.
 - Report: at most 10 lines: files changed, the size, the exact test command and its result stated
-  as passed, failed, skipped or not run (FR-003), the branch and PR link. Last line exactly `DONE`,
-  `FAILED` or `ESCALATE`.
+  as passed, failed, skipped or not run (FR-003). Last line exactly `DONE` (tests passed), `FAILED`
+  or `ESCALATE`.
 
 ## Installed files and settings
 
@@ -107,6 +121,10 @@ like the existing agents and skill. No new installer flag. `install.mjs --help` 
 
 ## Hook state
 
-`<git common dir>/speckit-team/patch/<key>.json`, one per run, never committed, safe to delete.
-`verdicts/`, `retries/` and `ends/` are not written by the fast track (FR-009); `ends` keeps its
-existing per-agent `agents/<id>.ends-ok` and `.ends-asked` markers.
+- `<git common dir>/speckit-team/patch/<key>.json`: the start record, one per run, never committed,
+  safe to delete.
+- `<git dir>/speckit-team/patch-accepted.json`: the accepted record, at most one per worktree,
+  present only between an accepted end of `patcher`'s run and its next hook call (research R15).
+  `/speckit-patch` reads it; nothing else does. Safe to delete (the skill then commits nothing).
+- `verdicts/`, `retries/` and `ends/` are not written by the fast track (FR-009); `ends` keeps its
+  existing per-agent `agents/<id>.ends-ok` and `.ends-asked` markers.
