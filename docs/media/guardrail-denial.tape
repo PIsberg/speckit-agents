@@ -1,6 +1,8 @@
 # architect tries to write production code and its scope hook denies it. Recorded by record.mjs,
 # which fills in the {{...}} fields.
 Output "{{OUTPUT}}"
+# Every frame as text, so a reviewer can search them all for account details.
+Output "{{WORK}}/guardrail-denial.txt"
 Set Shell {{SHELL}}
 Set FontSize 16
 Set Width 1280
@@ -9,18 +11,25 @@ Set Padding 16
 Set Framerate 12
 Set TypingSpeed 45ms
 Set PlaybackSpeed 2
+# Keep the working directory, and with it the user name, out of the startup logo.
+Env CLAUDE_CODE_HIDE_CWD "1"
 
-# Start Claude Code off camera. The second Enter accepts the folder-trust prompt on a first run
-# and does nothing on an empty prompt otherwise.
+# Start Claude Code off camera. On a first run the folder-trust prompt is up, and its default is
+# "No, exit": Down picks "Yes". On an empty prompt both keys do nothing.
 Hide
 Type "clear; {{CLAUDE}}"
 Enter
 Sleep 10s
+Down
+Sleep 300ms
 Enter
 Sleep 5s
 Show
 
-Type "@agent-architect Use the Write tool to create src/greet.js exporting greet(name). Do not ask first, just try it."
+# An @agent-architect mention is not enough: on 2026-10-09 the main session decided the architect
+# writes no code and wrote the file itself, where no lane applies. So the prompt names the agent
+# and the foreground, which keeps the agent's tool calls in the main transcript.
+Type "Run the architect agent in the foreground with this prompt: Call the Write tool once to create src/greet.js exporting greet(name). Do not ask first. Report the tool's answer word for word."
 Sleep 500ms
 Enter
 Wait+Screen@3m /outside that lane|denied|blocked/
