@@ -18,6 +18,10 @@ tool's result. A background launch costs you an extra request that only waits, a
 re-reads your whole context: in the 2026-10-07 runs those waits were 41% and 44% of the main
 session's input. Agents meant to run side by side go in one message as several Agent calls.
 
+If your Agent tool has no `run_in_background` parameter, every agent runs in the background
+whatever you pass. Then launch it and end your turn: its completion notification brings the
+report. Do not poll it, sleep, or read its output file.
+
 Launch a fresh agent for every phase and every fix round, and let it end when it reports. Never
 send a running or finished agent a new task with SendMessage: it keeps everything it has read. In
 the 001 run one architect kept alive across 4 audit rounds grew to 726k tokens of context over 729
@@ -43,13 +47,19 @@ and answers, or another agent's full report.
 ## Pace
 Wait for the user only where a step says **Stop:**, or where it says to hand something to the
 user. Everywhere else, launch the next agent as soon as the report you need is in: do not ask
-whether to go on, and do not end your turn between steps.
+whether to go on, and do not end your turn between steps, except to wait for an agent that runs in
+the background (see Handoffs).
 
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
 - The working tree is clean. If not, ask before going on.
 - `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
   (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
+- Your Agent tool has a `run_in_background` parameter. If not, Claude Code has fork subagents on
+  (the default in an interactive session) and runs every agent in the background, which costs an
+  extra waiting request per agent. Tell the user once, in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0`
+  in the shell or under `env` in settings.json, then a restart, brings foreground launches back.
+  Then go on.
 
 ## 0b. Constitution (only while it is the template)
 The constitution is the user's rules: draft them, never decide them.

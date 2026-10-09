@@ -27,8 +27,9 @@ Sleep 5s
 Show
 
 # An @agent-architect mention is not enough: on 2026-10-09 the main session decided the architect
-# writes no code and wrote the file itself, where no lane applies. So the prompt names the agent
-# and the foreground, which keeps the agent's tool calls in the main transcript.
+# writes no code and wrote the file itself, where no lane applies. So the prompt names the agent.
+# It asks for the foreground too, but Claude Code 2.1.296 ran the agent in the background anyway:
+# an interactive session has fork subagents on unless CLAUDE_CODE_FORK_SUBAGENT=0 (#64).
 Type "Run the architect agent in the foreground with this prompt: Call the Write tool once to create src/greet.js exporting greet(name). Do not ask first. Report the tool's answer word for word."
 Sleep 500ms
 Enter

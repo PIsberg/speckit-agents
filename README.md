@@ -220,12 +220,14 @@ runs will word things differently. The three recordings that wait on agents are 
 `node docs/media/record.mjs` records them again (see
 [Recording the demo media](#recording-the-demo-media)).
 
-### The team in `/agents`
+### The team in the `@` typeahead
 
-The six agents as Claude Code lists them, then the `@agent-` typeahead you use to call one
-directly.
+Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
+folders. Claude Code 2.1.296 stops the list at 15 entries, so it shows five of the team's six
+among its own six agents: test-writer, last in alphabetical order, is left out. Claude Code
+2.1.295 removed the `/agents` menu this section used to show.
 
-![The /agents menu listing the six speckit-agents, then the @agent- typeahead](docs/media/agents-list.gif)
+![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
 
 ### A subagent at work
 
@@ -510,6 +512,20 @@ than 15; and the skill had also gained [#37](https://github.com/PIsberg/speckit-
 and [#38](https://github.com/PIsberg/speckit-agents/issues/38). The waiting requests explain 0.95M
 of the main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
 
+An interactive session needs one setting for this. Claude Code 2.1.296 turns on fork subagents by
+default in an interactive session (not under `claude -p`, where the runs above were made), and
+with them on its Agent tool has no `run_in_background` parameter at all: every agent runs in the
+background, whatever the skill passes. `CLAUDE_CODE_FORK_SUBAGENT=0`, in the shell or under `env`
+in `~/.claude/settings.json`, turns them off, and the foreground launch comes back; it also takes
+away Claude Code's own `fork` agent type. The skill checks its Agent tool at the start of a run and
+tells you once if the parameter is missing. This surfaced while recording the README's GIFs
+([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked on 2026-10-09 against a fake
+API, at no cost: in an interactive session an Agent call with `run_in_background: false` ran in
+the background with the variable unset, and in the foreground with it set to `0` or `false`, in
+the environment or in `settings.json`. Two tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
+the same behaviour under `claude -p`. How much the background launches cost in a full interactive
+run is not measured ([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
+
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
 waits for you anyway. When you choose side by side, agents for `[P]` slices are launched together
@@ -648,9 +664,9 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 | `/speckit-board band` | hides or shows the band |
 | `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well and the model reads |
 
-The command runs at once, also during a turn: `/speckit-team` runs its agents in the foreground, so
-a whole pipeline is one turn, and a command that waited for the turn opened the board only once
-the run was over.
+The command runs at once, also during a turn: with its agents in the foreground
+([Foreground launches](#foreground-launches)), `/speckit-team` runs a whole pipeline in one turn,
+and a command that waited for the turn opened the board only once the run was over.
 
 ### Where it reads its state
 
@@ -796,7 +812,7 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 81 tests:
+`npm test` runs 99 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -804,10 +820,11 @@ Claude Code stopped at first-run login), and any session on macOS
 | [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 3 | the real Claude Code against a fake Anthropic API ([End-to-end tests](#end-to-end-tests)) |
+| [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
-They prove the logic. Most of them cannot prove that Claude Code fires a hook, which is where all
-three serious bugs in this project were.
+The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
+three serious bugs in this project were. The end-to-end tests do.
 
 ### CI
 
@@ -824,18 +841,35 @@ npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
 
 ### End-to-end tests
 
-The end-to-end tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) can prove that a hook fires, for
-the guardrail that fires before any model call. They install the team into a throwaway config dir,
-start the real Claude Code with `claude -p` in a throwaway Spec Kit repo, and point it at a fake
-Anthropic API on localhost, so they need no login and cost nothing. A typed `/speckit-implement`
-must reach the fake API zero times with no audit recorded and after `spec.md` changes behind a
-PASS, and at least once with a current PASS. With the `UserPromptExpansion` gate removed from
-`install.mjs`, the two blocking cases fail with "1 model requests".
+The end-to-end tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) prove that Claude Code fires the
+hooks. They install the team into a throwaway config dir, start the real Claude Code with
+`claude -p` in a throwaway Spec Kit repo, and point it at a fake Anthropic API on localhost, so they
+need no login and cost nothing.
 
-Every other guardrail fires only after a model has asked for a tool; covering those end to end is
-[#45](https://github.com/PIsberg/speckit-agents/issues/45), and a full pipeline run with real
-models is [#46](https://github.com/PIsberg/speckit-agents/issues/46). Until then, use the
-[live check](#live-check).
+- **No model.** A typed `/speckit-implement` must reach the fake API zero times with no audit
+  recorded and after `spec.md` changes behind a PASS, and at least once with a current PASS. With
+  the `UserPromptExpansion` gate removed from `install.mjs`, the two blocking cases fail with
+  "1 model requests".
+- **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
+  call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 11
+  tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
+  both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
+  `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
+  `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 11
+  fail, as do the two blocking cases above (2026-10-09, Claude Code 2.1.296).
+- **Claude Code's own behaviour.** Two tests pin what the skill's foreground rule relies on: an
+  Agent call with `run_in_background: false` runs in the foreground and returns the report, and
+  with `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
+  agent runs in the background ([Foreground launches](#foreground-launches)).
+
+The fake model tells the main session from each agent by a marker in its first prompt, and
+recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
+fails these tests with no hook at fault: the failure message gives each sender's request count and
+Claude Code's last events, so check those before changing a hook. A full pipeline run with real
+models is
+[#46](https://github.com/PIsberg/speckit-agents/issues/46).
 
 ### Live check
 
@@ -959,6 +993,13 @@ denied it, so a gated agent retried its report until it gave up, and spec-audito
 from the last message, was never found. The gate now lets `SubagentHandback` through and the
 verdict is read from its `message`. Any new catch-all hook must do the same.
 
+### Agents run in the background although the skill asks for the foreground
+
+In an interactive session, Claude Code 2.1.296 has fork subagents on, and then its Agent tool has
+no `run_in_background` parameter: every agent runs in the background, which costs a waiting
+request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0` and restart (see
+[Foreground launches](#foreground-launches)). The skill says so at the start of a run.
+
 ### `/speckit-implement` is not gated
 
 A typed slash command fires `UserPromptExpansion`, not `UserPromptSubmit`, and a PreToolUse `Skill`
@@ -992,7 +1033,8 @@ up and replace it.
 ## Known limits
 
 - **Hooks fail open.** If Node is missing or the script cannot start, the action is allowed. The
-  installer's smoke check and the [live check](#live-check) above are the defences. Input the hook
+  installer's smoke check, the [end-to-end tests](#end-to-end-tests) and the
+  [live check](#live-check) above are the defences. Input the hook
   cannot use (not JSON, not an object, an event the mode is not wired for) also lets the action
   through, but never silently: the hook makes no decision and shows a
   `speckit-team: ... no decision made` message. The same holds for fields of the wrong type and for
@@ -1078,18 +1120,25 @@ shared temp dir, because it gets folder trust; deleted and rebuilt on every run,
 `SPECKIT_DEMO_DIR` names another folder) with the demo feature in `docs/media/demo/`, installs the
 team into that repo's `.claude/`, and starts Claude Code with
 `--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
-MCP servers stay out of the frame. The `board` tape loads the board from this checkout with
+MCP servers stay out of the frame. On Windows the tapes reach that repo through a drive letter
+mapped onto the folder with `subst` (the first free one from `R:`), so the paths a session prints
+read `R:\repo` instead of one with your user name in it; the letter is removed when the script
+ends. The `board` tape loads the board from this checkout with
 `--plugin-dir`, in fullscreen so the pane docks, after staging the demo feature mid-build: three
 tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-writer and
 implementer for stand-ins that only report, so its agent rows cost two short Haiku runs.
 
 > [!CAUTION]
 > Look at every GIF and screenshot before committing it. The tapes hide the working directory in
-> the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names your plan
-> ([#63](https://github.com/PIsberg/speckit-agents/issues/63)), and a session can print an
-> absolute path with your user name in it
-> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). Each tape also writes every frame
-> as text to `<tape>.txt` in the demo folder: search those for your user name before committing.
+> the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names the model and your plan,
+> such as `Haiku 5.5 · Claude Max`. No setting hides the plan, and the README's GIFs keep it
+> (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape records
+> into the demo folder and writes every frame as text to `<tape>.txt` there. `record.mjs` copies a
+> recording into `docs/media/` only if no frame shows your user name, your home folder's name or,
+> on Windows, its 8.3 short form, even split across two rows
+> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)); otherwise the run exits 1 and the
+> files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing. On macOS and Linux
+> the repo's path contains your home directory, so a session that prints it fails the check.
 
 The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
 recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.
