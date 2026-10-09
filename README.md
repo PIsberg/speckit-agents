@@ -220,12 +220,14 @@ runs will word things differently. The three recordings that wait on agents are 
 `node docs/media/record.mjs` records them again (see
 [Recording the demo media](#recording-the-demo-media)).
 
-### The team in `/agents`
+### The team in the `@` typeahead
 
-The six agents as Claude Code lists them, then the `@agent-` typeahead you use to call one
-directly.
+Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
+folders. Claude Code 2.1.296 stops the list at 15 entries, so it shows five of the team's six
+among its own six agents: test-writer, last in alphabetical order, is left out. Claude Code
+2.1.295 removed the `/agents` menu this section used to show.
 
-![The /agents menu listing the six speckit-agents, then the @agent- typeahead](docs/media/agents-list.gif)
+![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
 
 ### A subagent at work
 
