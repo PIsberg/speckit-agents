@@ -1084,8 +1084,12 @@ tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-
 implementer for stand-ins that only report, so its agent rows cost two short Haiku runs.
 
 > [!CAUTION]
-> Look at every GIF and screenshot before committing it: the session banner and the usage line
-> can still show account details.
+> Look at every GIF and screenshot before committing it. The tapes hide the working directory in
+> the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names your plan
+> ([#63](https://github.com/PIsberg/speckit-agents/issues/63)), and a session can print an
+> absolute path with your user name in it
+> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). Each tape also writes every frame
+> as text to `<tape>.txt` in the demo folder: search those for your user name before committing.
 
 The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
 recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.
