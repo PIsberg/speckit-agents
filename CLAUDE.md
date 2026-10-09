@@ -12,7 +12,8 @@ this file is how to work on it.
 - `docs/media/`: the README's GIFs and the board's screenshot, the vhs tapes that record them,
   `record.mjs` that runs the tapes against a scratch Spec Kit repo, and the demo feature in
   `demo/`. Re-record after changing what an agent, a hook or the board shows on screen (README.md,
-  "Developing").
+  "Developing"). `architecture-visualized.svg` is drawn by hand, not recorded: edit it when an
+  agent's model or lane, a pipeline stage or the retry limit changes.
 - `mods/speckit-board/`: an experimental Claude Code mod (function hooks, TypeScript run as source)
   that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
   this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
