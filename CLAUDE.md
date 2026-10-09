@@ -65,5 +65,5 @@ this file is how to work on it.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/001-agent-activity-feed-and-pane/plan.md`
+`specs/003-fast-track-patch/plan.md`
 <!-- SPECKIT END -->
