@@ -10,16 +10,17 @@
 //
 // The team is installed into the scratch repo's own .claude/, and Claude Code is started with
 // --setting-sources project,local and --strict-mcp-config, so your user-level hooks, plugins,
-// statusline and MCP servers stay out of the recording. After each tape its frames are searched for
-// your OS user name (leaks.mjs), and a recording that shows it is moved out of docs/media. Still look
-// at each GIF and screenshot before committing it: the usage line can show other account details.
+// statusline and MCP servers stay out of the recording. Each tape records into the demo folder, and
+// its GIF and screenshots are copied into docs/media only if no frame shows your user name or your
+// home folder's name (leaks.mjs). Still look at each GIF and screenshot before committing it: the
+// usage line can show other account details.
 // The startup logo names your plan; no setting hides it, and the README's GIFs keep it (#63).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { quarantine } from './leaks.mjs';
+import { identities, publish } from './leaks.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -148,12 +149,26 @@ function stageBoard() {
   }
 }
 
+// Who you are, as a recording could show it (leaks.mjs). os.userInfo() throws where the user has no
+// passwd entry; the home folder's name is checked either way.
+const names = identities({
+  user: (() => { try { return os.userInfo().username; } catch { return process.env.USER ?? process.env.USERNAME; } })(),
+  home: os.homedir(),
+  shortHome: process.platform === 'win32'
+    ? spawnSync('cmd', ['/d', '/c', `for %I in ("${os.homedir()}") do @echo %~sI`], { encoding: 'utf8', windowsVerbatimArguments: true }).stdout?.trim()
+    : undefined,
+});
+
+// vhs writes a tape's GIF and screenshots to out/<tape>/ in the demo folder; publish() copies them
+// into docs/media only if no frame shows one of the names.
 function record(name) {
   const slash = (p) => p.replaceAll('\\', '/');
-  const template = fs.readFileSync(path.join(here, `${name}.tape`), 'utf8');
-  const tape = template
-    .replaceAll('{{OUTPUT}}', slash(path.join(here, `${name}.gif`)))
-    .replaceAll('{{SHOTS}}', slash(here))
+  const out = path.join(work, 'out', name);
+  fs.rmSync(out, { recursive: true, force: true });
+  fs.mkdirSync(out, { recursive: true });
+  const tape = fs.readFileSync(path.join(here, `${name}.tape`), 'utf8')
+    .replaceAll('{{OUTPUT}}', slash(path.join(out, `${name}.gif`)))
+    .replaceAll('{{SHOTS}}', slash(out))
     .replaceAll('{{WORK}}', slash(work))
     .replaceAll('{{BOARD}}', slash(path.join(repo, 'mods', 'speckit-board')))
     .replaceAll('{{SHELL}}', SHELL)
@@ -164,9 +179,9 @@ function record(name) {
   if (r.status !== 0) return `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
   const dump = path.join(work, `${name}.txt`);
   if (!fs.existsSync(dump)) return `FAILED (no ${dump} to check for your user name)`;
-  const shown = quarantine({ name, tape: template, dump: fs.readFileSync(dump, 'utf8'), user: os.userInfo().username, media: here, work });
+  const shown = publish({ dump: fs.readFileSync(dump, 'utf8'), names, out, media: here });
   return shown.length
-    ? `SHOWS YOUR USER NAME on ${shown.length} lines of ${dump}; its files were moved to ${work}:\n  ${shown.slice(0, 5).join('\n  ')}`
+    ? `NOT COPIED to docs/media: ${shown.length} lines of ${dump} show your user name; the files are in ${out}:\n  ${shown.slice(0, 5).join('\n  ')}`
     : 'recorded';
 }
 

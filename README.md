@@ -812,7 +812,7 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 97 tests:
+`npm test` runs 99 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -820,7 +820,7 @@ Claude Code stopped at first-run login), and any session on macOS
 | [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
-| [`test/media.test.mjs`](test/media.test.mjs) | 3 | `docs/media/leaks.mjs`, the user-name check `record.mjs` runs after each tape |
+| [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
@@ -1132,12 +1132,13 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 > Look at every GIF and screenshot before committing it. The tapes hide the working directory in
 > the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names the model and your plan,
 > such as `Haiku 5.5 · Claude Max`. No setting hides the plan, and the README's GIFs keep it
-> (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape writes
-> every frame as text to `<tape>.txt` in the demo folder, and after each tape `record.mjs`
-> searches that text for your OS user name
-> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). A recording that shows it is moved
-> from `docs/media/` to the demo folder, and the run exits 1. On macOS and Linux the repo's path
-> contains your home directory, so a session that prints it fails the check.
+> (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape records
+> into the demo folder and writes every frame as text to `<tape>.txt` there. `record.mjs` copies a
+> recording into `docs/media/` only if no frame shows your user name, your home folder's name or,
+> on Windows, its 8.3 short form, even split across two rows
+> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)); otherwise the run exits 1 and the
+> files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing. On macOS and Linux
+> the repo's path contains your home directory, so a session that prints it fails the check.
 
 The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
 recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.
