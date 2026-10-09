@@ -1130,12 +1130,14 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 
 > [!CAUTION]
 > Look at every GIF and screenshot before committing it. The tapes hide the working directory in
-> the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names your plan
-> ([#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape writes every frame as
-> text to `<tape>.txt` in the demo folder, and after each tape `record.mjs` searches that text for
-> your OS user name ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). A recording that
-> shows it is moved from `docs/media/` to the demo folder, and the run exits 1. On macOS and
-> Linux the repo's path contains your home directory, so a session that prints it fails the check.
+> the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names the model and your plan,
+> such as `Haiku 5.5 · Claude Max`. No setting hides the plan, and the README's GIFs keep it
+> (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape writes
+> every frame as text to `<tape>.txt` in the demo folder, and after each tape `record.mjs`
+> searches that text for your OS user name
+> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). A recording that shows it is moved
+> from `docs/media/` to the demo folder, and the run exits 1. On macOS and Linux the repo's path
+> contains your home directory, so a session that prints it fails the check.
 
 The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
 recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.

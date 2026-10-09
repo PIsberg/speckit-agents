@@ -13,6 +13,7 @@
 // statusline and MCP servers stay out of the recording. After each tape its frames are searched for
 // your OS user name (leaks.mjs), and a recording that shows it is moved out of docs/media. Still look
 // at each GIF and screenshot before committing it: the usage line can show other account details.
+// The startup logo names your plan; no setting hides it, and the README's GIFs keep it (#63).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
