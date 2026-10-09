@@ -31,20 +31,22 @@ this file is how to work on it.
   `claude plugin validate` and `claude plugin test` on it
   (skipped, not passed, without a `claude` executable on PATH); `usage.test.mjs` runs
   `tools/usage.mjs` on a synthetic transcript; `e2e.test.mjs` runs the real `claude -p` against a
-  fake Anthropic API on localhost and counts the model requests that reach it (no login, $0;
-  skipped without `claude` like the board tests).
+  fake Anthropic API on localhost, first with no model, then with a scripted one that makes an
+  agent's tool calls, and reads each hook's decision from the next request (no login, $0; skipped
+  without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 72 s on Windows (81 tests, 2026-10-09; the
-  four installer tests that run the real `claude plugin` and the three e2e tests take most of it).
+- `npm test`: all suites, no network beyond localhost, 66 s on Windows (92 tests, 2026-10-09; the
+  four installer tests that run the real `claude plugin` and the 14 e2e tests take most of it, and
+  a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing. On Linux it then runs `tsc`
   on the board mod (README.md, "Verifying", has the local command).
-- Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does so only for the typed
-  `/speckit-implement` gate. After changing any other hook command, event or matcher, install and
-  run a live check in a scratch Spec Kit repo (README.md, "Verifying"). A new guardrail that fires
-  before any model call gets a case in `e2e.test.mjs`.
+- Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does, for every hook entry the
+  installer writes, under `claude -p`. A new hook entry gets a case there; check that the case
+  fails with the installed hook replaced by `process.exit(0)`. After changing a hook command, event
+  or matcher, also run the live check in a scratch Spec Kit repo (README.md, "Verifying").
 
 ## Rules
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;

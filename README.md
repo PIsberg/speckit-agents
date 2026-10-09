@@ -796,7 +796,7 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 81 tests:
+`npm test` runs 92 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -804,10 +804,10 @@ Claude Code stopped at first-run login), and any session on macOS
 | [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 3 | the real Claude Code against a fake Anthropic API ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 14 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
-They prove the logic. Most of them cannot prove that Claude Code fires a hook, which is where all
-three serious bugs in this project were.
+The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
+three serious bugs in this project were. The end-to-end tests do.
 
 ### CI
 
@@ -824,18 +824,31 @@ npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
 
 ### End-to-end tests
 
-The end-to-end tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) can prove that a hook fires, for
-the guardrail that fires before any model call. They install the team into a throwaway config dir,
-start the real Claude Code with `claude -p` in a throwaway Spec Kit repo, and point it at a fake
-Anthropic API on localhost, so they need no login and cost nothing. A typed `/speckit-implement`
-must reach the fake API zero times with no audit recorded and after `spec.md` changes behind a
-PASS, and at least once with a current PASS. With the `UserPromptExpansion` gate removed from
-`install.mjs`, the two blocking cases fail with "1 model requests".
+The end-to-end tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) prove that Claude Code fires the
+hooks. They install the team into a throwaway config dir, start the real Claude Code with
+`claude -p` in a throwaway Spec Kit repo, and point it at a fake Anthropic API on localhost, so they
+need no login and cost nothing.
 
-Every other guardrail fires only after a model has asked for a tool; covering those end to end is
-[#45](https://github.com/PIsberg/speckit-agents/issues/45), and a full pipeline run with real
-models is [#46](https://github.com/PIsberg/speckit-agents/issues/46). Until then, use the
-[live check](#live-check).
+- **No model.** A typed `/speckit-implement` must reach the fake API zero times with no audit
+  recorded and after `spec.md` changes behind a PASS, and at least once with a current PASS. With
+  the `UserPromptExpansion` gate removed from `install.mjs`, the two blocking cases fail with
+  "1 model requests".
+- **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
+  call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 11
+  tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
+  both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
+  `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
+  `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 11
+  fail, as do the two blocking cases above (2026-10-09, Claude Code 2.1.296).
+
+The fake model tells the main session from each agent by a marker in its first prompt, and
+recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
+fails these tests with no hook at fault: the failure message gives each sender's request count and
+Claude Code's last events, so check those before changing a hook. A full pipeline run with real
+models is
+[#46](https://github.com/PIsberg/speckit-agents/issues/46).
 
 ### Live check
 
@@ -992,7 +1005,8 @@ up and replace it.
 ## Known limits
 
 - **Hooks fail open.** If Node is missing or the script cannot start, the action is allowed. The
-  installer's smoke check and the [live check](#live-check) above are the defences. Input the hook
+  installer's smoke check, the [end-to-end tests](#end-to-end-tests) and the
+  [live check](#live-check) above are the defences. Input the hook
   cannot use (not JSON, not an object, an event the mode is not wired for) also lets the action
   through, but never silently: the hook makes no decision and shows a
   `speckit-team: ... no decision made` message. The same holds for fields of the wrong type and for
