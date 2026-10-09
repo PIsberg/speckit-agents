@@ -74,13 +74,15 @@ Body sections (Inputs, Process, Lane, Report), carrying these rules:
 
 - Inputs: the change in the prompt, the code it touches, and `CLAUDE.md`, the CI workflow or the
   build file for the test command. No `specs/` artifacts.
-- Process: note `git status --short` first, those files are not yours; `git switch -c patch/<slug>`
+- Process: note `git status --short` first, those files are not yours: never edit, move, delete,
+  stage or commit them (a hook denies a write to one and stops the run if one changes or is
+  committed; research R14); `git switch -c patch/<slug>`
   from the current commit and say what that commit is if it is not on `main` or `master`; for a
   change in behaviour, write a regression test first and show it failing (FR-004; typos, comments,
   docs and config values with no behaviour are exempt); make the change; run the existing tests and
   check the command's own exit status; move or rename a file only with `git mv` (a plain `mv`
   counts as a deleted and a new file against the budget); only if they passed, stage your own files by name (never
-  `git add -A`), commit once, push the branch and open a PR with `gh pr create` if there is a GitHub
+  `git add -A` or `git commit -a`), commit once, push the branch and open a PR with `gh pr create` if there is a GitHub
   remote (FR-002). Never merge. Never start `/speckit-team`.
 - Lane: everything except the protected paths; at most 30 changed production lines (a modified
   line counts once) and 2 production files, tests and docs not counted, no binary production file. A hook enforces both.

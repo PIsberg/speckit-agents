@@ -40,8 +40,9 @@ decision, the reason for it, and what was rejected.
 - **Decision**:
   - The change is everything that differs from the start commit, committed or not, plus untracked
     files not ignored by git: `git diff --find-renames --numstat <start>` (with `--name-status` for
-    the change type) and `git ls-files --others --exclude-standard`. Files already dirty at the start are left out
-    (spec, Edge Cases).
+    the change type) and `git ls-files --others --exclude-standard`. Files already dirty at the start are left out of
+    the counts (spec, Edge Cases) only while they stay as they were; a later change to one stops the
+    run (R14).
   - **Changed lines** of a file are the larger of its insertions and its deletions as
     `git diff --numstat` reports them, so a modified line counts 1: 30 lines modified in place fit,
     31 do not, and 5 lines replaced by 8 count 8. A deleted file counts its deleted lines. An
@@ -54,7 +55,7 @@ decision, the reason for it, and what was rejected.
     production side alone, as a deleted file (its deleted lines) or an added file (its lines), read
     from a second `git diff --no-renames --numstat -z <start> -- <old> <new>` on just those two paths.
     A rename between two test or doc paths counts nothing. A rename with either side in the start's
-    dirty list is left out, like any dirty path. A rename under 50% similarity is, to git, a deletion
+    dirty list is left out of the counts, like any dirty path, and moving a dirty file changes it (R14). A rename under 50% similarity is, to git, a deletion
     and an addition, and counts as 2 files.
   - **Files touched** are the production files with any change: a rename between production paths
     counts 1, a deletion 1.
@@ -90,7 +91,8 @@ decision, the reason for it, and what was rejected.
 - **Owner decision**: confirmed on 2026-10-09 as max(insertions, deletions) per production file, and
   in a second answer the same day, with git's rename detection: a pure rename 0 lines and 1 file, a
   rename with edits its edited lines and 1 file (plan.md, "Decisions to confirm", 3). The handling of
-  a rename across classes and of a move git does not see is the planner's, not yet confirmed.
+  a rename across classes and of a move git does not see was the planner's, confirmed by the owner on
+  2026-10-09.
 
 ## R4. The protected set
 
@@ -139,7 +141,7 @@ decision, the reason for it, and what was rejected.
   still protects the sources and blocks until they and `package.json` are restored. The cost: in
   this repository the fast track cannot change `package.json` at all (a version bump or a new script
   goes through `/speckit-team`); the README says so. Reading the name from a commit rather than the
-  working tree is the planner's choice, not yet confirmed by the owner.
+  working tree was the planner's choice, confirmed by the owner on 2026-10-09.
 - **Rejected**: a `.specify/protected-paths` file like `.specify/test-paths`: it would let every
   repo add paths, but no agent's lane may write `.specify/`, so this repo's own entries would be a
   task only the user could do, and the spec does not ask for it (YAGNI; a follow-up issue if
@@ -172,7 +174,8 @@ decision, the reason for it, and what was rejected.
 
 - **Decision**: on `SubagentHandback` (PreToolUse), `SubagentStop` and `Stop`, `patch` measures again
   and, in this order:
-  1. Protected files changed since the start (not dirty at the start): block (Stop) or deny
+  1. Protected files changed since the start (not dirty at the start; a dirty one that changed is
+     R14's case, since restoring it to the start commit would destroy the developer's work): block (Stop) or deny
      (handback) naming each file and its restore command, `git checkout <start sha> -- <file>` or
      "delete it" for a new file. It blocks on every attempt until they are restored, including when
      `stop_hook_active` is set (spec Clarifications, FR-007).
@@ -204,7 +207,8 @@ decision, the reason for it, and what was rejected.
 
 ## R8. Start record key and lifetime
 
-- **Decision**: `.git/speckit-team/patch/<key>.json` with `{ sha, dirty, at }`, written at the
+- **Decision**: `.git/speckit-team/patch/<key>.json` with `{ sha, dirty, at }` (`dirty` maps each
+  path dirty at the start to the SHA-256 of its bytes then, R14), written at the
   agent's first tool call. `<key>` is `agent_id`, or `session_id` when the agent runs as the main
   thread (`claude --agent patcher`); it must match `^[\w-]{1,128}$`. The record is never deleted by
   the hook.
@@ -226,7 +230,8 @@ decision, the reason for it, and what was rejected.
 
 - **Decision**: FR-002 (no PR unless the existing tests passed), FR-003 (passed, failed, skipped or
   not run), FR-004 (regression test first for a behaviour change), "commit only your own files" and
-  "never merge" are rules in `agents/patcher.md`. The report's last line (`DONE`, `FAILED`,
+  "never merge" are rules in `agents/patcher.md`. "Commit only your own files" is also backed by a
+  hook for the files that were dirty at the start (R14). The report's last line (`DONE`, `FAILED`,
   `ESCALATE`) is checked by `ends`.
 - **Rationale**: no hook can tell which command is a repo's test suite or whether it passed; this is
   the same split `/speckit-team` has (implementer's `RESULT: GREEN` is its own claim, checked by
@@ -270,3 +275,39 @@ decision, the reason for it, and what was rejected.
   check of the new hook wiring that constitution II requires.
 - **Rationale**: same tool and same table as the existing figures, so they compare. No figure is
   promised in advance (SC-005).
+
+## R14. Files already uncommitted at the start: left alone, or the run stops
+
+- **Decision**: the start record keeps, for each path dirty at the start (differing from `HEAD`, or
+  untracked), the SHA-256 of its bytes then, or `null` if it did not exist. Such a path stays out of
+  the line and file counts as long as it is as it was. Then:
+  - A `Write`, `Edit`, `MultiEdit` or `NotebookEdit` aimed at one is denied before it runs, the
+    reason naming the path as the developer's uncommitted work.
+  - A change by any other means (Bash, a move, a deletion) makes its bytes differ from the recorded
+    hash; and a commit since the start that contains one (`git diff --no-renames --name-only <sha> HEAD`)
+    sweeps it in, even with its bytes unchanged. Either puts the path in `dirtyTouched`, which makes
+    the run **over budget**: every tool but reporting back is denied (R5), nothing is committed, and
+    a commit already made is blocked at the end until `git reset --soft <sha>` (R6 step 2), after
+    which the swept-in work is uncommitted again.
+  - At the end, an uncommitted `dirtyTouched` path is named in the stop message (ESCALATE); the hook
+    asks for no restore, because it holds only a hash, and restoring to the start commit would
+    destroy the developer's work (spec FR-007: dirty files are never touched).
+- **Rationale**: the spec leaves out only the changes that existed before the run (Edge Cases,
+  Assumptions: "left alone", "not swept into its commit"). Leaving a dirty path out of measurement for
+  the whole run let `patcher` make an unmeasured edit of any size to a production file the developer
+  had open, and let "stage your own files by name" sweep that file's work in progress into the
+  commit (FR-005, SC-002). The hook cannot separate the developer's lines from `patcher`'s in one
+  file, so a change it cannot measure counts as over the budget, R9's rule that an unmeasurable budget
+  is no budget. Denying the write up front keeps a `Write` from overwriting the work at all; the hash
+  catches every other route. Comparing bytes, not times, so rewriting identical content is not a
+  change. Constitution VI: the record holds a hash, never the content, and stays in the git directory.
+- **Rejected**: (a) refusing to start with a dirty tree: the spec's edge case runs the fast track with
+  uncommitted changes present, and untracked scratch files are common; (b) denying writes to dirty
+  files only: a Bash edit or `git commit -a` gets past it; (c) a hash only, with no up-front deny: a
+  `Write` would overwrite the developer's work before the hook could stop anything; (d) recording the
+  dirty files' content to measure `patcher`'s part: it copies the developer's work into hook state,
+  and the spec asks for no such split.
+- **Cost and limit**: every `patcher` tool call reads each dirty-at-start file once to hash it; not
+  measured, and a tree with many untracked files that git does not ignore pays most. A single Bash
+  call that edits or commits a dirty file and pushes in the same command runs before any PreToolUse
+  hook sees it, the limit R6 step 2 already has for the budget; the README's Known limits says so.

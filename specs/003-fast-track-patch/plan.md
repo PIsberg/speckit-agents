@@ -14,7 +14,10 @@ and away from guardrails: `scope protected` denies writes to protected paths; a 
 measures the change since the agent's first tool call on every call and, past 30 changed production
 lines (a modified line counts once), 2 production files or any binary production file, denies everything but reporting back, so
 nothing is committed and the work stays in the tree; at the end of the run it blocks finishing while
-a protected file changed by any means is not restored, and shows the measured size. The existing
+a protected file changed by any means is not restored, and shows the measured size. Files the
+developer had already changed when the run starts are left out of the count only while they stay
+as they were: a write to one is denied, and a change or commit of one by any other means stops the
+run like an over-budget change (decision 13). The existing
 `ends` mode checks the report's last word (`DONE`, `FAILED`, `ESCALATE`). An optional
 `/speckit-triage <request>` suggests a track with a reason and runs nothing. Nothing in
 `/speckit-team`, its agents, `settings.json` or the hook's existing modes changes. The feature ships
@@ -51,7 +54,7 @@ changed lines being the larger of its insertions and deletions; fail closed
 when the budget cannot be measured (research R9); no destructive git command in the hook (FR-007);
 silent and inert without `.specify/` (FR-010); hook messages carry paths and counts only (FR-014).
 
-**Scale/Scope**: about 160 lines added to `hooks/speckit-team.mjs`; one agent file of about 60
+**Scale/Scope**: about 180 lines added to `hooks/speckit-team.mjs`; one agent file of about 60
 lines; two skill files of about 40 and 25 lines; 4 lines in `install.mjs`; 1 line in `model.ts`.
 
 ## Constitution Check
@@ -65,8 +68,8 @@ Every MUST rule, with the task that delivers it or the line that shows it does n
 | I. Every behaviour change ships with a test in `test/` under `npm test` | Every implementation task is preceded by its test tasks in the same slice: T001 before T002, T003 before T004, T005 before T006, T007 to T009 before T010, T011 before T012. Doc and media tasks change no behaviour. | T001, T003, T005, T007, T008, T009, T011 | PASS |
 | I. Shown failing before the change, evidence in the PR body | Each test task's report carries its red output; T009 also runs the new e2e cases with the installed hook replaced by `process.exit(0)` (SC-004). T020 collects that evidence into the file the PR body quotes. | T001 to T012, T020 | PASS |
 | I. Tests assert what a caller observes | Hook tests assert decision JSON and the files left on disk; installer tests assert installed files and `--help` output; e2e tests assert what the agent's next request shows and `git` state. No test imports a hook function. | T001, T003, T005, T007, T009, T011 | PASS |
-| I. No test that passes because the code never ran | T009's `process.exit(0)` run; T003 and T005 include over-budget and protected cases that must decide, not only allow. | T003, T005, T009 | PASS |
-| II. Every hook entry point handles empty, malformed and unknown input; each path tested | `scope protected` and `patch` are added to the `MODES` list of the malformed-input, wrong-event and outside-Spec-Kit tests; `patch` gets tests for a missing key, a corrupt start record, an unknown start commit, an invalid `.specify/test-paths` and a repo with no commit; `scope protected` gets a missing, malformed and wrong-name root `package.json` and a repo with no commit (the speckit-agents check, decision 4). | T001, T003, T005 | PASS |
+| I. No test that passes because the code never ran | T009's `process.exit(0)` run; T003 and T005 include over-budget, protected and dirty-at-start cases that must decide, not only allow (a further edit to a file dirty at the start is denied through `Write`/`Edit` and stops the run through Bash, which the earlier plan let through). | T003, T005, T009 | PASS |
+| II. Every hook entry point handles empty, malformed and unknown input; each path tested | `scope protected` and `patch` are added to the `MODES` list of the malformed-input, wrong-event and outside-Spec-Kit tests; `patch` gets tests for a missing key, a corrupt start record, a start record whose `dirty` is an array or holds a value that is not a hash, an unknown start commit, an invalid `.specify/test-paths` and a repo with no commit; `scope protected` gets a missing, malformed and wrong-name root `package.json` and a repo with no commit (the speckit-agents check, decision 4). | T001, T003, T005 | PASS |
 | II. A wiring change is verified in a live session before merge, the PR says what was observed | `patcher`'s frontmatter is new hook wiring: live checks L1 to L7 (quickstart.md), recorded in README "Live results" and in T020's evidence. | T018, T020 | PASS |
 | II. Installed hook commands use a quoted, absolute, forward-slash path | `patcher.md` uses `node "{{HOOK}}" ...` like the other agents; T007 asserts the installed commands carry the quoted absolute path. | T007, T010 | PASS |
 | III. Observers never block; observer overhead budget | Not applicable: the feature adds no observer. Its hooks are guardrails that decide by design. The board mod change is one color constant with no behaviour. | none | N/A |
@@ -74,7 +77,7 @@ Every MUST rule, with the task that delivers it or the line that shows it does n
 | IV. A new runtime dependency needs an amendment | None added. | none | N/A |
 | V. Public contracts listed and versioned; additive within a major version | New public surface: `/speckit-patch`, `/speckit-triage`, agent `patcher`, three installed files, the `patch` mode and `scope protected` rule. All additive; nothing renamed or removed. Documented in contracts/ and the README. No emitted event is added, so no schema version applies. | T013, T014 | PASS |
 | V. Consumers may ignore unknown fields; docs say so | Not applicable: no event format changes. | none | N/A |
-| VI. Event data stays local; no prompt text, file contents, command output | State stays in `.git/speckit-team/patch/`. Hook messages carry paths, counts and a commit id; T003 and T005 assert that the content written in the test never appears in any hook output (FR-014). | T003, T005 | PASS |
+| VI. Event data stays local; no prompt text, file contents, command output | State stays in `.git/speckit-team/patch/`; the start record holds a SHA-256 per dirty file, never its content (research R14). Hook messages carry paths, counts and a commit id; T003 and T005 assert that the content written in the test never appears in any hook output (FR-014). | T003, T005 | PASS |
 | VII. Works on Windows, macOS and Linux; forward-slash paths | Paths come from `git` and the existing `canonical()`/`real()`; the protected table is case-insensitive for Windows and macOS file systems; T001 covers an upper-case spelling. CI runs every new test on all three. The live checks run on Windows only, and the README says so. | T001, T018 | PASS |
 | VIII. README, CLAUDE.md and the installer's help text describe it; counts, paths and commands match | README in T013, T014, T017, T018, T019; CLAUDE.md in T015 and T019; installer help and final message in T010 and T012, asserted by T007 and T011. Every doc hit found by search is listed under "Documentation plan" below with its task. | T010, T012 to T019 | PASS |
 | VIII. Docs state what was verified live, by unit test only, and not at all | T014 writes that line into "The fast track" section; T018 adds the dated live entry and moves anything not exercised into the "Not yet exercised live" note. | T014, T018 | PASS |
@@ -95,13 +98,14 @@ interactive session is settled only by the live check (T018).
 
 ## Decisions to confirm
 
-All twelve confirmed by the owner on 2026-10-09: 3 and 4 as changed by the owner, the rest as first
-written. The owner's second answer the same day settled the two points left open: renames are
+Decisions 1 to 12 confirmed by the owner on 2026-10-09: 3 and 4 as changed by the owner, the rest as
+first written. The owner's second answer the same day settled the two points left open: renames are
 measured with git's rename detection (decision 3), and the repository is recognised by the name in
-the top-level `package.json`, which joins the protected sources (decision 4). Two choices inside
-those answers are the planner's and not yet seen by the owner, each marked "planner's choice" below:
-the name is read from a commit rather than the working tree (4), and how a rename across path classes
-and a move git does not see as a rename are counted (3).
+the top-level `package.json`, which joins the protected sources (decision 4). The three choices the
+planner made inside those answers were confirmed by the owner on 2026-10-09 as well: the name is
+read from a commit rather than the working tree (4), how a rename across path classes is counted (3),
+and the `git mv` rule for a move git does not see as a rename (3). Decision 13 was added after the
+spec audit and is open.
 
 1. **Names** (public contract): `/speckit-patch`, `/speckit-triage`, agent `patcher`, report words
    `DONE`, `FAILED`, `ESCALATE`. Confirmed 2026-10-09.
@@ -113,8 +117,8 @@ and a move git does not see as a rename are counted (3).
    2026-10-09, changed from insertions plus deletions. **Renames** (owner-confirmed 2026-10-09, second
    answer): measured with git's rename detection (`git diff --find-renames`), so a pure rename counts
    0 lines and 1 file touched, and a rename with edits counts only its edited lines (the larger of
-   insertions and deletions) and 1 file. **Planner's choice, for you to confirm** (research R3): a
-   rename is counted that way only when both paths are production; a test or doc moved into
+   insertions and deletions) and 1 file. **Planner's choice, confirmed by the owner on 2026-10-09**
+   (research R3): a rename is counted that way only when both paths are production; a test or doc moved into
    production code (or out of it) counts as without rename detection, the production side as an
    added or deleted file, so moving a test into `src/` is not a free file. A pure rename of a binary
    production file is a file touched, not a modified binary. Git pairs only paths it tracks: a file
@@ -132,8 +136,8 @@ and a move git does not see as a rename are counted (3).
    name only in a subfolder's `package.json` means an ordinary repo. **`package.json` joins
    `OWN_SOURCES`** (owner-confirmed 2026-10-09, second answer): in this repository the fast track
    cannot change it, so an agent cannot lift the source protection by editing the name; in an
-   ordinary repo it is an ordinary production file. **Planner's choice, for you to confirm**: the
-   name is read from a commit, not the working tree (`git cat-file blob <rev>:package.json`): the end
+   ordinary repo it is an ordinary production file. **Planner's choice, confirmed by the owner on
+   2026-10-09**: the name is read from a commit, not the working tree (`git cat-file blob <rev>:package.json`): the end
    check reads the run's start commit, `scope protected` reads `HEAD`. A `Write` or `Edit` to
    `package.json` is denied here; a shell edit of the name, committed or not, cannot change the start
    commit, so the end check still treats the repo as this one and blocks until `package.json` (and
@@ -162,6 +166,15 @@ and a move git does not see as a rename are counted (3).
     `claude`; if the implementer cannot run them, T017 is yours). No new GIF of the fast track. Confirmed 2026-10-09.
 12. **Live runs cost real tokens**: T018 makes about seven short `claude -p` runs on your account;
     the cost is recorded, not estimated. Confirmed 2026-10-09.
+13. **Files already uncommitted at the start** (research R14; spec Edge Cases and Assumptions, FR-005,
+    SC-002). The start record keeps a SHA-256 of each such file. A `Write` or `Edit` to one is denied
+    before it runs; a change by any other means, or a commit that contains one, puts the run over the
+    budget: nothing is committed, a commit already made is blocked at the end until
+    `git reset --soft`, and the stop message names the file. The hook never restores it. While the
+    file is as it was, it costs nothing. Rejected: refusing to start with a dirty tree (the spec runs
+    with uncommitted changes present), and a write deny alone (a Bash edit or `git commit -a` gets
+    past it). Cost: each `patcher` tool call hashes every dirty-at-start file; not measured. **Planner's
+    choice after the spec audit (finding H1), confirmed by the owner on 2026-10-09.**
 
 ## Documentation plan
 
@@ -211,7 +224,7 @@ and their GIFs and `board.png` (none shows something this feature changes, resea
 specs/003-fast-track-patch/
 ├── spec.md              # approved (b215aef)
 ├── plan.md              # this file
-├── research.md          # R1 to R13
+├── research.md          # R1 to R14
 ├── data-model.md        # budget, path classes, start record, measurement, outcomes
 ├── quickstart.md        # usage and live checks L1 to L7
 ├── contracts/
@@ -225,7 +238,7 @@ specs/003-fast-track-patch/
 
 ```text
 hooks/speckit-team.mjs                 # + PROTECTED, OWN_SOURCES, isOwnRepo, isProtected, TEAM_DIR, isTeamFile, scope rule `protected`;
-                                       #   + PATCH_LINES, PATCH_FILES, DOC_PATTERNS, isDoc, patchFile, measure, mode `patch`
+                                       #   + PATCH_LINES, PATCH_FILES, DOC_PATTERNS, isDoc, patchFile, repoRel, stateOf, measure, mode `patch`
 agents/patcher.md                      # new agent
 skills/speckit-patch/SKILL.md          # new skill: /speckit-patch
 skills/speckit-triage/SKILL.md         # new skill: /speckit-triage
