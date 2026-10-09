@@ -240,6 +240,30 @@ function recordRed({ repo, hook }, id) {
   });
 }
 
+// The skill launches every agent with run_in_background: false and takes the report as the Agent
+// tool's result. These two pin the Claude Code behaviour that rule depends on (#64): -p has fork
+// subagents off, an interactive session has them on, and CLAUDE_CODE_FORK_SUBAGENT sets either.
+const agentSchema = (req) => req?.tools?.find((t) => t.name === 'Agent')?.input_schema?.properties ?? {};
+const launch = (r) => r.events.find((e) => e.type === 'system' && e.subtype === 'task_started');
+
+test('Agent with run_in_background: false runs the agent in the foreground and returns its report', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [say('No findings.\nVERDICT: PASS')] });
+  assert.equal(agentSchema(r.requests[MAIN][0]).run_in_background?.type, 'boolean', story(r));
+  assert.equal(launch(r)?.is_backgrounded, false, story(r));
+  assert.match(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
+});
+
+test('with fork subagents on, as in an interactive session, the Agent tool has no foreground option', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [say('No findings.\nVERDICT: PASS')] },
+    { env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
+  assert.equal(agentSchema(r.requests[MAIN][0]).run_in_background, undefined, story(r));
+  // run_in_background: false was sent all the same, and ignored.
+  assert.equal(launch(r)?.is_backgrounded, true, story(r));
+  assert.doesNotMatch(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
+});
+
 test("architect's and product-owner's scope hooks deny a Write outside their lanes", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   const write = (rel) => call('Write', { file_path: path.join(s.repo, ...rel.split('/')), content: 'export const greet = () => 1;\n' });

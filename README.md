@@ -510,6 +510,20 @@ than 15; and the skill had also gained [#37](https://github.com/PIsberg/speckit-
 and [#38](https://github.com/PIsberg/speckit-agents/issues/38). The waiting requests explain 0.95M
 of the main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
 
+An interactive session needs one setting for this. Claude Code 2.1.296 turns on fork subagents by
+default in an interactive session (not under `claude -p`, where the runs above were made), and
+with them on its Agent tool has no `run_in_background` parameter at all: every agent runs in the
+background, whatever the skill passes. `CLAUDE_CODE_FORK_SUBAGENT=0`, in the shell or under `env`
+in `~/.claude/settings.json`, turns them off, and the foreground launch comes back; it also takes
+away Claude Code's own `fork` agent type. The skill checks its Agent tool at the start of a run and
+tells you once if the parameter is missing. This surfaced while recording the README's GIFs
+([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked on 2026-10-09 against a fake
+API, at no cost: in an interactive session an Agent call with `run_in_background: false` ran in
+the background with the variable unset, and in the foreground with it set to `0` or `false`, in
+the environment or in `settings.json`. Two tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
+the same behaviour under `claude -p`. How much the background launches cost in a full interactive
+run is not measured ([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
+
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
 waits for you anyway. When you choose side by side, agents for `[P]` slices are launched together
@@ -648,9 +662,9 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 | `/speckit-board band` | hides or shows the band |
 | `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well and the model reads |
 
-The command runs at once, also during a turn: `/speckit-team` runs its agents in the foreground, so
-a whole pipeline is one turn, and a command that waited for the turn opened the board only once
-the run was over.
+The command runs at once, also during a turn: with its agents in the foreground
+([Foreground launches](#foreground-launches)), `/speckit-team` runs a whole pipeline in one turn,
+and a command that waited for the turn opened the board only once the run was over.
 
 ### Where it reads its state
 
@@ -796,7 +810,7 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 92 tests:
+`npm test` runs 94 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -804,7 +818,7 @@ Claude Code stopped at first-run login), and any session on macOS
 | [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 14 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -842,6 +856,10 @@ need no login and cost nothing.
   `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
   fire lets the action through. With the installed hook replaced by one that only exits, all 11
   fail, as do the two blocking cases above (2026-10-09, Claude Code 2.1.296).
+- **Claude Code's own behaviour.** Two tests pin what the skill's foreground rule relies on: an
+  Agent call with `run_in_background: false` runs in the foreground and returns the report, and
+  with `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
+  agent runs in the background ([Foreground launches](#foreground-launches)).
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -971,6 +989,13 @@ message. A hook that matches every tool (`.*`) also matches that one: before 202
 denied it, so a gated agent retried its report until it gave up, and spec-auditor's verdict, read
 from the last message, was never found. The gate now lets `SubagentHandback` through and the
 verdict is read from its `message`. Any new catch-all hook must do the same.
+
+### Agents run in the background although the skill asks for the foreground
+
+In an interactive session, Claude Code 2.1.296 has fork subagents on, and then its Agent tool has
+no `run_in_background` parameter: every agent runs in the background, which costs a waiting
+request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0` and restart (see
+[Foreground launches](#foreground-launches)). The skill says so at the start of a run.
 
 ### `/speckit-implement` is not gated
 
