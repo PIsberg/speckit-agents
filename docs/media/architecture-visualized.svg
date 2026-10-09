@@ -1,0 +1,270 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 860" width="100%" height="100%" style="background:#0b0f19; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgL4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="bgL3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="bgL2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </linearGradient>
+    <linearGradient id="bgL1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#18181b"/>
+      <stop offset="100%" stop-color="#27272a"/>
+    </linearGradient>
+
+    <!-- Drop Shadow -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arr-down" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8"/>
+    </marker>
+    <marker id="arr-red" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#f87171"/>
+    </marker>
+  </defs>
+
+  <!-- Title Banner -->
+  <text x="550" y="38" text-anchor="middle" font-size="22" font-weight="700" fill="#f8fafc" letter-spacing="1">SPECKIT-AGENTS ARCHITECTURE</text>
+  <text x="550" y="58" text-anchor="middle" font-size="12" fill="#94a3b8">Multi-tier execution pipeline: Artifacts, Spec Kit Flow, Subagents &amp; CLI Interface</text>
+
+  <!-- ========================================================================================= -->
+  <!-- LAYER 4: TOP COMMANDS -->
+  <!-- ========================================================================================= -->
+  <g transform="translate(40, 75)" filter="url(#shadow)">
+    <!-- Container -->
+    <rect width="1020" height="120" rx="10" fill="#131127" stroke="#6366f1" stroke-width="1.5"/>
+    <rect width="200" height="24" rx="4" x="16" y="-12" fill="#6366f1"/>
+    <text x="116" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" letter-spacing="0.5">LAYER 4: USER &amp; CLI COMMANDS</text>
+
+    <!-- Command 1: speckit-team -->
+    <rect x="25" y="24" width="465" height="78" rx="8" fill="url(#bgL4)" stroke="#818cf8" stroke-width="1"/>
+    <text x="45" y="48" font-size="15" font-weight="700" fill="#a5b4fc" font-family="monospace">/speckit-team &lt;feature description&gt;</text>
+    <text x="45" y="68" font-size="11" fill="#cbd5e1">• Main-session pipeline orchestrator (foreground subagent calls)</text>
+    <text x="45" y="84" font-size="11" fill="#cbd5e1">• Stop gates: User clarifications, spec sign-off, plan &amp; slice choices</text>
+
+    <!-- Command 2: speckit-board -->
+    <rect x="530" y="24" width="465" height="78" rx="8" fill="url(#bgL4)" stroke="#818cf8" stroke-width="1"/>
+    <text x="550" y="48" font-size="15" font-weight="700" fill="#a5b4fc" font-family="monospace">/speckit-board</text>
+    <text x="550" y="68" font-size="11" fill="#cbd5e1">• Statusline mod &amp; rich interactive terminal pane</text>
+    <text x="550" y="84" font-size="11" fill="#cbd5e1">• Phase track (✓ ◐ ○ ✗ ↻), subagent timers, RED n/3 retry meter</text>
+  </g>
+
+  <!-- Connector L4 -> L3 -->
+  <path d="M 550 195 L 550 225" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr-down)"/>
+
+  <!-- ========================================================================================= -->
+  <!-- LAYER 3: AGENTS -->
+  <!-- ========================================================================================= -->
+  <g transform="translate(40, 235)" filter="url(#shadow)">
+    <!-- Container -->
+    <rect width="1020" height="150" rx="10" fill="#090d16" stroke="#38bdf8" stroke-width="1.5"/>
+    <rect width="210" height="24" rx="4" x="16" y="-12" fill="#0284c7"/>
+    <text x="121" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" letter-spacing="0.5">LAYER 3: SPECKIT-AGENTS TEAM</text>
+
+    <!-- Subagents (6 items) -->
+    <!-- product-owner -->
+    <g transform="translate(20, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#475569" stroke-width="1"/>
+      <rect width="150" height="22" rx="6" fill="#3b82f6"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">product-owner</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#93c5fd">Sonnet</text>
+      <text x="10" y="58" font-size="9.5" fill="#94a3b8">Lane: specs/, feature.json</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• Clarifies feature idea</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• Surfaces Q&amp;A to user</text>
+      <text x="10" y="102" font-size="9" fill="#cbd5e1">• Outputs spec.md</text>
+    </g>
+
+    <!-- architect -->
+    <g transform="translate(186, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#475569" stroke-width="1"/>
+      <rect width="150" height="22" rx="6" fill="#6366f1"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">architect</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#c7d2fe">Opus</text>
+      <text x="10" y="58" font-size="9.5" fill="#94a3b8">Lane: specs/, CLAUDE.md</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• Minimal design specs</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• Constitution check</text>
+      <text x="10" y="102" font-size="9" fill="#cbd5e1">• Outputs plan &amp; tasks</text>
+    </g>
+
+    <!-- spec-auditor -->
+    <g transform="translate(352, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#ef4444" stroke-width="1.2"/>
+      <rect width="150" height="22" rx="6" fill="#dc2626"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">spec-auditor</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#fca5a5">Opus</text>
+      <text x="10" y="58" font-size="9.5" fill="#f87171">Lane: READ-ONLY (No Write)</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• Independent gatekeeper</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• Checks constitution</text>
+      <text x="10" y="102" font-size="9" font-weight="700" fill="#fca5a5">• VERDICT: PASS / FAIL</text>
+    </g>
+
+    <!-- test-writer -->
+    <g transform="translate(518, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#475569" stroke-width="1"/>
+      <rect width="150" height="22" rx="6" fill="#0284c7"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">test-writer</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#93c5fd">Sonnet</text>
+      <text x="10" y="58" font-size="9.5" fill="#94a3b8">Lane: test files only</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• TDD Red phase</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• Must fail on assert</text>
+      <text x="10" y="102" font-size="9" fill="#cbd5e1">• Report: RED / BLOCKED</text>
+    </g>
+
+    <!-- implementer -->
+    <g transform="translate(684, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#475569" stroke-width="1"/>
+      <rect width="150" height="22" rx="6" fill="#0d9488"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">implementer</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#99f6e4">Sonnet</text>
+      <text x="10" y="58" font-size="9.5" fill="#94a3b8">Lane: src/ (no test files)</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• Stubs (RESULT: STUB)</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• TDD Green: code logic</text>
+      <text x="10" y="102" font-size="9" fill="#cbd5e1">• Max 3x RED retry limit</text>
+    </g>
+
+    <!-- spec-gatekeeper -->
+    <g transform="translate(850, 22)">
+      <rect width="150" height="110" rx="6" fill="url(#bgL3)" stroke="#10b981" stroke-width="1.2"/>
+      <rect width="150" height="22" rx="6" fill="#059669"/>
+      <text x="75" y="15" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff">spec-gatekeeper</text>
+      <text x="75" y="38" text-anchor="middle" font-size="10" font-weight="600" fill="#a7f3d0">Sonnet</text>
+      <text x="10" y="58" font-size="9.5" fill="#6ee7b7">Lane: READ-ONLY (No Write)</text>
+      <text x="10" y="74" font-size="9" fill="#cbd5e1">• Final verification</text>
+      <text x="10" y="88" font-size="9" fill="#cbd5e1">• Maps tests to spec</text>
+      <text x="10" y="102" font-size="9" font-weight="700" fill="#a7f3d0">• APPROVED / REJECTED</text>
+    </g>
+  </g>
+
+  <!-- Connector L3 -> L2 -->
+  <path d="M 550 385 L 550 420" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr-down)"/>
+
+  <!-- ========================================================================================= -->
+  <!-- LAYER 2: SPECKIT-FLOW -->
+  <!-- ========================================================================================= -->
+  <g transform="translate(40, 430)" filter="url(#shadow)">
+    <!-- Container -->
+    <rect width="1020" height="175" rx="10" fill="#041f17" stroke="#10b981" stroke-width="1.5"/>
+    <rect width="260" height="24" rx="4" x="16" y="-12" fill="#059669"/>
+    <text x="146" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" letter-spacing="0.5">LAYER 2: SPECKIT-FLOW &amp; GATES</text>
+
+    <!-- Phases -->
+    <!-- 1. Specify -->
+    <rect x="25" y="35" width="130" height="60" rx="6" fill="url(#bgL2)" stroke="#34d399" stroke-width="1"/>
+    <text x="90" y="60" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">1. SPECIFY</text>
+    <text x="90" y="78" text-anchor="middle" font-size="10" fill="#a7f3d0">Clarifications &amp; Scope</text>
+
+    <!-- Arrow -->
+    <path d="M 155 65 L 185 65" stroke="#34d399" stroke-width="2" marker-end="url(#arr-down)"/>
+
+    <!-- 2. Plan & Tasks -->
+    <rect x="190" y="35" width="135" height="60" rx="6" fill="url(#bgL2)" stroke="#34d399" stroke-width="1"/>
+    <text x="257" y="60" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">2. PLAN &amp; TASKS</text>
+    <text x="257" y="78" text-anchor="middle" font-size="10" fill="#a7f3d0">Slices &amp; Contracts</text>
+
+    <!-- Arrow -->
+    <path d="M 325 65 L 355 65" stroke="#34d399" stroke-width="2" marker-end="url(#arr-down)"/>
+
+    <!-- 3. Audit Gate -->
+    <rect x="360" y="30" width="135" height="70" rx="6" fill="#450a0a" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="427" y="55" text-anchor="middle" font-size="12" font-weight="700" fill="#fca5a5">3. AUDIT GATE</text>
+    <text x="427" y="72" text-anchor="middle" font-size="9.5" fill="#fecaca">Fingerprint SHA-256</text>
+    <text x="427" y="86" text-anchor="middle" font-size="9.5" font-weight="700" fill="#ef4444">PASS / FAIL</text>
+
+    <!-- Arrow PASS -->
+    <path d="M 495 65 L 530 65" stroke="#34d399" stroke-width="2" marker-end="url(#arr-down)"/>
+    <text x="512" y="58" text-anchor="middle" font-size="9.5" font-weight="700" fill="#34d399">PASS</text>
+
+    <!-- 4. Slice: Red -->
+    <rect x="535" y="35" width="130" height="60" rx="6" fill="url(#bgL2)" stroke="#34d399" stroke-width="1"/>
+    <text x="600" y="60" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">4. TDD RED</text>
+    <text x="600" y="78" text-anchor="middle" font-size="10" fill="#a7f3d0">Failing Assertions</text>
+
+    <!-- Arrow Red -> Green -->
+    <path d="M 665 65 L 695 65" stroke="#34d399" stroke-width="2" marker-end="url(#arr-down)"/>
+
+    <!-- 5. Slice: Green -->
+    <rect x="700" y="35" width="130" height="60" rx="6" fill="url(#bgL2)" stroke="#34d399" stroke-width="1"/>
+    <text x="765" y="60" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">5. TDD GREEN</text>
+    <text x="765" y="78" text-anchor="middle" font-size="10" fill="#a7f3d0">Passing Test Suite</text>
+
+    <!-- Arrow Green -> Verify -->
+    <path d="M 830 65 L 860 65" stroke="#34d399" stroke-width="2" marker-end="url(#arr-down)"/>
+
+    <!-- 6. Gatekeeper -->
+    <rect x="865" y="30" width="130" height="70" rx="6" fill="#064e3b" stroke="#10b981" stroke-width="1.5"/>
+    <text x="930" y="55" text-anchor="middle" font-size="12" font-weight="700" fill="#6ee7b7">6. VERIFY</text>
+    <text x="930" y="72" text-anchor="middle" font-size="9.5" fill="#a7f3d0">Gatekeeper Check</text>
+    <text x="930" y="86" text-anchor="middle" font-size="9.5" font-weight="700" fill="#34d399">APPROVED ➔ PR</text>
+
+    <!-- Circuit breaker paths -->
+    <!-- FAIL back to Plan -->
+    <path d="M 427 100 L 427 135 L 257 135 L 257 95" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="3 3" marker-end="url(#arr-red)"/>
+    <text x="340" y="130" text-anchor="middle" font-size="9.5" font-weight="600" fill="#f87171">Audit FAIL: Kick back to Architect</text>
+
+    <!-- 3x RED back to Plan -->
+    <path d="M 765 95 L 765 155 L 257 155 L 257 135" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="560" y="150" text-anchor="middle" font-size="9.5" font-weight="600" fill="#f87171">Circuit Breaker: 3x REDs in a row halts Implementer ➔ routes back to Architect</text>
+  </g>
+
+  <!-- Connector L2 -> L1 -->
+  <path d="M 550 605 L 550 640" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr-down)"/>
+
+  <!-- ========================================================================================= -->
+  <!-- LAYER 1: DELIVERABLES & ARTIFACTS (BOTTOM) -->
+  <!-- ========================================================================================= -->
+  <g transform="translate(40, 650)" filter="url(#shadow)">
+    <!-- Container -->
+    <rect width="1020" height="150" rx="10" fill="#111317" stroke="#64748b" stroke-width="1.5"/>
+    <rect width="250" height="24" rx="4" x="16" y="-12" fill="#475569"/>
+    <text x="141" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" letter-spacing="0.5">LAYER 1: DELIVERABLES &amp; ARTIFACTS</text>
+
+    <!-- spec.md -->
+    <g transform="translate(25, 25)">
+      <rect width="225" height="100" rx="6" fill="url(#bgL1)" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="M 20 18 L 32 18 L 38 24 L 38 42 L 20 42 Z" fill="none" stroke="#38bdf8" stroke-width="1.5"/>
+      <text x="45" y="32" font-size="14" font-weight="700" fill="#38bdf8" font-family="monospace">spec.md</text>
+      <text x="15" y="60" font-size="10.5" fill="#cbd5e1">• User requirements &amp; stories</text>
+      <text x="15" y="76" font-size="10.5" fill="#cbd5e1">• Clarification Q&amp;A sessions</text>
+      <text x="15" y="92" font-size="10.5" fill="#94a3b8">• Hashed in audit fingerprint</text>
+    </g>
+
+    <!-- plan.md -->
+    <g transform="translate(275, 25)">
+      <rect width="225" height="100" rx="6" fill="url(#bgL1)" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="M 20 18 L 32 18 L 38 24 L 38 42 L 20 42 Z" fill="none" stroke="#818cf8" stroke-width="1.5"/>
+      <text x="45" y="32" font-size="14" font-weight="700" fill="#818cf8" font-family="monospace">plan.md</text>
+      <text x="15" y="60" font-size="10.5" fill="#cbd5e1">• System contracts &amp; data model</text>
+      <text x="15" y="76" font-size="10.5" fill="#cbd5e1">• Minimal design architecture</text>
+      <text x="15" y="92" font-size="10.5" fill="#94a3b8">• Constitution rule checks</text>
+    </g>
+
+    <!-- tasks.md -->
+    <g transform="translate(525, 25)">
+      <rect width="225" height="100" rx="6" fill="url(#bgL1)" stroke="#cbd5e1" stroke-width="1"/>
+      <path d="M 20 18 L 32 18 L 38 24 L 38 42 L 20 42 Z" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="45" y="32" font-size="14" font-weight="700" fill="#a78bfa" font-family="monospace">tasks.md</text>
+      <text x="15" y="60" font-size="10.5" fill="#cbd5e1">• Sliced implementation tasks</text>
+      <text x="15" y="76" font-size="10.5" fill="#cbd5e1">• Disjoint parallel [P] slices</text>
+      <text x="15" y="92" font-size="10.5" fill="#94a3b8">• Checkboxes normalized in hash</text>
+    </g>
+
+    <!-- code deliverable -->
+    <g transform="translate(775, 25)">
+      <rect width="220" height="100" rx="6" fill="url(#bgL1)" stroke="#34d399" stroke-width="1.2"/>
+      <path d="M 20 18 L 32 18 L 38 24 L 38 42 L 20 42 Z" fill="none" stroke="#34d399" stroke-width="1.5"/>
+      <text x="45" y="32" font-size="14" font-weight="700" fill="#34d399">Code Deliverable</text>
+      <text x="15" y="60" font-size="10.5" fill="#cbd5e1">• Signatures / stubs</text>
+      <text x="15" y="76" font-size="10.5" fill="#cbd5e1">• Unit tests (TDD red)</text>
+      <text x="15" y="92" font-size="10.5" fill="#34d399">• Production code &amp; GitHub PR</text>
+    </g>
+  </g>
+</svg>

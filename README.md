@@ -367,6 +367,8 @@ Each one says when to use the agent and what it will not do, so routing does not
 
 ## Why This Architecture Succeeds
 
+![The four layers: /speckit-team and /speckit-board on top, the six agents with their models and lanes, the six pipeline stages with the audit and retry kick-backs, and the artifacts each stage produces](docs/media/architecture-visualized.svg)
+
 **Prevents "Garbage In, Garbage Out":** Most agent pipelines fail because the initial spec is
 vague, and the coding agent fills in the blanks with hallucinations. Your product-owner forcing a
 human-in-the-loop Q&A step before architecture ensures the foundation is solid.
