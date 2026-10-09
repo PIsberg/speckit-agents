@@ -37,6 +37,31 @@ test('the hook records the fingerprint the board mod pins', () => {
   assert.equal(recorded.fingerprint, PINNED);
 });
 
+// The board draws each team member's name in the color Claude Code draws that agent in, the
+// `color:` line of its agent file. The mod cannot read the installed agent files, so ROLE_COLOR in
+// mods/speckit-board/hooks/model.ts copies them; this holds the copy to agents/*.md.
+test('the board mod draws each role in the color of its agent file', () => {
+  const model = fs.readFileSync(path.join(MOD, 'hooks', 'model.ts'), 'utf8');
+  const map = /export const ROLE_COLOR[^=]*=\s*\{([^}]*)\}/.exec(model);
+  assert.ok(map, 'ROLE_COLOR not found in mods/speckit-board/hooks/model.ts');
+  const board = Object.fromEntries([...map[1].matchAll(/'?([\w-]+)'?\s*:\s*'(\w+)'/g)].map((m) => [m[1], m[2]]));
+  const agents = Object.fromEntries(fs.readdirSync(path.join(ROOT, 'agents')).filter((f) => f.endsWith('.md')).map((f) => {
+    const text = fs.readFileSync(path.join(ROOT, 'agents', f), 'utf8');
+    return [/^name:\s*(\S+)/m.exec(text)?.[1], /^color:\s*(\S+)/m.exec(text)?.[1]];
+  }));
+  assert.equal(Object.keys(agents).length, 6);
+  assert.deepEqual(board, agents);
+});
+
+// The board draws the retry meter and the build's `retry limit` from its own MAX_RED; with the hook's
+// changed alone, it would show the limit reached where the gate still lets implementer run, or not.
+test('the board mod counts REDs to the hook\'s retry limit', () => {
+  const limit = (file, re) => Number(re.exec(fs.readFileSync(file, 'utf8'))?.[1]);
+  const hook = limit(HOOK, /^const MAX_RED = (\d+);/m);
+  assert.ok(hook > 0, 'MAX_RED not found in hooks/speckit-team.mjs');
+  assert.equal(limit(path.join(MOD, 'hooks', 'model.ts'), /^export const MAX_RED = (\d+)$/m), hook);
+});
+
 // Spawned without a shell, so a checkout path with spaces stays one argument. An npm-installed
 // claude.cmd cannot be spawned that way: the tests then report skipped, not passed. CI sets
 // SPECKIT_REQUIRE_CLAUDE=1, so there a missing claude fails them instead.

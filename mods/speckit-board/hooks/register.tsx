@@ -1,18 +1,22 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { SpeckitAgent, SpeckitBoard, SpeckitPhase } from '../types'
+import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState } from '../types'
 import {
-  COLOR, GLYPH, MAX_RED, MISSING, SPINNER, bar, current, derivePhases, featureDir, fingerprint,
-  fingerprintFiles, outcomeOf, parseTasks, redCount, since, teamRole,
+  COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, bandLayout, bar, boardText, current,
+  derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
+  roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
 } from './model'
 
 const PANE = 'speckit-board'
 const POLL_MS = 4000
+// The pane's team rows: running agents, then the latest to finish. The state keeps 12.
+const TEAM_ROWS = 6
 
 const board = atom({ plugin: 'speckit-board', key: 'board' } as const, null)
 const agents = atom({ plugin: 'speckit-board', key: 'agents' } as const, [])
 const isBandHidden = atom({ plugin: 'speckit-board', key: 'isBandHidden' } as const, false)
+const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
 
 type Repo = { root: string; stateDir: string }
 
@@ -46,6 +50,18 @@ async function activeFeature($: EngineInterface, root: string): Promise<string> 
   return featureDir(meta && typeof meta === 'object' ? (meta as { feature_directory?: unknown }).feature_directory : undefined, root)
 }
 
+// The plugin store is the user's, shared by every repo. Kept under the feature's path alone, a word
+// given in one repo showed in every other with a feature of that name, and with no time a later audit
+// could not void it. So it is kept as the hook keeps its own: per repo, with when it was given.
+const gateKey = (at: Repo, feature: string) => `gate:${JSON.stringify([at.stateDir, feature])}`
+
+// The gatekeeper's word from the hook's `ends` record or the store, with its time when it has one.
+function gateWord(record: unknown): { word: string; at: string | undefined } | undefined {
+  if (!record || typeof record !== 'object') return undefined
+  const { word, at } = record as { word?: unknown; at?: unknown }
+  return word === 'APPROVED' || word === 'REJECTED' ? { word, at: typeof at === 'string' ? at : undefined } : undefined
+}
+
 async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | null> {
   const feature = await activeFeature($, at.root)
   if (!feature) return null
@@ -64,17 +80,15 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   const isRetryUnreadable = retries === null
   // The word the hook's `ends` check recorded, so verify updates whether or not this mod saw the
   // gatekeeper stop; the store holds what it saw, for a hook from before that record existed.
-  const ends = await readJson($, `${at.stateDir}/ends/${name}.json`) as { word?: unknown, at?: unknown } | null | undefined
-  const recorded = ends && (ends.word === 'APPROVED' || ends.word === 'REJECTED') ? ends : undefined
-  const gate = recorded ? recorded.word : await $.store.get(`gate:${feature}`)
-  const gateAt = recorded && typeof recorded.at === 'string' ? recorded.at : undefined
+  const gate = gateWord(await readJson($, `${at.stateDir}/ends/${name}.json`))
+    ?? gateWord(await $.store.get(gateKey(at, feature)).catch(() => undefined))
   const running = (await read($, agents)).filter(a => a.isRunning).map(a => a.type)
 
   return {
     feature: name,
     phases: derivePhases({
       spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
-      gate: typeof gate === 'string' ? gate : undefined, gateAt, running,
+      gate: gate?.word, gateAt: gate?.at, running,
     }),
     tasks: tasks ?? [],
     red,
@@ -85,7 +99,12 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
 }
 
 function announce($: EngineInterface, before: SpeckitBoard | null, after: SpeckitBoard) {
-  if (!before || before.feature !== after.feature) return
+  if (!before) return
+  // The board follows .specify/feature.json, which a new feature's spec rewrites.
+  if (before.feature !== after.feature) {
+    $.ui.toast(`${after.feature} is the active feature now`)
+    return
+  }
   const was = (id: SpeckitPhase['id']) => before.phases.find(p => p.id === id)
   for (const p of after.phases) {
     const old = was(p.id)
@@ -101,14 +120,6 @@ function announce($: EngineInterface, before: SpeckitBoard | null, after: Specki
     if (p.id === 'build' && p.state === 'done') $.ui.toast(`All ${after.tasks.length} tasks done`)
     if (p.id === 'verify' && p.state === 'done') $.ui.toast('spec-gatekeeper APPROVED: ready for the PR')
   }
-}
-
-function statusLine(b: SpeckitBoard | null): string | undefined {
-  if (!b) return undefined
-  const now = current(b.phases)
-  const done = b.tasks.filter(t => t.isDone).length
-  const where = now ? `${GLYPH[now.state]} ${now.id}${now.note ? ` (${now.note})` : ''}` : '✓ verified'
-  return `speckit ${b.feature} · ${where} · ${done}/${b.tasks.length} tasks${b.red ? ` · RED ${b.red}/${b.maxRed}` : ''}`
 }
 
 // The poll, turn ends and agent events each refresh. A refresh in one event does not see the board
@@ -128,19 +139,32 @@ async function refresh($: EngineInterface) {
   $.ui.status(statusLine(next))
 }
 
+// What the Agent call said the agent's task was. SubagentStart does not carry it; the engine's list does.
+async function descriptionOf($: EngineInterface, id: string): Promise<string> {
+  const listed = await $.agent.list().catch(() => [])
+  return listed.find(a => a.id === id)?.description ?? ''
+}
+
 // An agent that is stopped or fails ends with no SubagentStop to say so, and would show running for
 // the rest of the session. The engine's own list settles it. A completed one is left to its
-// SubagentStop, which the team's stop checks may still block.
-const ENDED_UNREPORTED = new Set(['killed', 'failed'])
+// SubagentStop, which the team's stop checks may still block. The list also gives a running agent the
+// description it lacked when it started.
 async function settleEnded($: EngineInterface) {
-  if (!(await read($, agents)).some(a => a.isRunning)) return
-  const ended = new Map((await $.agent.list().catch(() => []))
-    .filter(a => ENDED_UNREPORTED.has(a.status)).map(a => [a.id, a.status]))
-  if (!ended.size) return
+  const team = await read($, agents)
+  if (!team.some(a => a.isRunning)) return
+  const listed = new Map((await $.agent.list().catch(() => [])).map(a => [a.id, a]))
   const now = await $.clock.now()
-  await update($, agents, list => list.map(a => (a.isRunning && ended.has(a.id)
-    ? { ...a, isRunning: false, outcome: a.outcome || (ended.get(a.id) ?? ''), endedAt: now }
-    : a)))
+  const settle = (a: SpeckitAgent): SpeckitAgent => {
+    const info = a.isRunning ? listed.get(a.id) : undefined
+    if (!info) return a
+    const description = a.description || info.description
+    if (ENDED_UNREPORTED.includes(info.status)) {
+      return { ...a, description, isRunning: false, outcome: a.outcome || info.status, endedAt: now }
+    }
+    return description === a.description ? a : { ...a, description }
+  }
+  if (team.every(a => settle(a) === a)) return
+  await update($, agents, list => list.map(settle))
   await keepTicking($)
 }
 
@@ -150,6 +174,23 @@ async function poll($: EngineInterface) {
   await settleEnded($)
   await refresh($)
   if ((await read($, agents)).length) $.ui.invalidate('ui.render')
+}
+
+// The rows the pane's tree takes, so a pane seated inline above the prompt opens tall enough to show
+// it whole rather than the third of the terminal it gets unasked (the dock ignores it). It follows
+// the tree in the Pane hook row for row: the header, the phases, the team, the buttons and the task
+// sections, a blank row between each two.
+function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean): number {
+  if (!b) return 2
+  const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
+  const taskRows = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
+  return 2 + b.phases.length + teamRows + 1 + taskRows + 4
+}
+
+// Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
+async function openPane($: EngineInterface) {
+  const rows = paneRows(await read($, board), await read($, agents), await read($, isAllTasksShown))
+  return $.ui.open({ id: PANE, title: 'Spec Kit', rows })
 }
 
 // Spinners and running times move every second only while an agent of the team runs.
@@ -163,7 +204,11 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'speckit-board',
-      description: 'Show the Spec Kit team board (args: refresh, band)',
+      description: 'Show the Spec Kit team board',
+      argumentHint: '[status|refresh|band]',
+      // /speckit-team runs its agents in the foreground, so a whole pipeline is one turn: without
+      // this, the command waited for the turn to end, and opened the board once the run was over.
+      immediate: true,
     })
     repo = await findRepo($, e.cwd)
     // Say so either way: a board that draws nothing is indistinguishable from one that never loaded.
@@ -189,9 +234,16 @@ export const register: Register = on => {
       const hidden = await update($, isBandHidden, h => !h)
       return { text: `band ${hidden ? 'hidden' : 'shown'}.` }
     }
+    // Any other argument opened the pane, so a typo looked as if it had worked.
+    if (arg && arg !== 'refresh' && arg !== 'status') return { text: `unknown argument "${arg}": use status, refresh or band.` }
     await refresh($)
     if (arg === 'refresh') return { text: 'refreshed.' }
-    const opened = await $.ui.open({ id: PANE, title: 'Spec Kit' })
+    if (arg === 'status') {
+      const b = await read($, board)
+      const running = (await read($, agents)).filter(a => a.isRunning)
+      return { text: b ? boardText(b, running, await $.clock.now()) : 'no active feature in .specify/feature.json.' }
+    }
+    const opened = await openPane($)
     return { text: opened.isPlaced ? 'pane opened.' : 'widen the terminal to see the pane.' }
   })
 
@@ -199,7 +251,8 @@ export const register: Register = on => {
     const role = teamRole(e.agent_type)
     if (role) {
       const now = await $.clock.now()
-      const agent: SpeckitAgent = { id: e.agent_id, type: role, isRunning: true, outcome: '', startedAt: now, endedAt: 0 }
+      const description = await descriptionOf($, e.agent_id)
+      const agent: SpeckitAgent = { id: e.agent_id, type: role, description, isRunning: true, outcome: '', startedAt: now, endedAt: 0 }
       await update($, agents, list => [...list.filter(a => a.id !== agent.id), agent].slice(-12))
       await keepTicking($)
       await refresh($)
@@ -230,10 +283,10 @@ export const register: Register = on => {
       const now = await $.clock.now()
       await update($, agents, list => list.map(a =>
         (a.id === e.agent_id ? { ...a, isRunning: false, outcome, endedAt: now } : a)))
-      const b = await read($, board)
-      if (role === 'spec-gatekeeper' && b && (outcome === 'APPROVED' || outcome === 'REJECTED')) {
-        const feature = repo ? await activeFeature($, repo.root) : ''
-        if (feature) await $.store.set(`gate:${feature}`, outcome)
+      const at = repo
+      if (role === 'spec-gatekeeper' && at && (outcome === 'APPROVED' || outcome === 'REJECTED')) {
+        const feature = await activeFeature($, at.root)
+        if (feature) await $.store.set(gateKey(at, feature), { word: outcome, at: new Date(now).toISOString() })
       }
       $.ui.toast(`${role} finished${outcome ? `: ${outcome}` : ''}`)
       await keepTicking($)
@@ -251,21 +304,34 @@ export const register: Register = on => {
     const b = await read($, board)
     if (!b || e.props.hasSurvey || (await read($, isBandHidden))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
-    const done = b.tasks.filter(t => t.isDone).length
-    const isWide = e.props.bodyColumns >= 100
+    const running = (await read($, agents)).filter(a => a.isRunning)
+    const items = bandLayout(b, running, await $.clock.now(), e.props.bodyColumns)
 
+    // bandLayout leaves out what does not fit the row; the wrap is for a feature name wider than it counts.
     return (
       <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-        <Text color="claude" bold>◆ {b.feature}</Text>
-        {b.phases.map(p => (
-          <Text color={COLOR[p.state]}>{GLYPH[p.state]}{isWide ? ` ${p.id}` : ''}</Text>
-        ))}
-        <Text dimColor>│</Text>
-        <Text color="success">{bar(done, b.tasks.length, isWide ? 10 : 5)}</Text>
-        <Text>{done}/{b.tasks.length}</Text>
-        {b.red > 0 && <Text color={b.red >= b.maxRed ? 'error' : 'warning'}>RED {b.red}/{b.maxRed}</Text>}
-        <Button key="board" label="board" hotkey="b" onPress={() => $.ui.open({ id: PANE, title: 'Spec Kit' })} />
-        <Button key="hide" label="hide" dimColor onPress={() => update($, isBandHidden, () => true)} />
+        {items.map(item => {
+          switch (item.kind) {
+            case 'feature': return <Text color="claude" bold>{item.text}</Text>
+            case 'phase': return <Text color={COLOR[item.state]} bold={item.isHead}>{item.text}</Text>
+            case 'sep': return <Text dimColor>{item.text}</Text>
+            case 'bar': return <Text color="success">{item.text}</Text>
+            case 'count': return <Text>{item.text}</Text>
+            case 'red': return <Text color={item.isLimit ? 'error' : 'warning'}>{item.text}</Text>
+            case 'agent':
+              return (
+                <Text>
+                  <Text color="claude">{item.spin} </Text>
+                  <Text color={roleColor(item.role)}>{item.role}</Text>
+                  <Text dimColor>{item.rest}</Text>
+                </Text>
+              )
+            case 'button':
+              return item.key === 'board'
+                ? <Button key="board" label="board" hotkey="b" onPress={() => openPane($)} />
+                : <Button key="hide" label="hide" dimColor onPress={() => update($, isBandHidden, () => true)} />
+          }
+        })}
       </Box>
     )
   })
@@ -273,91 +339,137 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const b = await read($, board)
-    if (!b) return <Text dimColor>No active Spec Kit feature (.specify/feature.json).</Text>
+    if (!b) {
+      return (
+        <Box flexDirection="column">
+          <Text dimColor>No active Spec Kit feature in .specify/feature.json.</Text>
+          <Text dimColor>/speckit-team {'<idea>'} starts one.</Text>
+        </Box>
+      )
+    }
 
     const team = await read($, agents)
+    const isAll = await read($, isAllTasksShown)
     const now = await $.clock.now()
-    const cols = e.props.bodyColumns
-    const done = b.tasks.filter(t => t.isDone).length
-    const pct = b.tasks.length ? Math.round((done / b.tasks.length) * 100) : 0
-    const sections = [...new Set(b.tasks.map(t => t.section))]
     const head = current(b.phases)
+    const done = b.tasks.filter(t => t.isDone).length
+    const progress = `${done}/${b.tasks.length}`
+    const next = nextTask(b.tasks)
+    const step = nextStep(b, team.filter(a => a.isRunning).map(a => a.type))
+    // Running agents first, then the latest started; the state keeps more than the pane draws.
+    const rows = [...team].reverse().sort((x, y) => Number(y.isRunning) - Number(x.isRunning))
+    const barWidth = Math.max(6, Math.min(24, e.props.bodyColumns - 30))
+    // A note that says something is wrong is drawn in the color of its glyph, the rest dim.
+    const noteColor = (state: SpeckitPhaseState) => (state === 'failed' || state === 'stale' || state === 'blocked' ? COLOR[state] : undefined)
+    // tasks.md text: the story tag dim, `code` as Claude Code draws inline code.
+    const taskText = (text: string) => {
+      const story = /^(\[US\d+\])\s*/.exec(text)
+      const rest = story ? text.slice(story[0].length) : text
+      return [
+        story ? <Text dimColor>{story[1]} </Text> : '',
+        ...rest.split('`').map((part, i) => (i % 2 ? <Text color="permission">{part}</Text> : part)),
+      ]
+    }
 
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text bold color="claude">SPEC KIT · {b.feature}</Text>
-          <Text dimColor>{head ? `now: ${head.id}${head.note ? `, ${head.note}` : ''}` : 'every phase done'}</Text>
+          <Text bold color="claude" wrap="truncate-end">SPEC KIT · {b.feature}</Text>
+          <Text wrap="truncate-end">
+            <Text dimColor>next </Text>
+            {step.task ? [<Text bold>{step.task.id}</Text>, ' ', taskText(step.task.text)] : step.text}
+          </Text>
         </Box>
 
-        <Box flexDirection="row" flexWrap="wrap">
-          {b.phases.map((p, i) => (
-            <Box key={`phase:${p.id}`} flexDirection="row">
-              {i > 0 && <Text dimColor>{' ─ '}</Text>}
-              <Text color={COLOR[p.state]} bold={p === head} inverse={p === head}>
-                {` ${GLYPH[p.state]} ${p.id} `}
-              </Text>
-            </Box>
-          ))}
-        </Box>
-
+        {/* The pipeline, one phase a row with its note: the build row carries the tasks and the REDs. */}
         <Box flexDirection="column">
-          <Box flexDirection="row" columnGap={1}>
-            <Text>Tasks  </Text>
-            <Text color="success">{bar(done, b.tasks.length, Math.max(6, Math.min(30, cols - 22)))}</Text>
-            <Text bold>{done}/{b.tasks.length}</Text>
-            <Text dimColor>{pct}%</Text>
-          </Box>
-          <Box flexDirection="row" columnGap={1}>
-            <Text>Retries</Text>
-            <Text color={b.red >= b.maxRed ? 'error' : b.red ? 'warning' : 'subtle'}>
-              {'●'.repeat(b.red) + '○'.repeat(Math.max(0, b.maxRed - b.red))}
-            </Text>
-            <Text dimColor>
-              {b.isRetryUnreadable
-                ? 'retry record unreadable: implementer is blocked until it is deleted'
-                : b.red ? `RED ${b.red} of ${b.maxRed} on this plan` : 'no REDs on this plan'}
-            </Text>
-          </Box>
+          {b.phases.map(p => {
+            const isBuilding = p.id === 'build' && b.tasks.length > 0
+            const note = isBuilding && p.note === progress ? '' : p.note
+            return (
+              <Box key={`phase:${p.id}`} flexDirection="row" columnGap={1}>
+                <Text color={COLOR[p.state]}>{GLYPH[p.state]}</Text>
+                <Box width={6} flexShrink={0}>
+                  <Text bold={p === head} color={p === head ? COLOR[p.state] : undefined}>{p.id}</Text>
+                </Box>
+                {isBuilding && <Text color="success">{bar(done, b.tasks.length, barWidth)}</Text>}
+                {isBuilding && <Text bold>{progress}</Text>}
+                {note !== '' && <Text color={noteColor(p.state)} dimColor={!noteColor(p.state)} wrap="truncate-end">{note}</Text>}
+                {p.id === 'build' && b.red > 0 && <Text dimColor>RED</Text>}
+                {p.id === 'build' && b.red > 0 && (
+                  <Text color={b.red >= b.maxRed ? 'error' : 'warning'}>
+                    {'●'.repeat(b.red) + '○'.repeat(Math.max(0, b.maxRed - b.red))}
+                  </Text>
+                )}
+              </Box>
+            )
+          })}
         </Box>
 
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         <Box flexDirection="column">
           <Text bold>Team</Text>
-          {team.length === 0 && <Text dimColor> no team agent has run this session</Text>}
-          {[...team].reverse().map(a => (
-            <Box key={`agent:${a.id}`} flexDirection="row" columnGap={1}>
-              <Text color={a.isRunning ? 'claude' : 'success'}>
-                {a.isRunning ? SPINNER[Math.floor(now / 250) % SPINNER.length] : '✓'}
-              </Text>
-              <Box width={16}><Text>{a.type}</Text></Box>
-              <Text dimColor wrap="truncate-end">
-                {a.isRunning ? `running ${since(now - a.startedAt)}` : `${a.outcome || 'done'} · ${since(now - a.endedAt)} ago`}
-              </Text>
-            </Box>
-          ))}
+          {team.length === 0 && <Text dimColor>no team agent has run this session</Text>}
+          {rows.slice(0, TEAM_ROWS).map(a => {
+            const tone = toneOf(a.type, a.outcome)
+            const color = a.isRunning ? 'claude' : TONE_COLOR[tone]
+            const asked = a.description ? ` · ${a.description}` : ''
+            return (
+              <Box key={`agent:${a.id}`} flexDirection="row" columnGap={1}>
+                <Text color={color}>{a.isRunning ? spinnerAt(now) : TONE_GLYPH[tone]}</Text>
+                <Box width={15} flexShrink={0}><Text color={roleColor(a.type)}>{a.type}</Text></Box>
+                {/* The word keeps its width and the rest is cut: docked 60 columns wide, `running` wrapped. */}
+                <Box flexShrink={0}>
+                  <Text color={color} bold={tone !== 'neutral'}>{a.isRunning ? 'running' : a.outcome || 'done'}</Text>
+                </Box>
+                <Box flexShrink={1}>
+                  <Text dimColor wrap="truncate-end">
+                    {a.isRunning
+                      ? `${since(now - a.startedAt)}${asked}`
+                      : `took ${since(a.endedAt - a.startedAt)} · ${since(now - a.endedAt)} ago${asked}`}
+                  </Text>
+                </Box>
+              </Box>
+            )
+          })}
+          {rows.length > TEAM_ROWS && <Text dimColor>+{rows.length - TEAM_ROWS} earlier</Text>}
         </Box>
 
-        <Box flexDirection="row" columnGap={1}>
+        <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />
+          <Button
+            key="tasks" label={isAll ? 'fold tasks' : 'all tasks'} hotkey="a"
+            onPress={async () => { await update($, isAllTasksShown, v => !v); await openPane($) }}
+          />
           <Button key="band" label="toggle band" hotkey="t" onPress={() => update($, isBandHidden, h => !h)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
 
+        {/* Finished sections, and those not started past the next task, fold to their title and count. */}
         <Box flexDirection="column">
-          {sections.map(section => (
-            <Box key={`sec:${section}`} flexDirection="column">
-              <Text bold dimColor>{section}</Text>
-              {b.tasks.filter(t => t.section === section).map(t => (
-                <Text wrap="truncate-end" dimColor={t.isDone}>
-                  <Text color={t.isDone ? 'success' : 'subtle'}>{t.isDone ? ' ✓ ' : ' ○ '}</Text>
-                  <Text bold={!t.isDone}>{t.id}</Text>
-                  {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
-                  {` ${t.text}`}
-                </Text>
-              ))}
-            </Box>
-          ))}
+          {taskSections(b.tasks, isAll).map(s => {
+            const state: SpeckitPhaseState = s.done === s.total ? 'done' : s.done > 0 ? 'active' : 'todo'
+            return (
+              <Box key={`sec:${s.title}`} flexDirection="column">
+                <Box flexDirection="row" columnGap={1}>
+                  <Text color={COLOR[state]}>{GLYPH[state]}</Text>
+                  <Box flexShrink={1}><Text bold={s.isOpen} dimColor={!s.isOpen} wrap="truncate-end">{s.title || 'Tasks'}</Text></Box>
+                  <Box flexShrink={0}><Text dimColor>{s.done}/{s.total}</Text></Box>
+                </Box>
+                {s.isOpen && s.tasks.map(t => (
+                  <Text wrap="truncate-end" dimColor={t.isDone}>
+                    <Text color={t.isDone ? 'success' : t === next ? 'claude' : 'subtle'}>
+                      {t.isDone ? '  ✓ ' : t === next ? '  ▶ ' : '  ○ '}
+                    </Text>
+                    <Text bold={!t.isDone}>{t.id}</Text>
+                    {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
+                    {' '}
+                    {taskText(t.text)}
+                  </Text>
+                ))}
+              </Box>
+            )
+          })}
         </Box>
       </Box>
     )

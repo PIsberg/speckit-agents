@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Records the agent-view GIFs in README.md. Each tape drives a real Claude Code session (Haiku,
-// main session and subagents: the scratch copies of the agents are set to `model: haiku`) in a
-// throwaway Spec Kit repo, so a run costs a little and the output differs from run to run.
-// Needs vhs, specify, claude and git on PATH.
+// Records the agent-view GIFs and the board mod's screenshot in README.md. Each tape drives a real
+// Claude Code session (Haiku, main session and subagents: the scratch copies of the agents are set
+// to `model: haiku`) in a throwaway Spec Kit repo, so a run costs a little and the output differs
+// from run to run. Needs vhs, specify, claude and git on PATH.
 //
 //   node docs/media/record.mjs                  all tapes
 //   node docs/media/record.mjs pipeline         only the named tapes
@@ -10,8 +10,8 @@
 //
 // The team is installed into the scratch repo's own .claude/, and Claude Code is started with
 // --setting-sources project,local and --strict-mcp-config, so your user-level hooks, plugins,
-// statusline and MCP servers stay out of the recording. Check each GIF before committing it:
-// the session banner can still show account details.
+// statusline and MCP servers stay out of the recording. Check each GIF and screenshot before
+// committing it: the session banner and the usage line can still show account details.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
 // Order matters: pipeline needs a clean tree on main, and every tape gets one (see resetDemo).
-const TAPES = ['agents-list', 'guardrail-denial', 'subagent-inline', 'pipeline'];
+const TAPES = ['agents-list', 'guardrail-denial', 'subagent-inline', 'pipeline', 'board'];
 // Bash stays unscoped: Spec Kit's skills run its PowerShell or shell scripts, so any allowlist that
 // lets the tapes finish includes an interpreter. The containment is the fixed prompts and the
 // throwaway repo; an unanswered permission prompt would only hang the recording.
@@ -31,8 +31,12 @@ const CLAUDE = "claude --model haiku --setting-sources project,local --strict-mc
 const SHELL = process.platform === 'win32' ? 'pwsh' : 'bash';
 // A fixed path, so Claude Code's folder trust survives between runs. It is in the home directory,
 // not a shared temp dir: the recorder accepts trust for it, and anyone who could create it first
-// could plant hooks that would then run as you.
-const work = path.join(os.homedir(), '.cache', 'speckit-agents-demo');
+// could plant hooks that would then run as you. Every run deletes it whole first.
+// SPECKIT_DEMO_DIR names another folder instead, for a run that must leave this one as it is;
+// the same care applies to that folder.
+const work = process.env.SPECKIT_DEMO_DIR
+  ? path.resolve(process.env.SPECKIT_DEMO_DIR)
+  : path.join(os.homedir(), '.cache', 'speckit-agents-demo');
 const demo = path.join(work, 'repo');
 
 function fail(msg) {
@@ -84,9 +88,48 @@ function resetDemo() {
   fs.rmSync(path.join(demo, '.git', 'speckit-team'), { recursive: true, force: true });
 }
 
+// The board tape shows the board mid-build: the demo feature's setup and test tasks ticked, and an
+// audit PASS and one RED recorded by the team's own hook, as the real agents' stops record them.
+// test-writer and implementer are swapped for stand-ins that only report, the implementer after 30
+// seconds so the screenshot catches it running (Claude Code's Bash refuses a bare `sleep`).
+// resetDemo puts the installed agents back.
+const STAND_INS = {
+  'test-writer': 'Use no tool. Reply with exactly these two lines and nothing else:\n'
+    + "T002 and T003 fail on the stub's not-implemented error\nRED\n",
+  implementer: 'Run this Bash command exactly once, so the board shows you at work for 30 seconds:\n'
+    + 'node -e "setTimeout(() => {}, 30000)"\n'
+    + 'Then reply with exactly these two lines and nothing else:\n'
+    + 'T004 greet(name) returns the greeting; 2 tests pass\nRESULT: GREEN\n',
+};
+
+function stageBoard() {
+  const tasks = path.join(demo, 'specs', '001-greet', 'tasks.md');
+  fs.writeFileSync(tasks, fs.readFileSync(tasks, 'utf8').replace(/^- \[ \] (T00[123]) /gm, '- [x] $1 '));
+  const hook = path.join(repo, 'hooks', 'speckit-team.mjs');
+  for (const [mode, stop] of [
+    ['verdict', { last_assistant_message: 'VERDICT: PASS' }],
+    ['result', { agent_id: 'board-tape', last_assistant_message: 'RESULT: RED' }],
+  ]) {
+    const r = spawnSync(process.execPath, [hook, mode], {
+      input: JSON.stringify({ cwd: demo, hook_event_name: 'SubagentStop', ...stop }),
+      encoding: 'utf8',
+    });
+    if (r.status !== 0) fail(`staging the board: the ${mode} hook failed: ${r.stderr}`);
+  }
+  for (const [name, prompt] of Object.entries(STAND_INS)) {
+    fs.writeFileSync(path.join(demo, '.claude', 'agents', `${name}.md`), `---\nname: ${name}\n`
+      + 'description: A stand-in for the board screenshot. Use only when asked by name.\n'
+      + `tools: Bash\nmodel: haiku\n---\n${prompt}`);
+  }
+}
+
 function record(name) {
+  const slash = (p) => p.replaceAll('\\', '/');
   const tape = fs.readFileSync(path.join(here, `${name}.tape`), 'utf8')
-    .replaceAll('{{OUTPUT}}', path.join(here, `${name}.gif`).replaceAll('\\', '/'))
+    .replaceAll('{{OUTPUT}}', slash(path.join(here, `${name}.gif`)))
+    .replaceAll('{{SHOTS}}', slash(here))
+    .replaceAll('{{WORK}}', slash(work))
+    .replaceAll('{{BOARD}}', slash(path.join(repo, 'mods', 'speckit-board')))
     .replaceAll('{{SHELL}}', SHELL)
     .replaceAll('{{CLAUDE}}', CLAUDE);
   const file = path.join(work, `${name}.tape`);
@@ -108,7 +151,8 @@ if (setupOnly) {
 }
 const results = (wanted.length ? TAPES.filter((t) => wanted.includes(t)) : TAPES).map((t) => {
   resetDemo();
+  if (t === 'board') stageBoard();
   return [t, record(t)];
 });
-for (const [t, status] of results) console.log(`record: ${t}.gif ${status}`);
+for (const [t, status] of results) console.log(`record: ${t} ${status}`);
 process.exit(results.every(([, s]) => s === 'recorded') ? 0 : 1);

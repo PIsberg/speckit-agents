@@ -1,7 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { derivePhases, featureDir, fingerprint, outcomeOf, parseTasks, redCount, teamRole } from '../hooks/model'
-import type { BoardInputs } from '../hooks/model'
+import {
+  bandLayout, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
+  statusLine, taskSections, teamRole, toneOf,
+} from '../hooks/model'
+import type { BandItem, BoardInputs } from '../hooks/model'
+import type { SpeckitBoard } from '../types'
 
 test('fingerprint matches speckit-team.mjs byte for byte', async () => {
   // 2cb0d7cc9eddc2be is what the hook's own createHash code gives for these inputs:
@@ -126,4 +130,147 @@ test('a draft spec counts as approved once a plan exists', () => {
   expect(states({ ...base, spec: draft, plan: undefined, tasks: undefined })).toMatchObject({ spec: 'active' })
   expect(states({ ...base, spec: draft })).toMatchObject({ spec: 'done' })
   expect(derivePhases({ ...base, spec: draft }).find(p => p.id === 'spec')?.note).toBe('')
+})
+
+// A board as snapshot() builds it, from a passed audit unless the inputs say otherwise.
+const board = (over: Partial<BoardInputs> = {}): SpeckitBoard => {
+  const i: BoardInputs = { ...base, verdict: { verdict: 'PASS', fingerprint: 'fp' }, ...over }
+  return {
+    feature: '001-x', phases: derivePhases(i), tasks: i.tasks ?? [], red: i.red, maxRed: 3,
+    isRetryUnreadable: i.isRetryUnreadable ?? false, fingerprint: 'fp',
+  }
+}
+const SLICE = parseTasks('## Setup\n- [x] T001 a\n## Story\n- [ ] T002 [P] Test greet\n- [ ] T003 Implement greet')
+
+test('an agent\'s word is good or bad for its own role', () => {
+  // A test-writer's RED is its job done, an implementer's RED a failed attempt: the pane drew both,
+  // and a killed agent, with the same green tick.
+  expect(toneOf('test-writer', 'RED')).toBe('good')
+  expect(toneOf('implementer', 'RED')).toBe('bad')
+  expect(toneOf('implementer', 'GREEN')).toBe('good')
+  expect(toneOf('implementer', 'STUB')).toBe('neutral')
+  expect(toneOf('spec-auditor', 'PASS')).toBe('good')
+  expect(toneOf('spec-auditor', 'FAIL')).toBe('bad')
+  expect(toneOf('spec-gatekeeper', 'APPROVED')).toBe('good')
+  expect(toneOf('spec-gatekeeper', 'REJECTED')).toBe('bad')
+  expect(toneOf('test-writer', 'BLOCKED')).toBe('bad')
+  expect(toneOf('product-owner', 'READY FOR PLAN')).toBe('good')
+  expect(toneOf('architect', '')).toBe('neutral')
+  for (const ended of ['killed', 'failed']) expect(toneOf('spec-auditor', ended)).toBe('bad')
+})
+
+test('an agent\'s word is one its role ends on, or none', () => {
+  // A role's other last lines, a question or a decision to confirm, were shown as its word, cut at 40.
+  expect(outcomeOf('test-writer', 'T002 fails on the stub\n\nRED')).toBe('RED')
+  expect(outcomeOf('test-writer', 'T003 cannot be tested\n**BLOCKED**')).toBe('BLOCKED')
+  expect(outcomeOf('architect', 'wrote plan.md\nConfirm: add commander as a dependency')).toBe('')
+  expect(outcomeOf('product-owner', 'Q1: Should a blank name greet the world? Recommended: yes')).toBe('')
+})
+
+test('each role is drawn in the color its agent file gives it', () => {
+  // test/board-mod.test.mjs holds these to the `color:` lines of agents/*.md.
+  expect(roleColor('architect')).toBe('purple_FOR_SUBAGENTS_ONLY')
+  expect(roleColor('spec-gatekeeper')).toBe('red_FOR_SUBAGENTS_ONLY')
+  expect(roleColor('Explore')).toBeUndefined()
+})
+
+test('the status line says where the feature stands, each part once', () => {
+  // Claude Code names the plugin before it, so it read "speckit-board: speckit 001-x · ◐ build (1/3) ·
+  // 1/3 tasks": the name twice and, while building, the count twice.
+  expect(statusLine(board({ tasks: SLICE, red: 1 }))).toBe('001-x · ◐ build (1/3) · RED 1/3')
+  expect(statusLine(board({ tasks: SLICE, verdict: { verdict: 'PASS', fingerprint: 'old' } })))
+    .toBe('001-x · ↻ audit (edited since PASS) · 1/3 tasks')
+  expect(statusLine(board({ tasks: SLICE, isRetryUnreadable: true })))
+    .toBe('001-x · ✗ build (retry record unreadable) · 1/3 tasks')
+  expect(statusLine(board({ tasks: parseTasks('- [x] T001 a'), gate: 'APPROVED' }))).toBe('001-x · ✓ verified · 1/1 tasks')
+  // No tasks.md yet, so no count of its tasks.
+  expect(statusLine(board({ spec: undefined, plan: undefined, tasks: undefined, verdict: undefined }))).toBe('001-x · ○ spec')
+  expect(statusLine(null)).toBeUndefined()
+})
+
+test('the next step follows the pipeline, and names the next task while building', () => {
+  const next = (over: Partial<BoardInputs>, running: string[] = []) => nextStep(board(over), running).text
+  const none = { spec: undefined, plan: undefined, tasks: undefined, verdict: undefined }
+  expect(next(none)).toBe('start with /speckit-team <idea>')
+  expect(next({ ...none, spec: '**Status**: Draft' })).toBe('review spec.md, then plan')
+  expect(next({ ...none, spec: '**Status**: Draft' }, ['product-owner'])).toBe('waiting for product-owner')
+  expect(next({ plan: undefined, tasks: undefined, verdict: undefined })).toBe('architect: write plan.md and tasks.md')
+  expect(next({ tasks: SLICE, verdict: undefined })).toBe('spec-auditor: audit spec, plan and tasks')
+  expect(next({ tasks: SLICE, verdict: undefined }, ['spec-auditor'])).toBe('waiting for spec-auditor')
+  expect(next({ tasks: SLICE, verdict: { verdict: 'PASS', fingerprint: 'old' } })).toBe('re-audit: spec, plan or tasks changed')
+  expect(next({ tasks: SLICE, verdict: { verdict: 'FAIL', fingerprint: 'fp' } })).toBe('route CRITICAL/HIGH findings, then re-audit')
+  expect(next({ tasks: SLICE, verdict: null })).toBe('verdict unreadable: run spec-auditor again')
+  // While building, whoever runs, the next open task in tasks.md order.
+  expect(next({ tasks: SLICE })).toBe('T002 Test greet')
+  expect(next({ tasks: SLICE }, ['test-writer'])).toBe('T002 Test greet')
+  expect(next({ tasks: SLICE, red: 3 })).toBe('retry limit: architect rethinks the task, then re-audit')
+  expect(next({ tasks: SLICE, isRetryUnreadable: true })).toBe('delete .git/speckit-team/retries/001-x.json')
+  const all = parseTasks('- [x] T001 a')
+  expect(next({ tasks: all })).toBe('spec-gatekeeper: check every requirement has a test')
+  expect(next({ tasks: all }, ['spec-gatekeeper'])).toBe('waiting for spec-gatekeeper')
+  expect(next({ tasks: all, gate: 'REJECTED' })).toBe('route the REJECTED reasons, then re-run spec-gatekeeper')
+  const reaudited = { verdict: 'PASS', fingerprint: 'fp', at: '2026-10-08T12:00:00.000Z' }
+  expect(next({ tasks: all, verdict: reaudited, gate: 'APPROVED', gateAt: '2026-10-08T11:00:00.000Z' }))
+    .toBe('re-run spec-gatekeeper: the audit changed')
+  expect(next({ tasks: all, gate: 'APPROVED' })).toBe('ready for the PR')
+  // The pane draws the task as it draws the task list.
+  expect(nextStep(board({ tasks: SLICE }), []).task).toMatchObject({ id: 'T002', isParallel: true })
+  expect(nextStep(board({ tasks: SLICE, verdict: undefined }), []).task).toBeUndefined()
+})
+
+test('task sections fold what is finished or not started yet', () => {
+  // A real tasks.md has dozens of tasks: the pane listed every one, done or not.
+  const tasks = parseTasks('## Setup\n- [x] T001 a\n## Story\n- [x] T002 b\n- [ ] T003 c\n## Later\n- [ ] T004 d\n## Polish\n- [ ] T005 e')
+  expect(taskSections(tasks, false).map(s => [s.title, s.done, s.total, s.isOpen])).toEqual([
+    ['Setup', 1, 1, false], ['Story', 1, 2, true], ['Later', 0, 1, false], ['Polish', 0, 1, false],
+  ])
+  expect(taskSections(tasks, true).every(s => s.isOpen)).toBe(true)
+  // Nothing done yet: the section with the first open task is the one shown.
+  expect(taskSections(parseTasks('## A\n- [ ] T001 a\n## B\n- [ ] T002 b'), false).map(s => s.isOpen)).toEqual([true, false])
+  // A section started out of order ([P] work) shows too.
+  expect(taskSections(parseTasks('## A\n- [ ] T001 a\n## B\n- [x] T002 b\n- [ ] T003 c'), false).map(s => s.isOpen)).toEqual([true, true])
+})
+
+const widthOf = (items: readonly BandItem[]) => items.reduce((n, x) => n + x.text.length, 0) + items.length - 1
+const phaseTexts = (items: readonly BandItem[]) => items.filter(x => x.kind === 'phase').map(x => x.text)
+
+test('the band keeps to one row and always names the current phase', () => {
+  // Below 100 columns it drew every phase as a bare glyph, and wrapped once the row was full.
+  const b = board({ tasks: SLICE, red: 1 })
+  const wide = bandLayout(b, [], 0, 135)
+  expect(phaseTexts(wide)).toEqual(['✓ spec', '✓ plan', '✓ tasks', '✓ audit', '◐ build', '○ verify'])
+  expect(wide.find(x => x.kind === 'bar')?.text).toHaveLength(10)
+  expect(wide.map(x => x.text)).toContain('[ hide ]')
+  expect(phaseTexts(bandLayout(b, [], 0, 70))).toEqual(['✓', '✓', '✓', '✓', '◐ build', '○'])
+  for (const cols of [135, 100, 80, 70, 60, 45, 30]) {
+    const items = bandLayout(b, [], 0, cols)
+    expect(widthOf(items)).toBeLessThanOrEqual(cols)
+    expect(phaseTexts(items)).toContain('◐ build')
+    expect(items.map(x => x.text)).toContain('RED 1/3')
+  }
+})
+
+test('the band shows the team agent at work and for how long', () => {
+  const b = board({ tasks: SLICE })
+  const agent = (running: { type: string, startedAt: number }[], cols = 135) =>
+    bandLayout(b, running, 42_000, cols).find(x => x.kind === 'agent')?.text
+  expect(agent([])).toBeUndefined()
+  expect(agent([{ type: 'implementer', startedAt: 0 }])).toBe('◐ implementer 42s')
+  expect(agent([{ type: 'test-writer', startedAt: 0 }, { type: 'test-writer', startedAt: 30_000 }])).toBe('◐ test-writer +1 42s')
+  expect(agent([{ type: 'implementer', startedAt: 0 }], 60)).toBe('◐ implementer 42s')
+})
+
+test('a short band drops its buttons before the phases, and does not change as the clock runs', () => {
+  // Beside a docked pane, the band is about 70 columns: it kept `[ board ]`, which opens the pane
+  // already open there, and dropped the glyphs of every other phase.
+  const b = board({ tasks: SLICE, red: 1 })
+  const at = (ms: number, cols: number) => bandLayout(b, [{ type: 'implementer', startedAt: 0 }], ms, cols)
+  expect(phaseTexts(at(14_000, 70))).toEqual(['✓', '✓', '✓', '✓', '◐ build', '○'])
+  expect(at(14_000, 70).some(x => x.kind === 'button')).toBe(false)
+  // The running time grows a character at 10s and at 1m: the band kept to one row by dropping parts,
+  // and would have changed shape as it ran.
+  for (let cols = 30; cols <= 140; cols++) {
+    const shape = (ms: number) => at(ms, cols).map(x => (x.kind === 'agent' ? 'agent' : x.text)).join('|')
+    expect(shape(5_000)).toBe(shape(3_599_000))
+  }
 })
