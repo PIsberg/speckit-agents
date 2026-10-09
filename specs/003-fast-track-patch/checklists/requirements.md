@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [x] No [NEEDS CLARIFICATION] markers remain (checked 2026-10-09: FR-005, FR-008, FR-013 resolved)
+- [x] No [NEEDS CLARIFICATION] markers remain (checked 2026-10-09: FR-005, FR-006, FR-013 resolved; re-checked after the 2026-10-09 revision)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)

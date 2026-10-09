@@ -15,6 +15,9 @@
 - Q: What is the budget, and do test and doc lines count? → A: 30 changed lines and 2 files, production code only; tests and docs do not count.
 - Q: What happens to the work when a run is stopped for budget? → A: Kept uncommitted in the working tree, no pull request, escalation message names `/speckit-team`; the fast track never starts `/speckit-team`.
 - Q: Is triage in scope? → A: Yes, as a P3 advisory step only: it suggests a track with a reason, the developer confirms, it never runs a track itself.
+- Q: What happens when a protected file is changed by other means (for example a shell command)? → A: The end-of-run check blocks the agent from finishing, naming the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored. Files already dirty at the start are excluded and never touched, and the hook runs no destructive git command. Rule of thumb: over-budget production changes stay in the working tree; protected-path changes must be restored.
+- Q: Are binary production files allowed on the fast track? → A: No. Any added or modified binary production file stops the run with the `/speckit-team` escalation message. Renamed and deleted production files still count as files touched.
+- Q: Are the budget-stop requirements one or two? → A: One. FR-006 now covers the stop (no commit, no pull request, work stays uncommitted, message with counts and limits, never starts `/speckit-team`); FR-008 is removed and the other ids are not renumbered.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -48,6 +51,7 @@ The fast track cannot grow into a feature. A hook measures the change against a 
 2. **Given** a change within budget, **When** it finishes, **Then** nothing is blocked.
 3. **Given** the budget is exceeded, **When** the developer checks the repo, **Then** no pull request was opened and no commit was made by the fast track, and the changes are still in the working tree.
 4. **Given** a change of 5 production lines plus 200 lines of tests and docs, **When** it is measured, **Then** it is within budget.
+5. **Given** a change that adds or modifies a binary production file, **When** it is measured, **Then** the run is stopped with the `/speckit-team` escalation message, whatever the line and file counts.
 
 ---
 
@@ -57,12 +61,14 @@ The fast track may not change files that carry the project's guardrails or contr
 
 **Why this priority**: These are the files that make the other tracks safe. A trivial-change path through them defeats the tool.
 
-**Independent Test**: Ask the fast track to edit a protected file. The write is denied and the file is unchanged.
+**Independent Test**: Ask the fast track to edit a protected file. The write is denied and the file is unchanged. Change a protected file through a shell command: the agent cannot finish until it is restored.
 
 **Acceptance Scenarios**:
 
-1. **Given** a protected path, **When** the fast track tries to write it, directly or through a shell command, **Then** it is denied, or caught when the run ends, and the file is left unchanged or the run is stopped.
-2. **Given** an unprotected path, **When** the fast track writes it, **Then** it is allowed.
+1. **Given** a protected path, **When** the fast track tries to write it directly, **Then** the write is denied and the file is unchanged.
+2. **Given** a protected file was changed by other means such as a shell command, **When** the agent tries to finish, **Then** it is blocked, and the message names the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored.
+3. **Given** a protected file that was already modified when the run started, **When** the run ends, **Then** that file is not reported, blocked on or touched.
+4. **Given** an unprotected path, **When** the fast track writes it, **Then** it is allowed.
 
 ---
 
@@ -98,10 +104,11 @@ Before work starts, the developer is told whether the request looks like a small
 ### Edge Cases
 
 - The change is within budget but touches a protected path: denied, not budgeted.
-- The change is made through a shell command rather than a file write: caught at the end of the run, and the run is stopped.
+- A protected file is changed through a shell command rather than a file write: the end-of-run check blocks finishing until it is restored; the hook itself runs no destructive git command. Protected files already dirty at the start are excluded.
+- Over-budget production changes stay in the working tree; protected-path changes must be restored.
 - The production-code diff is exactly 30 lines in 2 files: allowed. 31 lines or 3 files: stopped.
 - The working tree already has uncommitted changes when the fast track starts: they are not counted as the fast track's change, and are not swept into its commit.
-- Renamed, deleted or binary production files: counted as files touched; binary files count as one changed line each. Test and documentation files of any kind are not counted.
+- Renamed or deleted production files: counted as files touched. An added or modified binary production file is not allowed: the run is stopped with the escalation message. Test and documentation files of any kind are not counted.
 - Existing tests are absent or the test command is unavailable: reported as not run, never as passed, and the run does not claim success.
 - The hook crashes or gets malformed input: the action proceeds (existing fail-open rule) and a test covers the path.
 - Windows, macOS and Linux behave the same, including path comparison.
@@ -114,10 +121,9 @@ Before work starts, the developer is told whether the request looks like a small
 - **FR-002**: The fast track MUST work on a feature-less branch and MUST NOT open a pull request unless the existing tests passed.
 - **FR-003**: The fast track MUST report the existing tests as passed, failed, skipped or not run, distinctly.
 - **FR-004**: A change that adds or changes behaviour (a bug fix) MUST include a regression test, shown failing before the fix where practical; typos, comments, docs and config values with no behaviour are exempt.
-- **FR-005**: A hook MUST measure the change in changed lines and files touched, and stop the run when either exceeds the budget; the budget MUST be 30 changed lines and 2 files, counting production code only. Test files and documentation files do not count toward either limit; what counts as a test or documentation file is fixed in the plan and covered by a test.
-- **FR-006**: When stopped for budget, the message MUST give the measured value, the limit and the instruction to use `/speckit-team`; the fast track MUST NOT start `/speckit-team` itself.
-- **FR-007**: A hook MUST deny writes to protected paths before the file changes, and catch changes made by other means when the run ends. The protected set MUST include at least: the hook script, the agent definitions, the installer, Spec Kit's config, the constitution and CI workflow files.
-- **FR-008**: When a run is stopped for budget, the fast track MUST keep the work uncommitted in the working tree, MUST NOT commit it or open a pull request, and MUST print the escalation message naming `/speckit-team`.
+- **FR-005**: A hook MUST measure the change in changed lines and files touched, and stop the run when either exceeds the budget; the budget MUST be 30 changed lines and 2 files, counting production code only; added or modified binary production files are not allowed at all (FR-006). Test files and documentation files do not count toward either limit; what counts as a test or documentation file is fixed in the plan and covered by a test.
+- **FR-006**: When the budget is exceeded, or a binary production file is added or modified, the run MUST make no commit and open no pull request, the work MUST stay uncommitted in the working tree, and the message MUST give the measured counts, the limits and the instruction to use `/speckit-team`; the fast track MUST NOT start `/speckit-team` itself.
+- **FR-007**: A hook MUST deny writes to protected paths before the file changes. For a protected file changed by other means, the end-of-run check MUST block the agent from finishing, naming the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored; protected files already dirty when the run started MUST be excluded and never touched, and the hook MUST NOT run any destructive git command. The protected set MUST include at least: the hook script, the agent definitions, the installer, Spec Kit's config, the constitution and CI workflow files.
 - **FR-009**: The fast track MUST NOT alter the decisions of the audit gate, lanes or retry limit for `/speckit-team`.
 - **FR-010**: The fast track's hooks MUST be inactive, silent and non-blocking in repos without `.specify/`.
 - **FR-011**: Every hook path MUST handle empty, malformed and unknown input without throwing, and each such path has a test.
