@@ -10,13 +10,15 @@
 //
 // The team is installed into the scratch repo's own .claude/, and Claude Code is started with
 // --setting-sources project,local and --strict-mcp-config, so your user-level hooks, plugins,
-// statusline and MCP servers stay out of the recording. Check each GIF and screenshot before
-// committing it: the session banner and the usage line can still show account details.
+// statusline and MCP servers stay out of the recording. After each tape its frames are searched for
+// your OS user name (leaks.mjs), and a recording that shows it is moved out of docs/media. Still look
+// at each GIF and screenshot before committing it: the usage line can show other account details.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { quarantine } from './leaks.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -37,7 +39,7 @@ const SHELL = process.platform === 'win32' ? 'pwsh' : 'bash';
 const work = process.env.SPECKIT_DEMO_DIR
   ? path.resolve(process.env.SPECKIT_DEMO_DIR)
   : path.join(os.homedir(), '.cache', 'speckit-agents-demo');
-const demo = path.join(work, 'repo');
+let demo = path.join(work, 'repo');
 
 function fail(msg) {
   console.error(`record: ${msg}`);
@@ -51,9 +53,31 @@ function run(cmd, args, opts = {}) {
 
 const git = (...args) => run('git', ['-c', 'user.name=demo', '-c', 'user.email=demo@example.invalid', ...args]);
 
-function buildDemo() {
+// On Windows the tapes reach the scratch repo through a drive letter of its own, so a path on
+// screen reads R:\repo, not C:\Users\<name>\... (#60). The letter points at the demo folder, which
+// stays owner-only, and is removed when the script exits; one a crashed run left behind is reused.
+// Elsewhere the home directory stays in the path, and only the check after each tape catches it.
+function mapDrive() {
+  if (process.platform !== 'win32') return null;
+  const mapped = spawnSync('subst', { encoding: 'utf8' }).stdout ?? '';
+  for (const letter of 'RSTUVWXYZ') {
+    const target = mapped.split(/\r?\n/).find((l) => l.toUpperCase().startsWith(`${letter}:\\: => `))?.slice(8);
+    const ours = target && path.resolve(target).toLowerCase() === work.toLowerCase();
+    if (!ours && (target || fs.existsSync(`${letter}:\\`))) continue;
+    if (!ours && spawnSync('subst', [`${letter}:`, work]).status !== 0) continue;
+    process.on('exit', () => spawnSync('subst', [`${letter}:`, '/D']));
+    return `${letter}:`;
+  }
+  console.error('record: no free drive letter for the scratch repo; paths on screen will show your user name');
+  return null;
+}
+
+function buildDemo({ onDrive }) {
   fs.rmSync(work, { recursive: true, force: true });
   fs.mkdirSync(work, { recursive: true, mode: 0o700 });
+  // Before anything is installed, so the hook paths the installer writes use the drive letter too.
+  const drive = onDrive && mapDrive();
+  if (drive) demo = `${drive}\\repo`;
   fs.mkdirSync(demo);
   git('init', '-q', '-b', 'main');
   // Without --script, specify waits on an interactive picker. Without UTF-8, specify on Windows
@@ -125,7 +149,8 @@ function stageBoard() {
 
 function record(name) {
   const slash = (p) => p.replaceAll('\\', '/');
-  const tape = fs.readFileSync(path.join(here, `${name}.tape`), 'utf8')
+  const template = fs.readFileSync(path.join(here, `${name}.tape`), 'utf8');
+  const tape = template
     .replaceAll('{{OUTPUT}}', slash(path.join(here, `${name}.gif`)))
     .replaceAll('{{SHOTS}}', slash(here))
     .replaceAll('{{WORK}}', slash(work))
@@ -135,7 +160,13 @@ function record(name) {
   const file = path.join(work, `${name}.tape`);
   fs.writeFileSync(file, tape);
   const r = spawnSync('vhs', [file], { cwd: demo, stdio: 'inherit' });
-  return r.status === 0 ? 'recorded' : `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
+  if (r.status !== 0) return `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
+  const dump = path.join(work, `${name}.txt`);
+  if (!fs.existsSync(dump)) return `FAILED (no ${dump} to check for your user name)`;
+  const shown = quarantine({ name, tape: template, dump: fs.readFileSync(dump, 'utf8'), user: os.userInfo().username, media: here, work });
+  return shown.length
+    ? `SHOWS YOUR USER NAME on ${shown.length} lines of ${dump}; its files were moved to ${work}:\n  ${shown.slice(0, 5).join('\n  ')}`
+    : 'recorded';
 }
 
 const args = process.argv.slice(2);
@@ -144,7 +175,9 @@ const wanted = args.filter((a) => a !== '--setup-only');
 const unknown = wanted.filter((t) => !TAPES.includes(t));
 if (unknown.length) fail(`unknown tape ${unknown.join(', ')}; choose from ${TAPES.join(', ')}`);
 
-buildDemo();
+// --setup-only leaves the repo for you to use after the script exits, when the drive letter is gone
+// and hook paths written through it would point nowhere.
+buildDemo({ onDrive: !setupOnly });
 if (setupOnly) {
   console.log(`record: scratch repo ready at ${demo}`);
   process.exit(0);

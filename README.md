@@ -810,7 +810,7 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 94 tests:
+`npm test` runs 97 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -818,6 +818,7 @@ Claude Code stopped at first-run login), and any session on macOS
 | [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
+| [`test/media.test.mjs`](test/media.test.mjs) | 3 | `docs/media/leaks.mjs`, the user-name check `record.mjs` runs after each tape |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
@@ -1117,7 +1118,10 @@ shared temp dir, because it gets folder trust; deleted and rebuilt on every run,
 `SPECKIT_DEMO_DIR` names another folder) with the demo feature in `docs/media/demo/`, installs the
 team into that repo's `.claude/`, and starts Claude Code with
 `--setting-sources project,local --strict-mcp-config`, so your own hooks, plugins, statusline and
-MCP servers stay out of the frame. The `board` tape loads the board from this checkout with
+MCP servers stay out of the frame. On Windows the tapes reach that repo through a drive letter
+mapped onto the folder with `subst` (the first free one from `R:`), so the paths a session prints
+read `R:\repo` instead of one with your user name in it; the letter is removed when the script
+ends. The `board` tape loads the board from this checkout with
 `--plugin-dir`, in fullscreen so the pane docks, after staging the demo feature mid-build: three
 tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-writer and
 implementer for stand-ins that only report, so its agent rows cost two short Haiku runs.
@@ -1125,10 +1129,11 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 > [!CAUTION]
 > Look at every GIF and screenshot before committing it. The tapes hide the working directory in
 > the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names your plan
-> ([#63](https://github.com/PIsberg/speckit-agents/issues/63)), and a session can print an
-> absolute path with your user name in it
-> ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). Each tape also writes every frame
-> as text to `<tape>.txt` in the demo folder: search those for your user name before committing.
+> ([#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape writes every frame as
+> text to `<tape>.txt` in the demo folder, and after each tape `record.mjs` searches that text for
+> your OS user name ([#60](https://github.com/PIsberg/speckit-agents/issues/60)). A recording that
+> shows it is moved from `docs/media/` to the demo folder, and the run exits 1. On macOS and
+> Linux the repo's path contains your home directory, so a session that prints it fails the check.
 
 The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
 recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.

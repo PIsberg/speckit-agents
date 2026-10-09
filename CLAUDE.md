@@ -10,7 +10,8 @@ this file is how to work on it.
 - `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill.
 - `install.mjs`: installer (`setup.sh` / `setup.ps1` only check for Node and call it).
 - `docs/media/`: the README's GIFs and the board's screenshot, the vhs tapes that record them,
-  `record.mjs` that runs the tapes against a scratch Spec Kit repo, and the demo feature in
+  `record.mjs` that runs the tapes against a scratch Spec Kit repo, `leaks.mjs` that moves a
+  recording whose frames show the OS user name out of the folder, and the demo feature in
   `demo/`. Re-record after changing what an agent, a hook or the board shows on screen (README.md,
   "Developing"). `architecture-visualized.svg` is drawn by hand, not recorded: edit it when an
   agent's model or lane, a pipeline stage or the retry limit changes.
@@ -30,13 +31,14 @@ this file is how to work on it.
   fingerprint, retry limit and role colors against the hook's and `agents/*.md`, and runs
   `claude plugin validate` and `claude plugin test` on it
   (skipped, not passed, without a `claude` executable on PATH); `usage.test.mjs` runs
-  `tools/usage.mjs` on a synthetic transcript; `e2e.test.mjs` runs the real `claude -p` against a
+  `tools/usage.mjs` on a synthetic transcript; `media.test.mjs` checks `docs/media/leaks.mjs`;
+  `e2e.test.mjs` runs the real `claude -p` against a
   fake Anthropic API on localhost, first with no model, then with a scripted one that makes an
   agent's tool calls, and reads each hook's decision from the next request (no login, $0; skipped
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 61 s on Windows (94 tests, 2026-10-09; the
+- `npm test`: all suites, no network beyond localhost, 52 s on Windows (97 tests, 2026-10-09; the
   four installer tests that run the real `claude plugin` and the 16 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
