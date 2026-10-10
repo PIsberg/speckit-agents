@@ -128,6 +128,19 @@ test('installed patcher checks the tree once more before reporting, so an over-b
   assert.ok(last.index < text.indexOf('## Report'), 'in the Process, before the Report');
 });
 
+// Speed: each slice built on its own cost up to three agent launches in a row (stubs, red, green),
+// each with a fresh start. The skill builds a phase of tasks.md as one round of at most 4 slices.
+test('installed speckit-team skill builds a tasks.md phase per round, at most 4 slices, never the whole feature', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
+  const section = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.'));
+  assert.match(section, /a round is the slices of one phase of `tasks\.md`/i);
+  assert.match(section, /at most 4 slices/);
+  assert.match(section, /one stub pass, one test-writer and one implementer per round/i);
+  assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
+});
+
 // #70: the plan stop and the dictated revision are a contract between the skill and the architect.
 // The skill greps plan.md for the section and starts a prompt with the prefix; renaming either on
 // one side only would quietly bring back a revision round per decision.

@@ -23,7 +23,7 @@ fast track beside the pipeline for a change of at most 30 production lines in 2 
 (`/speckit-patch`), with no spec, plan or audit; hooks keep it inside that budget too.
 
 ```
-idea ─► product-owner ─► architect ─► spec-auditor ─► per slice: stubs ─► red ─► green ─► spec-gatekeeper ─► PR
+idea ─► product-owner ─► architect ─► spec-auditor ─► per round: stubs─► red ─► green ─► spec-gatekeeper ─► PR
         spec.md          plan.md      VERDICT:        implementer  test-writer  implementer  APPROVED /
         + questions      tasks.md     PASS / FAIL                                  │         REJECTED
            ▲                ▲              │                                       │
@@ -41,7 +41,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
   ([The audit gate](#the-audit-gate))
-- **Test-first, one slice at a time.** Stubs, then tests shown failing on an assertion, then the
+- **Test-first, one round at a time.** Stubs, then tests shown failing on an assertion, then the
   code that turns them green. ([Building in slices](#building-in-slices))
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
@@ -212,8 +212,8 @@ and asks you to approve it, a fourth stop, then writes it with `speckit-constitu
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself
 beforehand.
 
-After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
-verifies and opens a PR, which it does not merge.
+After that it audits, then builds the feature a phase of `tasks.md` at a time, in rounds of up to 4
+slices (stubs, failing tests, code), verifies and opens a PR, which it does not merge.
 
 #### 3. A small change: the fast track
 
@@ -375,36 +375,42 @@ way. After two failed audits it hands the findings to you.
 
 #### Building in slices
 
-After the audit it builds the feature one slice at a time, never in one shot. A slice is one small
+After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. For each slice:
+those slices. A round is the slices of one phase of `tasks.md` (Setup, Foundational, one user
+story), at most 4 of them, and gets one stub pass, one test-writer and one implementer. Until
+2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
+implementation task, each starting from nothing (11k to 14k tokens, see
+[Context budget](#context-budget)) and reading the code again; that was most of why a run felt
+slow next to plain prompting. The round size is a prompt rule; how much it saves in a full run is
+not measured yet. For each round:
 
 1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
    signatures the task lists, with bodies that only signal "not implemented", and reports
    `RESULT: STUB`. This is what lets the next step fail cleanly.
-2. **Red.** test-writer writes the slice's tests and loops until each one fails on an assertion
+2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion
    or on the stub's not-implemented signal. A test that fails because it does not parse, an
    import is missing or a name is undefined proves nothing about the behaviour, so test-writer
    fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
-3. **Green.** implementer makes the slice's tests pass, under the [retry limit](#the-retry-limit).
+3. **Green.** implementer makes the round's tests pass, under the [retry limit](#the-retry-limit).
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
 
-When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
+When the last round is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
 straight away, without asking: between the stops above it never waits for you. A task still
-unticked at that point (a final test run, say) becomes one more implementer slice, and the ticks
+unticked at that point (a final test run, say) becomes one more implementer round, and the ticks
 made while building never void the audit.
 
 #### Parallel slices
 
-For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
-own git worktree, merged back into the feature branch in task order. It does so only if you say so
-at the plan stop, and it recommends one at a time until a live run has confirmed side-by-side
-launches ([#40](https://github.com/PIsberg/speckit-agents/issues/40)). Side by side saves
-wall-clock time, not tokens: every slice gets its own test-writer and implementer either way, plus
-a few main-session requests for the merges, and several agents then draw on your usage limits at
-once.
+For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
+implementer in its own git worktree, merged back into the feature branch in task order. It does so
+only if you say so at the plan stop, and it recommends one at a time until a live run has
+confirmed side-by-side launches ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
+Side by side may save wall-clock time but costs more: each slice gets its own test-writer and
+implementer instead of sharing its round's, plus a few main-session requests for the merges, and
+several agents then draw on your usage limits at once.
 
 #### Handoffs are lossy on purpose
 

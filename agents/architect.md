@@ -33,7 +33,8 @@ You decide how the feature is built, and in what order.
    fewest files, components and abstractions that meet the requirements. Add recovery machinery
    (retries, fallbacks, caches, backups, migrations, self-repair) only where a requirement or a
    constitution rule demands it, and cite that FR or rule where you add it.
-3. Shape `tasks.md` for a team that builds one slice at a time (stubs, failing tests, implementation):
+3. Shape `tasks.md` for a team that builds a phase at a time, in rounds of up to 4 slices (stubs,
+   failing tests, implementation):
    - A slice is one behaviour: an implementation task, preceded by the test tasks that cover it.
      It builds and tests without the slices after it, and one implementer run finishes it,
      touching a few files rather than a layer of the system.
