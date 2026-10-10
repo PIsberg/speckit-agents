@@ -1012,16 +1012,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 99 tests:
+`npm test` runs 168 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 43 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 103 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 28 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 21 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1052,13 +1052,16 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 11
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 16
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
   `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 11
-  fail, as do the two blocking cases above (2026-10-09, Claude Code 2.1.296).
+  fire lets the action through. With the installed hook replaced by one that only exits, all 16
+  fail, as do the two blocking cases above (2026-10-10, Claude Code 2.1.296). Setting
+  `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
+  18 of the 21 tests fail (the 16 scripted ones and the two blocking no-model cases); the other three
+  do not depend on a hook.
 - **Claude Code's own behaviour.** Two tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report, and
   with `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the

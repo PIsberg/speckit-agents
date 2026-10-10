@@ -40,8 +40,8 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 54 s on Windows (99 tests, 2026-10-09; the
-  four installer tests that run the real `claude plugin` and the 16 e2e tests take most of it, and
+- `npm test`: all suites, no network beyond localhost, 129 s on Windows (168 tests, 2026-10-10; the
+  four installer tests that run the real `claude plugin` and the 21 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
