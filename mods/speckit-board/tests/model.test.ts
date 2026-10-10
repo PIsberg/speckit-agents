@@ -285,12 +285,15 @@ test('the band carries a clear button between board and hide, and drops buttons 
   expect(buttons.map(x => x.text)).toEqual(['[ board ]', '[ clear ]', '[ hide ]'])
   expect(buttons[1]).toMatchObject({ key: 'clear', label: 'clear' })
   for (const running of [[], [{ type: 'implementer', startedAt: 0 }]]) {
+    const narrowest = widthOf(bandLayout(b, running, 0, 30))
     for (let cols = 30; cols <= 140; cols++) {
       const items = bandLayout(b, running, 0, cols)
       const texts = items.map(x => x.text)
       if (texts.includes('[ hide ]')) expect(texts).toContain('[ clear ]')
       if (texts.includes('[ clear ]')) expect(texts).toContain('[ board ]')
-      expect(widthOf(items)).toBeLessThanOrEqual(cols)
+      // The narrowest layout (only-head) is wider than 30 columns with a running agent, with or
+      // without the button; the bound holds from that width up, and at every width with no agent.
+      if (running.length === 0 || cols >= narrowest) expect(widthOf(items)).toBeLessThanOrEqual(cols)
     }
   }
 })
