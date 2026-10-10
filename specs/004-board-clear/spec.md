@@ -87,7 +87,7 @@ Clearing is about what is drawn. The pipeline's own records (verdicts, retry cou
 - **FR-007**: After a clear, `/speckit-board` MUST still open the pane, showing the phases and next step from the records and no pre-clear agent rows.
 - **FR-008**: Clear MUST show one line saying what it cleared, or that there was nothing to clear, and MUST NOT error when there is nothing to clear, when the band is already hidden, or when run twice.
 - **FR-009**: The button MUST work in an interactive session; the `/speckit-board clear` argument MUST answer as text in a headless `claude -p` session.
-- **FR-012**: Clear MUST NOT change the status line or toasts.
+- **FR-012**: Clear MUST NOT reset or remove the status line or earlier toasts; a button press MAY add one toast with the FR-008 line.
 - **FR-010**: The README's command table and the board's description MUST document the [clear] button and the `clear` argument.
 
 ### Key Entities
