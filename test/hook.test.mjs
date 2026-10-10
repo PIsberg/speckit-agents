@@ -875,7 +875,7 @@ test('patch: renames count by the edited lines, one file (FR-005, decision 3, re
   put(b.dir, 'src/b.js', nl(30, 'b'));
   okBash(b.dir, 'pure rename plus 30 lines is 30 lines in 2 files');
   put(b.dir, 'src/c.js', nl(1, 'c'));
-  overBash(b.dir, /30 changed production lines in 3 files/);
+  overBash(b.dir, /31 changed production lines in 3 files/);
 
   const c = forty(); begin(c.dir);
   c.g('mv', 'src/forty.js', 'src/moved.js');
