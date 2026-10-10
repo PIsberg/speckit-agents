@@ -17,7 +17,8 @@
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
 //                           --record keeps the accepted word for the feature (spec-gatekeeper's)
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
-//   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget
+//   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
+//                           or it runs a history/remote command or a wholesale restore
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -566,6 +567,71 @@ function measure(start) {
   return r;
 }
 
+// Bash commands the fast track may not run: history and remote commands (research R15) and wholesale
+// restores that can overwrite the developer's uncommitted work (plan.md decision 16 point 3).
+const HISTORY_SUBCOMMANDS = new Set(['commit', 'commit-tree', 'merge', 'rebase', 'cherry-pick', 'revert', 'am', 'stash', 'tag',
+  'branch', 'switch', 'update-ref', 'symbolic-ref', 'notes', 'replace', 'filter-branch', 'push', 'pull', 'fetch', 'clone', 'remote',
+  'ls-remote', 'submodule', 'send-email', 'request-pull']);
+const GIT_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
+const program = (w) => w.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
+// The subcommand index after the git word at words[i], skipping git's options.
+function afterGitOptions(words, i) {
+  let j = i + 1;
+  while (j < words.length && words[j].startsWith('-')) j += GIT_OPTIONS_WITH_VALUE.has(words[j]) ? 2 : 1;
+  return j;
+}
+function historyCommand(command) {
+  if (typeof command !== 'string') return null;
+  const words = command.split(/[\s;&|(){}<>`"'$!]+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    const prog = program(words[i]);
+    if (prog === 'gh' || prog === 'hub') return prog;
+    if (prog !== 'git') continue;
+    const j = afterGitOptions(words, i);
+    const sub = words[j];
+    if (sub === undefined) continue;
+    if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
+    if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
+  }
+  return null;
+}
+function gitCalls(command) {
+  const calls = [];
+  for (const seg of command.split(/[\n;&|()]+/)) {
+    const words = seg.split(/[\s"'`]+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      if (program(words[i]) !== 'git') continue;
+      const j = afterGitOptions(words, i);
+      if (j < words.length) calls.push({ sub: words[j], args: words.slice(j + 1) });
+    }
+  }
+  return calls;
+}
+function treeCommand(command, start) {
+  if (typeof command !== 'string') return null;
+  const wholesale = (w) => {
+    if (w === '.' || w === '..' || w.endsWith('/') || /[*?[]/.test(w) || w.startsWith(':')) return true;
+    try { if (fs.statSync(path.resolve(cwd, w)).isDirectory()) return true; } catch { /* not an existing path */ }
+    const rel = repoRel(w);
+    return rel !== null && Object.prototype.hasOwnProperty.call(start.dirty, rel);
+  };
+  for (const { sub, args } of gitCalls(command)) {
+    if (sub === 'reset' && args.includes('--hard')) return 'git reset --hard';
+    if (sub === 'clean') return 'git clean';
+    let paths = null;
+    if (sub === 'checkout' && args.includes('--')) paths = args.slice(args.indexOf('--') + 1);
+    else if (sub === 'restore') {
+      if (args.some((a) => a === '--pathspec-from-file' || a.startsWith('--pathspec-from-file='))) return 'git restore --pathspec-from-file';
+      const dd = args.indexOf('--');
+      if (dd >= 0) paths = args.slice(dd + 1);
+      else paths = args.filter((a, k) => !a.startsWith('-') && !['-s', '--source'].includes(args[k - 1]));
+    }
+    const hit = paths?.find(wholesale);
+    if (hit !== undefined) return sub === 'checkout' ? `git checkout -- ${hit}` : `git restore ${hit}`;
+  }
+  return null;
+}
+
 if (mode === 'patch') {
   // Every call removes the accepted record: it stands only while the last call was an accepting end check.
   fs.rmSync(path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json'), { force: true });
@@ -602,6 +668,19 @@ if (mode === 'patch') {
     if (hit) {
       deny(`Fast track: ${hit} had uncommitted changes when the run started. They are the developer's work, so the fast track leaves the file alone. `
         + 'If the change needs this file, report ESCALATE; the developer commits or stashes that work first, or uses /speckit-team.');
+    }
+  }
+  if (input.tool_name === 'Bash') {
+    const cmd = ti.command;
+    const h = historyCommand(cmd);
+    if (h) {
+      deny(`Fast track: ${who} may not run ${h}: the fast track never commits, pushes or opens a pull request; /speckit-patch does that after the end-of-run check accepts the run. `
+        + 'Change the working tree only, run the tests, and report DONE, FAILED or ESCALATE.');
+    }
+    const t = treeCommand(cmd, start);
+    if (t) {
+      deny(`Fast track: ${who} may not run ${t}: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. `
+        + 'Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.');
     }
   }
   let m;
