@@ -152,6 +152,8 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--uninstall` | remove everything the installer wrote, and nothing else ([Uninstall](#uninstall)) |
 | `--board` | also install the experimental [board mod](#board-mod-experimental); later reruns keep it |
 | `--no-board` | remove the board mod and keep the team |
+| `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
+| `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
 
 There is no flag for the fast track: `patcher` and its two skills are always installed.
 
@@ -784,6 +786,12 @@ it in the project's `.claude/settings.json`:
 { "env": { "CLAUDE_CODE_FORK_SUBAGENT": "0" } }
 ```
 
+To turn them off for every project instead, `node install.mjs --no-fork` writes the same line
+into the `settings.json` of your Claude config directory, and Claude Code's `fork` agent type is
+then gone everywhere. It writes it only where no value is set, records in its manifest that it did,
+and `--fork` or `--uninstall` removes it again only while it is still that `"0"`
+([#78](https://github.com/PIsberg/speckit-agents/issues/78)).
+
 This repository commits exactly that, since the team builds its own features here. The skill
 checks its Agent tool at the start of a run and tells you once if the parameter is missing. This
 surfaced while recording the README's GIFs
@@ -1388,8 +1396,8 @@ verdict is read from its `message`. Any new catch-all hook must do the same.
 In an interactive session, Claude Code 2.1.296 has fork subagents on, and then its Agent tool has
 no `run_in_background` parameter: every agent runs in the background, which costs a waiting
 request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0`, for example under `env` in the project's
-`.claude/settings.json`, and restart (see [Foreground launches](#foreground-launches)). The skill
-says so at the start of a run.
+`.claude/settings.json`, or for every project with `node install.mjs --no-fork`, and restart (see
+[Foreground launches](#foreground-launches)). The skill says so at the start of a run.
 
 ### `/speckit-implement` is not gated
 
@@ -1548,7 +1556,8 @@ nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
   are written back, CRLF and inline arrays included. If something did (another tool, you), that
-  change is kept and only the gates are removed, in the file's own format. Your own empty
+  change is kept and only the gates (and the `--no-fork` line, if the installer wrote it and it is
+  still `"0"`) are removed, in the file's own format. Your own empty
   `"hooks": {}` or event lists are kept. No backup is made at uninstall, and the install-time copy
   is deleted.
 - **Files:** only files that carry the installer's marker are removed; a same-named file you wrote

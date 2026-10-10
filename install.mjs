@@ -8,6 +8,9 @@
 //   node install.mjs --claude-dir D  target D instead of $CLAUDE_CONFIG_DIR or ~/.claude
 //   node install.mjs --board         also install the speckit-board mod; later reruns keep it
 //   node install.mjs --no-board      remove the speckit-board mod, keep the team
+//   node install.mjs --no-fork       turn Claude Code's fork subagents off for every project, so
+//                                    the team's agents run in the foreground; later reruns keep it
+//   node install.mjs --fork          remove what --no-fork wrote
 //
 // After installing, /speckit-patch <change> is the fast track for small changes, and
 // /speckit-triage <request> suggests which track fits.
@@ -49,6 +52,12 @@ const boardFlag = flag('--board');
 const noBoard = flag('--no-board');
 if (boardFlag && noBoard) {
   console.error('ERROR: --board and --no-board contradict each other.');
+  process.exit(1);
+}
+const forkFlag = flag('--fork');
+const noFork = flag('--no-fork');
+if (forkFlag && noFork) {
+  console.error('ERROR: --fork and --no-fork contradict each other.');
   process.exit(1);
 }
 
@@ -110,6 +119,7 @@ function settingsShapeProblem(s) {
   const kind = (v) => (v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v);
   const isObject = (v) => kind(v) === 'object';
   if (!isObject(s)) return `the file holds ${kind(s)}`;
+  if (s.env !== undefined && !isObject(s.env)) return `"env" is ${kind(s.env)}`;
   if (s.hooks === undefined) return null;
   if (!isObject(s.hooks)) return `"hooks" is ${kind(s.hooks)}`;
   for (const [event, groups] of Object.entries(s.hooks)) {
@@ -185,6 +195,26 @@ function withGates(current, addGates) {
   }
   if (Object.keys(hooks).length) next.hooks = hooks; else delete next.hooks;
   return next;
+}
+
+// --no-fork (#78): with Claude Code's fork subagents on, the default in an interactive session, every
+// agent runs in the background and the main session spends a request that only waits on each one.
+// Written only where no value is set, and removed only while it is still the "0" this wrote: a
+// value the user set is theirs. JSON has no room for the marker, so the manifest records it.
+const FORK_ENV = 'CLAUDE_CODE_FORK_SUBAGENT';
+function withFork(current, want, added) {
+  const next = JSON.parse(JSON.stringify(current));
+  const env = next.env;
+  if (want) {
+    if (env?.[FORK_ENV] !== undefined) return { next, added };
+    next.env = { ...(env ?? {}), [FORK_ENV]: '0' };
+    return { next, added: true };
+  }
+  if (added && env?.[FORK_ENV] === '0') {
+    delete env[FORK_ENV];
+    if (!Object.keys(env).length) delete next.env;
+  }
+  return { next, added: false };
 }
 
 function have(cmd) {
@@ -299,7 +329,8 @@ if (uninstall) {
     const backup = m.settingsBackup && read(abs(m.settingsBackup));
     let original = null;
     try { original = backup === null || backup === undefined ? null : JSON.parse(backup); } catch { original = null; }
-    const stripped = keepEmptyContainers(withGates(settings, false), original);
+    const stripped = keepEmptyContainers(withFork(withGates(settings, false), false, Boolean(m.addedForkEnv)).next, original);
+    if (original?.env && !stripped.env) stripped.env = {};
     // `claude plugin uninstall` and `marketplace remove` leave these keys behind as `{}`.
     for (const key of hadBoard ? ['enabledPlugins', 'extraKnownMarketplaces'] : []) {
       const v = stripped[key];
@@ -357,7 +388,9 @@ for (const { src, dst } of files()) {
 
 // One backup of the user's own settings, taken the first time this installer changes them, kept
 // under a fixed name and removed again on uninstall.
-const nextSettings = withGates(settings, true);
+const wantFork = !forkFlag && (noFork || Boolean(manifest?.forkOff));
+const fork = withFork(withGates(settings, true), wantFork, Boolean(manifest?.addedForkEnv));
+const nextSettings = fork.next;
 let settingsBackup = manifest?.settingsBackup ?? null;
 if (same(nextSettings, settings) && settingsText !== null) {
   log('unchanged', settingsFile);
@@ -385,6 +418,8 @@ write(manifestFile, `${JSON.stringify({
   // The intent, kept when a step failed, so the next rerun tries again.
   board: wantBoard,
   addedMarketplace: boardResult.added,
+  forkOff: wantFork,
+  addedForkEnv: fork.added,
 }, null, 2)}\n`);
 
 if (!dryRun) {

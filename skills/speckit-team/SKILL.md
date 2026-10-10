@@ -64,7 +64,8 @@ the background (see Handoffs).
 - Your Agent tool has a `run_in_background` parameter. If not, Claude Code has fork subagents on
   (the default in an interactive session) and runs every agent in the background, which costs an
   extra waiting request per agent. Tell the user once, in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0`
-  in the shell or under `env` in settings.json, then a restart, brings foreground launches back.
+  in the shell or under `env` in settings.json (`node install.mjs --no-fork` in the speckit-agents
+  checkout writes it for every project), then a restart, brings foreground launches back.
   Then go on.
 
 ## 0b. Constitution (only while it is the template)

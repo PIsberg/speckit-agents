@@ -332,12 +332,67 @@ test('uninstall puts back an agent that --force replaced', () => {
   assert.deepEqual(fs.readdirSync(path.join(dir, 'agents')), ['architect.md']);
 });
 
-test('--help lists every flag, --board and --no-board included', () => {
+test('--help lists every flag, --board, --no-board, --no-fork and --fork included', () => {
   const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
-  for (const f of ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board']) assert.match(r.stdout, new RegExp(`${f}\\b`));
+  for (const f of ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board', '--no-fork', '--fork']) assert.match(r.stdout, new RegExp(`${f}\\b`));
   assert.match(r.stdout, /\/speckit-patch/);
   assert.doesNotMatch(r.stdout, /^import/m);
+});
+
+// #78: in the 003 run fork subagents were on, all 53 agents ran in the background, and 24% of the main
+// session's input was responses that only waited. --no-fork writes the setting once, for every project.
+const forkEnv = (dir) => settingsOf(dir).env?.CLAUDE_CODE_FORK_SUBAGENT;
+test('--no-fork turns fork subagents off in settings.json; reruns keep it; --fork and uninstall remove it', () => {
+  const dir = claudeDir({ model: 'opus', env: { MY_VAR: '1' } });
+  const before = bytes(dir);
+  assert.equal(install(dir).status, 0);
+  assert.equal(forkEnv(dir), undefined, 'opt-in: a plain install does not set it');
+  let r = install(dir, '--no-fork');
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(forkEnv(dir), '0');
+  assert.equal(settingsOf(dir).env.MY_VAR, '1', "the user's own env is kept");
+  assert.equal(install(dir).status, 0);
+  assert.equal(forkEnv(dir), '0', 'a rerun without the flag keeps it');
+  r = install(dir, '--fork');
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(forkEnv(dir), undefined, '--fork removes what --no-fork wrote');
+  assert.equal(install(dir, '--no-fork').status, 0);
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(bytes(dir), before, 'uninstall restores settings.json byte for byte');
+});
+
+test('--no-fork leaves a value the user set alone, and uninstall does not remove it', () => {
+  for (const value of ['1', '0']) {
+    const dir = claudeDir({ env: { CLAUDE_CODE_FORK_SUBAGENT: value } });
+    assert.equal(install(dir, '--no-fork').status, 0);
+    assert.equal(forkEnv(dir), value, `kept ${value}`);
+    assert.equal(install(dir, '--fork').status, 0);
+    assert.equal(forkEnv(dir), value, `--fork does not remove the user's ${value}`);
+    assert.equal(install(dir, '--uninstall').status, 0);
+    assert.equal(forkEnv(dir), value, `uninstall keeps the user's ${value}`);
+  }
+});
+
+test('--no-fork into an empty config dir, then uninstall, leaves it empty', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir, '--no-fork').status, 0);
+  assert.equal(forkEnv(dir), '0');
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+test('--fork and --no-fork together, or an env that is not an object, are refused before anything is written', () => {
+  const dir = claudeDir();
+  const r = install(dir, '--fork', '--no-fork');
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /contradict/);
+  assert.deepEqual(fs.readdirSync(dir), []);
+  const bad = claudeDir({ env: ['CLAUDE_CODE_FORK_SUBAGENT=0'] });
+  const b = install(bad, '--no-fork');
+  assert.equal(b.status, 1);
+  assert.match(b.stderr, /"env" is an array/);
+  assert.deepEqual(fs.readdirSync(bad), ['settings.json']);
 });
 
 test('--board and --no-board together are refused before anything is written', () => {
