@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-09
 
-**Status**: Draft
+**Status**: Implemented (merged in PR #76, 2026-10-10). Approved by the owner at b215aef; FR-007 and the Threat Model were amended after that by owner decisions (9d7deb8, 4591bbb; plan.md decisions 15 to 17).
 
 **Input**: GitHub issue #68, "Feature: Implement a /specify-fastrack for small changes in the flow". The issue's cost and time figures and its model suggestions are not requirements.
 
@@ -73,7 +73,7 @@ The fast track may not change files that carry the project's guardrails or contr
 
 1. **Given** a protected path, **When** the fast track tries to write it directly, **Then** the write is denied and the file is unchanged.
 2. **Given** a protected file was changed by other means such as a shell command, **When** the agent tries to finish, **Then** it is blocked, and the message names the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored.
-3. **Given** a protected file that was already modified when the run started, **When** the run ends, **Then** that file is not reported, blocked on or touched.
+3. **Given** a protected file that was already modified when the run started, **When** the run ends, **Then** that file is not reported, blocked on or touched, unless it changed again during the run, which stops the run like an over-budget change (plan.md decision 13).
 4. **Given** an unprotected path, **When** the fast track writes it, **Then** it is allowed.
 5. **Given** an installed team file in the Claude config directory (hook script, agent definition, skill or settings file), **When** the fast track tries to write it directly, **Then** the write is denied and the file is unchanged.
 6. **Given** an installed team file in the Claude config directory was changed by other means such as a shell command, **When** the run ends, **Then** the run ends as FAILED with a message naming the files, nothing is committed, pushed or opened as a pull request, and the agent is not blocked from finishing.
@@ -153,7 +153,7 @@ Before work starts, the developer is told whether the request looks like a small
 - **SC-001**: A one-line typo fix completes through the fast track with 0 files created under `specs/` and 1 agent stage instead of `/speckit-team`'s 6.
 - **SC-002**: 100% of runs whose change exceeds the budget are stopped, and 0% of runs at or under it are stopped for budget.
 - **SC-003**: 100% of attempted writes to protected paths in the test matrix are denied or caught, on Windows, macOS and Linux.
-- **SC-004**: All existing test suites pass unchanged, and each new hook decision has a test that fails when the hook is replaced by one that always allows.
+- **SC-004**: All existing test suites pass, with existing assertions changed only where a count grows with the new agent (T011, T012: 6 to 7 agents), and each new hook decision has a test that fails when the hook is replaced by one that always allows.
 - **SC-005**: Input token use of a fast-track run is measured with the repo's usage tool and recorded in the README next to `/speckit-team`'s; no cost figure is promised in advance.
 
 ## Assumptions
@@ -161,6 +161,8 @@ Before work starts, the developer is told whether the request looks like a small
 - The fast track adds no new runtime dependency.
 - Uncommitted changes present at start are left alone.
 - The protected list in FR-007 is the minimum; the planner may add paths, and a developer cannot override it per run.
+- A `.txt` file is documentation only under the top-level `docs/` folder or with a documentation name (owner decision 2026-10-10, plan.md decision 17 point 1): `src/docs/x.txt` counts as production.
+- The installed team is hashed one folder level deep (research R16): files deeper below `agents/`, `hooks/` or `skills/<name>/` are protected against direct writes only.
 - Merging stays with the developer; the fast track never merges.
 - The issue's alternative of relaxing the audit gate for a lone implementer (issue point 4) is out of scope; `/speckit-team`'s gates stay as they are.
 

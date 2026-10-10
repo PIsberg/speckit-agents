@@ -24,6 +24,13 @@ T017, T018). M5: `git reset --hard`, `git clean` and a wholesale `git checkout`/
 denied to `patcher`, and the restore allowance admits only commands naming protected files still to
 be restored (T005, T006, T007, T008, T011, T014, T017, T018). No task added or renumbered.
 
+**Revision of 2026-10-10, spec-gatekeeper review**: the owner's decision 17 (plan.md): a `.txt` file
+is documentation only under the top-level `docs/` or with a documentation name, other `.txt` files
+count as production (T003, T004; the case is `test/hook.test.mjs`, "patch: a .txt production file
+counts, documentation .txt does not"); FR-003, FR-004 and FR-013 are accepted as prompt rules with
+live checks; forge CLIs other than `gh` and `hub` stay a documented gap (since closed for `glab` and
+`tea` by #72). No task added or renumbered.
+
 **Tests**: Required by constitution I and SC-004. In every slice the test tasks come first and are
 shown failing before the implementation task. Where a test guards behaviour that already holds (the
 malformed-input cases of an existing mode), the task says so; the deliberate break that turns it red

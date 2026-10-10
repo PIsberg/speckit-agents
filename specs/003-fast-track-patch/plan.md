@@ -70,7 +70,8 @@ request by `patcher` (decision 14); silent and inert without `.specify/` (FR-010
 records carry paths, counts and hashes only (FR-014).
 
 **Scale/Scope**: about 260 lines added to `hooks/speckit-team.mjs`; one agent file of about 60
-lines; two skill files of about 60 and 25 lines; 4 lines in `install.mjs`; 1 line in `model.ts`.
+lines; two skill files of about 60 and 25 lines; about 7 lines in `install.mjs` (the merged change
+added 9 and removed 2); 1 line in `model.ts`.
 
 ## Constitution Check
 
@@ -310,7 +311,8 @@ and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 an
        production file counts, documentation .txt does not".
     2. *FR-003, FR-004 and FR-013 are accepted as prompt rules* (extends decision 8; research R10,
        R11). Their coverage is the text tests of the installed `agents/patcher.md` and skills plus
-       live checks L1 and L2 (quickstart.md), not hook tests.
+       live checks (quickstart.md): L1 and L2 for FR-003 and FR-004, L6 for FR-013 (the triage
+       check, which failed once; #73), not hook tests.
     3. *Forge CLIs other than `gh` and `hub` are a documented gap* (research R15, "What remains").
        `glab` and `tea` are not in the deny list; a commit made through them is still caught by the
        end check (decision 15, point 4), but a push, merge request or issue they made on the forge
