@@ -162,7 +162,7 @@ test('the pane lists the phases with their notes, the tasks by section, the retr
     const keys = buttons.map(b => b.key)
     expect(keys.indexOf('clear')).toBe(keys.indexOf('band') + 1)
     expect(keys.indexOf('close')).toBe(keys.indexOf('clear') + 1)
-    expect(buttons[keys.indexOf('clear')].props).toMatchObject({ label: 'clear', hotkey: 'c' })
+    expect(buttons[keys.indexOf('clear')]?.props).toMatchObject({ label: 'clear', hotkey: 'c' })
     await ui.unmount()
   }
 })
@@ -570,8 +570,8 @@ function recorders(on: On) {
 // Refuses writes to one of the mod's state keys once armed.
 function denyState(on: On, key: string) {
   const gate = { isArmed: false }
-  on('state.set', { plugin: 'speckit-board', key } as never, (_$: unknown, e: unknown, next: (e: unknown) => unknown) =>
-    (gate.isArmed ? { deny: 'state is read-only' } : next(e)) as never)
+  on('state.set', { plugin: 'speckit-board', key } as never, ((_$: unknown, e: unknown, next: (e: never) => unknown) =>
+    (gate.isArmed ? { deny: 'state is read-only' } : next(e as never))) as never)
   return gate
 }
 
