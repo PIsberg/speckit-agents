@@ -384,12 +384,25 @@ if (mode === 'gate') {
 }
 
 if (mode === 'verdict') {
+  // The auditor's first tool call records the files it starts from: a verdict is about the files it
+  // read, and one that finishes after they changed would stamp itself on files nobody audited (#77).
+  const startFile = agentId && path.join(stateDir, 'agents', `${agentId}.audit-start.json`);
+  const doneFile = agentId && path.join(stateDir, 'agents', `${agentId}.verdict-done`);
+  if (event === 'PreToolUse' && input.tool_name !== 'SubagentHandback') {
+    const feat = feature();
+    if (!startFile || !feat) process.exit(0);
+    // Work after a report is a new audit by the same agent (one resumed with SendMessage): it starts afresh.
+    if (fs.existsSync(doneFile)) { fs.rmSync(doneFile, { force: true }); fs.rmSync(startFile, { force: true }); }
+    if (!fs.existsSync(startFile)) writeJson(startFile, { feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
+    process.exit(0);
+  }
   const viaHandback = event === 'PreToolUse';
-  if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
   const text = reportText(viaHandback);
   const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
+  // The Stop after a handback is the same report: neither recorded twice nor asked for again.
+  if (doneFile && fs.existsSync(doneFile)) process.exit(0);
   if (!found) {
     if (viaHandback) {
       // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
@@ -404,6 +417,14 @@ if (mode === 'verdict') {
   }
   if (!feat) process.exit(0);
   const verdict = found[1].toUpperCase();
+  if (doneFile) writeJson(doneFile, { verdict });
+  // No start record (an auditor that made no tool call, or a main-thread Stop) keeps the old rule:
+  // the verdict is on the files as they are now. An unreadable one proves nothing, so it is stale.
+  const start = startFile ? readState(startFile) : undefined;
+  if (start !== undefined && (!start || start.feature !== feat || start.fingerprint !== fingerprint(feat))) {
+    emit({ systemMessage: `spec-auditor's VERDICT: ${verdict} was not recorded: spec, plan, tasks or constitution of ${feat} changed after it started `
+      + `reading them${start?.at ? ` (${start.at})` : ''}, so it describes files that are gone. The last recorded verdict stands; run @agent-spec-auditor again on the current files.` });
+  }
   writeJson(verdictFile(feat), {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });

@@ -267,7 +267,8 @@ test('verdict is read from the handback report', () => {
   assert.ok(!denied(sent), 'the report goes through');
   assert.match(sent.systemMessage, /recorded VERDICT: PASS/);
   assert.equal(run(dir, ['gate'], tool), null, 'and the PASS unlocks the gate');
-  handback(dir, 'verdict', 'Findings...\nVERDICT: FAIL');
+  // A second audit: one agent's second report with no work in between is the same report (#77).
+  handback(dir, 'verdict', 'Findings...\nVERDICT: FAIL', { agent_id: 'aud2' });
   assert.ok(denied(run(dir, ['gate'], tool)));
 });
 
@@ -283,6 +284,65 @@ test('stop after a handback verdict does not demand the line again', () => {
   const { dir } = repo();
   handback(dir, 'verdict', 'VERDICT: FAIL');
   assert.equal(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud1', last_assistant_message: '' }), null);
+});
+
+// #77: a verdict describes the files the auditor read, not the files on disk when it stops. Seen in
+// feature 003: an audit launched on old files finished ten hours late, and its FAIL replaced a newer
+// audit's PASS on the current files.
+const readAs = (dir, id) => run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: id });
+const gateOpen = (dir) => !denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} }));
+
+test('a late verdict on files that changed after the auditor started does not replace a newer one', () => {
+  const { dir, write: w } = repo();
+  assert.equal(readAs(dir, 'old'), null, 'the first tool call only records where the audit started');
+  w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work, revised.\n');
+  assert.equal(readAs(dir, 'new'), null);
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'new' }).systemMessage, /recorded VERDICT: PASS/);
+  const late = handback(dir, 'verdict', 'Two HIGH findings.\nVERDICT: FAIL', { agent_id: 'old' });
+  assert.ok(!denied(late), 'the report itself still goes through');
+  assert.match(late.systemMessage, /VERDICT: FAIL was not recorded: .*changed after it started/);
+  assert.ok(gateOpen(dir), 'the newer PASS still stands');
+  assert.equal(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'old', last_assistant_message: 'VERDICT: FAIL' })?.decision, undefined,
+    'its Stop neither records the stale verdict nor asks for a VERDICT line');
+  assert.ok(gateOpen(dir), 'the Stop did not record it either');
+});
+
+test('a PASS on files edited during the audit does not open the gate', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  w(`${FEAT}/tasks.md`, '- [ ] T001 write test\n- [ ] T002 implement\n- [ ] T003 unaudited\n');
+  assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud1', last_assistant_message: 'VERDICT: PASS' }).systemMessage,
+    /VERDICT: PASS was not recorded/);
+  assert.ok(!gateOpen(dir));
+  readAs(dir, 'aud2');
+  assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud2', last_assistant_message: 'VERDICT: PASS' }).systemMessage,
+    /recorded VERDICT: PASS/, 'a fresh audit of the same files is recorded');
+  assert.ok(gateOpen(dir));
+});
+
+test('ticking a task during the audit does not make its verdict stale', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [ ] T002 implement\n');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
+});
+
+test('an auditor resumed after its report starts a new audit from the files it reads then', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  handback(dir, 'verdict', 'VERDICT: FAIL', { agent_id: 'aud1' });
+  w(`${FEAT}/plan.md`, '# Plan\nRevised for the FAIL.\n');
+  readAs(dir, 'aud1');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
+  assert.ok(gateOpen(dir));
+});
+
+test('an unreadable audit start record is treated as stale, not as a match', () => {
+  const { dir } = repo();
+  readAs(dir, 'aud1');
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'aud1.audit-start.json'), '{broken');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /not recorded/);
+  assert.ok(!gateOpen(dir));
 });
 
 // Raw stdin, run from inside the repo: input that is not a hook event carries no cwd of its own.

@@ -375,6 +375,21 @@ test("spec-auditor's Stop asks once for a missing VERDICT line, then records the
   assert.equal(v.feature, 'specs/001-x');
 });
 
+// #77: the PreToolUse entry on every tool records the files the audit starts from. Without it, the
+// second audit's PASS would be stamped on the spec it edited mid-run and replace the first one.
+test("spec-auditor's verdict is not recorded when the files changed after its first tool call", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const first = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [call('Read', { file_path: spec(s) }), say('No findings.\nVERDICT: PASS')] });
+  const recorded = state(s, 'verdicts', '001-x.json');
+  assert.equal(recorded.verdict, 'PASS', story(first));
+  const second = await session(s, {
+    [MAIN]: [agent('spec-auditor', 'e2e auditor')],
+    'e2e auditor': [call('Bash', { command: 'echo "FR-002 added mid-audit." >> specs/001-x/spec.md', description: 'Edit the spec' }), say('No findings.\nVERDICT: FAIL')],
+  });
+  assert.match(fs.readFileSync(spec(s), 'utf8'), /FR-002/, `the Bash call never ran:\n${story(second)}`);
+  assert.deepEqual(state(s, 'verdicts', '001-x.json'), recorded, `the stale FAIL replaced the PASS:\n${story(second)}`);
+});
+
 test("spec-auditor's report through SubagentHandback is refused once without a VERDICT line, then recorded", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   // Auto mode is where Claude Code gives a subagent the SubagentHandback tool.
