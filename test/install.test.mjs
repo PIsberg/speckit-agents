@@ -105,6 +105,29 @@ test('installed speckit-patch skill commits only after the end check, and never 
   assert.ok(empty.index < text.indexOf('git commit -m'), 'the empty-record rule comes before the first git commit -m');
 });
 
+// #73, from the sixth spec audit of PR #76: without .specify/ every fast-track hook is inactive (FR-010),
+// so patcher would run with no budget and no protected paths. The skill must stop before anything else.
+test('installed speckit-patch skill stops first when .specify/ is missing', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  const stop = /`\.specify\/` exists\. If not, stop/.exec(text);
+  assert.ok(stop, 'the precondition is stated');
+  assert.ok(stop.index < text.indexOf('## 2.'), 'it comes before the branch is created');
+  assert.ok(stop.index < text.indexOf('Launch `patcher`'), 'and before patcher is launched');
+});
+
+// #73, live check L3: patcher wrote 86 lines in one Bash call, made no further tool call, so the budget
+// deny never reached it, and it reported DONE. A last tool call before the report meets that deny.
+test('installed patcher checks the tree once more before reporting, so an over-budget run ends ESCALATE', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
+  const last = /Last, just before the report, run `git status --short` again[^]*ESCALATE/.exec(text);
+  assert.ok(last, 'the last step is stated');
+  assert.ok(last.index < text.indexOf('## Report'), 'in the Process, before the Report');
+});
+
 // #70: the plan stop and the dictated revision are a contract between the skill and the architect.
 // The skill greps plan.md for the section and starts a prompt with the prefix; renaming either on
 // one side only would quietly bring back a revision round per decision.
