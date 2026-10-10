@@ -1200,6 +1200,10 @@ test('patch: other forges, obfuscated git words, aliases, publishing and its own
     ['g"it" push', 'git push'], ["g'it' commit -m x", 'git commit'], ['g\\it push', 'git push'],
     ['G=git; $G push', 'git push'], ['G=git && ${G} commit -m x', 'git commit'], ['git${IFS}push', 'git push'],
     ['git -c alias.p=push p', 'git -c alias'], ['git -c alias.s=status s', 'git -c alias'],
+    // From the push-time security review: an empty substitution between git and its subcommand still
+    // runs git push (``git `` push`` was denied before #72), and a variable is read where it is used.
+    ['git `` push', 'git push'], ['git $(true) push', 'git push'], ['git `true` commit -m x', 'git commit'],
+    ['G=git; $G push; G=x', 'git push'], ['git \\\npush', 'git push'],
     ['npm publish', 'npm publish'], ['pnpm publish --access public', 'pnpm publish'], ['yarn npm publish', 'yarn publish'],
     ['echo {} > .git/speckit-team/patch/p1.json', "a command on the fast track's state"],
     ["rm -rf '.git/speckit-team'", "a command on the fast track's state"],
@@ -1211,7 +1215,8 @@ test('patch: other forges, obfuscated git words, aliases, publishing and its own
     assert.match(why(out), new RegExp(`may not run ${esc(name)}`), command);
   }
   for (const command of ['git branch --show-current', 'git branch', 'git branch -a', 'git branch --list', 'git branch -vv && npm test',
-    'echo "it" "push"', 'X=1 npm test', 'npm run build', 'grep -rn publish src', 'cat package.json']) {
+    'echo "it" "push"', 'X=1 npm test', 'npm run build', 'grep -rn publish src', 'cat package.json',
+    'git log $(git rev-parse HEAD) --oneline', 'git diff `git merge-base HEAD main`']) {
     const out = bash(dir, command);
     assert.equal(out, null, `${command}: expected null, got ${JSON.stringify(out)}`);
   }

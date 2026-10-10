@@ -635,29 +635,38 @@ const FORGE_CLIS = new Set(['gh', 'hub', 'glab', 'tea']);
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 // git branch that only lists: live check L5 saw `git branch --show-current` denied (#72).
 const BRANCH_READ_ONLY = new Set(['--show-current', '--list', '-l', '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose', '--no-color', '--no-column']);
-// The command with quotes and backslashes taken out and $VAR / ${VAR} replaced by the value the command
-// assigns it, or a space: g"it" push, G=git; $G push and git${IFS}push all read as git push (#72).
-// The shell would run more than this sees; the end check still catches any commit that gets through.
+// The command as the shell would more likely run it: line continuations joined, command substitutions
+// dropped (their output is unknown, and empty is the reading that hides most), $VAR and ${VAR} replaced
+// by the value assigned before that point, or a space, then quotes and backslashes taken out. So
+// g"it" push, G=git; $G push, git${IFS}push and git $(true) push all read as git push (#72). The shell
+// can still run more than this sees; the end check catches any commit that gets through.
 function unquoted(command) {
   const vars = {};
-  for (const m of command.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:'([^']*)'|"([^"]*)"|([^\s;&|)]*))/g)) vars[m[1]] = m[2] ?? m[3] ?? m[4];
-  return command.replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g, (_, a, b) => vars[a ?? b] ?? ' ').replace(/["'\\]/g, '');
+  return command.replace(/\\\r?\n/g, ' ').replace(/\$\([^()]*\)|`[^`]*`/g, ' ')
+    .replace(/(?<=^|[\s;&|(])([A-Za-z_]\w*)=(?:'([^']*)'|"([^"]*)"|([^\s;&|)]*))|\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g,
+      (m, name, sq, dq, bare, braced, plain) => {
+        if (name) { vars[name] = sq ?? dq ?? bare; return m; }
+        return vars[braced ?? plain] ?? ' ';
+      })
+    .replace(/["'\\]/g, '');
 }
+// Words, with only a command separator (; & | newline) as a boundary between them: anything else the
+// shell drops or substitutes, such as `` or $(...), still leaves git next to its subcommand.
+const SEP = '\0';
 function historyWords(command) {
-  for (const seg of command.split(/[\n;&|(){}<>`$!]+/)) {
-    const words = seg.split(/[\s"']+/).filter(Boolean);
-    for (let i = 0; i < words.length; i++) {
-      const prog = program(words[i]);
-      if (FORGE_CLIS.has(prog)) return prog;
-      if (PACKAGE_MANAGERS.has(prog) && words.slice(i + 1).includes('publish')) return `${prog} publish`;
-      if (prog !== 'git') continue;
-      const j = afterGitOptions(words, i);
-      const sub = words[j];
-      if (sub === undefined) continue;
-      if (sub === 'branch' && words.slice(j + 1).every((w) => BRANCH_READ_ONLY.has(w))) continue;
-      if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
-      if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
-    }
+  const words = command.split(/([;&|\n]+)|[\s(){}<>`"'$!]+/).filter((t) => t !== undefined && t !== '').map((t) => (/^[;&|\n]+$/.test(t) ? SEP : t));
+  const simple = (k) => { const end = words.indexOf(SEP, k); return words.slice(k, end < 0 ? undefined : end); };
+  for (let i = 0; i < words.length; i++) {
+    const prog = program(words[i]);
+    if (FORGE_CLIS.has(prog)) return prog;
+    if (PACKAGE_MANAGERS.has(prog) && simple(i + 1).includes('publish')) return `${prog} publish`;
+    if (prog !== 'git') continue;
+    const j = afterGitOptions(words, i);
+    const sub = words[j];
+    if (sub === undefined || sub === SEP) continue;
+    if (sub === 'branch' && simple(j + 1).every((w) => BRANCH_READ_ONLY.has(w))) continue;
+    if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
+    if (sub === 'checkout' && !simple(j + 1).includes('--')) return 'git checkout';
   }
   return null;
 }
