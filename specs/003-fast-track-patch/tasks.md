@@ -127,7 +127,7 @@ commit.
   - `scope` and `lane` unchanged (FR-009): in a repo whose working-tree `.specify/test-paths` has an uncommitted `^checks/golden/` line, `scope tests` still allows a `Write` to `checks/golden/x.out`.
   - Add `['patch']` to the `MODES` list of both malformed-input tests, to the "an event a mode is not wired for" test, and a `patch` call to "every mode is a no-op outside a Spec Kit repo".
   - After every case: no hook output contains `PATCH-CONTENT-7f3a` (FR-014), and `.git/speckit-team/` holds no `verdicts/`, `retries/` or `ends/` folder (FR-009).
-- [ ] T004 [US2] Implement the `patch` mode's PreToolUse path in `hooks/speckit-team.mjs`, per contracts/hook-cli.md "patch" steps 1, 2, 3, 5 and 7 (step 4 is T006, step 6 is T008), research R3, R5, R8, R9 and R14, and data-model.md. New names:
+- [X] T004 [US2] Implement the `patch` mode's PreToolUse path in `hooks/speckit-team.mjs`, per contracts/hook-cli.md "patch" steps 1, 2, 3, 5 and 7 (step 4 is T006, step 6 is T008), research R3, R5, R8, R9 and R14, and data-model.md. New names:
   - `const PATCH_LINES = 30;`, `const PATCH_FILES = 2;`
   - `const DOC_PATTERNS: RegExp[] = [/\.(md|mdx|markdown|rst|adoc|asciidoc|txt)$/i];` and `const isDoc = (rel: string): boolean`.
   - `function parseTestPaths(text: string): { patterns: RegExp[], bad: string | null }`: the body of today's `testPaths` IIFE, which now calls it with the working-tree file (no change in `scope` or `lane`).
