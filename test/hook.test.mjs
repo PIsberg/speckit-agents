@@ -48,6 +48,7 @@ const pass = (dir) => run(dir, ['verdict'], { hook_event_name: 'SubagentStop', l
 test('every mode is a no-op outside a Spec Kit repo', () => {
   const { dir } = repo({ speckit: false });
   assert.equal(write(dir, ['scope', 'only', 'specs/'], 'src/main/App.java'), null);
+  assert.equal(write(dir, ['scope', 'protected'], '.github/workflows/x.yml'), null, 'scope protected');
   assert.equal(run(dir, ['gate'], { hook_event_name: 'UserPromptExpansion', command_name: 'speckit-implement' }), null);
 });
 
@@ -288,7 +289,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -332,6 +333,8 @@ test('mistyped fields never crash a hook', () => {
   for (const file_path of [7, [], {}, null, true]) {
     const out = run(dir, ['scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } });
     assert.ok(!decided(out), `file_path ${JSON.stringify(file_path)}`);
+    const prot = run(dir, ['scope', 'protected'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } });
+    assert.ok(!decided(prot), `scope protected, file_path ${JSON.stringify(file_path)}`);
   }
   for (const message of [7, ['VERDICT: PASS'], null]) {
     assert.ok(!decided(handback(dir, 'verdict', message)) || true); // must not throw; run() asserts exit 0
@@ -603,4 +606,111 @@ test('ends without --record leaves the recorded word alone', () => {
   run(dir, ['ends', '--record', 'APPROVED', 'REJECTED'], { hook_event_name: 'SubagentStop', agent_id: 'gk1', last_assistant_message: 'FR-001 untested\nREJECTED' });
   run(dir, ['ends', 'RED', 'BLOCKED'], { hook_event_name: 'SubagentStop', agent_id: 'tw1', last_assistant_message: 'test/a.test.mjs:3 FR-001 fails\nRED' });
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).word, 'REJECTED');
+});
+
+// --- 003 fast track: `scope protected` (T001; FR-007, FR-001, US3-1, US3-4, SC-003) ---
+const PROT = ['scope', 'protected'];
+const OWN = ['hooks/speckit-team.mjs', 'agents/implementer.md', 'skills/speckit-team/SKILL.md', 'install.mjs', 'package.json'];
+const caseInsensitiveFs = (dir) => fs.existsSync(path.join(dir, '.GIT'));
+// Asserts a deny that names the repo-relative path and /speckit-team, and that disk is unchanged.
+function assertProtected(dir, rel) {
+  const target = path.join(dir, rel);
+  const before = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+  const out = write(dir, PROT, rel);
+  assert.ok(denied(out), `${rel} must be denied: ${JSON.stringify(out)}`);
+  const reason = out.hookSpecificOutput.permissionDecisionReason;
+  assert.ok(reason.includes(rel), `${rel}: reason names the path: ${reason}`);
+  assert.match(reason, /\/speckit-team/, rel);
+  const after = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+  assert.equal(after, before, `${rel}: disk unchanged`);
+}
+function commitAll(r, msg) { r.g('add', '-A'); r.g('commit', '-qm', msg); return r; }
+function ownRepo() {
+  const r = repo();
+  r.write('package.json', '{"name":"speckit-agents"}');
+  for (const f of OWN.slice(0, 4)) r.write(f, 'x\n');
+  return commitAll(r, 'own');
+}
+
+test('scope protected: Spec Kit, CI and agent-team paths are denied before the write (FR-007, FR-001, US3-1)', () => {
+  const { dir } = repo();
+  const paths = ['.specify/memory/constitution.md', '.specify/feature.json', '.specify/test-paths', 'specs/001-demo/spec.md',
+    'specs/004-new/plan.md', '.claude/settings.json', '.claude/agents/x.md', '.github/workflows/test.yml', '.github/CODEOWNERS',
+    '.gitlab-ci.yml', '.circleci/config.yml', 'azure-pipelines.yml', 'Jenkinsfile', '.pre-commit-config.yaml'];
+  if (caseInsensitiveFs(dir)) paths.push('.SPECIFY/memory/constitution.md');
+  for (const rel of paths) assertProtected(dir, rel);
+});
+
+test('scope protected: ordinary paths are allowed (FR-001, US3-4)', () => {
+  const { dir } = repo();
+  assertProtected(dir, '.github/CODEOWNERS'); // the rule is live, so the allows below mean something
+  for (const f of ['src/main/App.java', 'README.md', 'docs/guide.md', 'test/app.test.js', 'hooks/useThing.js', 'agents/notes.txt',
+    'skills/x/notes.md', 'src/install.mjs', 'package.json', '.specifyx/notes.md', 'specsheet/x.md']) {
+    assert.equal(write(dir, PROT, f), null, f);
+  }
+});
+
+test('scope protected: the speckit-agents sources are protected in the speckit-agents repo only (FR-007)', () => {
+  const { dir } = ownRepo();
+  const pkgBefore = fs.readFileSync(path.join(dir, 'package.json'), 'utf8');
+  for (const rel of OWN) assertProtected(dir, rel);
+  assert.equal(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'), pkgBefore, 'package.json content unchanged');
+  if (caseInsensitiveFs(dir)) for (const rel of ['HOOKS/speckit-team.mjs', 'PACKAGE.JSON']) assertProtected(dir, rel);
+  for (const f of ['hooks/useThing.js', 'agents/notes.txt', 'src/install.mjs', 'pkg/package.json']) {
+    assert.equal(write(dir, PROT, f), null, f);
+  }
+});
+
+test('scope protected: the same five paths are ordinary in other repos (FR-007)', () => {
+  const withPkg = (rel, text, commit = true) => () => { const r = repo(); r.write(rel, text); return commit ? commitAll(r, 'p') : r; };
+  const cases = {
+    'no package.json': () => repo(),
+    'other name': withPkg('package.json', '{"name":"my-app"}'),
+    'malformed': withPkg('package.json', '{not json'),
+    'array': withPkg('package.json', '[]'),
+    'name is an array': withPkg('package.json', '{"name":["speckit-agents"]}'),
+    'only in pkg/': withPkg('pkg/package.json', '{"name":"speckit-agents"}'),
+    'never committed': withPkg('package.json', '{"name":"speckit-agents"}', false),
+    'no commit': () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skteam-'));
+      execFileSync('git', ['init', '-q'], { cwd: dir, stdio: 'ignore' });
+      fs.mkdirSync(path.join(dir, '.specify'));
+      fs.writeFileSync(path.join(dir, '.specify', 'feature.json'), '{}');
+      fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"speckit-agents"}');
+      return { dir };
+    },
+  };
+  for (const [name, make] of Object.entries(cases)) {
+    const { dir } = make();
+    assertProtected(dir, '.github/workflows/test.yml'); // the rule is live in this repo too
+    for (const rel of OWN) assert.equal(write(dir, PROT, rel), null, `${name}: ${rel}`);
+  }
+});
+
+test('scope protected: the repo name is read from HEAD, not the working tree (decision 4)', () => {
+  const { dir } = ownRepo();
+  fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"x"}');
+  assertProtected(dir, 'install.mjs');
+});
+
+test('scope protected: the installed agent team outside the repo is denied (FR-007)', () => {
+  const { dir } = repo();
+  const checkout = path.join(path.dirname(HOOK), '..');
+  const ev = (file_path) => run(dir, PROT, { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } });
+  for (const p of [path.join(checkout, 'agents', 'x.md'), path.join(checkout, 'hooks', 'x.mjs'),
+    path.join(checkout, 'skills', 'y', 'SKILL.md'), path.join(checkout, 'settings.json'), path.join(checkout, 'settings.local.json')]) {
+    const out = ev(p);
+    assert.ok(denied(out), p);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /installed agent team/, p);
+    assert.ok(!fs.existsSync(p), `${p} not created`);
+  }
+  assert.equal(ev(path.join(os.tmpdir(), 'elsewhere.txt')), null);
+});
+
+test('scope protected: the guardrail state under .git/ is denied (FR-007)', () => {
+  const { dir } = repo();
+  assertProtected(dir, '.github/CODEOWNERS'); // the rule is live
+  const out = write(dir, PROT, '.git/speckit-team/retries/x.json');
+  assert.ok(denied(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /guardrail state/);
 });
