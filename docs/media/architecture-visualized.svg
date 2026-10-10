@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1042" width="800" height="1042" style="background:#0b0f19; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1286" width="800" height="1286" style="background:#0b0f19; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
   <!-- Drawn at 800 wide so GitHub's README column (about 830px) shows it near 1:1: keep text at 14 or more. -->
   <defs>
     <linearGradient id="bgL4" x1="0" y1="0" x2="1" y2="0">
@@ -37,7 +37,7 @@
 
   <!-- LAYER 4: COMMANDS -->
   <g transform="translate(24, 100)" filter="url(#shadow)">
-    <rect width="752" height="140" rx="10" fill="#131127" stroke="#6366f1" stroke-width="1.5"/>
+    <rect width="752" height="248" rx="10" fill="#131127" stroke="#6366f1" stroke-width="1.5"/>
     <rect x="16" y="-13" width="150" height="26" rx="4" fill="#6366f1"/>
     <text x="91" y="5" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="0.5">1. COMMANDS</text>
 
@@ -50,13 +50,23 @@
     <text x="402" y="56" font-size="17" font-weight="700" fill="#a5b4fc" font-family="monospace">/speckit-board</text>
     <text x="402" y="82" font-size="14" fill="#cbd5e1">• Status band and terminal pane</text>
     <text x="402" y="104" font-size="14" fill="#cbd5e1">• Phase track, agent timers, RED n/3</text>
+
+    <rect x="20" y="134" width="348" height="96" rx="8" fill="url(#bgL4)" stroke="#818cf8"/>
+    <text x="38" y="164" font-size="17" font-weight="700" fill="#a5b4fc" font-family="monospace">/speckit-patch &lt;change&gt;</text>
+    <text x="38" y="190" font-size="14" fill="#cbd5e1">• One agent, 30 lines / 2 files</text>
+    <text x="38" y="212" font-size="14" fill="#cbd5e1">• Protected paths denied; commits after end check</text>
+
+    <rect x="384" y="134" width="348" height="96" rx="8" fill="url(#bgL4)" stroke="#818cf8"/>
+    <text x="402" y="164" font-size="17" font-weight="700" fill="#a5b4fc" font-family="monospace">/speckit-triage</text>
+    <text x="402" y="190" font-size="14" fill="#cbd5e1">• Suggests a track for your change</text>
+    <text x="402" y="212" font-size="14" fill="#cbd5e1">• Advisory: runs nothing</text>
   </g>
 
-  <path d="M 400 240 L 400 264" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+  <path d="M 400 352 L 400 376" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
 
   <!-- LAYER 3: AGENTS (pipeline order, left to right, top to bottom) -->
-  <g transform="translate(24, 278)" filter="url(#shadow)">
-    <rect width="752" height="296" rx="10" fill="#090d16" stroke="#38bdf8" stroke-width="1.5"/>
+  <g transform="translate(24, 390)" filter="url(#shadow)">
+    <rect width="752" height="428" rx="10" fill="#090d16" stroke="#38bdf8" stroke-width="1.5"/>
     <rect x="16" y="-13" width="150" height="26" rx="4" fill="#0284c7"/>
     <text x="91" y="5" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="0.5">2. AGENTS</text>
 
@@ -108,12 +118,23 @@
       <text x="14" y="78" font-size="14" fill="#6ee7b7">Lane: read-only</text>
       <text x="14" y="100" font-size="14" font-weight="700" fill="#a7f3d0">APPROVED / REJECTED</text>
     </g>
+    <g transform="translate(20, 292)">
+      <rect width="226" height="116" rx="6" fill="url(#bgL3)" stroke="#06b6d4" stroke-width="1.2"/>
+      <rect width="226" height="30" rx="6" fill="#0891b2"/>
+      <text x="113" y="21" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">patcher</text>
+      <text x="113" y="54" text-anchor="middle" font-size="15" font-weight="600" fill="#a5f3fc">Sonnet</text>
+      <text x="14" y="78" font-size="14" fill="#94a3b8">Lane: tree, not protected paths</text>
+      <text x="14" y="100" font-size="14" fill="#a5f3fc">DONE / FAILED / ESCALATE</text>
+    </g>
+    <text x="263" y="326" font-size="14" fill="#94a3b8">patcher is the fast track's only agent: it stays within</text>
+    <text x="263" y="348" font-size="14" fill="#94a3b8">30 lines / 2 files and never commits. The skill does,</text>
+    <text x="263" y="370" font-size="14" fill="#94a3b8">from the accepted record, after the end check.</text>
   </g>
 
-  <path d="M 400 574 L 400 598" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+  <path d="M 400 818 L 400 842" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
 
   <!-- LAYER 2: PIPELINE -->
-  <g transform="translate(24, 612)" filter="url(#shadow)">
+  <g transform="translate(24, 856)" filter="url(#shadow)">
     <rect width="752" height="222" rx="10" fill="#041f17" stroke="#10b981" stroke-width="1.5"/>
     <rect x="16" y="-13" width="150" height="26" rx="4" fill="#059669"/>
     <text x="91" y="5" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="0.5">3. PIPELINE</text>
@@ -157,10 +178,10 @@
     <text x="20" y="208" font-size="14" fill="#94a3b8">A PASS holds until constitution, spec, plan or tasks change (SHA-256).</text>
   </g>
 
-  <path d="M 400 834 L 400 858" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+  <path d="M 400 1078 L 400 1102" stroke="#38bdf8" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
 
   <!-- LAYER 1: ARTIFACTS -->
-  <g transform="translate(24, 872)" filter="url(#shadow)">
+  <g transform="translate(24, 1116)" filter="url(#shadow)">
     <rect width="752" height="144" rx="10" fill="#111317" stroke="#64748b" stroke-width="1.5"/>
     <rect x="16" y="-13" width="150" height="26" rx="4" fill="#475569"/>
     <text x="91" y="5" text-anchor="middle" font-size="14" font-weight="700" fill="#ffffff" letter-spacing="0.5">4. ARTIFACTS</text>
