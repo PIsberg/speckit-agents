@@ -5,9 +5,11 @@ this file is how to work on it.
 
 ## Layout
 - `agents/*.md`: subagent definitions. `{{HOOK}}` is replaced by the installer with the absolute
-  path of the installed hook script. Never hard-code a path or use `$HOME` there.
-- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane`.
-- `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill.
+  path of the installed hook script. Never hard-code a path or use `$HOME` there. Seven agents, `patcher` (the fast track's) among them.
+- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane`, `patch`.
+- `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill. `skills/speckit-patch/SKILL.md`
+  is the fast track (`/speckit-patch`, one `patcher` agent) and `skills/speckit-triage/SKILL.md` the
+  advisory `/speckit-triage`, which suggests a track and runs nothing.
 - `install.mjs`: installer (`setup.sh` / `setup.ps1` only check for Node and call it).
 - `docs/media/`: the README's GIFs and the board's screenshot, the vhs tapes that record them,
   `record.mjs` that runs the tapes against a scratch Spec Kit repo, `leaks.mjs` that lets a
@@ -59,8 +61,14 @@ this file is how to work on it.
 - `fingerprint()` in `hooks/speckit-team.mjs` has a twin in `mods/speckit-board/hooks/model.ts`.
   Change both, and the pinned value in `test/board-mod.test.mjs` and the mod's `model.test.ts`.
 - `ROLE_COLOR` in `mods/speckit-board/hooks/model.ts` copies the `color:` line of each
-  `agents/*.md`, and its `MAX_RED` the hook's. Change both; `test/board-mod.test.mjs` holds each
+  `agents/*.md` (seven files), and its `MAX_RED` the hook's. Change both; `test/board-mod.test.mjs` holds each
   pair together.
+- `OWN_SOURCES` in `hooks/speckit-team.mjs` lists the team's own source paths. The fast track protects
+  them only in this repository, recognised by the `name` in the committed top-level `package.json`,
+  which is itself in `OWN_SOURCES`, so the fast track cannot change `package.json` here. A new
+  guardrail file of the team gets an entry there and a case in `test/hook.test.mjs`.
+- The accepted record's fields are read by `skills/speckit-patch/SKILL.md`. A change to either
+  changes both, and `test/install.test.mjs`.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
