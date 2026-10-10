@@ -622,7 +622,9 @@ function assertProtected(dir, rel) {
   const out = write(dir, PROT, rel);
   assert.ok(denied(out), `${rel} must be denied: ${JSON.stringify(out)}`);
   const reason = out.hookSpecificOutput.permissionDecisionReason;
-  assert.ok(reason.includes(rel), `${rel}: reason names the path: ${reason}`);
+  // Case and slash form are not specified: the hook may name the path in its on-disk case (macOS /var symlink, Windows short names).
+  const norm = (s) => s.toLowerCase().replace(/\\/g, '/');
+  assert.ok(norm(reason).includes(norm(rel)), `${rel}: reason names the path: ${reason}`);
   assert.match(reason, /\/speckit-team/, rel);
   const after = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
   assert.equal(after, before, `${rel}: disk unchanged`);
