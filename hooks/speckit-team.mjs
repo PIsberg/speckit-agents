@@ -691,8 +691,14 @@ function balanced(src, i, openCh, closeCh) {
   }
   return [src.slice(i + 1), src.length];
 }
-function shellCommands(src, pin = null, assigned = null, depth = 0) {
-  const cmds = []; const vars = {}; let cur = []; let word = null; let braces = 0;
+// A value only known at run time: a substitution's output, $@ or $1, an unset variable, an expansion
+// this reading does not compute. Where git's subcommand or a program word would be, it is denied.
+const DYN = '\u0004';
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
+function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}) {
+  // Too deep to read is not read as harmless: the caller denies the command (fail closed).
+  if (depth > 8) throw new Error('nested more than 8 levels deep');
+  const cmds = []; const vars = { ...inherit }; let cur = []; let word = null; let braces = 0;
   const record = (name, value) => { vars[name] = value; if (assigned) (assigned[name] ??= new Set()).add(value); };
   // IFS unset is the shell's default, so an unquoted ${IFS} splits words (git${IFS}push).
   const value = (name) => (pin && pin.name === name ? pin.value : vars[name] ?? (name === 'IFS' ? ' \t\n' : undefined));
@@ -703,14 +709,22 @@ function shellCommands(src, pin = null, assigned = null, depth = 0) {
     if (m && cur.every((c) => ['export', 'declare', 'local', 'readonly', 'typeset'].includes(c) || c.startsWith('-'))) { record(m[1], m[2]); return; }
     cur.push(...braceExpand(w).filter((x) => x !== '' || !w.includes(BRACE_OPEN)));
   };
+  // Text the shell runs as a command (a substitution, sh -c, eval, a here-string to a shell) is
+  // read as commands of its own, with the variables known at that point.
+  const sub = (inner) => { cmds.push(...shellCommands(inner, pin, assigned, depth + 1, vars)); };
+  // A word's text as the shell expands it, joined, for text that is run again.
+  const expanded = (text) => shellCommands(text, pin, null, depth + 1, vars).flat().join(' ');
   const end = () => {
     push();
-    if (cur[0] === 'for' && cur[2] === 'in') for (const v of cur.slice(3)) record(cur[1], v);
-    if (cur.length) cmds.push(cur);
-    cur = [];
+    const done = cur; cur = [];
+    if (done[0] === 'for' && done[2] === 'in') for (const v of done.slice(3)) record(done[1], v);
+    if (done.length) cmds.push(done);
+    const shellAt = done.findIndex((w, k) => SHELLS.has(program(w)) && /^-[a-z]*c[a-z]*$/i.test(done[k + 1] ?? ''));
+    if (shellAt >= 0 && done[shellAt + 2] !== undefined) sub(done[shellAt + 2]);
+    const evalAt = done.indexOf('eval');
+    if (evalAt >= 0) sub(done.slice(evalAt + 1).join(' '));
   };
   const add = (s) => { word = (word ?? '') + s; };
-  const sub = (inner) => { if (depth < 8) cmds.push(...shellCommands(inner, pin, assigned, depth + 1)); };
   // An unquoted expansion is split into words on IFS (the command's own, if it sets one).
   const addSplit = (v) => {
     const ifs = vars.IFS ?? ' \t\n';
@@ -720,23 +734,33 @@ function shellCommands(src, pin = null, assigned = null, depth = 0) {
   };
   // $... at src[i]: returns the index after it, having added its value to the word.
   const dollar = (i, quoted) => {
-    const put = (v) => (quoted ? add(v ?? '') : addSplit(v ?? ''));
-    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); if (quoted) add(''); return e < 0 ? src.length : e + 1; }
+    const put = (v, split = false) => { const s = v ?? DYN; if (quoted && !split) add(s); else addSplit(s); };
+    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); add(DYN); return e < 0 ? src.length : e + 1; }
     const c = src[i + 1];
     if (c === '(') {
-      if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); return after; }
-      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); if (quoted) add(''); return after;
+      if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); add('0'); return after; }
+      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add(DYN); return after;
     }
     if (c === '{') {
       const [inner, after] = balanced(src, i + 1, '{', '}');
-      const m = /^#?([A-Za-z_]\w*)(?::?[-=+?]([^]*))?$/.exec(inner);
-      const v = m ? value(m[1]) : undefined;
-      put(m && !v && /^:?[-=]/.test(inner.slice(m[0].length - (m[2]?.length ?? 0) - 2)) ? m[2] : v);
+      const m = /^(!?)(#?)([A-Za-z_]\w*|[@*#?$!0-9-])(\[[^\]]*\])?([^]*)$/.exec(inner);
+      if (!m) { add(DYN); return after; }
+      const [, bang, hash, name, index, op] = m;
+      if (hash && !op) { add('0'); return after; }
+      let v = /^[@*0-9]$/.test(name) ? DYN : value(name);
+      if (bang) v = v === undefined || v === DYN ? DYN : value(v);
+      const whole = /^\[[@*]\]$/.test(index ?? '');
+      if (index && !whole && v !== undefined && v !== DYN) { const n = Number(index.slice(1, -1)); v = Number.isInteger(n) ? v.split(/\s+/)[n] : DYN; }
+      if (/^:?[-=]/.test(op)) { if (v === undefined || v === '') v = expanded(op.replace(/^:?[-=]/, '')); }
+      else if (/^:?\+/.test(op)) v = v ? expanded(op.replace(/^:?\+/, '')) : '';
+      else if (op && !/^:?\?/.test(op) && !/^(\^\^?|,,?|~~?)$/.test(op)) v = DYN;
+      put(v, whole);
       return after;
     }
     const m = /^[A-Za-z_]\w*/.exec(src.slice(i + 1));
     if (m) { put(value(m[0])); return i + 1 + m[0].length; }
-    if (c && /[0-9@*#?$!-]/.test(c)) return i + 2;
+    if (c && /[@*0-9]/.test(c)) { add(DYN); return i + 2; }
+    if (c && /[#?$!-]/.test(c)) { add('0'); return i + 2; }
     add('$'); return i + 1;
   };
   let i = 0;
@@ -762,13 +786,22 @@ function shellCommands(src, pin = null, assigned = null, depth = 0) {
       if ((c === '<' || c === '>') && src[i + 1] === '(') { const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); i = after; continue; }
       if (word !== null && /^\d+$/.test(word)) word = null; else push();
       let k = i; while (k < src.length && /[<>&|]/.test(src[k])) k++;
-      if (src.slice(i, k).endsWith('&') && /[\d-]/.test(src[k] ?? '')) { i = k + 1; continue; }
+      const op = src.slice(i, k);
+      if (op.endsWith('&') && /[\d-]/.test(src[k] ?? '')) { i = k + 1; continue; }
       while (k < src.length && /[ \t]/.test(src[k])) k++;
-      // The target: one word, quotes kept together.
+      // The target: one word, quotes kept together. A here-string may be a script for a shell.
+      const from = k;
       while (k < src.length && !/[\s;&|<>()]/.test(src[k])) {
         if (src[k] === "'" || src[k] === '"') { const e = src.indexOf(src[k], k + 1); k = e < 0 ? src.length : e + 1; } else k++;
       }
+      if (op === '<<<') sub(expanded(src.slice(from, k)));
       i = k; continue;
+    }
+    // An array assignment, a=(git push): its words are its value, as "${a[@]}" gives them back.
+    if (c === '(' && word !== null && /^[A-Za-z_]\w*\+?=$/.test(word) && cur.every((w) => ['export', 'declare', 'local', 'readonly', 'typeset'].includes(w) || w.startsWith('-'))) {
+      const [inner, after] = balanced(src, i, '(', ')');
+      record(word.replace(/\+?=$/, ''), shellCommands(inner, pin, null, depth + 1, vars).flat().join(' '));
+      word = null; i = after; continue;
     }
     if (c === '\n' || c === ';' || c === '&' || c === '|' || c === '(' || c === ')') { end(); i++; continue; }
     if (/\s/.test(c)) { push(); i++; continue; }
@@ -786,7 +819,8 @@ function shellCommands(src, pin = null, assigned = null, depth = 0) {
 function readings(command) {
   const assigned = {};
   const first = shellCommands(command, null, assigned);
-  const pins = Object.entries(assigned).flatMap(([name, values]) => [...values].map((v) => ({ name, value: v }))).slice(0, 24);
+  const pins = Object.entries(assigned).flatMap(([name, values]) => [...values].map((v) => ({ name, value: v })));
+  if (pins.length > 64) throw new Error(`more than 64 assigned values (${pins.length})`);
   return [first, ...pins.map((p) => shellCommands(command, p))].map((cmds) => cmds.flatMap((c) => [...c, SEP]));
 }
 // Words, with only a command separator (; & | newline) as a boundary between them: anything else the
@@ -803,21 +837,43 @@ function historyWords(words) {
     const j = afterGitOptions(words, i);
     const sub = words[j];
     if (sub === undefined || sub === SEP) continue;
+    if (sub.includes(DYN)) return 'git with a subcommand known only at run time';
     if (sub === 'branch' && simple(j + 1).every((w) => BRANCH_READ_ONLY.has(w))) continue;
     if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
     if (sub === 'checkout' && !simple(j + 1).includes('--')) return 'git checkout';
+    // A word git does not know as a command may be the value of an option this list lacks
+    // (git --attr-source x push): the next words are then the subcommand.
+    if (!GIT_READ_COMMANDS.has(sub)) {
+      const next = simple(j + 1).slice(0, 2).find((w) => HISTORY_SUBCOMMANDS.has(w));
+      if (next) return `git ${next}`;
+    }
+  }
+  // A program only known at run time ($TOOL, a substitution) given a history or forge command.
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (words[i].includes(DYN) && RUN_TIME_SUSPECT.has(words[i + 1])) return 'a program known only at run time';
   }
   return null;
 }
+const GIT_READ_COMMANDS = new Set(['status', 'diff', 'log', 'show', 'add', 'mv', 'rm', 'restore', 'reset', 'grep', 'blame', 'annotate',
+  'ls-files', 'ls-tree', 'rev-parse', 'rev-list', 'describe', 'config', 'init', 'apply', 'format-patch', 'shortlog', 'cat-file',
+  'hash-object', 'check-ignore', 'check-attr', 'help', 'version', 'var', 'reflog', 'show-ref', 'for-each-ref', 'name-rev',
+  'merge-base', 'diff-tree', 'diff-files', 'diff-index', 'count-objects', 'fsck', 'archive', 'clean', 'checkout', 'worktree',
+  'range-diff', 'whatchanged', 'cherry', 'interpret-trailers', 'check-ref-format', 'stage']);
+const RUN_TIME_SUSPECT = new Set([...HISTORY_SUBCOMMANDS, 'pr', 'mr', 'release', 'api', 'repo', 'publish', 'pull-request']);
 function historyCommand(command) {
   if (typeof command !== 'string') return null;
+  const flat = historyWords(flatWords(command));
+  if (flat) return flat;
   let read;
-  try { read = readings(command); } catch { read = []; }
+  // A command this reading cannot finish is denied, not let through: the hook fails closed here.
+  try { read = readings(command); } catch (e) { return `a command the hook could not read (${e?.message ?? e})`; }
   // The fast track's start record and accepted record decide the end check; a shell write could reset them.
   const state = /\.git[\\/]+speckit-team(?![\w.-])/i;
   if (state.test(command) || read.some((ws) => ws.some((w) => state.test(w)))) return "a command on the fast track's state";
   // The flat words keep the old rule that a command which only mentions git push is denied too.
-  for (const ws of [flatWords(command), ...read]) { const found = historyWords(ws); if (found) return found; }
+  // Name the program when any reading can; "known only at run time" only when none can.
+  const found = read.map(historyWords).filter(Boolean);
+  if (found.length) return found.find((f) => !f.includes('known only at run time')) ?? found[0];
   // An alias defined on the command line runs whatever it names, under a name no list can know.
   const alias = (ws) => ws.some((w, k) => programOf(w) === 'git' && ws.slice(k + 1).some((a, n, rest) => /^-c\s*alias\./i.test(a) || (a === '-c' && /^alias\./i.test(rest[n + 1] ?? ''))));
   return [flatWords(command), ...read].some(alias) ? 'git -c alias' : null;

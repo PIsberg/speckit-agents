@@ -501,12 +501,17 @@ and any other change is caught at the end.
   `git -C . commit` are caught. It is then read again the way a shell reads it: quotes, escapes
   and `$'...'`, variables where they are used (split on `IFS`, and once with each value a later
   assignment or a `for` loop gives them), redirections dropped, `{a,b}` expanded, command and
-  process substitutions read as commands of their own, and a glob such as `/usr/bin/g?t` matched
-  against the denied programs. So `g"it" push`, `G=git; $G push`, `git${IFS}push`,
-  `git 2>/dev/null push`, `git -c x="a b" push` and `{git,} push` are caught too
-  ([#72](https://github.com/PIsberg/speckit-agents/issues/72) and two security reviews of it).
-  It is not a shell: a string built at run time (`eval "$(cmd)"`, `read`, a function) is not
-  seen, and the end check still catches any commit that gets through.
+  process substitutions read as commands of their own, as are the strings given to `sh -c`, `eval`
+  and a here-string, and a glob such as `/usr/bin/g?t` matched against the denied programs. So
+  `g"it" push`, `G=git; $G push`, `git${IFS}push`, `git 2>/dev/null push`, `git -c x="a b" push`,
+  `{git,} push` and `G=git; sh -c '$G push'` are caught too. What it cannot work out (a
+  substitution's output, `$@`, an unset variable, `${X%y}`) counts as unknown, and an unknown
+  word is denied where git's subcommand would be (`git "$@"` in a function) or where a program
+  word stands before a history or forge command (`"$TOOL" push`, `$(printf git) push`). A
+  command it cannot finish reading (nested more than 8 levels, more than 64 assigned values) is
+  denied ([#72](https://github.com/PIsberg/speckit-agents/issues/72) and three security reviews of
+  it). It is still not a shell: text read at run time (`eval "$(cat cmd.txt)"`, `read`) is not
+  seen, and the end check catches any commit that gets through.
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -1519,7 +1524,7 @@ up and replace it.
   shell. By category, the fast track does not guard against:
   - **git aliases:** a commit, push or PR made by a program whose command does not name it (a git
     alias from a config file, `npm version`, a script, `make release`, `curl` to the GitHub API, an
-    obfuscation the unquoting does not undo such as `$(printf git) push`) is not denied before
+    command whose text is only read at run time such as `eval "$(cat cmd.txt)"`) is not denied before
     it runs. A commit is still caught at the end, and the skill never force-pushes, so a stray
     push makes the skill's own push fail; you delete the stray branch or PR.
   - **scripts:** the same holds for any script `patcher` writes and runs.
