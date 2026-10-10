@@ -336,6 +336,8 @@ test('mistyped fields never crash a hook', () => {
     assert.ok(!decided(out), `file_path ${JSON.stringify(file_path)}`);
     const prot = run(dir, ['scope', 'protected'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } });
     assert.ok(!decided(prot), `scope protected, file_path ${JSON.stringify(file_path)}`);
+    // The crash net also yields "no decision"; only the guard yields it without this message.
+    assert.doesNotMatch(prot?.systemMessage ?? '', /internal error/, `scope protected crashed on file_path ${JSON.stringify(file_path)}`);
   }
   for (const message of [7, ['VERDICT: PASS'], null]) {
     assert.ok(!decided(handback(dir, 'verdict', message)) || true); // must not throw; run() asserts exit 0
@@ -805,6 +807,22 @@ test('patch: a file counts the larger of its insertions and deletions; deletions
   begin(other.dir);
   put(other.dir, 'src/forty.js', fs.readFileSync(path.join(other.dir, 'src/forty.js'), 'utf8').split('\n').slice(31).join('\n'));
   overBash(other.dir, /31 changed production lines in 1 files/);
+});
+
+// Owner decision 2026-10-10: .txt is documentation only under docs/ or with a documentation-style name.
+test('patch: a .txt production file counts, documentation .txt does not (FR-005, owner decision 2026-10-10)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'docs/notes.txt', nl(40, 'n')); put(dir, 'README.txt', nl(40, 'r'));
+  okBash(dir, 'docs/notes.txt and README.txt are docs');
+  const a = fresh();
+  begin(a.dir);
+  put(a.dir, 'requirements.txt', nl(31, 'q'));
+  overBash(a.dir, /31 changed production lines in 1 files/);
+  const b = fresh();
+  begin(b.dir);
+  put(b.dir, 'CMakeLists.txt', nl(31, 'c'));
+  overBash(b.dir, /31 changed production lines in 1 files/);
 });
 
 test('patch: a third production file is over budget (FR-005, FR-006)', () => {
