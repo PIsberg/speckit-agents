@@ -35,6 +35,8 @@ function setup() {
   };
   fs.mkdirSync(repo);
   git(repo, 'init', '-q');
+  // The scripted agent runs plain git under the machine's global config; pin the bytes it checks out.
+  git(repo, 'config', 'core.autocrlf', 'false');
   write('.specify/feature.json', JSON.stringify({ feature_directory: 'specs/001-x' }));
   write('.specify/memory/constitution.md', '# Constitution\n');
   write('specs/001-x/spec.md', '# Spec\n');
