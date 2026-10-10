@@ -17,6 +17,7 @@
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
 //                           --record keeps the accepted word for the feature (spec-gatekeeper's)
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
+//   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -39,6 +40,12 @@ const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
 const SPECKIT_CONFIG = /^\.specify\//;
 // Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
 const MAX_RED = 3;
+// The fast track's budget: production lines and production files changed since the run started.
+const PATCH_LINES = 30;
+const PATCH_FILES = 2;
+// Documentation is not production code; a docs/ folder is not a doc rule (research R3).
+const DOC_PATTERNS = [/\.(md|mdx|markdown|rst|adoc|asciidoc|txt)$/i];
+const isDoc = (rel) => DOC_PATTERNS.some((re) => re.test(rel));
 
 // Paths the fast track never changes, repo-relative, matched case-insensitively from the start.
 const PROTECTED = [
@@ -92,6 +99,7 @@ const WIRED = {
   result: ['PreToolUse', 'SubagentStop', 'Stop'],
   ends: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
+  patch: ['PreToolUse', 'SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
 
@@ -164,6 +172,13 @@ function isProtected(rel, rev = 'HEAD') {
   const hit = PROTECTED.find(([re]) => re.test(rel)) ?? (isOwnRepo(rev) ? OWN_SOURCES.find(([re]) => re.test(rel)) : undefined);
   return hit ? hit[1] : null;
 }
+// The repo-relative, forward-slash path of file as the file system will resolve it, null when outside.
+// Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
+// and a symlinked or short-named way into the repo must not read as outside it.
+function repoRel(file) {
+  const rel = path.relative(real(root), real(path.resolve(cwd, file))).split(path.sep).join('/');
+  return rel.startsWith('..') || path.isAbsolute(rel) ? null : rel;
+}
 // The installed team: agents/, hooks/, skills/ and the settings files beside the running hook.
 const TEAM_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 function isTeamFile(abs) {
@@ -171,18 +186,29 @@ function isTeamFile(abs) {
   return ['/agents/', '/hooks/', '/skills/'].some((d) => c.startsWith(t + d)) || c === `${t}/settings.json` || c === `${t}/settings.local.json`;
 }
 
-// Read once per run. A line that is not a valid regex leaves the test lanes undecidable: scope denies
-// and lane says it could not run, instead of crashing, which would let every write through.
-const testPaths = (() => {
+// A line that is not a valid regex leaves the test lanes undecidable: scope denies and lane says it
+// could not run, instead of crashing, which would let every write through.
+function parseTestPaths(text) {
   const patterns = [...TEST_PATTERNS]; const bad = [];
-  readOr(path.join(root, '.specify', 'test-paths'), '').split('\n').forEach((l, i) => {
+  text.split('\n').forEach((l, i) => {
     const t = l.trim();
     if (!t || t.startsWith('#')) return;
     try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
   });
   return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
-})();
+}
+// Read once per run, from the working tree.
+const testPaths = parseTestPaths(readOr(path.join(root, '.specify', 'test-paths'), ''));
 const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+// The same patterns as committed at a revision: the fast track measures with the rules the run started under.
+const testsAtMemo = new Map();
+function testsAt(rev) {
+  if (!testsAtMemo.has(rev)) {
+    const t = parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '');
+    testsAtMemo.set(rev, { isTest: (rel) => t.patterns.some((re) => re.test(rel)), bad: t.bad });
+  }
+  return testsAtMemo.get(rev);
+}
 const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
@@ -278,10 +304,8 @@ if (mode === 'scope') {
     deny(`${who} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
       + 'Stop and report ESCALATE; the developer uses /speckit-team.');
   }
-  // Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
-  // and a symlinked or short-named way into the repo must not read as outside it.
-  const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
-  if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
+  const rel = repoRel(file);
+  if (rel === null) process.exit(0);
   const [rule, ...prefixes] = args;
   const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
   if (why) {
@@ -471,5 +495,124 @@ if (mode === 'lane') {
   }
   fs.rmSync(f, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
+  process.exit(0);
+}
+
+// The fast track: patcher's change since its first tool call must stay within PATCH_LINES production
+// lines in PATCH_FILES production files. Tests and docs do not count (FR-005).
+const patchFile = (key) => path.join(stateDir, 'patch', `${key}.json`);
+const HEX64 = /^[0-9a-f]{64}$/;
+function stateOf(rel) {
+  try { return createHash('sha256').update(fs.readFileSync(path.join(root, rel))).digest('hex'); } catch { return null; }
+}
+function measure(start) {
+  const sha = start.sha;
+  const must = (out) => { if (out === null) throw new Error('git could not measure the change'); return out; };
+  const tests = testsAt(sha);
+  const dirty = new Set(Object.keys(start.dirty));
+  const cls = (rel) => (isProtected(rel, sha) ? 'protected' : tests.isTest(rel) ? 'test' : isDoc(rel) ? 'doc' : 'prod');
+  const parseNumstat = (out) => {
+    const map = new Map(); const t = out.split('\0');
+    for (let i = 0; i < t.length;) {
+      const m = /^(-|\d+)\t(-|\d+)\t([^]*)$/.exec(t[i]);
+      if (!m) { i++; continue; }
+      const stat = { ins: Number(m[1]) || 0, del: Number(m[2]) || 0, bin: m[1] === '-' };
+      if (m[3] === '') { map.set(t[i + 2], stat); i += 3; } else { map.set(m[3], stat); i++; }
+    }
+    return map;
+  };
+  const stats = parseNumstat(must(git(root, 'diff', '--find-renames', '--numstat', '-z', sha)));
+  const tokens = must(git(root, 'diff', '--find-renames', '--name-status', '-z', sha)).split('\0');
+  const r = { lines: 0, files: 0, binary: [], protectedChanged: [], committed: false, dirtyTouched: [] };
+  const prod = (rel, n, bin) => { r.files++; r.lines += n; if (bin) r.binary.push(rel); };
+  for (let i = 0; i < tokens.length && tokens[i];) {
+    const status = tokens[i];
+    const renamed = status[0] === 'R';
+    const old = renamed ? tokens[i + 1] : null;
+    const rel = renamed ? tokens[i + 2] : tokens[i + 1];
+    i += renamed ? 3 : 2;
+    if (dirty.has(rel) || (old !== null && dirty.has(old))) continue;
+    const st = stats.get(rel) ?? { ins: 0, del: 0, bin: false };
+    const c = cls(rel);
+    if (!renamed) {
+      if (c === 'protected') r.protectedChanged.push({ path: rel, isNew: status === 'A' });
+      else if (c === 'prod') prod(rel, status === 'D' ? st.del : Math.max(st.ins, st.del), st.bin && status !== 'D');
+      continue;
+    }
+    const co = cls(old);
+    if (c === 'protected' || co === 'protected') {
+      r.protectedChanged.push({ path: old, isNew: false }, { path: rel, isNew: true });
+    } else if (co === 'prod' && c === 'prod') {
+      prod(rel, Math.max(st.ins, st.del), st.bin && status !== 'R100');
+    } else if (co === 'prod' || c === 'prod') {
+      const pair = parseNumstat(must(git(root, 'diff', '--no-renames', '--numstat', '-z', sha, '--', old, rel)));
+      if (co === 'prod') prod(old, (pair.get(old) ?? st).del, false);
+      else { const p = pair.get(rel) ?? st; prod(rel, p.ins, p.bin); }
+    }
+  }
+  for (const rel of must(git(root, 'ls-files', '--others', '--exclude-standard', '-z')).split('\0').filter(Boolean)) {
+    if (dirty.has(rel)) continue;
+    const c = cls(rel);
+    if (c === 'protected') { r.protectedChanged.push({ path: rel, isNew: true }); continue; }
+    if (c !== 'prod') continue;
+    let buf; try { buf = fs.readFileSync(path.join(root, rel)); } catch { buf = Buffer.alloc(0); }
+    if (buf.subarray(0, 8000).includes(0)) prod(rel, 0, true);
+    else prod(rel, buf.length ? buf.toString('latin1').split('\n').length - (buf[buf.length - 1] === 10 ? 1 : 0) : 0, false);
+  }
+  r.committed = git(root, 'rev-parse', 'HEAD') !== sha;
+  const swept = r.committed
+    ? new Set(must(git(root, 'diff', '--no-renames', '--name-only', '-z', sha, 'HEAD')).split('\0')) : new Set();
+  r.dirtyTouched = [...dirty].filter((rel) => stateOf(rel) !== start.dirty[rel] || swept.has(rel)).sort();
+  return r;
+}
+
+if (mode === 'patch') {
+  // Every call removes the accepted record: it stands only while the last call was an accepting end check.
+  fs.rmSync(path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json'), { force: true });
+  if (event !== 'PreToolUse' || input.tool_name === 'SubagentHandback') process.exit(0);
+  const key = str(input.agent_id) ?? str(input.session_id);
+  if (!key || !/^[\w-]{1,128}$/.test(key)) noDecision('no agent_id or session_id to keep the start record under');
+  const f = patchFile(key);
+  if (!fs.existsSync(f)) {
+    const sha = git(root, 'rev-parse', 'HEAD');
+    if (!sha) deny('Fast track: this repo has no commit to measure the change from. Commit first, or use /speckit-team.');
+    const dirty = Object.fromEntries(changedSince('HEAD').map((rel) => [rel, stateOf(rel)]));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
+  }
+  const start = readState(f);
+  const plain = (o) => o && typeof o === 'object' && !Array.isArray(o);
+  if (!plain(start) || typeof start.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(start.sha) || !plain(start.dirty)
+    || !Object.values(start.dirty).every((v) => v === null || (typeof v === 'string' && HEX64.test(v)))
+    || git(root, 'cat-file', '-e', `${start.sha}^{commit}`) === null) {
+    deny(`Fast track: the budget cannot be measured: ${f} is unreadable or names a commit this repo does not have. `
+      + 'Report this; the user deletes the file to start over.');
+  }
+  const bad = testsAt(start.sha).bad;
+  if (bad) {
+    deny(`Fast track: the budget cannot be measured: ${bad} (as committed at ${start.sha.slice(0, 12)}). `
+      + 'Report this to the user, who fixes and commits the file, then starts a new run.');
+  }
+  const ti = input.tool_input || {};
+  const given = ti.file_path ?? ti.notebook_path;
+  if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name) && str(given)) {
+    const rel = repoRel(given);
+    const same = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+    const hit = rel === null ? undefined : Object.keys(start.dirty).find((k) => same(k, rel));
+    if (hit) {
+      deny(`Fast track: ${hit} had uncommitted changes when the run started. They are the developer's work, so the fast track leaves the file alone. `
+        + 'If the change needs this file, report ESCALATE; the developer commits or stashes that work first, or uses /speckit-team.');
+    }
+  }
+  let m;
+  try { m = measure(start); } catch (e) {
+    deny(`Fast track: the budget cannot be measured: ${e?.message ?? e}. Report this; the user starts a new run.`);
+  }
+  if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
+    deny(`Fast-track budget exceeded: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
+      + (m.binary.length ? `; binary production files are not allowed: ${m.binary.join(', ')}` : '')
+      + (m.dirtyTouched.length ? `; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: ${m.dirtyTouched.join(', ')}` : '')
+      + '. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.');
+  }
   process.exit(0);
 }
