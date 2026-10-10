@@ -7,6 +7,8 @@
 //   scope only <prefix>...  PreToolUse Write/Edit: allow only paths under these prefixes
 //   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
 //   scope no-tests          PreToolUse Write/Edit: allow anything except test files and .specify/
+//   scope protected         PreToolUse Write/Edit: deny CI, Spec Kit, specs/ and .claude/ paths, the installed
+//                           team, and in the speckit-agents repo its own sources; allow the rest
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
@@ -19,6 +21,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TEST_PATTERNS = [
   /(^|\/)(test|tests|__tests__|testing|testdata|test-data|fixtures|e2e|spec)\//i,
@@ -36,6 +39,23 @@ const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
 const SPECKIT_CONFIG = /^\.specify\//;
 // Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
 const MAX_RED = 3;
+
+// Paths the fast track never changes, repo-relative, matched case-insensitively from the start.
+const PROTECTED = [
+  [/^\.specify\//i, "Spec Kit's config and the constitution"],
+  [/^specs\//i, 'feature specs, plans and tasks, which belong to /speckit-team'],
+  [/^\.claude\//i, "the project's Claude Code agents, skills, hooks and settings"],
+  [/^\.github\//i, 'CI workflows and repository settings'],
+  [/^(\.gitlab-ci\.yml|\.circleci\/|azure-pipelines\.yml|Jenkinsfile|\.pre-commit-config\.yaml)/i, 'CI and commit-hook configuration'],
+];
+// Only in the speckit-agents repository itself (recognised by isOwnRepo).
+const OWN_SOURCES = [
+  [/^hooks\/speckit-team\.mjs$/i, "the agent team's own sources"],
+  [/^agents\/[^/]+\.md$/i, "the agent team's own sources"],
+  [/^skills\/[^/]+\/SKILL\.md$/i, "the agent team's own sources"],
+  [/^install\.mjs$/i, "the agent team's own sources"],
+  [/^package\.json$/i, 'its package name marks this repository as speckit-agents'],
+];
 
 const [mode, ...args] = process.argv.slice(2);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -127,6 +147,29 @@ function canonical(p) {
 }
 const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
 const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
+
+const ownRepo = new Map();
+function isOwnRepo(rev) {
+  if (!ownRepo.has(rev)) {
+    let own = false;
+    try {
+      const pkg = JSON.parse(git(root, 'cat-file', 'blob', `${rev}:package.json`));
+      own = !!pkg && typeof pkg === 'object' && pkg.name === 'speckit-agents';
+    } catch { /* not JSON, or no such blob */ }
+    ownRepo.set(rev, own);
+  }
+  return ownRepo.get(rev);
+}
+function isProtected(rel, rev = 'HEAD') {
+  const hit = PROTECTED.find(([re]) => re.test(rel)) ?? (isOwnRepo(rev) ? OWN_SOURCES.find(([re]) => re.test(rel)) : undefined);
+  return hit ? hit[1] : null;
+}
+// The installed team: agents/, hooks/, skills/ and the settings files beside the running hook.
+const TEAM_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+function isTeamFile(abs) {
+  const c = canonical(abs); const t = canonical(TEAM_DIR);
+  return ['/agents/', '/hooks/', '/skills/'].some((d) => c.startsWith(t + d)) || c === `${t}/settings.json` || c === `${t}/settings.local.json`;
+}
 
 // Read once per run. A line that is not a valid regex leaves the test lanes undecidable: scope denies
 // and lane says it could not run, instead of crashing, which would let every write through.
@@ -231,11 +274,23 @@ if (mode === 'scope') {
     deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
       + 'Report what you need instead; only the user resets that state.');
   }
+  if (args[0] === 'protected' && isTeamFile(target)) {
+    deny(`${who} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
+  }
   // Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
   // and a symlinked or short-named way into the repo must not read as outside it.
   const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
   if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
   const [rule, ...prefixes] = args;
+  const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
+  if (why) {
+    // Name the path as the caller wrote it; matching used the case the disk reports.
+    const typed = path.relative(path.resolve(root), target).split(path.sep).join('/');
+    const shown = typed && !typed.startsWith('..') && !path.isAbsolute(typed) ? typed : rel;
+    deny(`${who} may not write ${shown}: it is a protected path (${why}). The fast track does not change it. `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
+  }
   if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
     deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
       + 'Report this to the user, who fixes the file; do not edit it yourself.');
