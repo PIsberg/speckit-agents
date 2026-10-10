@@ -234,6 +234,32 @@ The three that passed (`with a PASS on the current files, /speckit-implement goe
 `Agent with run_in_background: false ...` and `with fork subagents on ...`) assert that nothing is
 blocked or that the Agent tool behaves a certain way, so a silent hook satisfies them.
 
+## Review fixes: red runs of strengthened and new tests
+
+Found by the spec-gatekeeper review. The first four entries are the tests extended in slice 1 and
+the strengthened mistyped-fields test, each run by test-writer against a scratch mutant of the
+hook (never committed). The last is the new `.txt` test at its own commit.
+
+- **MODES entry**, mutant "scope protected exits 0 silently":
+  `✖ malformed input never crashes a hook ... AssertionError: scope protected on "{not json" must say so; actual: '', expected: /speckit-team: .*input/`
+- **Outside-Spec-Kit no-op** (`test/hook.test.mjs:48`), mutant "scope protected always denies":
+  `✖ every mode is a no-op outside a Spec Kit repo ... AssertionError: scope protected; actual: {...permissionDecision: 'deny'...}, expected: null`
+- **Mistyped-fields loop**, mutant "deny on a non-string path":
+  `✖ mistyped fields never crash a hook ... AssertionError: scope protected, file_path 7; actual: false, expected: true`
+- **Mistyped-fields loop**, mutant "the `if (!file) noDecision(...)` line removed":
+  `AssertionError: scope protected crashed on file_path 7; actual: 'speckit-team: scope hit an internal error (The "paths[1]" argument must be of type string. Received null); no decision made.', expected: /internal error/`
+  The same mutant passed before the strengthening.
+- **.txt budget class** (owner decision 2026-10-10), tests at a0f75d5, hook before the fix. Run
+  here in a stash-and-checkout of a0f75d5 (`node --test test/hook.test.mjs`):
+
+```text
+ℹ tests 104
+ℹ pass 103
+ℹ fail 1
+✖ patch: a .txt production file counts, documentation .txt does not (FR-005, owner decision 2026-10-10)
+  AssertionError [ERR_ASSERTION]: expected a deny, got null
+```
+
 ## Live results (T022), copied from README.md "Live results" as they stand
 
 All eight checks were run; L6 failed and L3 and L8 were only partly exercised (status below). The README remains the source.

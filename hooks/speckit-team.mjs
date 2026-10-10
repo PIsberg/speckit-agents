@@ -46,7 +46,13 @@ const MAX_RED = 3;
 const PATCH_LINES = 30;
 const PATCH_FILES = 2;
 // Documentation is not production code; a docs/ folder is not a doc rule (research R3).
-const DOC_PATTERNS = [/\.(md|mdx|markdown|rst|adoc|asciidoc|txt)$/i];
+// .txt is documentation only under docs/ or with a documentation-style name (owner decision 2026-10-10);
+// requirements.txt and CMakeLists.txt are production.
+const DOC_PATTERNS = [
+  /\.(md|mdx|markdown|rst|adoc|asciidoc)$/i,
+  /^docs\/.*\.txt$/i,
+  /(^|\/)(README|CHANGELOG|CHANGES|HISTORY|NEWS|LICENSE|NOTICE|AUTHORS|CONTRIBUTING|COPYING)\.txt$/i,
+];
 const isDoc = (rel) => DOC_PATTERNS.some((re) => re.test(rel));
 
 // Paths the fast track never changes, repo-relative, matched case-insensitively from the start.

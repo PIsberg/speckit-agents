@@ -313,7 +313,7 @@ rejection message tells the agent what to do instead.
 ### Why each agent has a narrow description
 
 Claude Code puts every agent's description into every session so it can route work. These seven
-total about 1,900 characters (1,872 counted in the `description:` lines), roughly 460 tokens. Each one says when to use the agent and what it
+total about 1,900 characters (1,872 counted in the `description:` lines), about 470 tokens. The token figure is an estimate, not a measurement: 1,872 characters at the usual 4 characters per token for English text (counting tokens needs a model call, which was not made). Each one says when to use the agent and what it
 will not do, so routing does not have to guess.
 
 ## Why This Architecture Succeeds
@@ -441,8 +441,11 @@ Each changed path gets one class, checked in this order:
 1. **Protected**: never written (the table below).
 2. **Test**: the [built-in patterns](#test-files) plus `.specify/test-paths` as committed at the
    start commit, not as it is in the working tree, so commit a change to that file before a run.
-3. **Doc**: a file ending `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc`, `.asciidoc` or `.txt`,
-   case-insensitive. A `docs/` folder is not a doc rule: a `.js` file in it is production.
+3. **Doc**: a file ending `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc`, `.asciidoc`, or a `.txt` file under `docs/` or named
+   `README`, `CHANGELOG`, `CHANGES`, `HISTORY`, `NEWS`, `LICENSE`, `NOTICE`, `AUTHORS`, `CONTRIBUTING`
+   or `COPYING` (any directory), all case-insensitive. Any other `.txt` file, such as
+   `requirements.txt` or `CMakeLists.txt`, is production.
+   A `docs/` folder is not a doc rule for other files: a `.js` file in it is production.
 4. **Production**: anything else. Only production counts against the budget.
 
 | Protected path | Why |
@@ -1012,11 +1015,11 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 168 tests:
+`npm test` runs 169 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 103 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
 | [`test/install.test.mjs`](test/install.test.mjs) | 28 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
