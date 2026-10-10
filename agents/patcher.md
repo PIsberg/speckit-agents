@@ -48,6 +48,9 @@ the build file for the test command. No `specs/` artifacts.
 6. Never commit, never push, never run `gh`, never switch branch: a hook denies them, and
    `/speckit-patch` commits your files after the end-of-run check accepts the run. Never merge.
    Never start `/speckit-team`.
+7. Last, just before the report, run `git status --short` again. If a hook denies it for the
+   budget, the change is too big for the fast track: report `ESCALATE`, even if the tests passed.
+   One large write (a single Bash call) otherwise reaches the end with no tool call left to stop it.
 
 ## Lane
 The working tree, everything except the protected paths. At most 30 changed production lines (a

@@ -254,7 +254,8 @@ test('the team rows say what each agent was asked and whether its word is good f
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'speckit-board', surface, ...PANE, ...pane } as never)
     const red = await around(ui, 'test-writer')
-    expect([red.before?.text, red.before?.props.color, red.after?.text, red.after?.props.color]).toEqual(['✓', 'success', 'RED', 'success'])
+    // The tick says test-writer's job is done; the word RED itself is always drawn red (#71).
+    expect([red.before?.text, red.before?.props.color, red.after?.text, red.after?.props.color]).toEqual(['✓', 'success', 'RED', 'error'])
     const failed = await around(ui, 'implementer')
     expect([failed.before?.text, failed.before?.props.color, failed.after?.text, failed.after?.props.color]).toEqual(['✗', 'error', 'RED', 'error'])
     expect(failed.then?.text).toBe('took 0s · 0s ago · Green T003 greet')

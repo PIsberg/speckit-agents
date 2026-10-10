@@ -42,10 +42,10 @@ and answers, or another agent's full report.
   named only the files cost 0.70M. Anything that needs design judgement is a full revision, and so
   is an edit a dictated architect reports as `needs revision`.
 - spec-auditor: the feature directory.
-- test-writer: the slice's test task IDs. It ticks them in `tasks.md` itself once they are red:
+- test-writer: the round's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
   implementer launch only to tick them.
-- implementer: the slice's task IDs plus test-writer's report for them (test files and failing
+- implementer: the round's task IDs plus test-writer's report for them (test files and failing
   output, trimmed); on a relaunch, the failing output of the last attempt instead. For a stub
   pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory.
@@ -64,7 +64,8 @@ the background (see Handoffs).
 - Your Agent tool has a `run_in_background` parameter. If not, Claude Code has fork subagents on
   (the default in an interactive session) and runs every agent in the background, which costs an
   extra waiting request per agent. Tell the user once, in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0`
-  in the shell or under `env` in settings.json, then a restart, brings foreground launches back.
+  in the shell or under `env` in settings.json (`node install.mjs --no-fork` in the speckit-agents
+  checkout writes it for every project), then a restart, brings foreground launches back.
   Then go on.
 
 ## 0b. Constitution (only while it is the template)
@@ -101,9 +102,9 @@ edits, see Handoffs). In the 003 run four architect revisions only applied answe
 together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
 same stop, with AskUserQuestion, whether to build them one at a time (recommended: no live run has confirmed
-side-by-side launches yet) or side by side. Say why it matters: side by side is faster but no
-cheaper, since every slice gets its own agents either way, and it runs several agents against the
-user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
+side-by-side launches yet) or side by side. Say why it matters: side by side may be faster but
+costs more, since each `[P]` slice then gets its own agents instead of sharing its round's, and it
+runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
 On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
@@ -112,35 +113,39 @@ After two FAILs, hand the findings to the user. A PASS is voided by any later ed
 or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
 while building never call for a re-audit.
 
-## 4-5. Red and green, one slice at a time
-Work through `tasks.md` one slice at a time: a slice is one implementation task (or a few that
-change the same behaviour) plus the test tasks that cover it. Finish a slice before starting the
-next. Never hand the whole feature to one test-writer or one implementer.
+## 4-5. Red and green, one round at a time
+A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
+that cover it, as the architect wrote them. A round is the slices of one phase of `tasks.md` (Setup,
+Foundational, one user story), at most 4 slices: split a longer phase into rounds in task order.
+Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
+finish it before starting the next. Every launch starts from nothing (11k to 14k tokens before it
+reads a file) and reads the code again, so up to three launches per slice made the build the
+longest part of a run. Never hand the whole feature to one test-writer or one implementer.
 
-For each slice:
-1. **Stubs** (implementer, only if the slice's tests will call a file, function or type that does
-   not exist yet): launch with `stub` and the slice's task IDs. It creates the signatures the
+For each round:
+1. **Stubs** (implementer, only if the round's tests will call a file, function or type that does
+   not exist yet): launch with `stub` and the round's task IDs. It creates the signatures the
    architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
-2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. It ends
-   `RED` or `BLOCKED`, and on `RED` the slice's test tasks are ticked; on `BLOCKED`, act on the
-   entries it lists. Every
+2. **Red** (test-writer, the round's test task IDs): check the report before moving on. It ends
+   `RED` or `BLOCKED`, and on `RED` the round's test tasks are ticked; on `BLOCKED`, act on the
+   entries it lists. A test-writer sent only to correct an existing test ends `FIXED`. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it.
-3. **Green** (implementer, the slice's implementation task IDs). Every report ends with
+3. **Green** (implementer, the round's implementation task IDs). Every report ends with
    `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with the failing output. After 3 REDs in
    a row the hook blocks implementer: do not retry, and never delete the retry record yourself.
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
-Only if the user chose side by side in step 2, slices whose tasks are all `[P]` and touch disjoint
-files run side by side: one loop per slice,
-each step's agents launched together in one message, each implementer with `isolation: "worktree"`,
+Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
+touch disjoint files run side by side instead: one loop per slice, each step's agents launched
+together in one message, each implementer with `isolation: "worktree"`,
 then merge their branches into the feature branch in task order.
 
 ## 6. Verify: spec-gatekeeper
-Start it as soon as the last slice reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
-A task still unticked then (a final test run, a docs task no slice took) is one more slice: launch
+Start it as soon as the last round reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
+A task still unticked then (a final test run, a docs task no round took) is one more round: launch
 implementer for it, and verify after its GREEN. Hand to the user only a task no agent can do.
 On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
 

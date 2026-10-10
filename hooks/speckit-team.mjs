@@ -384,12 +384,25 @@ if (mode === 'gate') {
 }
 
 if (mode === 'verdict') {
+  // The auditor's first tool call records the files it starts from: a verdict is about the files it
+  // read, and one that finishes after they changed would stamp itself on files nobody audited (#77).
+  const startFile = agentId && path.join(stateDir, 'agents', `${agentId}.audit-start.json`);
+  const doneFile = agentId && path.join(stateDir, 'agents', `${agentId}.verdict-done`);
+  if (event === 'PreToolUse' && input.tool_name !== 'SubagentHandback') {
+    const feat = feature();
+    if (!startFile || !feat) process.exit(0);
+    // Work after a report is a new audit by the same agent (one resumed with SendMessage): it starts afresh.
+    if (fs.existsSync(doneFile)) { fs.rmSync(doneFile, { force: true }); fs.rmSync(startFile, { force: true }); }
+    if (!fs.existsSync(startFile)) writeJson(startFile, { feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
+    process.exit(0);
+  }
   const viaHandback = event === 'PreToolUse';
-  if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
   const text = reportText(viaHandback);
   const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
+  // The Stop after a handback is the same report: neither recorded twice nor asked for again.
+  if (doneFile && fs.existsSync(doneFile)) process.exit(0);
   if (!found) {
     if (viaHandback) {
       // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
@@ -404,6 +417,14 @@ if (mode === 'verdict') {
   }
   if (!feat) process.exit(0);
   const verdict = found[1].toUpperCase();
+  if (doneFile) writeJson(doneFile, { verdict });
+  // No start record (an auditor that made no tool call, or a main-thread Stop) keeps the old rule:
+  // the verdict is on the files as they are now. An unreadable one proves nothing, so it is stale.
+  const start = startFile ? readState(startFile) : undefined;
+  if (start !== undefined && (!start || start.feature !== feat || start.fingerprint !== fingerprint(feat))) {
+    emit({ systemMessage: `spec-auditor's VERDICT: ${verdict} was not recorded: spec, plan, tasks or constitution of ${feat} changed after it started `
+      + `reading them${start?.at ? ` (${start.at})` : ''}, so it describes files that are gone. The last recorded verdict stands; run @agent-spec-auditor again on the current files.` });
+  }
   writeJson(verdictFile(feat), {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
@@ -610,20 +631,252 @@ function afterGitOptions(words, i) {
   while (j < words.length && words[j].startsWith('-')) j += GIT_OPTIONS_WITH_VALUE.has(words[j]) ? 2 : 1;
   return j;
 }
-function historyCommand(command) {
-  if (typeof command !== 'string') return null;
-  const words = command.split(/[\s;&|(){}<>`"'$!]+/).filter(Boolean);
+const FORGE_CLIS = new Set(['gh', 'hub', 'glab', 'tea']);
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+// git branch that only lists: live check L5 saw `git branch --show-current` denied (#72).
+const BRANCH_READ_ONLY = new Set(['--show-current', '--list', '-l', '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose', '--no-color', '--no-column']);
+// A program word names a denied program by its last path segment, or as a glob that matches it
+// (/usr/bin/g?t runs git when the file is there).
+const DENIED_PROGRAMS = ['git', ...FORGE_CLIS, ...PACKAGE_MANAGERS];
+function programOf(w) {
+  const base = program(w);
+  if (DENIED_PROGRAMS.includes(base) || !/[*?[]/.test(base)) return base;
+  // A glob the shell would take literally (an unclosed [) is no regex either: it names itself.
+  let re;
+  try { re = new RegExp(`^${base.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^')}$`); } catch { return base; }
+  return DENIED_PROGRAMS.find((p) => re.test(p)) ?? base;
+}
+
+// The command read as a shell reads it, enough to see which programs it runs (#72 and its two security
+// reviews): quotes and escapes, $'...', line continuations, $VAR and ${VAR} (read where they are used,
+// split on IFS when unquoted, ${X:-default}), for-loop variables, command and process substitutions
+// (empty, and their own text read as commands), redirections and their targets dropped, and {a,b}
+// brace expansion. Returns the simple commands, each a list of words. `pin` forces one variable to one
+// value everywhere, for a loop that may have assigned it later in the text. Not a shell: a string built
+// at run time (eval, read, a function) is not seen, and the end check still catches what gets through.
+const BRACE_OPEN = '\u0001'; const BRACE_COMMA = '\u0002'; const BRACE_CLOSE = '\u0003';
+function braceExpand(word) {
+  const open = word.indexOf(BRACE_OPEN);
+  if (open < 0) return [word];
+  let depth = 0; const commas = [];
+  for (let k = open; k < word.length; k++) {
+    if (word[k] === BRACE_OPEN) depth++;
+    else if (word[k] === BRACE_COMMA && depth === 1) commas.push(k);
+    else if (word[k] === BRACE_CLOSE && --depth === 0) {
+      const head = word.slice(0, open); const tail = word.slice(k + 1);
+      if (!commas.length) return braceExpand(`${head}{${word.slice(open + 1, k)}}${tail}`);
+      const cuts = [open, ...commas, k];
+      return cuts.slice(1).flatMap((c, n) => braceExpand(head + word.slice(cuts[n] + 1, c) + tail));
+    }
+  }
+  return [word.replace(/[\u0001-\u0003]/g, (m) => ({ [BRACE_OPEN]: '{', [BRACE_COMMA]: ',', [BRACE_CLOSE]: '}' })[m])];
+}
+function ansiC(body) {
+  const esc = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' };
+  return body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|[0-7]{1,3}|c.|.)/g, (_, e) => {
+    if (/^[xuU]/.test(e)) return String.fromCodePoint(parseInt(e.slice(1), 16));
+    if (/^[0-7]/.test(e)) return String.fromCharCode(parseInt(e, 8));
+    if (e[0] === 'c') return String.fromCharCode(e.charCodeAt(1) & 31);
+    return esc[e] ?? `\\${e}`;
+  });
+}
+// The text between the bracket at src[i] and its partner, and the index after the partner.
+function balanced(src, i, openCh, closeCh) {
+  let depth = 0;
+  for (let k = i; k < src.length; k++) {
+    if (src[k] === '\\') { k++; continue; }
+    if (src[k] === "'") { const e = src.indexOf("'", k + 1); k = e < 0 ? src.length : e; continue; }
+    if (src[k] === openCh) depth++;
+    else if (src[k] === closeCh && --depth === 0) return [src.slice(i + 1, k), k + 1];
+  }
+  return [src.slice(i + 1), src.length];
+}
+// A value only known at run time: a substitution's output, $@ or $1, an unset variable, an expansion
+// this reading does not compute. Where git's subcommand or a program word would be, it is denied.
+const DYN = '\u0004';
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
+function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}) {
+  // Too deep to read is not read as harmless: the caller denies the command (fail closed).
+  if (depth > 8) throw new Error('nested more than 8 levels deep');
+  const cmds = []; const vars = { ...inherit }; let cur = []; let word = null; let braces = 0;
+  const record = (name, value) => { vars[name] = value; if (assigned) (assigned[name] ??= new Set()).add(value); };
+  // IFS unset is the shell's default, so an unquoted ${IFS} splits words (git${IFS}push).
+  const value = (name) => (pin && pin.name === name ? pin.value : vars[name] ?? (name === 'IFS' ? ' \t\n' : undefined));
+  const push = () => {
+    if (word === null) return;
+    const w = word; word = null; braces = 0;
+    const m = /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
+    if (m && cur.every((c) => ['export', 'declare', 'local', 'readonly', 'typeset'].includes(c) || c.startsWith('-'))) { record(m[1], m[2]); return; }
+    cur.push(...braceExpand(w).filter((x) => x !== '' || !w.includes(BRACE_OPEN)));
+  };
+  // Text the shell runs as a command (a substitution, sh -c, eval, a here-string to a shell) is
+  // read as commands of its own, with the variables known at that point.
+  const sub = (inner) => { cmds.push(...shellCommands(inner, pin, assigned, depth + 1, vars)); };
+  // A word's text as the shell expands it, joined, for text that is run again.
+  const expanded = (text) => shellCommands(text, pin, null, depth + 1, vars).flat().join(' ');
+  const end = () => {
+    push();
+    const done = cur; cur = [];
+    if (done[0] === 'for' && done[2] === 'in') for (const v of done.slice(3)) record(done[1], v);
+    if (done.length) cmds.push(done);
+    const shellAt = done.findIndex((w, k) => SHELLS.has(program(w)) && /^-[a-z]*c[a-z]*$/i.test(done[k + 1] ?? ''));
+    if (shellAt >= 0 && done[shellAt + 2] !== undefined) sub(done[shellAt + 2]);
+    const evalAt = done.indexOf('eval');
+    if (evalAt >= 0) sub(done.slice(evalAt + 1).join(' '));
+  };
+  const add = (s) => { word = (word ?? '') + s; };
+  // An unquoted expansion is split into words on IFS (the command's own, if it sets one).
+  const addSplit = (v) => {
+    const ifs = vars.IFS ?? ' \t\n';
+    if (!v) return;
+    const parts = ifs ? v.split(new RegExp(`[${ifs.replace(/[\]\\^-]/g, '\\$&')}]`)) : [v];
+    parts.forEach((p, n) => { if (n) push(); if (p) add(p); });
+  };
+  // $... at src[i]: returns the index after it, having added its value to the word.
+  const dollar = (i, quoted) => {
+    const put = (v, split = false) => { const s = v ?? DYN; if (quoted && !split) add(s); else addSplit(s); };
+    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); add(DYN); return e < 0 ? src.length : e + 1; }
+    const c = src[i + 1];
+    if (c === '(') {
+      if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); add('0'); return after; }
+      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add(DYN); return after;
+    }
+    if (c === '{') {
+      const [inner, after] = balanced(src, i + 1, '{', '}');
+      const m = /^(!?)(#?)([A-Za-z_]\w*|[@*#?$!0-9-])(\[[^\]]*\])?([^]*)$/.exec(inner);
+      if (!m) { add(DYN); return after; }
+      const [, bang, hash, name, index, op] = m;
+      if (hash && !op) { add('0'); return after; }
+      let v = /^[@*0-9]$/.test(name) ? DYN : value(name);
+      if (bang) v = v === undefined || v === DYN ? DYN : value(v);
+      const whole = /^\[[@*]\]$/.test(index ?? '');
+      if (index && !whole && v !== undefined && v !== DYN) { const n = Number(index.slice(1, -1)); v = Number.isInteger(n) ? v.split(/\s+/)[n] : DYN; }
+      if (/^:?[-=]/.test(op)) { if (v === undefined || v === '') v = expanded(op.replace(/^:?[-=]/, '')); }
+      else if (/^:?\+/.test(op)) v = v ? expanded(op.replace(/^:?\+/, '')) : '';
+      else if (op && !/^:?\?/.test(op) && !/^(\^\^?|,,?|~~?)$/.test(op)) v = DYN;
+      put(v, whole);
+      return after;
+    }
+    const m = /^[A-Za-z_]\w*/.exec(src.slice(i + 1));
+    if (m) { put(value(m[0])); return i + 1 + m[0].length; }
+    if (c && /[@*0-9]/.test(c)) { add(DYN); return i + 2; }
+    if (c && /[#?$!-]/.test(c)) { add('0'); return i + 2; }
+    add('$'); return i + 1;
+  };
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') { if (src[i + 1] === '\n') i += 2; else if (src.startsWith('\r\n', i + 1)) i += 3; else { add(src[i + 1] ?? ''); i += 2; } continue; }
+    if (c === "'") { const e = src.indexOf("'", i + 1); add(src.slice(i + 1, e < 0 ? undefined : e)); i = e < 0 ? src.length : e + 1; continue; }
+    if (c === '$' && src[i + 1] === "'") {
+      let k = i + 2; while (k < src.length && src[k] !== "'") k += src[k] === '\\' ? 2 : 1;
+      add(ansiC(src.slice(i + 2, k))); i = k + 1; continue;
+    }
+    if (c === '"') {
+      add(''); i++;
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === '\\' && '"\\$`\n'.includes(src[i + 1])) { if (src[i + 1] !== '\n') add(src[i + 1]); i += 2; continue; }
+        if (src[i] === '$' || src[i] === '`') { i = dollar(i, true); continue; }
+        add(src[i]); i++;
+      }
+      i++; continue;
+    }
+    if (c === '$' || c === '`') { i = dollar(i, false); continue; }
+    if (c === '<' || c === '>' || (c === '&' && src[i + 1] === '>')) {
+      if ((c === '<' || c === '>') && src[i + 1] === '(') { const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); i = after; continue; }
+      if (word !== null && /^\d+$/.test(word)) word = null; else push();
+      let k = i; while (k < src.length && /[<>&|]/.test(src[k])) k++;
+      const op = src.slice(i, k);
+      if (op.endsWith('&') && /[\d-]/.test(src[k] ?? '')) { i = k + 1; continue; }
+      while (k < src.length && /[ \t]/.test(src[k])) k++;
+      // The target: one word, quotes kept together. A here-string may be a script for a shell.
+      const from = k;
+      while (k < src.length && !/[\s;&|<>()]/.test(src[k])) {
+        if (src[k] === "'" || src[k] === '"') { const e = src.indexOf(src[k], k + 1); k = e < 0 ? src.length : e + 1; } else k++;
+      }
+      if (op === '<<<') sub(expanded(src.slice(from, k)));
+      i = k; continue;
+    }
+    // An array assignment, a=(git push): its words are its value, as "${a[@]}" gives them back.
+    if (c === '(' && word !== null && /^[A-Za-z_]\w*\+?=$/.test(word) && cur.every((w) => ['export', 'declare', 'local', 'readonly', 'typeset'].includes(w) || w.startsWith('-'))) {
+      const [inner, after] = balanced(src, i, '(', ')');
+      record(word.replace(/\+?=$/, ''), shellCommands(inner, pin, null, depth + 1, vars).flat().join(' '));
+      word = null; i = after; continue;
+    }
+    if (c === '\n' || c === ';' || c === '&' || c === '|' || c === '(' || c === ')') { end(); i++; continue; }
+    if (/\s/.test(c)) { push(); i++; continue; }
+    if ((c === '{' || c === '}') && word === null && /[\s;]/.test(src[i + 1] ?? ' ')) { end(); i++; continue; }
+    if (c === '{') { braces++; add(BRACE_OPEN); i++; continue; }
+    if (c === ',' && braces > 0) { add(BRACE_COMMA); i++; continue; }
+    if (c === '}' && braces > 0) { braces--; add(BRACE_CLOSE); i++; continue; }
+    add(c); i++;
+  }
+  end();
+  return cmds;
+}
+// Every reading worth checking: the command as it runs once, then once per value each assigned
+// variable takes, so a loop that reassigns it later in the text is read with that value too.
+function readings(command) {
+  const assigned = {};
+  const first = shellCommands(command, null, assigned);
+  const pins = Object.entries(assigned).flatMap(([name, values]) => [...values].map((v) => ({ name, value: v })));
+  if (pins.length > 64) throw new Error(`more than 64 assigned values (${pins.length})`);
+  return [first, ...pins.map((p) => shellCommands(command, p))].map((cmds) => cmds.flatMap((c) => [...c, SEP]));
+}
+// Words, with only a command separator (; & | newline) as a boundary between them: anything else the
+// shell drops or substitutes, such as `` or $(...), still leaves git next to its subcommand.
+const SEP = '\0';
+const flatWords = (command) => command.split(/([;&|\n]+)|[\s(){}<>`"'$!]+/).filter((t) => t !== undefined && t !== '').map((t) => (/^[;&|\n]+$/.test(t) ? SEP : t));
+function historyWords(words) {
+  const simple = (k) => { const end = words.indexOf(SEP, k); return words.slice(k, end < 0 ? undefined : end); };
   for (let i = 0; i < words.length; i++) {
-    const prog = program(words[i]);
-    if (prog === 'gh' || prog === 'hub') return prog;
+    const prog = programOf(words[i]);
+    if (FORGE_CLIS.has(prog)) return prog;
+    if (PACKAGE_MANAGERS.has(prog) && simple(i + 1).includes('publish')) return `${prog} publish`;
     if (prog !== 'git') continue;
     const j = afterGitOptions(words, i);
     const sub = words[j];
-    if (sub === undefined) continue;
+    if (sub === undefined || sub === SEP) continue;
+    if (sub.includes(DYN)) return 'git with a subcommand known only at run time';
+    if (sub === 'branch' && simple(j + 1).every((w) => BRANCH_READ_ONLY.has(w))) continue;
     if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
-    if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
+    if (sub === 'checkout' && !simple(j + 1).includes('--')) return 'git checkout';
+    // A word git does not know as a command may be the value of an option this list lacks
+    // (git --attr-source x push): the next words are then the subcommand.
+    if (!GIT_READ_COMMANDS.has(sub)) {
+      const next = simple(j + 1).slice(0, 2).find((w) => HISTORY_SUBCOMMANDS.has(w));
+      if (next) return `git ${next}`;
+    }
+  }
+  // A program only known at run time ($TOOL, a substitution) given a history or forge command.
+  for (let i = 0; i + 1 < words.length; i++) {
+    if (words[i].includes(DYN) && RUN_TIME_SUSPECT.has(words[i + 1])) return 'a program known only at run time';
   }
   return null;
+}
+const GIT_READ_COMMANDS = new Set(['status', 'diff', 'log', 'show', 'add', 'mv', 'rm', 'restore', 'reset', 'grep', 'blame', 'annotate',
+  'ls-files', 'ls-tree', 'rev-parse', 'rev-list', 'describe', 'config', 'init', 'apply', 'format-patch', 'shortlog', 'cat-file',
+  'hash-object', 'check-ignore', 'check-attr', 'help', 'version', 'var', 'reflog', 'show-ref', 'for-each-ref', 'name-rev',
+  'merge-base', 'diff-tree', 'diff-files', 'diff-index', 'count-objects', 'fsck', 'archive', 'clean', 'checkout', 'worktree',
+  'range-diff', 'whatchanged', 'cherry', 'interpret-trailers', 'check-ref-format', 'stage']);
+const RUN_TIME_SUSPECT = new Set([...HISTORY_SUBCOMMANDS, 'pr', 'mr', 'release', 'api', 'repo', 'publish', 'pull-request']);
+function historyCommand(command) {
+  if (typeof command !== 'string') return null;
+  const flat = historyWords(flatWords(command));
+  if (flat) return flat;
+  let read;
+  // A command this reading cannot finish is denied, not let through: the hook fails closed here.
+  try { read = readings(command); } catch (e) { return `a command the hook could not read (${e?.message ?? e})`; }
+  // The fast track's start record and accepted record decide the end check; a shell write could reset them.
+  const state = /\.git[\\/]+speckit-team(?![\w.-])/i;
+  if (state.test(command) || read.some((ws) => ws.some((w) => state.test(w)))) return "a command on the fast track's state";
+  // The flat words keep the old rule that a command which only mentions git push is denied too.
+  // Name the program when any reading can; "known only at run time" only when none can.
+  const found = read.map(historyWords).filter(Boolean);
+  if (found.length) return found.find((f) => !f.includes('known only at run time')) ?? found[0];
+  // An alias defined on the command line runs whatever it names, under a name no list can know.
+  const alias = (ws) => ws.some((w, k) => programOf(w) === 'git' && ws.slice(k + 1).some((a, n, rest) => /^-c\s*alias\./i.test(a) || (a === '-c' && /^alias\./i.test(rest[n + 1] ?? ''))));
+  return [flatWords(command), ...read].some(alias) ? 'git -c alias' : null;
 }
 function gitCalls(command) {
   const calls = [];

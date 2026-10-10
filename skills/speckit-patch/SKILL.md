@@ -17,8 +17,9 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
   before going on.
 - Your Agent tool has a `run_in_background` parameter. If not, Claude Code has fork subagents on
   and runs every agent in the background, which costs an extra waiting request. Tell the user once,
-  in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0` in the shell or under `env` in settings.json,
-  then a restart, brings foreground launches back. Then go on.
+  in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0` in the shell or under `env` in settings.json
+  (`node install.mjs --no-fork` writes it for every project), then a restart, brings foreground
+  launches back. Then go on.
 
 ## 2. Before launching
 - Note `git rev-parse HEAD` (the start) and `git hash-object -- "{{HOOK}}"` (the installed hook's

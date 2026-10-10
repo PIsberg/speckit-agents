@@ -153,7 +153,9 @@ word rule of research R15. Denied git subcommands: `commit`, `commit-tree`, `mer
 `cherry-pick`, `revert`, `am`, `stash`, `tag`, `branch`, `switch`, `update-ref`, `symbolic-ref`,
 `notes`, `replace`, `filter-branch`, `push`, `pull`, `fetch`, `clone`, `remote`, `ls-remote`,
 `submodule`, `send-email`, `request-pull`, and `checkout` with no `--` word after it. Denied
-programs: `gh`, `hub`. A `command` that is not a string returns `null`.
+programs: `gh`, `hub`. A `command` that is not a string returns `null`. (Since #72 also `glab`, `tea`, a
+package manager's `publish`, `git -c alias.*`, a command naming `.git/speckit-team`, and the same
+checks on the command with quotes removed and variables expanded; listing forms of `git branch` pass.)
 
 `treeCommand(command, start)` (owner decision of 2026-10-10, plan.md decision 16 point 3) returns
 the name of a git command that can overwrite or delete the developer's uncommitted files, or

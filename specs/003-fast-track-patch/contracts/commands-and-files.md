@@ -53,8 +53,11 @@ Frontmatter: `name: speckit-triage`, `argument-hint: "<request>"`,
 Output: one suggestion with a one-line reason and the exact command to type, for example
 `Suggested: /speckit-team <request> (adds a new installer flag, a public contract)`. It launches no
 agent and invokes no skill (FR-013). Signals for `/speckit-team`: a new capability, command, flag
-or output; a change to a public contract; a protected path (README, "The fast track"); more than 30
-production lines or 2 production files.
+or output; a change to a public contract; a protected path, meaning one the fast track protects:
+`.specify/`, `specs/`, `.claude/`, CI and commit-hook config (`.github/` and similar), and in the
+speckit-agents repo its hook, agents, skills and installer; README.md is not protected, so a typo
+fix there is no reason for `/speckit-team` (live check L6 failed on the earlier wording, #73); more
+than 30 production lines or 2 production files.
 
 ## Agent `patcher`
 

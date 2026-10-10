@@ -454,7 +454,8 @@ planner's (decision 15), confirmed by the owner on 2026-10-10.
     already reached the remote; the skill never force-pushes, so its own push to a branch the
     program already pushed fails instead of overwriting it, and the developer deletes the stray
     branch or pull request.
-  - Forge CLIs other than `gh` and `hub`, such as `glab` and `tea`, are not denied (owner decision,
+  - Forge CLIs other than `gh` and `hub`, such as `glab` and `tea`, are not denied (since #72 these two
+    are; owner decision,
     2026-10-10, at the spec-gatekeeper review: a documented gap; plan.md decision 17 point 3). A
     commit made through one is still caught by the end check as above; a merge request, issue or
     push it made on the forge is not undone by the hook.

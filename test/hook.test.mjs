@@ -267,7 +267,8 @@ test('verdict is read from the handback report', () => {
   assert.ok(!denied(sent), 'the report goes through');
   assert.match(sent.systemMessage, /recorded VERDICT: PASS/);
   assert.equal(run(dir, ['gate'], tool), null, 'and the PASS unlocks the gate');
-  handback(dir, 'verdict', 'Findings...\nVERDICT: FAIL');
+  // A second audit: one agent's second report with no work in between is the same report (#77).
+  handback(dir, 'verdict', 'Findings...\nVERDICT: FAIL', { agent_id: 'aud2' });
   assert.ok(denied(run(dir, ['gate'], tool)));
 });
 
@@ -283,6 +284,65 @@ test('stop after a handback verdict does not demand the line again', () => {
   const { dir } = repo();
   handback(dir, 'verdict', 'VERDICT: FAIL');
   assert.equal(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud1', last_assistant_message: '' }), null);
+});
+
+// #77: a verdict describes the files the auditor read, not the files on disk when it stops. Seen in
+// feature 003: an audit launched on old files finished ten hours late, and its FAIL replaced a newer
+// audit's PASS on the current files.
+const readAs = (dir, id) => run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: id });
+const gateOpen = (dir) => !denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} }));
+
+test('a late verdict on files that changed after the auditor started does not replace a newer one', () => {
+  const { dir, write: w } = repo();
+  assert.equal(readAs(dir, 'old'), null, 'the first tool call only records where the audit started');
+  w(`${FEAT}/spec.md`, '# Spec\nFR-001 must work, revised.\n');
+  assert.equal(readAs(dir, 'new'), null);
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'new' }).systemMessage, /recorded VERDICT: PASS/);
+  const late = handback(dir, 'verdict', 'Two HIGH findings.\nVERDICT: FAIL', { agent_id: 'old' });
+  assert.ok(!denied(late), 'the report itself still goes through');
+  assert.match(late.systemMessage, /VERDICT: FAIL was not recorded: .*changed after it started/);
+  assert.ok(gateOpen(dir), 'the newer PASS still stands');
+  assert.equal(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'old', last_assistant_message: 'VERDICT: FAIL' })?.decision, undefined,
+    'its Stop neither records the stale verdict nor asks for a VERDICT line');
+  assert.ok(gateOpen(dir), 'the Stop did not record it either');
+});
+
+test('a PASS on files edited during the audit does not open the gate', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  w(`${FEAT}/tasks.md`, '- [ ] T001 write test\n- [ ] T002 implement\n- [ ] T003 unaudited\n');
+  assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud1', last_assistant_message: 'VERDICT: PASS' }).systemMessage,
+    /VERDICT: PASS was not recorded/);
+  assert.ok(!gateOpen(dir));
+  readAs(dir, 'aud2');
+  assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'aud2', last_assistant_message: 'VERDICT: PASS' }).systemMessage,
+    /recorded VERDICT: PASS/, 'a fresh audit of the same files is recorded');
+  assert.ok(gateOpen(dir));
+});
+
+test('ticking a task during the audit does not make its verdict stale', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [ ] T002 implement\n');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
+});
+
+test('an auditor resumed after its report starts a new audit from the files it reads then', () => {
+  const { dir, write: w } = repo();
+  readAs(dir, 'aud1');
+  handback(dir, 'verdict', 'VERDICT: FAIL', { agent_id: 'aud1' });
+  w(`${FEAT}/plan.md`, '# Plan\nRevised for the FAIL.\n');
+  readAs(dir, 'aud1');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
+  assert.ok(gateOpen(dir));
+});
+
+test('an unreadable audit start record is treated as stale, not as a match', () => {
+  const { dir } = repo();
+  readAs(dir, 'aud1');
+  fs.writeFileSync(path.join(stateDir(dir), 'agents', 'aud1.audit-start.json'), '{broken');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /not recorded/);
+  assert.ok(!gateOpen(dir));
 });
 
 // Raw stdin, run from inside the repo: input that is not a hook event carries no cwd of its own.
@@ -599,6 +659,20 @@ test('ends: a test-writer report without RED or BLOCKED is sent back once', () =
   assert.equal(send('test/a.test.mjs:3 FR-001 expected 3, got undefined\n\nRED', 'tw2'), null);
   assert.equal(send('missing stubs: src/sum.mjs sum(a, b)\n\n**BLOCKED**', 'tw3'), null);
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
+});
+
+// #74: sent to correct an existing test, test-writer adds no failing test, so the suite ends green and
+// RED would contradict the run. It ends FIXED instead; the words are run as its agent file declares them.
+test("test-writer's own ends commands accept FIXED for a correction that adds no test", () => {
+  const { dir } = repo();
+  const text = fs.readFileSync(path.join(path.dirname(HOOK), '..', 'agents', 'test-writer.md'), 'utf8');
+  const commands = [...text.matchAll(/" (ends [A-Z ]+)'/g)].map((m) => m[1].split(' '));
+  assert.equal(commands.length, 2, 'the SubagentHandback and the Stop entry');
+  for (const [i, args] of commands.entries()) {
+    const report = 'test/a.test.mjs:12 expected 6 cases, now 7; suite green\n\nFIXED';
+    assert.equal(run(dir, args, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: report }, agent_id: `fx${i}` }), null, args.join(' '));
+    assert.equal(run(dir, args, { hook_event_name: 'SubagentStop', agent_id: `fy${i}`, last_assistant_message: report }), null, args.join(' '));
+  }
 });
 
 // The `ends` record is the gatekeeper's word, which the board's verify step reads. Without
@@ -1113,6 +1187,60 @@ test('patch: commit, push, history and pull-request commands are denied within b
     assert.ok(denied(out), `${command}: expected a deny, got ${JSON.stringify(out)}`);
     assert.match(why(out), name ? new RegExp(`may not run ${esc(name)}\\b`) : /may not run /, command);
     assert.match(why(out), /\/speckit-patch/, command);
+  }
+});
+
+// #72: forms the word match missed (other forge CLIs, split or variable git words, aliases, package
+// publishing, a shell write to the fast track's own state), and the read-only git branch live check L5
+// saw denied.
+test('patch: other forges, obfuscated git words, aliases, publishing and its own state are denied (#72)', () => {
+  const { dir } = cmdRepo();
+  const cases = [
+    ['glab mr create --fill', 'glab'], ['tea pr create', 'tea'], ['/usr/local/bin/glab api x', 'glab'],
+    ['g"it" push', 'git push'], ["g'it' commit -m x", 'git commit'], ['g\\it push', 'git push'],
+    ['G=git; $G push', 'git push'], ['G=git && ${G} commit -m x', 'git commit'], ['git${IFS}push', 'git push'],
+    ['git -c alias.p=push p', 'git -c alias'], ['git -c alias.s=status s', 'git -c alias'],
+    // From the push-time security review: an empty substitution between git and its subcommand still
+    // runs git push (``git `` push`` was denied before #72), and a variable is read where it is used.
+    ['git `` push', 'git push'], ['git $(true) push', 'git push'], ['git `true` commit -m x', 'git commit'],
+    ['G=git; $G push; G=x', 'git push'], ['git \\\npush', 'git push'],
+    // The second review: read the command as a shell does, not by guessing at words.
+    ['git -c core.x="a b" push', 'git push'], ["git -c 'user.name=a;b' commit -m x", 'git commit'],
+    ['for i in 1 2; do $G push; G=git; done', 'git push'], ['G=x; for i in 1 2; do $G push; G=git; done', 'git push'],
+    ['git 2>/dev/null push', 'git push'], ['git >out.txt commit -m x', 'git commit'], ['git 2>&1 push', 'git push'],
+    ["$'\\x67it' push", 'git push'], ["$'\\147it' push", 'git push'], ['{git,} push', 'git push'],
+    ['/usr/bin/g?t push', 'git push'], ['/usr/bin/gi[t] push', 'git push'], ['X="git push"; $X', 'git push'],
+    ['IFS=,; X=git,push; $X', 'git push'], ['export G=git; $G push', 'git push'], ['env -i git push', 'git push'],
+    // The third review: what the reading cannot resolve is denied where a denied word would be, not skipped.
+    ["G=git; sh -c '$G push'", 'git push'], ["bash -c 'g\"it\" commit -m x'", 'git commit'], ["eval 'git' 'push'", 'git push'],
+    ['f() { git "$@"; }; f push', 'git with a subcommand known only at run time'],
+    ['git $(echo push)', 'git push'], ['git "$SUB" -m x', 'git with a subcommand known only at run time'],
+    ['$(echo git) push', 'git push'], ['"$TOOL" commit -m x', 'a program known only at run time'],
+    ['${G-git} push', 'git push'], ['G=git; H=G; ${!H} push', 'git push'], ['a=(git push); "${a[@]}"', 'git push'],
+    ['G=GIT; ${G,,} push', 'git push'], ['G=gitx; ${G%x} push', 'a program known only at run time'], ["bash <<< 'git push'", 'git push'],
+    ['G=git; bash <<< "$G push"', 'git push'], ['git --attr-source x push', 'git push'],
+    [`${Array.from({ length: 30 }, (_, k) => `V=v${k}`).join('; ')}; V=git; $V push`, 'git push'],
+    [`${'$('.repeat(12)}git push${')'.repeat(12)}`, 'git push'],
+    ['npm publish', 'npm publish'], ['pnpm publish --access public', 'pnpm publish'], ['yarn npm publish', 'yarn publish'],
+    ['echo {} > .git/speckit-team/patch/p1.json', "a command on the fast track's state"],
+    ["rm -rf '.git/speckit-team'", "a command on the fast track's state"],
+    ['del .git\\speckit-team\\patch-accepted.json', "a command on the fast track's state"],
+  ];
+  for (const [command, name] of cases) {
+    const out = bash(dir, command);
+    assert.ok(denied(out), `${command}: expected a deny, got ${JSON.stringify(out)}`);
+    assert.match(why(out), new RegExp(`may not run ${esc(name)}`), command);
+  }
+  for (const command of ['git branch --show-current', 'git branch', 'git branch -a', 'git branch --list', 'git branch -vv && npm test',
+    'echo "it" "push"', 'X=1 npm test', 'npm run build', 'grep -rn publish src', 'cat package.json',
+    'git log $(git rev-parse HEAD) --oneline', 'git diff `git merge-base HEAD main`',
+    // Input the shell reading cannot make sense of gets no deny and, above all, no crash.
+    '/usr/bin/g[ push', "echo 'unterminated", 'echo $(( 1 + 2 )) ${', 'echo {{,}']) {
+    const out = bash(dir, command);
+    assert.equal(out, null, `${command}: expected null, got ${JSON.stringify(out)}`);
+  }
+  for (const command of ['git branch x', 'git branch -D x', 'git branch -m y', 'git branch --show-current && git branch x']) {
+    assert.match(why(bash(dir, command)), /may not run git branch/, command);
   }
 });
 

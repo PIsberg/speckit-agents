@@ -33,7 +33,7 @@ export const PHASE_ROLES: Record<SpeckitPhaseId, readonly string[]> = {
 const WORDS: Record<string, { good: readonly string[]; bad: readonly string[] }> = {
   'product-owner': { good: ['READY FOR PLAN'], bad: [] },
   'spec-auditor': { good: ['PASS'], bad: ['FAIL'] },
-  'test-writer': { good: ['RED'], bad: ['BLOCKED'] },
+  'test-writer': { good: ['RED', 'FIXED'], bad: ['BLOCKED'] },
   implementer: { good: ['GREEN'], bad: ['RED'] },
   'spec-gatekeeper': { good: ['APPROVED'], bad: ['REJECTED'] },
 }
@@ -51,6 +51,10 @@ export function toneOf(role: string, outcome: string): Tone {
 
 export const TONE_GLYPH: Record<Tone, string> = { good: '✓', bad: '✗', neutral: '•' }
 export const TONE_COLOR: Record<Tone, string> = { good: 'success', bad: 'error', neutral: 'subtle' }
+// The glyph says whether the role's work came out as it should; the words RED and GREEN keep their own
+// color, so a test-writer's RED (its job done) is not drawn green (#71).
+export const wordColor = (outcome: string, tone: Tone): string =>
+  outcome === 'RED' ? 'error' : outcome === 'GREEN' ? 'success' : TONE_COLOR[tone]
 
 // The active feature as feature() in speckit-team.mjs reads it: repo-relative with forward slashes, or
 // '' when it is not a path inside the repo. The fingerprint hashes the path with the text, so an

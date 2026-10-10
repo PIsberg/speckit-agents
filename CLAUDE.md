@@ -33,7 +33,7 @@ this file is how to work on it.
 - `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
   `install.test.mjs` installs into throwaway config dirs (its board tests run the real
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
-  fingerprint, retry limit and role colors against the hook's and `agents/*.md`, and runs
+  fingerprint, retry limit, role colors and report words against the hook's and `agents/*.md`, and runs
   `claude plugin validate` and `claude plugin test` on it
   (skipped, not passed, without a `claude` executable on PATH); `usage.test.mjs` runs
   `tools/usage.mjs` on a synthetic transcript; `media.test.mjs` checks `docs/media/leaks.mjs`;
@@ -43,8 +43,8 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 152 s on Windows (171 tests, 2026-10-10; the
-  four installer tests that run the real `claude plugin` and the 22 e2e tests take most of it, and
+- `npm test`: all suites, no network beyond localhost, 161 s on Windows (187 tests, 2026-10-10; the
+  four installer tests that run the real `claude plugin` and the 23 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
@@ -66,6 +66,8 @@ this file is how to work on it.
 - `ROLE_COLOR` in `mods/speckit-board/hooks/model.ts` copies the `color:` line of each
   `agents/*.md` (seven files), and its `MAX_RED` the hook's. Change both; `test/board-mod.test.mjs` holds each
   pair together.
+- `WORDS` in `mods/speckit-board/hooks/model.ts` copies the words each agent file passes to `ends`
+  (test-writer's and spec-gatekeeper's). Change both; `test/board-mod.test.mjs` holds them together.
 - `OWN_SOURCES` in `hooks/speckit-team.mjs` lists the team's own source paths. The fast track protects
   them only in this repository, recognised by the `name` in the committed top-level `package.json`,
   which is itself in `OWN_SOURCES`, so the fast track cannot change `package.json` here. A new

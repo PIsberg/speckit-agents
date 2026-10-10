@@ -154,6 +154,8 @@ test('an agent\'s word is good or bad for its own role', () => {
   expect(toneOf('spec-gatekeeper', 'APPROVED')).toBe('good')
   expect(toneOf('spec-gatekeeper', 'REJECTED')).toBe('bad')
   expect(toneOf('test-writer', 'BLOCKED')).toBe('bad')
+  // #74: a correction of an existing test, which adds no failing test, ends FIXED.
+  expect(toneOf('test-writer', 'FIXED')).toBe('good')
   expect(toneOf('product-owner', 'READY FOR PLAN')).toBe('good')
   expect(toneOf('architect', '')).toBe('neutral')
   for (const ended of ['killed', 'failed']) expect(toneOf('spec-auditor', ended)).toBe('bad')

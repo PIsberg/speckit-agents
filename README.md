@@ -23,7 +23,7 @@ fast track beside the pipeline for a change of at most 30 production lines in 2 
 (`/speckit-patch`), with no spec, plan or audit; hooks keep it inside that budget too.
 
 ```
-idea ─► product-owner ─► architect ─► spec-auditor ─► per slice: stubs ─► red ─► green ─► spec-gatekeeper ─► PR
+idea ─► product-owner ─► architect ─► spec-auditor ─► per round: stubs─► red ─► green ─► spec-gatekeeper ─► PR
         spec.md          plan.md      VERDICT:        implementer  test-writer  implementer  APPROVED /
         + questions      tasks.md     PASS / FAIL                                  │         REJECTED
            ▲                ▲              │                                       │
@@ -41,7 +41,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
   ([The audit gate](#the-audit-gate))
-- **Test-first, one slice at a time.** Stubs, then tests shown failing on an assertion, then the
+- **Test-first, one round at a time.** Stubs, then tests shown failing on an assertion, then the
   code that turns them green. ([Building in slices](#building-in-slices))
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
@@ -152,6 +152,8 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--uninstall` | remove everything the installer wrote, and nothing else ([Uninstall](#uninstall)) |
 | `--board` | also install the experimental [board mod](#board-mod-experimental); later reruns keep it |
 | `--no-board` | remove the board mod and keep the team |
+| `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
+| `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
 
 There is no flag for the fast track: `patcher` and its two skills are always installed.
 
@@ -210,8 +212,8 @@ and asks you to approve it, a fourth stop, then writes it with `speckit-constitu
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself
 beforehand.
 
-After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
-verifies and opens a PR, which it does not merge.
+After that it audits, then builds the feature a phase of `tasks.md` at a time, in rounds of up to 4
+slices (stubs, failing tests, code), verifies and opens a PR, which it does not merge.
 
 #### 3. A small change: the fast track
 
@@ -293,7 +295,7 @@ main session puts them to you: the first of the pipeline's three stops.
 | [`product-owner`](agents/product-owner.md) | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
 | [`architect`](agents/architect.md) | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
 | [`spec-auditor`](agents/spec-auditor.md) | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
-| [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it | sonnet |
+| [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it, or `FIXED` when it only corrected an existing test and the suite is green | sonnet |
 | [`implementer`](agents/implementer.md) | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
 | [`spec-gatekeeper`](agents/spec-gatekeeper.md) | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
 | [`patcher`](agents/patcher.md) | fast track | the working tree except protected paths, within 30 production lines and 2 files, never a commit | a report that `/speckit-patch` commits from, ending `DONE`, or `ESCALATE` or `FAILED` | sonnet |
@@ -373,36 +375,42 @@ way. After two failed audits it hands the findings to you.
 
 #### Building in slices
 
-After the audit it builds the feature one slice at a time, never in one shot. A slice is one small
+After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. For each slice:
+those slices. A round is the slices of one phase of `tasks.md` (Setup, Foundational, one user
+story), at most 4 of them, and gets one stub pass, one test-writer and one implementer. Until
+2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
+implementation task, each starting from nothing (11k to 14k tokens, see
+[Context budget](#context-budget)) and reading the code again; that was most of why a run felt
+slow next to plain prompting. The round size is a prompt rule; how much it saves in a full run is
+not measured yet. For each round:
 
 1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
    signatures the task lists, with bodies that only signal "not implemented", and reports
    `RESULT: STUB`. This is what lets the next step fail cleanly.
-2. **Red.** test-writer writes the slice's tests and loops until each one fails on an assertion
+2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion
    or on the stub's not-implemented signal. A test that fails because it does not parse, an
    import is missing or a name is undefined proves nothing about the behaviour, so test-writer
    fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
-3. **Green.** implementer makes the slice's tests pass, under the [retry limit](#the-retry-limit).
+3. **Green.** implementer makes the round's tests pass, under the [retry limit](#the-retry-limit).
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
 
-When the last slice is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
+When the last round is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
 straight away, without asking: between the stops above it never waits for you. A task still
-unticked at that point (a final test run, say) becomes one more implementer slice, and the ticks
+unticked at that point (a final test run, say) becomes one more implementer round, and the ticks
 made while building never void the audit.
 
 #### Parallel slices
 
-For `[P]` slices touching disjoint files, it can run several loops at once, each implementer in its
-own git worktree, merged back into the feature branch in task order. It does so only if you say so
-at the plan stop, and it recommends one at a time until a live run has confirmed side-by-side
-launches ([#40](https://github.com/PIsberg/speckit-agents/issues/40)). Side by side saves
-wall-clock time, not tokens: every slice gets its own test-writer and implementer either way, plus
-a few main-session requests for the merges, and several agents then draw on your usage limits at
-once.
+For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
+implementer in its own git worktree, merged back into the feature branch in task order. It does so
+only if you say so at the plan stop, and it recommends one at a time until a live run has
+confirmed side-by-side launches ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
+Side by side may save wall-clock time but costs more: each slice gets its own test-writer and
+implementer instead of sharing its round's, plus a few main-session requests for the merges, and
+several agents then draw on your usage limits at once.
 
 #### Handoffs are lossy on purpose
 
@@ -485,9 +493,25 @@ and any other change is caught at the end.
 - **Writes** (`scope protected`): a `Write`, `Edit`, `MultiEdit` or `NotebookEdit` to a protected
   path, the installed team or the git directory is denied before it runs.
 - **History and remote commands**: `patcher` may not run `git commit`, `merge`, `rebase`, `stash`,
-  `tag`, `branch`, `switch`, `push`, `pull`, `fetch`, a `git checkout` with no `--` and the other
-  subcommands in `HISTORY_SUBCOMMANDS`, nor `gh` or `hub`. The command is split into words and every
-  `git` word is checked, so `sh -c "git push"` and `git -C . commit` are caught.
+  `tag`, `branch` (except the listing forms such as `git branch --show-current`), `switch`, `push`,
+  `pull`, `fetch`, a `git checkout` with no `--` and the other subcommands in `HISTORY_SUBCOMMANDS`,
+  a `git -c alias.*` call, the forge CLIs `gh`, `hub`, `glab` and `tea`, or `npm`, `pnpm`, `yarn`
+  or `bun publish`, nor a command that names the fast track's own state (`.git/speckit-team`). The
+  command is split into words and every `git` word is checked, so `sh -c "git push"` and
+  `git -C . commit` are caught. It is then read again the way a shell reads it: quotes, escapes
+  and `$'...'`, variables where they are used (split on `IFS`, and once with each value a later
+  assignment or a `for` loop gives them), redirections dropped, `{a,b}` expanded, command and
+  process substitutions read as commands of their own, as are the strings given to `sh -c`, `eval`
+  and a here-string, and a glob such as `/usr/bin/g?t` matched against the denied programs. So
+  `g"it" push`, `G=git; $G push`, `git${IFS}push`, `git 2>/dev/null push`, `git -c x="a b" push`,
+  `{git,} push` and `G=git; sh -c '$G push'` are caught too. What it cannot work out (a
+  substitution's output, `$@`, an unset variable, `${X%y}`) counts as unknown, and an unknown
+  word is denied where git's subcommand would be (`git "$@"` in a function) or where a program
+  word stands before a history or forge command (`"$TOOL" push`, `$(printf git) push`). A
+  command it cannot finish reading (nested more than 8 levels, more than 64 assigned values) is
+  denied ([#72](https://github.com/PIsberg/speckit-agents/issues/72) and three security reviews of
+  it). It is still not a shell: text read at run time (`eval "$(cat cmd.txt)"`, `read`) is not
+  seen, and the end check catches any commit that gets through.
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -567,10 +591,10 @@ nothing elsewhere.
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
 | `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
-| `verdict` | spec-auditor: PreToolUse `SubagentHandback`, and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict |
+| `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
-| `ends RED BLOCKED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED` or `BLOCKED`, such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
+| `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The two
 `settings.json` entries are the ones the installer merges in.
@@ -779,6 +803,12 @@ it in the project's `.claude/settings.json`:
 { "env": { "CLAUDE_CODE_FORK_SUBAGENT": "0" } }
 ```
 
+To turn them off for every project instead, `node install.mjs --no-fork` writes the same line
+into the `settings.json` of your Claude config directory, and Claude Code's `fork` agent type is
+then gone everywhere. It writes it only where no value is set, records in its manifest that it did,
+and `--fork` or `--uninstall` removes it again only while it is still that `"0"`
+([#78](https://github.com/PIsberg/speckit-agents/issues/78)).
+
 This repository commits exactly that, since the team builds its own features here. The skill
 checks its Agent tool at the start of a run and tells you once if the parameter is missing. This
 surfaced while recording the README's GIFs
@@ -916,10 +946,12 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     row with the progress bar and the retry meter;
   - the team agents of this session, running ones first, each name in its agent file's color, with
     the task its Agent call described: a spinner and the running time while it runs, then its
-    report word, how long it took and how long ago it ended. The word is green with `✓` when it is
-    the one the role should end on (`PASS`, `GREEN`, `APPROVED`, a test-writer's `RED`), red with
-    `✗` when not (`FAIL`, an implementer's `RED`, `BLOCKED`, `REJECTED`, `killed`, `failed`), and
-    dim otherwise. The latest six show, and the rest are counted;
+    report word, how long it took and how long ago it ended. A green `✓` marks the word the role
+    should end on (`PASS`, `GREEN`, `APPROVED`, a test-writer's `RED`), a red `✗` one it should not
+    (`FAIL`, an implementer's `RED`, `BLOCKED`, `REJECTED`, `killed`, `failed`), and a dim `•` any
+    other. The word takes the glyph's color, except that `RED` is always red and `GREEN` always
+    green, so a test-writer's `RED` reads `✓ RED` with a green tick and a red word. The latest six
+    show, and the rest are counted;
   - the buttons, and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
     A finished section, and one not started past the next task, folds to its title and count, and
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
@@ -1090,16 +1122,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 171 tests:
+`npm test` runs 187 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 29 | the installer, against throwaway config dirs |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 36 | the installer, against throwaway config dirs |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 8 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 22 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 23 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1259,7 +1291,8 @@ changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and
   the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
   `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
   `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
-  word, as [Known limits](#known-limits) says, and the model went on without it.
+  word, as [Known limits](#known-limits) said, and the model went on without it. The listing forms
+  of `git branch` are allowed since [#72](https://github.com/PIsberg/speckit-agents/issues/72).
 - **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
   a new machine-readable output format, which is a public contract") and launched no agent.
   **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
@@ -1380,8 +1413,8 @@ verdict is read from its `message`. Any new catch-all hook must do the same.
 In an interactive session, Claude Code 2.1.296 has fork subagents on, and then its Agent tool has
 no `run_in_background` parameter: every agent runs in the background, which costs a waiting
 request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0`, for example under `env` in the project's
-`.claude/settings.json`, and restart (see [Foreground launches](#foreground-launches)). The skill
-says so at the start of a run.
+`.claude/settings.json`, or for every project with `node install.mjs --no-fork`, and restart (see
+[Foreground launches](#foreground-launches)). The skill says so at the start of a run.
 
 ### `/speckit-implement` is not gated
 
@@ -1440,9 +1473,11 @@ reinstall the team (`node install.mjs` in the speckit-agents checkout), then run
 ### "may not run git commit" (and push, `gh` and the rest)
 
 `patcher` never commits, pushes or opens a PR; `/speckit-patch` does that after the end check. The
-denied commands are the history and remote commands in `HISTORY_SUBCOMMANDS` and the programs `gh`
-and `hub`. The match is on words, so a command that only mentions one, such as `echo "git push"`,
-is denied too.
+denied commands are the history and remote commands in `HISTORY_SUBCOMMANDS`, a `git -c alias.*`
+call, the programs `gh`, `hub`, `glab` and `tea`, a package manager's `publish`, and any command
+that names `.git/speckit-team`. The match is on words, so a command that only mentions one, such as
+`echo "git push"`, is denied too. The listing forms of `git branch` (`--show-current`, `--list`,
+`-a`, `-r`, `-v`) are allowed.
 
 ### "may not run git reset --hard" (and `git clean`)
 
@@ -1488,7 +1523,8 @@ up and replace it.
   that overreaches by accident. It does not cover one that evades the hooks on purpose through the
   shell. By category, the fast track does not guard against:
   - **git aliases:** a commit, push or PR made by a program whose command does not name it (a git
-    alias, `npm version`, a script, `make release`, `curl` to the GitHub API) is not denied before
+    alias from a config file, `npm version`, a script, `make release`, `curl` to the GitHub API, an
+    command whose text is only read at run time such as `eval "$(cat cmd.txt)"`) is not denied before
     it runs. A commit is still caught at the end, and the skill never force-pushes, so a stray
     push makes the skill's own push fail; you delete the stray branch or PR.
   - **scripts:** the same holds for any script `patcher` writes and runs.
@@ -1498,15 +1534,17 @@ up and replace it.
     Claude config directory is not caught.
   - **network access:** nothing limits what `patcher` fetches or sends over the network from Bash.
     Only the history and remote commands named above are denied.
-  - **other forge CLIs:** `patcher`'s command deny matches only `gh` and `hub`, so a `glab` (GitLab)
-    or `tea` (Gitea) command that opens a merge request is not stopped before it runs. A commit
-    made that way is still caught by the end check, and the skill makes the real commit and PR
-    only after that check.
+  - **other forge CLIs:** `patcher`'s command deny matches `gh`, `hub`, `glab` and `tea`. Any other
+    forge CLI that opens a merge request is not stopped before it runs. A commit made that way is
+    still caught by the end check, and the skill makes the real commit and PR only after that
+    check.
 - **The command check matches words.** A command that only mentions `git push` or `gh` is denied
   too.
-- **Fast-track state is protected from `Write` and `Edit`, not Bash.** A change hidden by rewriting
-  the start record stays uncommitted: a protected file hidden that way is not in the accepted
-  record, so the skill does not commit it.
+- **Fast-track state is protected from `Write` and `Edit`, and from Bash only by name.** A Bash
+  command that names `.git/speckit-team` is denied, but one that reaches it another way (a script,
+  a path built at run time) is not. A change hidden by rewriting the start record stays
+  uncommitted: a protected file hidden that way is not in the accepted record, so the skill does
+  not commit it.
 - **One fast-track run per worktree at a time.** Two runs share the accepted record and the
   working tree.
 - **Installed team files deeper than one folder level are not hashed.** `Write` and `Edit` to them
@@ -1535,7 +1573,8 @@ nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
   are written back, CRLF and inline arrays included. If something did (another tool, you), that
-  change is kept and only the gates are removed, in the file's own format. Your own empty
+  change is kept and only the gates (and the `--no-fork` line, if the installer wrote it and it is
+  still `"0"`) are removed, in the file's own format. Your own empty
   `"hooks": {}` or event lists are kept. No backup is made at uninstall, and the install-time copy
   is deleted.
 - **Files:** only files that carry the installer's marker are removed; a same-named file you wrote
