@@ -34,6 +34,8 @@ function roundTrip(dir) {
 const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
+// Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
+const flat = (s) => s.replace(/\s+/g, ' ');
 
 test('install lays down agents, skill, hook and both settings gates, keeping other hooks', () => {
   const dir = claudeDir({ model: 'opus', hooks: { PreToolUse: [UNRELATED, {
@@ -159,6 +161,84 @@ test('installed speckit-team skill and architect agree on the decisions section 
   // The decisions' reasoning stays in plan.md, so the report keeps its cap; the skill batches its questions.
   assert.match(architect, /At most 15 lines/);
   assert.match(skill, /at most 4 questions/);
+});
+
+// specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
+// lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
+// failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
+// the skill did not mention; a grep cut at 200 columns hid four mentions of a dropped task (one more
+// architect). Each rule has a half in another file, so renaming it on one side brings the cost back.
+test('installed skill, architect and product-owner settle the plan decisions and their spec lines in one round', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const read = (...p) => flat(fs.readFileSync(path.join(dir, ...p), 'utf8'));
+  const skill = read('skills', 'speckit-team', 'SKILL.md');
+  const architect = read('agents', 'architect.md');
+  const owner = read('agents', 'product-owner.md');
+  const stop = skill.slice(skill.indexOf('## 2.'), skill.indexOf('## 3.'));
+  assert.ok(architect.includes('`Spec:`'), 'architect writes the new wording of a spec line an option changes');
+  for (const term of ['`Spec:`', 'product-owner', 'same message']) assert.ok(stop.includes(term), `the plan stop names ${term}`);
+  assert.match(owner.slice(owner.indexOf('## Inputs'), owner.indexOf('## Process')), /plan decisions/);
+  assert.match(skill.slice(0, skill.indexOf('## 1.')), /at most 4 questions/, 'the limit is stated before the first stop');
+  assert.ok(stop.includes("sed -n '/^## Open Decisions/,$p'"), 'the section is read in one command');
+  assert.match(stop, /more than 4/);
+  assert.match(stop, /every recommended option/);
+  for (const [name, text] of [['architect.md', architect], ['speckit-team SKILL.md', skill]]) {
+    assert.match(text, /every mention/, `${name}: a dropped ID is one edit for every mention`);
+  }
+  assert.match(architect, /`cut`/);
+});
+
+// specs/004-board-clear/findings.md, 4: past the Bash tool's default 2 minutes Claude Code moves a
+// command to the background, where a subagent cannot wait for it (sleep is blocked, Monitor is not
+// its tool). One implementer waited 234 s that way on an `npm test` it then ran again. Every agent
+// that runs a suite says so.
+test('every installed agent that runs tests gives the run a Bash timeout that covers it', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  for (const a of ['test-writer', 'implementer', 'spec-gatekeeper', 'patcher']) {
+    const text = flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
+    for (const re of [/`timeout`/, /600000 ms/, /moves the command to the background/]) assert.match(text, re, a);
+  }
+});
+
+// specs/004-board-clear/findings.md, 2 and 3: a test can be red and still wrong. A width bound no
+// layout could meet was red for another reason, then cost an implementer RED and two more launches;
+// two type errors in test code would have failed CI's tsc. A number that cannot hold blocks the round.
+test('installed test-writer runs the type check and reports a task number no implementation can meet', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'agents', 'test-writer.md'), 'utf8'));
+  const work = text.slice(text.indexOf('## Process'), text.indexOf('## Lane'));
+  assert.match(work, /type check/);
+  assert.match(work, /smallest and the largest case/);
+  assert.match(text.slice(text.indexOf('## Report')), /numbers that cannot hold/);
+});
+
+// specs/004-board-clear/findings.md, 5 and 6: product-owner's and architect's hooks see Write and
+// Edit only, and no stop check reads their Bash writes. And in Claude Code 2.1.296 a report arrives as
+// the agent's hand-back message, which the Agent tool's result only points to.
+test('installed product-owner and architect write files with the tools their hook sees; the skill reads hand-backs', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  for (const a of ['product-owner', 'architect']) {
+    const text = flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
+    assert.match(text.slice(text.indexOf('## Lane'), text.indexOf('## Report')), /Write and Edit[^]*Bash/, a);
+  }
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  assert.match(skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace')), /`SubagentHandback`/);
+});
+
+// README.md, "The team", gives the agent bodies' length. It said 26 to 43 lines while architect.md
+// had 65 (2026-10-10), so the numbers are counted here: lines after the frontmatter, blank ones left out.
+test("README states the agent bodies' length as agents/*.md has it", () => {
+  const repo = path.dirname(INSTALL);
+  const body = (a) => fs.readFileSync(path.join(repo, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n')
+    .split(/^---$/m).slice(2).join('---').split('\n').filter((l) => l.trim()).length;
+  const team = AGENTS.filter((a) => a !== 'patcher').map(body);
+  const readme = flat(fs.readFileSync(path.join(repo, 'README.md'), 'utf8'));
+  assert.ok(readme.includes(`Those bodies are ${Math.min(...team)} to ${Math.max(...team)} lines`), `team bodies: ${team.join(', ')}`);
+  assert.ok(readme.includes(`its ${body('patcher')}-line body`), `patcher body: ${body('patcher')}`);
 });
 
 // 003 FR-013, FR-012, US5-1, US5-2 (T015): the advisory triage skill.
