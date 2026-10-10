@@ -161,21 +161,27 @@ const lastToolResult = (req) => (req?.messages ?? []).flatMap((m) => (Array.isAr
 const lastResult = (req) => strings(lastToolResult(req) ?? []).join('\n');
 const lastResultIsError = (req) => lastToolResult(req)?.is_error === true;
 
-function reply(res, stream, { text, name, input }, id) {
-  const block = name ? { type: 'tool_use', id, name, input } : { type: 'text', text };
-  const stop = name ? 'tool_use' : 'end_turn';
+// A scripted reply is one block ({ text } or { name, input }) or an array of them, sent as one
+// response in that order: several tool calls in one message, as a model makes them.
+function reply(res, stream, step, id) {
+  const blocks = (Array.isArray(step) ? step : [step]).map(({ text, name, input }, i) => (name
+    ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text }));
+  const stop = blocks.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
   const message = { id: `msg_${id}`, type: 'message', role: 'assistant', model: 'claude-fake', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
   if (!stream) {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ...message, content: [block], stop_reason: stop }));
+    res.end(JSON.stringify({ ...message, content: blocks, stop_reason: stop }));
     return;
   }
   res.writeHead(200, { 'content-type': 'text/event-stream' });
   const event = (type, data) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`);
   event('message_start', { message: { ...message, content: [], stop_reason: null } });
-  event('content_block_start', { index: 0, content_block: name ? { ...block, input: {} } : { type: 'text', text: '' } });
-  event('content_block_delta', { index: 0, delta: name ? { type: 'input_json_delta', partial_json: JSON.stringify(input) } : { type: 'text_delta', text } });
-  event('content_block_stop', { index: 0 });
+  blocks.forEach((block, index) => {
+    const tool = block.type === 'tool_use';
+    event('content_block_start', { index, content_block: tool ? { ...block, input: {} } : { type: 'text', text: '' } });
+    event('content_block_delta', { index, delta: tool ? { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } : { type: 'text_delta', text: block.text } });
+    event('content_block_stop', { index });
+  });
   event('message_delta', { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: 1 } });
   event('message_stop', {});
   res.end();
@@ -280,6 +286,20 @@ test("a project's .claude/settings.json env turns fork subagents off and brings 
   assert.equal(agentSchema(r.requests[MAIN][0]).run_in_background?.type, 'boolean', story(r));
   assert.equal(launch(r)?.is_backgrounded, false, story(r));
   assert.match(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
+});
+
+// The skill commits the approved spec or plan in the same message that launches the next agent, to
+// save the main session a request (each one re-reads its whole context). That holds only if Claude
+// Code runs the calls of one message in order, so the agent starts on the committed tree.
+test('a Bash call and an Agent call in one message run in order: the agent starts after the commit', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  s.write('specs/001-x/plan.md', '# Plan\n\nApproved.\n');
+  const commit = call('Bash', { command: 'git -c user.name=t -c user.email=t@example.invalid commit -qam "e2e plan approved"', description: 'Commit the approved plan' });
+  const r = await session(s, {
+    [MAIN]: [[commit, agent('architect', 'e2e architect')]],
+    'e2e architect': [call('Bash', { command: 'git log -1 --format=%s', description: 'Show the last commit' })],
+  });
+  assert.match(lastResult(r.requests['e2e architect'][1]), /e2e plan approved/, story(r));
 });
 
 test("architect's and product-owner's scope hooks deny a Write outside their lanes", { skip: noClaude, timeout: 120_000 }, async () => {

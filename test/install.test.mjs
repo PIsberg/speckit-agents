@@ -229,6 +229,54 @@ test('installed product-owner and architect write files with the tools their hoo
   assert.match(skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace')), /`SubagentHandback`/);
 });
 
+// The 004 architect's first pass wrote 47k characters in about 230 of its 654 s; the constitution
+// table was 39% of plan.md, the quickstart mostly live checks the owner deferred, and the plugin API's
+// types were explored three times (19k, 17k and 9k characters). The architect writes each fact once,
+// leaves the cases to test-writer, and maps the code; neither it nor product-owner reads other
+// features' artifacts as examples (40k characters in 004).
+test('installed architect writes each fact once, cites the spec instead of spelling out cases, and maps the code', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const read = (a) => flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
+  const architect = read('architect');
+  const inputs = architect.slice(architect.indexOf('## Inputs'), architect.indexOf('## Process'));
+  const work = architect.slice(architect.indexOf('## Process'), architect.indexOf('## Context'));
+  assert.match(inputs, /Other features' artifacts are not inputs/);
+  for (const doc of ['`research.md` only', '`data-model.md` only', '`contracts/` only', '`quickstart.md` only']) assert.ok(work.includes(doc), doc);
+  for (const term of ['each fact once', 'one row per rule', 'do not spell out each case', 'file and symbol']) assert.ok(work.includes(term), term);
+  const owner = read('product-owner');
+  assert.match(owner.slice(owner.indexOf('## Inputs'), owner.indexOf('## Process')), /Other features' specs are not inputs/);
+  const writer = read('test-writer');
+  assert.match(writer.slice(writer.indexOf('## Inputs'), writer.indexOf('## Process')), /not the whole file/);
+  assert.match(writer, /a test for each scenario and FR/);
+  assert.match(writer, /saved to a file/);
+});
+
+// The full suite ran 5 times in the 004 run, about 14.5 of the 48 agent-minutes; the last
+// implementer's run and spec-gatekeeper's were a minute apart on the same commit. Rounds now run the
+// tests that cover their change, and only the last round, which the skill names, runs the full suite.
+test('installed implementer runs the full suite only in the round the skill calls the last', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const implementer = flat(fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8'));
+  assert.match(implementer, /full suite only when your prompt says `last round`/);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  assert.ok(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 7.')).includes('`last round`'), 'the skill names the last round');
+});
+
+// The main session is the run's largest cost: in 004 its 58 run responses took 8.92M, 2.73M of it
+// earlier conversation re-read by every response. While an agent works the user sees its Agent
+// description and its tool calls, never its text (checked against Claude Code 2.1.296's interface).
+// test/e2e.test.mjs pins that the calls of one message run in order, which the commit-and-launch rule needs.
+test('installed skill keeps the main session short and tells the user what each agent does', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  assert.match(skill.slice(skill.indexOf('## 0.'), skill.indexOf('## 0b.')), /`\/clear`/);
+  assert.equal(skill.split('in the message that launches').length - 1, 2, 'the spec and the plan are committed with the next launch');
+  for (const term of ['Before each launch', '`duration_ms`', 'Agent call\'s `description`']) assert.ok(skill.includes(term), term);
+});
+
 // README.md, "The team", gives the agent bodies' length. It said 26 to 43 lines while architect.md
 // had 65 (2026-10-10), so the numbers are counted here: lines after the frontmatter, blank ones left out.
 test("README states the agent bodies' length as agents/*.md has it", () => {
