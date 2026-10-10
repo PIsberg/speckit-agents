@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'patcher'];
 const UNRELATED = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] };
 
 function claudeDir(settings) {
@@ -43,6 +43,7 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
 
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
   for (const a of AGENTS) {
+    assert.ok(fs.existsSync(path.join(dir, 'agents', `${a}.md`)), `agents/${a}.md installed`);
     const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8');
     assert.doesNotMatch(text, /\{\{HOOK\}\}/, a);
     assert.match(text, /speckit-agents: managed/, a);
@@ -52,6 +53,19 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   assert.match(implementer, new RegExp(`node "${hookPath}" result`));
   assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md')));
 
+  // 003 FR-001, FR-006, FR-012, plan.md decision 14: the fast track's agent and skill.
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'patcher.md')), 'agents/patcher.md installed');
+  const patcher = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
+  assert.match(patcher, new RegExp(`node "${hookPath}" patch`));
+  assert.match(patcher, new RegExp(`node "${hookPath}" scope protected`));
+  assert.match(patcher, new RegExp(`node "${hookPath}" ends DONE FAILED ESCALATE`));
+  assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md')), 'skills/speckit-patch installed');
+  const patchSkill = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  assert.match(patchSkill, /speckit-agents: managed/);
+  assert.match(patchSkill, /^name: speckit-patch$/m);
+  assert.match(patchSkill, /^disable-model-invocation: true$/m);
+  assert.doesNotMatch(patchSkill, /\{\{HOOK\}\}/);
+
   const s = settingsOf(dir);
   assert.equal(s.model, 'opus');
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
@@ -59,12 +73,54 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   assert.ok(!JSON.stringify(s).includes('C:/old/place'), 'stale gate replaced, not duplicated');
   assert.equal(backups(dir).length, 1, 'settings.json backed up before the change');
   assert.match(r.stdout, /verified\s+installed hook runs/);
+  assert.match(r.stdout, /\/speckit-patch/, 'the final Next lines name /speckit-patch');
+});
+
+// 003 FR-002, FR-003, FR-004, FR-006, FR-012, plan.md decision 16 point 3: the prose rules.
+test("installed patcher.md states the fast track's rules", () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'patcher.md')), 'agents/patcher.md installed');
+  const text = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
+  for (const re of [/DONE/, /FAILED/, /ESCALATE/, /regression test/i, /passed, failed, skipped or not run/i,
+    /not yours/i, /git mv/i, /never commit/i, /never push/i, /\bgh\b/, /git reset --hard/i, /git clean/i,
+    /naming it/i, /never merge/i, /\/speckit-team/, /never start/i]) assert.match(text, re);
+  assert.doesNotMatch(text, /gh pr create/);
+  assert.doesNotMatch(text, /git switch -c/);
+});
+
+// 003 research R15, plan.md decisions 14 to 16, spec audit finding H1: the commit-after-the-check steps.
+test('installed speckit-patch skill commits only after the end check, and never on an empty record', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md')), 'skills/speckit-patch installed');
+  const text = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  assert.ok(text.includes(`git hash-object -- "${hookPath}"`), 'noted hash of the installed hook');
+  for (const re of [/git switch -c patch\//, /patch-accepted\.json/, /git add --/, /git commit -m/, /git add -A/,
+    /git push -u origin/, /--force/, /gh pr create/, /DONE/, /passed/, /commit nothing and report the run as FAILED/,
+    /never merge/i, /never start/i, /\/speckit-team/]) assert.match(text, re);
+  const empty = /`files` is empty[^]*commit nothing, push nothing and open no pull request/i.exec(text);
+  assert.ok(empty, 'the empty-record rule is stated');
+  assert.ok(empty.index < text.indexOf('git commit -m'), 'the empty-record rule comes before the first git commit -m');
+});
+
+test('refuses to replace a patcher.md it did not install', () => {
+  const dir = claudeDir();
+  const mine = path.join(dir, 'agents', 'patcher.md');
+  fs.mkdirSync(path.dirname(mine), { recursive: true });
+  fs.writeFileSync(mine, '---\nname: patcher\ndescription: my own\n---\n');
+  const r = install(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /patcher\.md/);
+  assert.equal(fs.readFileSync(mine, 'utf8'), '---\nname: patcher\ndescription: my own\n---\n');
 });
 
 test('a second install changes nothing', () => {
   const dir = claudeDir({});
   install(dir);
   const before = fs.readFileSync(path.join(dir, 'settings.json'), 'utf8');
+  assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-patch')));
   const r = install(dir);
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stdout, /^(install|update) /m);
@@ -124,6 +180,7 @@ test('--uninstall removes only what it installed', () => {
   assert.equal(r.status, 0, r.stderr);
   for (const a of AGENTS) assert.ok(!fs.existsSync(path.join(dir, 'agents', `${a}.md`)), a);
   assert.ok(!fs.existsSync(path.join(dir, 'skills', 'speckit-team')));
+  assert.ok(!fs.existsSync(path.join(dir, 'skills', 'speckit-patch')));
   assert.ok(!fs.existsSync(path.join(dir, 'hooks', 'speckit-team.mjs')));
   assert.ok(fs.existsSync(path.join(dir, 'agents', 'my-agent.md')));
   assert.deepEqual(settingsOf(dir).hooks, { PreToolUse: [UNRELATED] });
@@ -217,6 +274,7 @@ test('--help lists every flag, --board and --no-board included', () => {
   const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   for (const f of ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board']) assert.match(r.stdout, new RegExp(`${f}\\b`));
+  assert.match(r.stdout, /\/speckit-patch/);
   assert.doesNotMatch(r.stdout, /^import/m);
 });
 

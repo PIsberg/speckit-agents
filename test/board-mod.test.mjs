@@ -49,7 +49,7 @@ test('the board mod draws each role in the color of its agent file', () => {
     const text = fs.readFileSync(path.join(ROOT, 'agents', f), 'utf8');
     return [/^name:\s*(\S+)/m.exec(text)?.[1], /^color:\s*(\S+)/m.exec(text)?.[1]];
   }));
-  assert.equal(Object.keys(agents).length, 6);
+  assert.equal(Object.keys(agents).length, 7);
   assert.deepEqual(board, agents);
 });
 
