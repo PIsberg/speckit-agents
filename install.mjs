@@ -9,7 +9,8 @@
 //   node install.mjs --board         also install the speckit-board mod; later reruns keep it
 //   node install.mjs --no-board      remove the speckit-board mod, keep the team
 //
-// After installing, /speckit-patch <change> is the fast track for small changes.
+// After installing, /speckit-patch <change> is the fast track for small changes, and
+// /speckit-triage <request> suggests which track fits.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,6 +80,7 @@ function files() {
   return [
     ...AGENTS.map((a) => ({ src: `agents/${a}.md`, dst: path.join(claudeDir, 'agents', `${a}.md`) })),
     { src: 'skills/speckit-team/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-team', 'SKILL.md') },
+    { src: 'skills/speckit-triage/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-triage', 'SKILL.md') },
     { src: 'skills/speckit-patch/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-patch', 'SKILL.md') },
     { src: `hooks/${HOOK_FILE}`, dst: path.join(claudeDir, 'hooks', HOOK_FILE) },
   ];
@@ -412,5 +414,6 @@ Done. Next:
   1. Restart Claude Code (agents load at session start).
   2. In a repo: specify init --here --integration claude (/speckit-team drafts the constitution with you).
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...
-  4. A small change: /speckit-patch <change>`);
+  4. A small change: /speckit-patch <change>
+  Not sure which track: /speckit-triage <request>`);
 if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');
