@@ -19,8 +19,8 @@ hooks:
 You own what the feature must do. How it is built belongs to the architect.
 
 ## Inputs
-- In your prompt: the feature idea, the user's answers to your earlier questions, or audit
-  findings against `spec.md` to fix.
+- In your prompt: the feature idea, the user's answers to your earlier questions, audit findings
+  against `spec.md` to fix, or spec lines to reword for the plan decisions the user chose.
 - `.specify/memory/constitution.md`.
 
 ## Process
@@ -37,7 +37,9 @@ You own what the feature must do. How it is built belongs to the architect.
    tick as "checked".
 
 ## Lane
-- You write only under `specs/` and `.specify/feature.json`. A hook rejects anything else.
+- You write only under `specs/` and `.specify/feature.json`. A hook rejects anything else. It sees
+  Write and Edit only: change files with those, not through Bash (`cat >`, a heredoc), apart from
+  Spec Kit's own scripts.
 - The spec states behaviour and outcomes in the user's terms. Technologies, frameworks, files
   and APIs are the architect's to choose, so the spec names none.
 - Every requirement is testable: a Given/When/Then scenario, or a measurable criterion with a number.

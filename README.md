@@ -36,8 +36,9 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
   test-writer and implementer build test-first, spec-gatekeeper checks the result. Each one's
   phase instructions are Spec Kit's own skill. ([The team](#the-team))
 - **Lanes are hooks, not requests.** A `Write` or `Edit` outside an agent's lane is denied before
-  the file exists, and the denial tells the agent whose lane it is in; a change made through Bash
-  is caught when the agent stops. ([Guardrails](#guardrails), [The lane check](#the-lane-check))
+  the file exists, and the denial tells the agent whose lane it is in; a change test-writer or
+  implementer makes through Bash is caught when it stops. ([Guardrails](#guardrails),
+  [The lane check](#the-lane-check))
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
   ([The audit gate](#the-audit-gate))
@@ -302,9 +303,10 @@ main session puts them to you: the first of the pipeline's three stops.
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 26 to 43 lines on
-purpose. `patcher` is the exception to the preloaded skill: it runs no Spec Kit phase, so its
-31-line body carries the whole job.
+not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 76 lines long,
+blank lines not counted; the architect's is the longest. `patcher` is the exception to the
+preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
+`test/install.test.mjs` counts them.
 
 ### Why the prompts are short
 
@@ -355,17 +357,24 @@ launches each agent with the inputs it needs and relays the product owner's ques
 The architect writes each decision you should confirm (a new dependency, a schema or public API
 change, a rule with more than one reasonable reading) to an `## Open Decisions` section of
 `plan.md`: the options, its recommendation first, and what follows from each option (edge cases,
-counts, side effects, the requirements and tasks it changes). Its report names only the decision
-IDs, so the reasoning is not carried in the main session for the rest of the run. At the plan stop
-the skill asks you about every open decision at once, and one architect revision applies all the
-answers, moving each entry to a `## Decisions` section with the answer and the date.
+counts, side effects, the requirements and tasks it changes). An option that would make a line of
+the spec wrong carries that line's new wording on a `Spec:` line. Its report names only the
+decision IDs, so the reasoning is not carried in the main session for the rest of the run. At the
+plan stop the skill reads the section in one command and asks you about every open decision at
+once; with more than 4, its first question takes every recommended option in one answer, in which
+you can also name exceptions (`D5: B`). One architect revision then applies all the answers,
+moving each entry to a `## Decisions` section with the answer and the date, and product-owner,
+launched in the same message, rewords the spec lines the chosen options carry. The spec and the
+plan then agree before the first audit; in the 004 run a decision that contradicted FR-012 failed
+it ([Feature 004](#feature-004-interactive)).
 
 When your answers, or an audit's findings, fully determine the edits (a value, a list entry, a
 wording), the skill sends a *dictated* revision: each exact edit and where it goes, which the
-architect makes by grep without re-reading the artifacts. Anything that needs design judgement, and any edit the architect
-finds changes more than it was told, gets a full revision. The orchestrating session never edits
-the plan itself: a response there re-reads a much larger context than an architect's
-([Feature 003](#feature-003-interactive)).
+architect makes by grep without re-reading the artifacts. An answer that drops or renames an ID is
+one edit for every mention, which the architect finds by grep. Anything that needs design
+judgement, and any edit the architect finds changes more than it was told, gets a full revision.
+The orchestrating session never edits the plan itself: a response there re-reads a much larger
+context than an architect's ([Feature 003](#feature-003-interactive)).
 
 #### Routing findings
 
@@ -392,10 +401,18 @@ not measured yet. For each round:
    or on the stub's not-implemented signal. A test that fails because it does not parse, an
    import is missing or a name is undefined proves nothing about the behaviour, so test-writer
    fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
+   test-writer also runs the type check CI runs over tests, and works out on the current code any
+   value an assertion compares with that the code already decides: a task asking for a number no
+   implementation can meet is reported, before any implementer runs, not written as a red test.
 3. **Green.** implementer makes the round's tests pass, under the [retry limit](#the-retry-limit).
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
+
+Every agent that runs tests gives the run a Bash `timeout` that covers it. Past Claude Code's
+default of 2 minutes the command moves to the background, where a subagent cannot wait for it:
+`sleep` is blocked and Monitor is not one of its tools. In the 004 run one implementer waited
+234 s that way on an `npm test` it then ran again.
 
 When the last round is GREEN and every task in `tasks.md` is ticked, it launches spec-gatekeeper
 straight away, without asking: between the stops above it never waits for you. A task still
@@ -651,6 +668,11 @@ blocks the stop if any changed file is outside the lane. The agent is told which
 Files that were dirty before the agent started are ignored. If the agent stops a second time with
 the problem still there, the hook lets it finish with a WARNING rather than loop.
 
+The check runs for test-writer and implementer, whose first tool call the gate records.
+product-owner and architect work before the audit and have no gate, so a file either of them
+writes through Bash is not checked; their prompts tell them to change files with `Write` and
+`Edit` only ([#88](https://github.com/PIsberg/speckit-agents/issues/88)).
+
 ### Test files
 
 A path counts as a test if it matches one of:
@@ -778,16 +800,61 @@ considered and left out: a first plan writes five or more files, so a cap low en
 would cut artifacts short and cost an audit round. None of these changes is measured yet; the next
 full run is the measurement.
 
+#### Feature 004, interactive
+
+The run that built feature 004 (a `[ clear ]` button on the board, 2026-10-10, Claude Code 2.1.296)
+was interactive, with fork subagents off: all 18 launches were in the foreground, and no request
+only waited. Measured with `tools/usage.mjs` and the agents' transcripts; one sample, and the main
+session also carried the reinstall before the run and a transcript watcher, so its figure is higher
+than a plain run's. [`specs/004-board-clear/findings.md`](specs/004-board-clear/findings.md) has
+the run step by step.
+
+| Where | Input | Wall time |
+|---|---|---|
+| main session: 81 responses, first 59k, peak 207k | 10.74M | |
+| agents: 18 runs | 7.41M | 48 min |
+| of which the first architect run: 35 responses, peak 142k | 2.96M | 654 s |
+| of which the six launches and the stall the causes below added | 1.07M | 830 s |
+
+Five causes added launches or waiting, and what changed for each:
+- **A plan decision contradicted the spec.** The first audit failed on FR-012 against decision D3;
+  a product-owner and a second audit fixed it (229 s, 0.59M), and the second audit listed three
+  more such conflicts as MEDIUM. An option that changes a spec line now carries its new wording,
+  and product-owner applies the chosen ones in the same message as the architect's revision
+  ([Settling decisions](#settling-decisions)).
+- **A task asked for a number no implementation could meet.** T006 held the band to 30 columns
+  where its narrowest layout with a running agent is 44. The test failed earlier for another
+  reason, so implementer reported RED (1 of the 3 the retry limit allows), test-writer corrected
+  the bound, and one more implementer only confirmed it (278 s, 0.14M for the last two).
+  test-writer now works such a value out on the current code and reports the task before any
+  implementer runs.
+- **test-writer did not run the type check.** Two type errors in test code reached implementer
+  and would have failed CI's `tsc`; one more test-writer fixed them (55 s, 0.16M). test-writer now
+  runs the type check CI runs over tests.
+- **A test run moved to the background.** One implementer's `npm test` passed the Bash tool's
+  default 2 minutes, Claude Code moved it to the background, and the agent waited 234 s on a run
+  it then repeated. Every agent that runs tests now gives the run a timeout that covers it
+  ([Building in slices](#building-in-slices)).
+- **A dictated revision missed four lines.** The main session built the list of lines for a
+  dropped task from a grep cut at 200 columns; one more architect (33 s, 0.13M). An ID that goes
+  away is now one edit for every mention, which the architect greps for.
+
+The first architect run made 22 of its 35 responses for a single read, at 85k of input each on
+average; its prompt now asks for every read it can already name in one response. None of these
+changes is measured yet: the next full run is the measurement
+([#79](https://github.com/PIsberg/speckit-agents/issues/79)).
+
 #### Foreground launches
 
 A background launch returns only a receipt, and the main session then spent a request that did
 nothing but wait for the agent, re-reading its whole context to do so. So the skill launches every
-agent in the foreground, and the report comes back as the Agent tool's result: 1.5 main-session
-requests per agent instead of 2.4, and 63k of main-session input per agent instead of 153k. The
-third run is not a clean comparison, though. It ran on Claude Code 2.1.294 instead of 2.1.292,
-with the team installed in the scratch repo and `--setting-sources project,local
---strict-mcp-config`, so its first request was 32k rather than 42k; it launched 11 agents rather
-than 15; and the skill had also gained [#37](https://github.com/PIsberg/speckit-agents/issues/37)
+agent in the foreground, and the report comes back with the Agent call (as its result or, in an
+interactive Claude Code 2.1.296 session, as the agent's own message, which the result points to):
+1.5 main-session requests per agent instead of 2.4, and 63k of main-session input per agent
+instead of 153k. The third run is not a clean comparison, though. It ran on Claude Code 2.1.294
+instead of 2.1.292, with the team installed in the scratch repo and `--setting-sources
+project,local --strict-mcp-config`, so its first request was 32k rather than 42k; it launched 11
+agents rather than 15; and the skill had also gained [#37](https://github.com/PIsberg/speckit-agents/issues/37)
 and [#38](https://github.com/PIsberg/speckit-agents/issues/38). The waiting requests explain 0.95M
 of the main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
 
@@ -1125,12 +1192,12 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 188 tests:
+`npm test` runs 193 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 36 | the installer, against throwaway config dirs |
+| [`test/install.test.mjs`](test/install.test.mjs) | 41 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 9 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
@@ -1517,6 +1584,10 @@ up and replace it.
   but Bash could still write a file. Likewise the git-directory guard stops `Write` and `Edit`
   (in any spelling Windows folds together, through symlinks, and from a linked worktree), not `rm`
   through Bash.
+- **product-owner's and architect's lanes stop `Write` and `Edit` only.** A file either of them
+  writes through Bash is not caught: the [lane check](#the-lane-check) runs for test-writer and
+  implementer. Their prompts tell them to use `Write` and `Edit`, which is a request, not a hook
+  ([#88](https://github.com/PIsberg/speckit-agents/issues/88)).
 - **Subagents can't ask you questions.** product-owner returns its questions, and the main
   session asks them.
 - **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will
@@ -1607,7 +1678,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
-| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001, 002 and 003 |
+| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 004 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
 ### Making a change

@@ -41,7 +41,9 @@ a task names it. When your prompt names task IDs, do only those.
 2. Per task: write the least code that turns its tests green, then refactor while they stay green.
 3. Run the build, linter and full test suite the way `CLAUDE.md` or the build file specifies.
    Check each command's own exit status: through a pipe to `tail`, `tee` or `grep`, the status
-   you see is the last stage's.
+   you see is the last stage's. Give each run a Bash `timeout` that covers it, up to 600000 ms:
+   past the default 2 minutes Claude Code moves the command to the background, where you cannot
+   wait for it.
 4. Tick finished tasks (`- [X]`) in `tasks.md`, and commit on the feature branch, never on main
    or master.
 

@@ -41,7 +41,9 @@ the build file for the test command. No `specs/` artifacts.
    docs and config values with no behaviour are exempt.
 3. Make the change. Move or rename a file only with `git mv`: a plain `mv` counts as a deleted and
    a new file against the budget.
-4. Run the existing tests and check the command's own exit status.
+4. Run the existing tests and check the command's own exit status. Give the run a Bash `timeout`
+   that covers it, up to 600000 ms: past the default 2 minutes Claude Code moves the command to the
+   background, where you cannot wait for it.
 5. Restore a file only by naming it (`git checkout <sha> -- <file>`). Never `git reset --hard`,
    `git clean`, `git stash`, or a `git checkout` or `git restore` of `.`, a folder or a pattern: a
    hook denies them, because they destroy the developer's uncommitted work.

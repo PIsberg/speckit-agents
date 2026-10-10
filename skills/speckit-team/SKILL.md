@@ -13,10 +13,11 @@ the inputs it needs and passes reports along. It does not do the agents' work it
 hooks: the README.md of the speckit-agents repo.
 
 ## Handoffs
-Launch every agent in the foreground (`run_in_background: false`) and take its report as the
-tool's result. A background launch costs you an extra request that only waits, and each request
-re-reads your whole context: in the 2026-10-07 runs those waits were 41% and 44% of the main
-session's input. Agents meant to run side by side go in one message as several Agent calls.
+Launch every agent in the foreground (`run_in_background: false`). Its report is the tool's
+result or, when the result says so, the agent's own message (its `SubagentHandback` call, as in
+Claude Code 2.1.296). A background launch costs you an extra request that only waits, and each
+request re-reads your whole context: in the 2026-10-07 runs those waits were 41% and 44% of the
+main session's input. Agents meant to run side by side go in one message as several Agent calls.
 
 If your Agent tool has no `run_in_background` parameter, every agent runs in the background
 whatever you pass. Then launch it and end your turn: its completion notification brings the
@@ -40,7 +41,10 @@ and answers, or another agent's full report.
   and heading or line): the architect then greps and edits without re-reading the artifacts. In
   the 003 run a revision that named the line cost 0.11M tokens; one with fully decided changes that
   named only the files cost 0.70M. Anything that needs design judgement is a full revision, and so
-  is an edit a dictated architect reports as `needs revision`.
+  is an edit a dictated architect reports as `needs revision`. An ID an answer drops or renames is
+  one edit for every mention (`drop T013 everywhere under specs/004-x/`), which the architect
+  greps for itself: in the 004 run a list of lines from a grep cut at 200 columns missed four of
+  them, and cost one more architect.
 - spec-auditor: the feature directory.
 - test-writer: the round's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
@@ -54,7 +58,8 @@ and answers, or another agent's full report.
 Wait for the user only where a step says **Stop:**, or where it says to hand something to the
 user. Everywhere else, launch the next agent as soon as the report you need is in: do not ask
 whether to go on, and do not end your turn between steps, except to wait for an agent that runs in
-the background (see Handoffs).
+the background (see Handoffs). AskUserQuestion takes at most 4 questions per call: at any stop, ask
+in as many calls as it takes, all before the next launch.
 
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
@@ -91,15 +96,21 @@ constitution if step 0b wrote it, on that branch.
 **Stop:** the user reviews `spec.md`.
 
 ## 2. Plan and tasks: architect
-**Stop:** the user settles every open decision and approves `plan.md` and `tasks.md`.
+**Stop:** the user settles every open decision and approves `plan.md`, `tasks.md` and the spec
+lines the decisions reword.
 The architect's report lists each open decision by ID; its options, and what follows from each,
-are in the `## Open Decisions` section of `plan.md`. Read only that section (`grep -n` for the
-heading, then that line range), and ask about every open decision at this one stop with
-AskUserQuestion, recommended option first, each option's description saying what follows from it.
-One call takes at most 4 questions, so ask in as many calls as it takes, all before relaunching.
+are in `## Open Decisions`, the last section of `plan.md`. Read only that section, in one command
+(`sed -n '/^## Open Decisions/,$p'` on the file), and ask about every open decision at this one
+stop with AskUserQuestion, recommended option first, each option's description saying what
+follows from it. With more than 4, ask first one question that lists every decision with its
+options: take every recommended option (recommended), or decide one by one. The user can also
+answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recommended option.
 Then send all the answers to one architect revision (dictated where they fully determine the
-edits, see Handoffs). In the 003 run four architect revisions only applied answers, 7.37M tokens
-together.
+edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
+the two write different files, and the first audit then reads a spec that agrees with the plan.
+In the 004 run a decision that contradicted FR-012 failed the first audit, and the fix cost a
+product-owner and a second audit (229 s, 0.59M tokens). In the 003 run four architect revisions
+only applied answers, 7.37M tokens together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
 same stop, with AskUserQuestion, whether to build them one at a time (recommended: no live run has confirmed
 side-by-side launches yet) or side by side. Say why it matters: side by side may be faster but
@@ -131,7 +142,9 @@ For each round:
    entries it lists. A test-writer sent only to correct an existing test ends `FIXED`. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
-   one: send it back. If test-writer reports a missing production symbol, run step 1 for it.
+   one: send it back. If test-writer reports a missing production symbol, run step 1 for it. If
+   it reports a task number that cannot hold, send a test-writer the number the code allows when
+   the task's intent is plain, and list the task at hand-over; otherwise the architect rewrites it.
 3. **Green** (implementer, the round's implementation task IDs). Every report ends with
    `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with the failing output. After 3 REDs in
    a row the hook blocks implementer: do not retry, and never delete the retry record yourself.
