@@ -11,6 +11,9 @@ this file is how to work on it.
   is the fast track (`/speckit-patch`, one `patcher` agent) and `skills/speckit-triage/SKILL.md` the
   advisory `/speckit-triage`, which suggests a track and runs nothing.
 - `install.mjs`: installer (`setup.sh` / `setup.ps1` only check for Node and call it).
+- `.claude/settings.json`: sets `CLAUDE_CODE_FORK_SUBAGENT=0` for sessions in this repo, so the
+  team's agents run in the foreground when it builds its own features (README.md, "Foreground
+  launches"). It also removes Claude Code's `fork` agent type here.
 - `docs/media/`: the README's GIFs and the board's screenshot, the vhs tapes that record them,
   `record.mjs` that runs the tapes against a scratch Spec Kit repo, `leaks.mjs` that lets a
   recording into the folder only if no frame shows the OS user name or home folder, and the demo
@@ -40,8 +43,8 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 137 s on Windows (169 tests, 2026-10-10; the
-  four installer tests that run the real `claude plugin` and the 21 e2e tests take most of it, and
+- `npm test`: all suites, no network beyond localhost, 146 s on Windows (170 tests, 2026-10-10; the
+  four installer tests that run the real `claude plugin` and the 22 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the

@@ -268,6 +268,18 @@ test('with fork subagents on, as in an interactive session, the Agent tool has n
   assert.doesNotMatch(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
 });
 
+// This repository commits the setting as project settings (#70), so a session here launches agents
+// in the foreground even where fork subagents would be on.
+test("a project's .claude/settings.json env turns fork subagents off and brings the foreground back", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  s.write('.claude/settings.json', JSON.stringify({ env: { CLAUDE_CODE_FORK_SUBAGENT: '0' } }));
+  const r = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [say('No findings.\nVERDICT: PASS')] },
+    { env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
+  assert.equal(agentSchema(r.requests[MAIN][0]).run_in_background?.type, 'boolean', story(r));
+  assert.equal(launch(r)?.is_backgrounded, false, story(r));
+  assert.match(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
+});
+
 test("architect's and product-owner's scope hooks deny a Write outside their lanes", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   const write = (rel) => call('Write', { file_path: path.join(s.repo, ...rel.split('/')), content: 'export const greet = () => 1;\n' });

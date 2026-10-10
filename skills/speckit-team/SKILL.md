@@ -34,7 +34,13 @@ detail than that, and do not restate a report to the user in full: summarise it 
 A subagent starts with nothing but the prompt you write, so keep every prompt lossy: only what
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
 and answers, or another agent's full report.
-- architect: the feature directory and, on a revision, the findings it owns.
+- architect: the feature directory and, on a revision, the findings it owns or the user's answers
+  by decision ID. When the answers or findings fully determine every edit (a value, a list entry,
+  a wording), start the prompt with `dictated:` and give each exact edit with where it goes (file
+  and heading or line): the architect then greps and edits without re-reading the artifacts. In
+  the 003 run a revision that named the line cost 0.11M tokens; one with fully decided changes that
+  named only the files cost 0.70M. Anything that needs design judgement is a full revision, and so
+  is an edit a dictated architect reports as `needs revision`.
 - spec-auditor: the feature directory.
 - test-writer: the slice's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
@@ -84,7 +90,15 @@ constitution if step 0b wrote it, on that branch.
 **Stop:** the user reviews `spec.md`.
 
 ## 2. Plan and tasks: architect
-**Stop:** show the decisions it flagged; the user approves `plan.md` and `tasks.md`.
+**Stop:** the user settles every open decision and approves `plan.md` and `tasks.md`.
+The architect's report lists each open decision by ID; its options, and what follows from each,
+are in the `## Open Decisions` section of `plan.md`. Read only that section (`grep -n` for the
+heading, then that line range), and ask about every open decision at this one stop with
+AskUserQuestion, recommended option first, each option's description saying what follows from it.
+One call takes at most 4 questions, so ask in as many calls as it takes, all before relaunching.
+Then send all the answers to one architect revision (dictated where they fully determine the
+edits, see Handoffs). In the 003 run four architect revisions only applied answers, 7.37M tokens
+together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
 same stop, with AskUserQuestion, whether to build them one at a time (recommended: no live run has confirmed
 side-by-side launches yet) or side by side. Say why it matters: side by side is faster but no
