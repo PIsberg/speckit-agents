@@ -15,14 +15,17 @@ protected paths; a new `patch` mode denies any Bash command that names a git sub
 history or reaching the remote, or `gh`, and measures the change since the agent's first tool call
 on every call. Past 30 changed production lines (a modified line counts once), 2 production files
 or any binary production file, it denies everything but reporting back, so the work stays in the
-tree. Test files are decided by `.specify/test-paths` as committed at the start. At the end of the
-run the hook blocks finishing while a protected file or an installed agent, hook or skill file
-changed by any means is not restored, or while anything is committed; a changed settings file in
-the config directory ends the run `FAILED` with no accepted record; otherwise it shows the measured
+tree. It also denies the git commands that overwrite or delete files wholesale (`git reset --hard`,
+`git clean`, a `git checkout` or `git restore` of `.`, a folder, a pattern or a file uncommitted at
+the start), and the restore allowed while over budget names each protected file to restore
+(decision 16). Test files are decided by `.specify/test-paths` as committed at the start. At the end of the
+run the hook blocks finishing while a protected repo file changed by any means is not restored, or
+while anything is committed; a changed installed team file (agent, hook, skill or settings file in
+the config directory) ends the run `FAILED` with no accepted record (decision 16); otherwise it shows the measured
 size and, within budget, writes an accepted record listing `patcher`'s files. Only after `patcher` reported `DONE`
 with the tests passed, and only from that record, does the skill commit those files in the main
 session, push and open the pull request (owner decision of 2026-10-09, decision 14, reversing
-decision 6). Files the developer had already changed when the run starts are left out of the count
+decision 6); a record that lists no file commits nothing (decision 16). Files the developer had already changed when the run starts are left out of the count
 and the commit only while they stay as they were: a write to one is denied, and a change or commit
 of one by any other means stops the run like an over-budget change (decision 13). The existing
 `ends` mode checks the report's last word (`DONE`, `FAILED`, `ESCALATE`). An optional
@@ -80,8 +83,8 @@ Every MUST rule, with the task that delivers it or the line that shows it does n
 | I. Every behaviour change ships with a test in `test/` under `npm test` | Every implementation task is preceded by its test tasks in the same slice: T001 before T002, T003 before T004, T005 before T006, T007 before T008, T009 before T010, T011 to T013 before T014, T015 before T016. Doc and media tasks change no behaviour. | T001, T003, T005, T007, T009, T011, T012, T013, T015 | PASS |
 | I. Shown failing before the change, evidence in the PR body | Each test task's report carries its red output; T013 is also run with the installed hook replaced by `process.exit(0)` (SC-004). T024 collects that evidence into the file the PR body quotes. | T001 to T016, T024 | PASS |
 | I. Tests assert what a caller observes | Hook tests assert decision JSON, the records and files left on disk; installer tests assert installed files and `--help` output; e2e tests assert what the agent's next request shows, the accepted record and `git` state. No test imports a hook function. | T001, T003, T005, T007, T009, T011, T013, T015 | PASS |
-| I. No test that passes because the code never ran | T013's `process.exit(0)` run; every new hook decision has a case named in its task that fails when that decision is removed: the budget (T003), test patterns from the start commit (T003), the command deny (T005), a commit at any size, the accepted record's removal and contents (T007), the team check (T009). | T003, T005, T007, T009, T013 | PASS |
-| II. Every hook entry point handles empty, malformed and unknown input; each path tested | `scope protected` and `patch` are added to the `MODES` list of the malformed-input, wrong-event and outside-Spec-Kit tests; `patch` gets tests for a missing key, a corrupt start record, a `dirty` or `team` field of the wrong shape, an unknown start commit, an invalid committed `.specify/test-paths`, a repo with no commit, a non-string Bash `command`, a config dir with missing folders; `scope protected` gets a missing, malformed and wrong-name root `package.json` and a repo with no commit. | T001, T003, T005, T007, T009 | PASS |
+| I. No test that passes because the code never ran | T013's `process.exit(0)` run; every new hook decision has a case named in its task that fails when that decision is removed: the budget (T003), test patterns from the start commit (T003), the command deny and the wholesale-restore deny (T005), a commit at any size, the accepted record's removal and contents, the narrowed restore allowance (T007), the team check ending the run `FAILED` without blocking (T009). | T003, T005, T007, T009, T013 | PASS |
+| II. Every hook entry point handles empty, malformed and unknown input; each path tested | `scope protected` and `patch` are added to the `MODES` list of the malformed-input, wrong-event and outside-Spec-Kit tests; `patch` gets tests for a missing key, a corrupt start record, a `dirty` or `team` field of the wrong shape, an unknown start commit, an invalid committed `.specify/test-paths`, a repo with no commit, a non-string Bash `command` (for both the history and the wholesale-restore deny), a config dir with missing folders; `scope protected` gets a missing, malformed and wrong-name root `package.json` and a repo with no commit. | T001, T003, T005, T007, T009 | PASS |
 | II. A wiring change is verified in a live session before merge, the PR says what was observed | `patcher`'s frontmatter is new hook wiring: live checks L1 to L8 (quickstart.md), recorded in README "Live results" and in T024's evidence. | T022, T024 | PASS |
 | II. Installed hook commands use a quoted, absolute, forward-slash path | `patcher.md` uses `node "{{HOOK}}" ...` like the other agents, and the skill `git hash-object -- "{{HOOK}}"`; T011 asserts both installed texts carry the quoted absolute path. | T011, T014 | PASS |
 | III. Observers never block; observer overhead budget | Not applicable: the feature adds no observer. Its hooks are guardrails that decide by design. The board mod change is one color constant with no behaviour. | none | N/A |
@@ -104,8 +107,8 @@ Every MUST rule, with the task that delivers it or the line that shows it does n
 | Governance: deviations in Complexity Tracking | None. | none | N/A |
 
 Post-design re-check (after research.md, data-model.md and contracts/): no rule changed status. The
-open risks are not violations: the protected end check can loop on a model that never restores, and
-on an agent, hook or skill file `patcher` cannot restore (research R6, R16, decision 5); a commit,
+open risks are not violations: the protected end check can loop on a model that never restores a
+protected repo file (research R6, decision 5; an installed team file no longer loops, decision 16); a commit,
 push or PR made by a program whose command does not name it is not denied before it runs, which is
 deliberate shell evasion and outside what the fast track guards against (research R15, "What
 remains"); and whether Claude Code delivers the fast track's hooks in an interactive session is
@@ -123,7 +126,8 @@ counted (3), and the `git mv` rule for a move git does not see as a rename (3). 
 audit the owner chose "commit after the check" on 2026-10-09 (decision 14), which reverses decision 6.
 The owner confirmed decision 15 on 2026-10-10 with one change (point 5): a change to the config
 directory's settings file during a run no longer blocks the end; the run ends `FAILED` with nothing
-committed.
+committed. After the third spec audit the owner chose on 2026-10-10 the fixes for its findings H1, M2
+and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 and 5.
 
 1. **Names** (public contract): `/speckit-patch`, `/speckit-triage`, agent `patcher`, report words
    `DONE`, `FAILED`, `ESCALATE`. Confirmed 2026-10-09.
@@ -175,6 +179,8 @@ committed.
    them (finding H1). Unchanged from 6: on a red CI the skill reports to you; it starts no fix round.
 7. **While over budget, every tool is denied** except reporting back and, when a restore is pending,
    a single pure `git checkout`, `git restore`, `git reset --soft` or `rm` command (research R7). Confirmed 2026-10-09.
+   **Narrowed by the owner on 2026-10-10 (decision 16, point 3)**: the restore command must name
+   only protected files still to be restored.
 8. **FR-002, FR-003 and FR-004 are prompt rules** in `agents/patcher.md` and the skill, not hooks: no
    hook can know a repo's test command or its result. Unit tests only show the installed agent and
    skill carry them; the live check is the behavioural evidence. Confirmed 2026-10-09.
@@ -206,7 +212,9 @@ committed.
        passed and `patcher` reported `DONE` with the tests passed.
     3. `.specify/test-paths` is read from the run's start commit, not the working tree.
     4. The installed team files are hashed at the start of the run and compared in the end check; a
-       change blocks like any protected change (except a settings file: decision 15, point 5).
+       change ends the run `FAILED` with no accepted record (owner change of 2026-10-10: first for a
+       settings file, decision 15 point 5, then for every team file, decision 16 point 2; it blocked
+       like a protected change before).
 15. **How decision 14 is built** (planner's choices, owner-confirmed 2026-10-10 with the change in
     point 5; research R15, R16):
     1. *How the skill knows the end check passed*: the hook writes
@@ -216,6 +224,7 @@ committed.
        end. The skill commits only with it, with `git add -- <untracked>` and
        `git commit -m <message> -- <files>` (verified 2026-10-10 with git 2.55.0.windows.5: commits
        exactly those paths, leaves the developer's staged work staged). Tested by T007 and T013.
+       With `files` empty the skill commits nothing (decision 16, point 1).
     2. *The skill creates the branch* (`git switch -c patch/<slug>`) before launching `patcher`, so
        `patcher` needs no branch command at all.
     3. *The deny list* (research R15): the git subcommands `commit`, `commit-tree`, `merge`,
@@ -223,15 +232,17 @@ committed.
        `symbolic-ref`, `notes`, `replace`, `filter-branch`, `push`, `pull`, `fetch`, `clone`,
        `remote`, `ls-remote`, `submodule`, `send-email`, `request-pull`, `checkout` without `--`,
        and the programs `gh` and `hub`, matched on the words of the command, so a command that only
-       mentions them is denied too. `git mv`, `git add`, `git reset` and `git checkout <sha> -- <file>`
-       stay allowed.
+       mentions them is denied too. `git mv`, `git add`, `git reset` without `--hard` and
+       `git checkout <sha> -- <file>` stay allowed (`git reset --hard`, `git clean` and the
+       wholesale `git checkout`/`git restore` are denied by decision 16, point 3).
     4. *A commit at any size blocks the end* until `git reset --soft <start>` (it blocked only over
        budget before): a commit within budget was finding H1's route.
     5. *The team set*: files directly in `agents/`, `hooks/` and each `skills/<name>/` of the config
        directory the hook runs from, plus `settings.json` and `settings.local.json`; deeper files are
-       only `Write`-protected. A change to an agent, hook or skill file gives no restore command:
+       only `Write`-protected. ~~A change to an agent, hook or skill file gives no restore command:
        `patcher` cannot undo it, so the run loops until you stop it or reinstall the team
-       (decision 5). **Settings files** (owner change of 2026-10-10): a change to `settings.json`
+       (decision 5).~~ Replaced by decision 16, point 2: it ends the run `FAILED` like a settings
+       file. **Settings files** (owner change of 2026-10-10): a change to `settings.json`
        (and, by the same reasoning, `settings.local.json`) in that directory during the run, which
        Claude Code or you may make, does not block. The end check lets the run finish, writes no
        accepted record and shows a message naming the file and saying the run ended `FAILED`; the
@@ -239,6 +250,42 @@ committed.
        by T009 (a case that fails if it blocks or writes the record) and T011 (the skill's text).
     6. *The skill also compares `git hash-object` of the installed hook* before and after `patcher`
        and commits nothing on a difference, because a rewritten hook runs a rewritten end check.
+
+16. **Fixes for the third spec audit** (owner decision, 2026-10-10; findings H1, M2, M5).
+    1. *An accepted record with no file commits nothing* (H1). `git commit -m <message> --` with no
+       path commits the whole index (verified 2026-10-10 with git 2.55.0.windows.5: a staged file
+       was committed), so a record with `files: []` (`patcher` changed nothing and reported `DONE`)
+       would sweep the developer's staged work into the commit, the push and the PR (spec Edge
+       Cases, threat model). When `files` is empty the skill runs no `git add`, `git commit`,
+       `git push` or `gh pr create`, and reports that `patcher` changed no file, so nothing was
+       committed and no pull request opened. Contract: contracts/commands-and-files.md step 4.
+       Tested by T011 (the installed skill's text); the hook still writes the record (no hook change).
+    2. *A changed installed team file ends the run `FAILED`* (M2). An agent, hook or skill file in
+       the config directory has no restore command and `patcher` may not write there, so blocking
+       trapped the run: even `ESCALATE` could not finish. Every team file is now treated like the
+       settings files of decision 15 point 5: the end check lets the run finish, writes no accepted
+       record, and its message names each changed file and says the run ended `FAILED`; nothing is
+       committed. Protected files inside the repo keep blocking until restored (decision 5). The
+       constant `TEAM_SETTINGS` is no longer needed and is dropped. Tested by T009 (each team-file
+       case fails if it blocks or writes the record). **Spec note**: FR-007 says a protected file
+       changed by other means MUST block until restored, and its protected set names "the hook
+       script, the agent definitions"; for the installed copies in the config directory this
+       decision ends the run instead of blocking. The owner confirmed this on 2026-10-10 and had
+       the product-owner amend FR-007 to say so.
+    3. *No wholesale restore* (M5). Denied to `patcher` on every `Bash` call, within budget or not
+       (contracts/hook-cli.md step 4): `git reset --hard`, `git clean`, `git stash` (already in the
+       history list), and a `git checkout … -- <paths>` or `git restore <paths>` whose paths include
+       `.` (the owner's `git checkout -- .` and `git restore .`). The restore allowance while over
+       budget (decision 7, step 6) admits only a command whose every path is a protected file still
+       to be restored: `git checkout`/`git restore` naming changed protected files that existed at
+       the start, `rm` naming new protected files, `git reset --soft <sha>` only when something is
+       committed; never `.`, a folder, a pattern or a file uncommitted at the start. Tested by T005
+       and T007 (each listed command fails the test if allowed). **Planner's extension, confirmed
+       by the owner on 2026-10-10**: the always-on deny covers not only `.` but every path that is not one file the
+       developer left alone: `..`, a folder, a pattern (`*`, `?`, `[`), git pathspec magic (a word
+       starting with `:`) and a file uncommitted at the start (spec.md "Uncommitted changes present
+       at start are left alone"). Denying `.` alone would let `git restore src` or
+       `git checkout -- '*.js'` destroy the same work.
 
     What remains after 14 and 15 (README, Known limits; research R15, R16). The fast track guards
     against an agent's mistakes and drift, not against deliberate evasion through the shell (the
@@ -264,7 +311,7 @@ on 2026-10-09. Each hit and the task that fixes it:
 | `README.md` 254 to 280 (The team: table, "26 to 43 lines", "These six total about 1,700 characters") | no `patcher` row; counts | T017 |
 | `README.md` 284 (SVG alt text, "the six agents") | count, commands | T017 |
 | `README.md` 1028 to 1031 ("one of these six names"), 1057 to 1082 (Uninstall: "six agents, the skill") | counts, files | T017 |
-| `README.md` 971 to 1031 (Troubleshooting) | budget stop, protected denial, blocked finish, command deny, commit blocked | T017 |
+| `README.md` 971 to 1031 (Troubleshooting) | budget stop, protected denial, blocked finish, command deny, wholesale-restore deny, commit blocked, team file changed (run `FAILED`) | T017 |
 | `README.md` 1086 to 1098 (Repository layout: "six subagent definitions", mode list, skills row, "features 001 and 002") | counts, modes, skills, features | T017 |
 | `README.md` 301 to 306 (How it works intro), new section "The fast track" | how it works, commit after the check, what is prose, what was verified | T018 |
 | `README.md` 361 to 383 (Guardrails table, "The two settings.json entries") | rows for `scope protected`, `patch`, `ends DONE FAILED ESCALATE` | T018 |
@@ -312,8 +359,8 @@ specs/003-fast-track-patch/
 ```text
 hooks/speckit-team.mjs                 # + PROTECTED, OWN_SOURCES, isOwnRepo, isProtected, TEAM_DIR, isTeamFile, scope rule `protected`;
                                        #   + PATCH_LINES, PATCH_FILES, DOC_PATTERNS, isDoc, parseTestPaths, testsAt, patchFile, repoRel,
-                                       #     stateOf, measure, HISTORY_SUBCOMMANDS, historyCommand, acceptedFile, isPureRestore, endCheck,
-                                       #     teamState, teamChanged, TEAM_SETTINGS, mode `patch`
+                                       #     stateOf, measure, HISTORY_SUBCOMMANDS, historyCommand, gitCalls, treeCommand, acceptedFile,
+                                       #     restoreAllowed, endCheck, teamState, teamChanged, mode `patch`
 agents/patcher.md                      # new agent
 skills/speckit-patch/SKILL.md          # new skill: /speckit-patch (branches, launches patcher, commits after the check)
 skills/speckit-triage/SKILL.md         # new skill: /speckit-triage

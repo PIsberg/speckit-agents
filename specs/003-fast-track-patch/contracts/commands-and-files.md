@@ -23,18 +23,23 @@ decision 14):
 4. On `DONE` with the report stating the existing tests passed, commit only when every check holds:
    `git hash-object -- "{{HOOK}}"` equals the noted hash; `git rev-parse HEAD` equals the start;
    `git branch --show-current` is `patch/<slug>`; `$(git rev-parse --git-dir)/speckit-team/patch-accepted.json`
-   exists and its `sha` equals the start. Then `git add -- <each path in untracked>` and
+   exists and its `sha` equals the start. If the record's `files` is empty, commit nothing, push
+   nothing and open no pull request, and report that `patcher` changed no file (owner decision of
+   2026-10-10, plan.md decision 16 point 1: `git commit -m "<message>" --` with no path commits
+   everything already staged, the developer's work included). Otherwise
+   `git add -- <each path in untracked>` (skipped when `untracked` is empty) and
    `git commit -m "<message>" -- <each path in files>` (every path quoted; never `git add -A`, never
    `git commit -a`), `git push -u origin patch/<slug>` (never `--force`), and `gh pr create` if
    there is a GitHub remote. Watch the PR's CI per the git rules in `CLAUDE.md`; on red, report it to
    the user (no automatic fix round). If a check fails: commit nothing and report the run as
    `FAILED`, say which check failed, and that the work is uncommitted in the working tree. A missing
-   accepted record is such a check; one cause is a settings file in the config directory changed
-   during the run, which the hook's message names (contracts/hook-cli.md, message C; plan.md
-   decision 15 point 5).
+   accepted record is such a check; one cause is an installed team file (an agent, hook, skill or
+   settings file in the config directory) changed during the run, which the hook's message names
+   (contracts/hook-cli.md, message C; plan.md decision 15 point 5 and decision 16 point 2).
 5. Relay the outcome in at most 5 lines: what changed, the size against the budget, the test
    outcome, the PR link.
    - `FAILED`: say which test failed or that tests were not run; no commit, no PR.
+   - `DONE` with an empty `files`: say that `patcher` changed no file; no commit, no PR.
    - `ESCALATE`: say why, that the work is uncommitted in the working tree, and that
      `/speckit-team` is the way on. Never start `/speckit-team`.
 6. Never merge.
@@ -95,6 +100,9 @@ Body sections (Inputs, Process, Lane, Report), carrying these rules:
   show it failing (FR-004; typos, comments, docs and config values with no behaviour are exempt);
   make the change; move or rename a file only with `git mv` (a plain `mv` counts as a deleted and a
   new file against the budget); run the existing tests and check the command's own exit status.
+  Restore a file only by naming it (`git checkout <sha> -- <file>`); never `git reset --hard`,
+  `git clean`, `git stash`, or a `git checkout`/`git restore` of `.`, a folder or a pattern: a
+  hook denies them, because they destroy the developer's uncommitted work (plan.md decision 16).
   Never commit, never push, never run `gh`, never switch branch: a hook denies them, and
   `/speckit-patch` commits your files after the end-of-run check accepts the run (research R15).
   Never merge. Never start `/speckit-team`.

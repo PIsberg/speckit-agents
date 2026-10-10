@@ -70,15 +70,28 @@ In this order:
 4. `tool_name` is `Bash` and `historyCommand(tool_input.command)` names a command (research R15):
    deny, within budget or not,
    `Fast track: <who> may not run <name>: the fast track never commits, pushes or opens a pull request; /speckit-patch does that after the end-of-run check accepts the run. Change the working tree only, run the tests, and report DONE, FAILED or ESCALATE.`
+   Else `tool_name` is `Bash` and `treeCommand(tool_input.command, start)` names a command (owner
+   decision of 2026-10-10, plan.md decision 16 point 3, research R7): deny, within budget or not,
+   `Fast track: <who> may not run <name>: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.`
+   `<name>` is `git reset --hard`, `git clean`, `git checkout -- <path>` or `git restore <path>`,
+   with `<path>` the first offending path word as written.
 5. Measure. Within budget: allow.
 6. Over budget, a protected repo file changed or `committed`, `tool_name` is `Bash` and
-   `tool_input.command` is one pure restore command (research R7: whole command is
-   `git checkout …`, `git restore …`, `git reset --soft …` or `rm …`, containing none of
-   `; & | ` `` ` `` ` $ > <` or a newline): allow.
+   `restoreAllowed(tool_input.command, start, m)` (research R7, narrowed by the owner on
+   2026-10-10, plan.md decision 16 point 3): the whole command is one of the forms below,
+   containing none of `; & | ` `` ` `` ` $ > <` or a newline, and every path it names is a
+   protected file still to be restored: allow.
+   - `git checkout [<rev>] -- <path>...` or `git restore [--source=<rev>|-s <rev>] [--staged] [--worktree] [--] <path>...`:
+     each `<path>`, resolved to a repo-relative path as `scope` does, is a `protectedChanged` entry
+     with `isNew: false`.
+   - `rm [-f] [--] <path>...`: each `<path>` is a `protectedChanged` entry with `isNew: true`.
+   - `git reset --soft <rev>`, only when `committed`.
+   Any other word (another option, `.`, a folder, a pattern, a file uncommitted at the start, a
+   path not to be restored) denies the call through step 7.
 7. Otherwise deny with the budget message:
    `Fast-track budget exceeded: <lines> changed production lines in <files> files (limit 30 lines, 2 files)[; binary production files are not allowed: <paths>][; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: <paths>]. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.`
    When a restore is pending (step 6's condition), the reason adds
-   ` First restore the protected files (git checkout <sha12> -- <file>, or delete a new file) and undo any commit (git reset --soft <sha12>).`
+   ` First restore the protected files, naming each one (git checkout <sha12> -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft <sha12>).`
 
 ### End of run: PreToolUse `SubagentHandback`, `SubagentStop`, `Stop`
 
@@ -89,15 +102,15 @@ applies:
 
 | Condition | Handback (PreToolUse) | SubagentStop / Stop | Accepted record |
 |---|---|---|---|
-| `protectedChanged`, or `teamChanged` outside `TEAM_SETTINGS`, not empty | deny | block, also when `stop_hook_active` | none |
+| `protectedChanged` not empty | deny | block, also when `stop_hook_active` | none |
 | `committed` (any size) | deny | block, also when `stop_hook_active` | none |
-| `teamChanged` holds `settings.json` or `settings.local.json` | allow + systemMessage C, whatever the report's last word | allow + systemMessage C, never block | none |
+| `teamChanged` not empty (any agent, hook, skill or settings file) | allow + systemMessage C, whatever the report's last word | allow + systemMessage C, never block | none |
 | over budget (`dirtyTouched` included) | allow + systemMessage A | allow + systemMessage A | none |
 | within budget | allow + systemMessage B | allow + systemMessage B | written, last |
 
-- Protected reason: `Fast track: <who> changed protected files: <path> (git checkout <sha12> -- <path>), <new path> (new: delete it)[; installed agent team files in <TEAM_DIR>: <team path>, ...]. Restore them, then finish. The hook changes nothing itself.` When only team files changed, the first part is left out. For team files the reason adds: ` An installed team file has no restore command: put back its exact content, or stop and report ESCALATE so the developer reinstalls the team (node install.mjs from the speckit-agents checkout).` A path named as a protected repo path is not named again as a team file. A settings path is never named here: it is message C's, once nothing blocks.
+- Protected reason: `Fast track: <who> changed protected files: <path> (git checkout <sha12> -- <path>), <new path> (new: delete it). Restore them, then finish. The hook changes nothing itself.` It names repo paths only; an installed team file is never named here, it is message C's, once nothing blocks (owner decision of 2026-10-10, plan.md decision 16 point 2).
 - Committed reason: `Fast track: <who> committed (<lines> lines in <files> files since <sha12>). The fast track never commits; /speckit-patch commits after this check. Run git reset --soft <sha12> so the work stays uncommitted, then finish.`
-- C (owner decision of 2026-10-10, plan.md decision 15 point 5): `fast track FAILED: <TEAM_DIR>/<settings path>[, <TEAM_DIR>/<settings path>] changed during the run (Claude Code or you may have saved a setting there), and the fast track cannot tell that change from patcher's. The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. Run the change again.`
+- C (owner decisions of 2026-10-10, plan.md decision 15 point 5 and decision 16 point 2): `fast track FAILED: installed agent team files changed during the run: <TEAM_DIR>/<team path>[, <TEAM_DIR>/<team path>]. The fast track cannot restore them, and cannot tell a change patcher made from a setting Claude Code or you saved. The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.`
 - A: `fast track stopped: <lines> changed production lines in <files> files (limit 30 lines, 2 files)[; binary production files: <paths>][; changed although they had uncommitted changes when the run started: <paths>]. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.`
 - B: `fast track: <lines> of 30 production lines, <files> of 2 production files (tests and docs not counted). The end check accepted the run.`
 

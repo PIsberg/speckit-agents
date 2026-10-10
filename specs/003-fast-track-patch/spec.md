@@ -23,6 +23,8 @@
 
 - Q: Which adversary does the fast track guard against, given two audit rounds kept finding shell routes around the hooks? → A: An agent that overreaches by mistake or drifts out of scope, not one that deliberately evades the hooks through the shell. Evasion routes are listed as known limits in the README and are not defects of this feature. FR-006 and FR-007 apply within this threat model (see "Threat Model").
 
+- Q: What happens when the installed team in the Claude config directory (hook script, agent definitions, skills, settings files) is changed by other means? → A: A direct write is still denied. A change by other means, detected at the end of the run, ends the run as FAILED with a message naming the files; nothing is committed, pushed or opened as a pull request. It does not block the agent from finishing, because the agent has no restore path for files outside the repository. Protected files inside the repository keep the block-until-restored rule. This amends FR-007.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Make a trivial change without the full pipeline (Priority: P1)
@@ -65,7 +67,7 @@ The fast track may not change files that carry the project's guardrails or contr
 
 **Why this priority**: These are the files that make the other tracks safe. A trivial-change path through them defeats the tool.
 
-**Independent Test**: Ask the fast track to edit a protected file. The write is denied and the file is unchanged. Change a protected file through a shell command: the agent cannot finish until it is restored.
+**Independent Test**: Ask the fast track to edit a protected file. The write is denied and the file is unchanged. Change a protected file in the repository through a shell command: the agent cannot finish until it is restored. Change an installed team file in the Claude config directory through a shell command: the run ends as FAILED, naming the file, with nothing committed, pushed or opened as a pull request.
 
 **Acceptance Scenarios**:
 
@@ -73,6 +75,8 @@ The fast track may not change files that carry the project's guardrails or contr
 2. **Given** a protected file was changed by other means such as a shell command, **When** the agent tries to finish, **Then** it is blocked, and the message names the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored.
 3. **Given** a protected file that was already modified when the run started, **When** the run ends, **Then** that file is not reported, blocked on or touched.
 4. **Given** an unprotected path, **When** the fast track writes it, **Then** it is allowed.
+5. **Given** an installed team file in the Claude config directory (hook script, agent definition, skill or settings file), **When** the fast track tries to write it directly, **Then** the write is denied and the file is unchanged.
+6. **Given** an installed team file in the Claude config directory was changed by other means such as a shell command, **When** the run ends, **Then** the run ends as FAILED with a message naming the files, nothing is committed, pushed or opened as a pull request, and the agent is not blocked from finishing.
 
 ---
 
@@ -109,7 +113,8 @@ Before work starts, the developer is told whether the request looks like a small
 
 - The change is within budget but touches a protected path: denied, not budgeted.
 - A protected file is changed through a shell command rather than a file write: the end-of-run check blocks finishing until it is restored; the hook itself runs no destructive git command. Protected files already dirty at the start are excluded.
-- Over-budget production changes stay in the working tree; protected-path changes must be restored.
+- Over-budget production changes stay in the working tree; protected-path changes inside the repository must be restored.
+- An installed team file in the Claude config directory is changed by other means: the run ends as FAILED naming the files, with no commit, push or pull request. The agent is not blocked, since it cannot restore files outside the repository.
 - The production-code diff is exactly 30 lines in 2 files: allowed. 31 lines or 3 files: stopped.
 - The working tree already has uncommitted changes when the fast track starts: they are not counted as the fast track's change, and are not swept into its commit.
 - Renamed or deleted production files: counted as files touched. An added or modified binary production file is not allowed: the run is stopped with the escalation message. Test and documentation files of any kind are not counted.
@@ -127,7 +132,7 @@ Before work starts, the developer is told whether the request looks like a small
 - **FR-004**: A change that adds or changes behaviour (a bug fix) MUST include a regression test, shown failing before the fix where practical; typos, comments, docs and config values with no behaviour are exempt.
 - **FR-005**: A hook MUST measure the change in changed lines and files touched, and stop the run when either exceeds the budget; the budget MUST be 30 changed lines and 2 files, counting production code only; added or modified binary production files are not allowed at all (FR-006). Test files and documentation files do not count toward either limit; what counts as a test or documentation file is fixed in the plan and covered by a test.
 - **FR-006**: When the budget is exceeded, or a binary production file is added or modified, the run MUST make no commit and open no pull request, the work MUST stay uncommitted in the working tree, and the message MUST give the measured counts, the limits and the instruction to use `/speckit-team`; the fast track MUST NOT start `/speckit-team` itself.
-- **FR-007**: A hook MUST deny writes to protected paths before the file changes. For a protected file changed by other means, the end-of-run check MUST block the agent from finishing, naming the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored; protected files already dirty when the run started MUST be excluded and never touched, and the hook MUST NOT run any destructive git command. The protected set MUST include at least: the hook script, the agent definitions, the installer, Spec Kit's config, the constitution and CI workflow files.
+- **FR-007**: A hook MUST deny writes to protected paths before the file changes. For a protected file changed by other means, for a protected file inside the repository the end-of-run check MUST block the agent from finishing, naming the files and the restore command (`git checkout <start sha> -- <file>`, or delete a new file), until they are restored; protected files already dirty when the run started MUST be excluded and never touched, and the hook MUST NOT run any destructive git command. The protected set inside the repository MUST include at least: the hook script, the agent definitions, the installer, Spec Kit's config, the constitution and CI workflow files. The installed team in the Claude config directory (the hook script, agent definitions, skills and settings files installed there) is also protected: a direct write MUST be denied, and a change by other means detected at the end of the run MUST end the run as FAILED with a message naming the files, with nothing committed, pushed or opened as a pull request; it MUST NOT block the agent from finishing.
 - **FR-009**: The fast track MUST NOT alter the decisions of the audit gate, lanes or retry limit for `/speckit-team`.
 - **FR-010**: The fast track's hooks MUST be inactive, silent and non-blocking in repos without `.specify/`.
 - **FR-011**: Every hook path MUST handle empty, malformed and unknown input without throwing, and each such path has a test.
@@ -137,7 +142,7 @@ Before work starts, the developer is told whether the request looks like a small
 
 ### Key Entities
 
-- **Fast-track run**: one request, one branch, one commit, with a measured size, a test outcome and a result (done, stopped for budget, stopped for protected path, tests failed).
+- **Fast-track run**: one request, one branch, one commit, with a measured size, a test outcome and a result (done, stopped for budget, stopped for protected path, tests failed, FAILED because the installed team was changed).
 - **Budget**: 30 changed lines and 2 files touched, production code only.
 - **Protected path**: a path the fast track may not change.
 

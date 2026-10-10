@@ -147,8 +147,8 @@ R15 and R16 are new with it.
   `settings.json` and `settings.local.json`. The hook finds that directory from its own path
   (`fileURLToPath(import.meta.url)`, two levels up). A `Write` or `Edit` there is denied by
   `scope protected`; a change by any other means is caught by the end check through the hashes taken
-  at the start (R16: it blocks for an agent, hook or skill file, and ends the run `FAILED` for a
-  settings file). The git directory is already denied by every `scope` rule.
+  at the start (R16: it ends the run `FAILED` with no accepted record, owner decision of
+  2026-10-10, plan.md decision 16 point 2). The git directory is already denied by every `scope` rule.
 - **Rationale**: FR-007's minimum names the hook script, the agent definitions and the installer.
   In a user's repo those live in `.claude/` or in the Claude Code config directory, outside the
   repo; in this repo they are `hooks/`, `agents/`, `skills/` and `install.mjs`. Both have to be
@@ -199,20 +199,20 @@ R15 and R16 are new with it.
 - **Decision**: on `SubagentHandback` (PreToolUse), `SubagentStop` and `Stop`, `patch` first removes
   the accepted record (R15), measures again and, in this order:
   1. Protected repo files changed since the start (not dirty at the start; a dirty one that changed
-     is R14's case, since restoring it to the start commit would destroy the developer's work), or an
-     installed agent, hook or skill file whose hash differs from the start (R16): block (Stop) or deny (handback)
-     naming each file and, for a repo file, its restore command, `git checkout <start sha> -- <file>`
-     or "delete it" for a new file. It blocks on every attempt until they are restored, including
+     is R14's case, since restoring it to the start commit would destroy the developer's work):
+     block (Stop) or deny (handback) naming each file and its restore command,
+     `git checkout <start sha> -- <file>` or "delete it" for a new file. It blocks on every attempt until they are restored, including
      when `stop_hook_active` is set (spec Clarifications, FR-007).
   2. `HEAD` is no longer the start commit, at any size (a commit made by a program the command deny
      does not see, R15): block or deny, asking for `git reset --soft <start sha>`, which keeps the
      work uncommitted, until `HEAD` is back. `patcher` never commits, so any commit is one to undo.
-  3. Over budget, nothing committed: let it finish, with a `systemMessage` giving the counts, the
-     limits, that the work is uncommitted, and `/speckit-team`. No accepted record. A changed
-     settings file in the config directory (R16) is handled here too, checked first: let it finish,
-     also at a handback ending in `DONE`, with a `systemMessage` naming the file and saying the run
-     ended `FAILED`; no accepted record, so the skill commits nothing.
-  4. Within budget: write the accepted record and let it finish, with a `systemMessage` giving the
+  3. An installed team file (agent, hook, skill or settings file, R16) whose hash differs from the
+     start: let it finish, also at a handback ending in `DONE`, with a `systemMessage` naming the
+     files and saying the run ended `FAILED`; no accepted record, so the skill commits nothing
+     (owner decisions of 2026-10-10, plan.md decision 15 point 5 and decision 16 point 2).
+  4. Over budget, nothing committed: let it finish, with a `systemMessage` giving the counts, the
+     limits, that the work is uncommitted, and `/speckit-team`. No accepted record.
+  5. Within budget: write the accepted record and let it finish, with a `systemMessage` giving the
      size against the budget (User Story 1, scenario 3).
   The hook itself runs no git command that changes anything.
 - **Rationale**: the protected rule and the stop-for-budget rule pull in opposite directions
@@ -230,12 +230,25 @@ R15 and R16 are new with it.
 - **Decision**: while over budget, and only if a protected repo file changed or a commit was made
   since the start, a Bash call is allowed when its whole command is one of `git checkout <args>`,
   `git restore <args>`, `git reset --soft <args>` or `rm <args>`, with no `;`, `&`, `|`, backtick,
-  `$`, `>`, `<` or newline in it. Every other tool stays denied. A changed installed team file opens
+  `$`, `>`, `<` or newline in it, and (owner decision of 2026-10-10, spec audit finding M5, plan.md
+  decision 16 point 3) every path it names is a protected file still to be restored: a changed
+  protected file that existed at the start for `git checkout`/`git restore`, a new protected file
+  for `rm`, and `git reset --soft` only when something is committed. No `.`, folder, pattern or file
+  uncommitted at the start. Every other tool stays denied. A changed installed team file opens
   no allowance: no command in that list restores it (R16).
+- **Wholesale restore denied** (same decision): on every `Bash` call, within budget or not,
+  `git reset --hard`, `git clean`, `git stash` (R15's list) and a `git checkout -- <paths>` or
+  `git restore <paths>` with `.` among the paths are denied, because each can overwrite or delete
+  the developer's uncommitted files (spec Assumptions: "left alone"). The planner extended the
+  path rule from `.` to `..`, folders, patterns, pathspec magic and files uncommitted at the start,
+  which reach the same files (plan.md decision 16 point 3, to confirm). Words are split per
+  command segment (at `;`, `&`, `|`, `(`, `)` and newlines), so a following `&& npm test` is not
+  read as paths.
 - **Rationale**: without it R5 and R6 deadlock: the end check asks for a restore and R5 denies the
   Bash call that would do it. None of the four commands is in R15's deny list.
 - **Rejected**: allowing all Bash while a restore is pending: the agent could run anything in that
-  window.
+  window. Any `git checkout`, `git restore` or `rm` while a restore is pending (the first plan):
+  `git restore .` or `rm -rf src` would pass as a restore (finding M5).
 
 ## R8. Start record and accepted record: keys and lifetime
 
@@ -378,9 +391,10 @@ planner's (decision 15), confirmed by the owner on 2026-10-10.
     other word is the subcommand. Every `git` word in the command is checked, so
     `sh -c "git push"`, `a && git commit`, `git -C . commit`, `/usr/bin/git push`, `git.exe push`
     and `git -c alias.x='!git push' x` are all caught. A word whose last segment is `gh` or `hub`
-    (`.exe` removed) is denied wherever it stands. `git checkout <sha> -- <file>`, `git restore`,
-    `git reset`, `git mv`, `git add`, `git status`, `git diff`, `git log` and `git show` stay
-    allowed: they change the tree or the index, or only read.
+    (`.exe` removed) is denied wherever it stands. `git checkout <sha> -- <file>`,
+    `git restore <file>`, `git reset` without `--hard`, `git mv`, `git add`, `git status`,
+    `git diff`, `git log` and `git show` stay allowed: they change the tree or the index for named
+    files, or only read (the wholesale forms are denied, R7).
   - **The skill commits.** `/speckit-patch`, in the main session: before launching `patcher`, it
     notes `git rev-parse HEAD` (the start), creates `patch/<slug>` with `git switch -c` and notes
     `git hash-object -- "<installed hook path>"`. After `patcher` reported `DONE` with the tests
@@ -389,10 +403,14 @@ planner's (decision 15), confirmed by the owner on 2026-10-10.
     the start. It then runs `git add -- <untracked>` and `git commit -m <message> -- <files>` with
     the record's two lists, `git push -u origin patch/<slug>` (never forced), and `gh pr create` if
     there is a GitHub remote. On any failed check it commits nothing and tells the user which check
-    failed and that the work is uncommitted in the working tree.
+    failed and that the work is uncommitted in the working tree. When the record's `files` is empty
+    it commits, pushes and opens nothing and says `patcher` changed no file:
+    `git commit -m <message> --` with no path commits the whole index, the developer's staged work
+    included (owner decision of 2026-10-10, spec audit finding H1, plan.md decision 16 point 1;
+    verified the same day with git 2.55.0.windows.5).
   - **The accepted record**: `<git dir>/speckit-team/patch-accepted.json`,
     `{ key, sha, files, untracked, lines, filesTouched, at }` (data-model.md). Every `patch` call, on
-    any event, first removes it; only an end check that reaches outcome 4 (R6: no protected or team
+    any event, first removes it; only an end check that reaches outcome 5 (R6: no protected or team
     change, `HEAD` at the start, within budget) writes it, as its last step. `files` is every path
     `patcher` changed (production, test and doc; both sides of a rename), `untracked` the ones git
     does not track yet; neither ever holds a path dirty at the start or a protected path.
@@ -449,17 +467,16 @@ changed settings file ends the run `FAILED` instead of blocking.
   directly in `TEAM_DIR/hooks/` and directly in each `TEAM_DIR/skills/<name>/`, plus
   `settings.json` and `settings.local.json` (always listed; `null` when missing). The end check
   lists the same set again; a path whose hash differs, that is new, or that is gone is a team change.
-  - An agent, hook or skill file changed blocks like a protected change (R6 step 1), on every
-    attempt, naming the file under `TEAM_DIR`. The hook gives no restore command: it holds only a
-    hash, and no command `patcher` may run restores an installed file; the message says to put back
-    the file's exact content, or to stop so the developer reinstalls the team (`node install.mjs`
-    from the speckit-agents checkout).
-  - `settings.json` or `settings.local.json` changed (owner decision of 2026-10-10, plan.md decision
-    15 point 5): no block. The end check lets the run finish (R6 step 3), writes no accepted record
-    and shows a `systemMessage` naming the file and saying the run ended `FAILED`, so
-    `/speckit-patch` commits nothing and opens no PR. Claude Code or the developer may write that
-    file during any session, and `patcher` cannot restore it, so blocking would leave no way out
-    but stopping the run by hand.
+  - Any team file changed, agent, hook, skill or settings file alike (owner decisions of
+    2026-10-10: plan.md decision 15 point 5 for the settings files, decision 16 point 2 and spec
+    audit finding M2 for the rest): no block. The end check lets the run finish (R6 step 3),
+    writes no accepted record and shows a `systemMessage` naming each file under `TEAM_DIR` and
+    saying the run ended `FAILED`, so `/speckit-patch` commits nothing and opens no PR; for an
+    agent, hook or skill file it says to reinstall the team (`node install.mjs` from the
+    speckit-agents checkout). The hook holds only a hash, `patcher` may not write there and no
+    command it may run restores an installed file, and Claude Code or the developer may write the
+    settings files during any session, so blocking would leave no way out but stopping the run by
+    hand: even `ESCALATE` could not finish.
   The skill separately compares `git hash-object` of the installed hook before and after `patcher`
   and commits nothing on a difference (R15).
 - **Rationale**: FR-007 requires the end check to catch a protected change made by other means, and
@@ -474,12 +491,13 @@ changed settings file ends the run `FAILED` instead of blocking.
   denied to `Write` and `Edit` but not hashed. A change Claude Code or the developer makes to
   `settings.json` or `settings.local.json` in the config directory during the run (a setting changed
   in `/config`, a permission saved there) cannot be told apart from one `patcher` made, so it ends
-  the run `FAILED` with nothing committed, and the developer re-runs the change. A Bash write
+  the run `FAILED` with nothing committed, and the developer re-runs the change; so does any other
+  change to a hashed team file, whoever made it. A Bash write
   anywhere else outside the repo is not caught: deliberate evasion through the shell is outside what
   the fast track guards against (the spec's threat model).
-- **Rejected**: blocking the end on a changed settings file like any other team file (the first
-  plan; replaced by the owner on 2026-10-10, because `patcher` cannot restore it and the run would
-  loop until stopped by hand); hashing the whole config directory (it holds Claude Code's own state,
+- **Rejected**: blocking the end on a changed team file (the first plan; replaced by the owner on
+  2026-10-10, first for the settings files and then, after finding M2, for every team file,
+  because `patcher` cannot restore one and the run would loop until stopped by hand); hashing the whole config directory (it holds Claude Code's own state,
   written during every session); a recursive walk of `skills/` (a user's skill folder may hold thousands of files,
   hashed twice per run); checking the team on every tool call (the owner asked for the end check, and
   a team change matters only once the run would be accepted); hashing only files that carry the

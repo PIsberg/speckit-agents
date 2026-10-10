@@ -33,3 +33,4 @@
 
 - Re-checked 2026-10-10 after adding the Threat Model section and the 2026-10-10 clarification: all items above still hold. The new section names no technology beyond the owner's own examples of evasion routes (aliases, scripts), has one verifiable criterion (README known-limits list), and no [NEEDS CLARIFICATION] marker was added.
 - Mentions of the repo's own hook script and installer name its deliverables, not a technology choice.
+- Re-checked 2026-10-10 after the FR-007 amendment (installed team in the Claude config directory ends the run as FAILED, no block): all items above still hold. FR-007 has Given/When/Then coverage in User Story 3 scenarios 5 and 6, the edge case and the Fast-track run result list agree with it, and no [NEEDS CLARIFICATION] marker was added.

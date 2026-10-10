@@ -88,9 +88,12 @@ same `.git` that holds the start records).
 
 - Removed by every call of mode `patch`, on any event, before anything else is decided (after only
   the hook's existing outside-Spec-Kit, unusable-input and wrong-event exits, which decide nothing).
-- Written only by an end check that reaches outcome 4 (within budget, nothing protected or team
-  changed, `HEAD` at `sha`), as its last step.
+- Written only by an end check that reaches the last outcome (within budget, nothing protected or
+  team changed, `HEAD` at `sha`), as its last step.
 - Read by `/speckit-patch`: `git add -- <untracked>`, then `git commit -m <message> -- <files>`.
+  `files` may be empty (`patcher` changed nothing and reported `DONE`); then the skill commits,
+  pushes and opens nothing, because `git commit -m <message> --` with no path commits the whole
+  index (owner decision of 2026-10-10, plan.md decision 16 point 1).
 
 ## Measurement (computed on every call, never stored)
 
@@ -114,10 +117,10 @@ Derived: `over = lines > PATCH_LINES || files > PATCH_FILES || binary.length > 0
 (research R14: a change the hook cannot separate from the developer's work counts as over).
 
 Computed at the end check only: `teamChanged`, the sorted `TEAM_DIR`-relative paths whose entry in
-`teamState()` differs from `start.team`, counting a path present on one side only. The end check
-splits it by `TEAM_SETTINGS = ['settings.json', 'settings.local.json']`: the other paths (agents,
-hook, skills) block; the settings paths end the run `FAILED` with no accepted record (plan.md
-decision 15 point 5, owner decision of 2026-10-10; research R16).
+`teamState()` differs from `start.team`, counting a path present on one side only. Any path in it,
+agent, hook, skill or settings file alike, ends the run `FAILED` with no accepted record and never
+blocks (owner decisions of 2026-10-10, plan.md decision 15 point 5 and decision 16 point 2;
+research R16).
 
 Paths in `start.dirty` are left out of `lines`, `files`, `binary`, `protectedChanged` and `changed`;
 a change to one shows only in `dirtyTouched`.
@@ -146,14 +149,33 @@ word rule of research R15. Denied git subcommands: `commit`, `commit-tree`, `mer
 `submodule`, `send-email`, `request-pull`, and `checkout` with no `--` word after it. Denied
 programs: `gh`, `hub`. A `command` that is not a string returns `null`.
 
+`treeCommand(command, start)` (owner decision of 2026-10-10, plan.md decision 16 point 3) returns
+the name of a git command that can overwrite or delete the developer's uncommitted files, or
+`null`, checked on every `Bash` call within budget or not:
+
+| Git call | Denied when | Name returned |
+|---|---|---|
+| `git reset` | a `--hard` word follows it | `git reset --hard` |
+| `git clean` | always | `git clean` |
+| `git checkout` | a path word after `--` is `.`, `..`, a folder, holds `*`, `?` or `[`, starts with `:`, or is a key of `start.dirty` | `git checkout -- <path>` |
+| `git restore` | a path word (after `--`, else every word not starting with `-` and not the value of `-s`/`--source`) is as for `checkout`, or `--pathspec-from-file` is given | `git restore <path>` |
+
+`git stash` stays in the history list above. A `command` that is not a string returns `null`.
+
+`restoreAllowed(command, start, m)` decides step 6 (research R7): true only for one pure command
+(no `;`, `&`, `|`, backtick, `$`, `>`, `<` or newline) whose every path is a protected file still to
+be restored: `git checkout`/`git restore` paths each a `m.protectedChanged` entry with
+`isNew: false`; `rm [-f] [--]` paths each one with `isNew: true`; `git reset --soft <rev>` only when
+`m.committed`.
+
 ## Run outcome (the report's last line)
 
 `patcher` commits nothing in any outcome; the commit is the skill's.
 
 | Word | When | Committed by the skill | PR |
 |---|---|---|---|
-| `DONE` | within budget, nothing protected or team changed, no commit, the existing tests passed | yes, one commit on `patch/<slug>`, only if the accepted record exists, its `sha` and `HEAD` are the start, and the installed hook's hash is unchanged | opened if the repo has a GitHub remote; never merged |
-| `FAILED` | a test failed, or no test command could be run (reported as not run); or, reported by the skill, a commit check of step 4 failed, such as no accepted record because a settings file in the config directory changed during the run | no | no |
+| `DONE` | within budget, nothing protected or team changed, no commit, the existing tests passed | yes, one commit on `patch/<slug>`, only if the accepted record exists, its `sha` and `HEAD` are the start, the installed hook's hash is unchanged, and its `files` is not empty | opened if a commit was made and the repo has a GitHub remote; never merged |
+| `FAILED` | a test failed, or no test command could be run (reported as not run); or, reported by the skill, a commit check of step 4 failed, such as no accepted record because an installed team file (agent, hook, skill or settings file in the config directory) changed during the run | no | no |
 | `ESCALATE` | over budget, a binary production file, a file that was uncommitted at the start changed or committed, or the change needs a protected path | no | no |
 
 The spec's four results map as: done to `DONE`; tests failed to `FAILED`; stopped for budget and
@@ -172,23 +194,26 @@ first tool call ──► start record written (sha, hash of each dirty file, ha
       ▼
 each tool call: Write/Edit to a dirty-at-start file ──► denied (research R14)
                 Bash naming git commit, push, gh, ... ──► denied (research R15)
+                Bash git reset --hard, git clean, checkout/restore of ., a folder,
+                     a pattern or a dirty-at-start file ──► denied (decision 16)
       │
       ▼
 measure ──► within budget ──► tool allowed
    │
-   └──► over budget ──► restore needed and the call is a pure restore? ──► allowed
+   └──► over budget ──► restore needed and the call restores named protected files only? ──► allowed
                               │
                               └──► denied (FR-006 message)
 report (handback or stop): measure, hash the team
-   protected, agent, hook or skill changed ──► blocked until restored (every attempt)
+   protected repo file changed ──► blocked until restored (every attempt)
    committed (any size)      ──► blocked until git reset --soft <sha>
-   settings file changed     ──► finishes, systemMessage: the file, run FAILED; no accepted record
+   team file changed         ──► finishes, systemMessage: the files, run FAILED; no accepted record
    over                      ──► finishes, systemMessage: stopped for budget, work uncommitted,
                                  any changed dirty-at-start file named; no accepted record
    within                    ──► accepted record written; finishes, systemMessage: size against the budget
       │
       ▼
 /speckit-patch: DONE with tests passed, record present, sha = HEAD = start, branch, hook hash unchanged?
+   yes, files empty ──► no commit, no push, no PR; reports that patcher changed no file
    yes ──► git add -- <untracked>; git commit -m <message> -- <files>; git push -u; gh pr create
    no  ──► no commit, no PR; the work stays uncommitted. After DONE, a failed check is
            reported as FAILED, naming the check; FAILED and ESCALATE are relayed as reported

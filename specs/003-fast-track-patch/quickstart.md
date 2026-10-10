@@ -43,5 +43,8 @@ The scratch repo is an ordinary repo (its `package.json`, if any, is not named `
 the speckit-agents source paths and `package.json` are not protected there. That rule, both sides
 of it, is verified by unit test only (T001, T007), and so are rename counting (T003), test patterns
 read from the start commit (T003, T007), a commit made by a program the command deny does not see
-(T007), a change to the installed team (T009) and a changed config-dir settings file ending the run
-`FAILED` with no accepted record (T009); the README says so (T018).
+(T007), a change to any installed team file (agent, hook, skill or settings file) ending the run
+`FAILED` with no accepted record (T009), and the deny of `git reset --hard`, `git clean` and a
+wholesale `git checkout`/`git restore`, with the restore allowance naming protected files only
+(T005, T007); the README says so (T018). The skill committing nothing when the accepted record
+lists no file is a prompt rule, checked in the installed text only (T011).
