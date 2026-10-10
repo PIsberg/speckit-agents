@@ -1061,3 +1061,99 @@ test('patch reads committed test patterns while scope tests keeps the working tr
   overBash(dir, /31 changed production lines/);
   assert.equal(write(dir, ['scope', 'tests'], 'checks/golden/x.out'), null, 'scope tests unchanged');
 });
+
+// ---- patch, PreToolUse: the command deny and the wholesale-restore deny (feature 003, T005) -----
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function cmdRepo(extra = {}) {
+  const r = fresh({ 'test/t.js': nl(2, 't'), ...extra });
+  put(r.dir, 'src/wip.js', nl(5, 'w')); // dirty at start
+  begin(r.dir);
+  put(r.dir, 'src/a.js', nl(1, 'a')); // within budget
+  r.sha = JSON.parse(fs.readFileSync(startFile(r.dir), 'utf8')).sha;
+  return r;
+}
+
+// FR-006 "no commit, no pull request", FR-007, US2-3, audit finding H1, plan.md decision 14, research R15.
+test('patch: commit, push, history and pull-request commands are denied within budget (FR-006, FR-007, US2-3)', () => {
+  const { dir } = cmdRepo();
+  const cases = [
+    ['git commit -qm x', 'git commit'], ['git add -A && git commit -qm x', 'git commit'],
+    ['echo x >> .github/workflows/ci.yml && git commit -qam x && git push', 'git commit'],
+    ['git push origin HEAD', 'git push'], ['git -C . commit -m x'], ['git -c user.name=x commit -m x'],
+    ['git --git-dir=.git push'], ['GIT_DIR=.git git push'], ['/usr/bin/git push'],
+    ['"C:\\Program Files\\Git\\cmd\\git.exe" push'], ['sh -c "git push"'], ["bash -c 'git commit -m x'"],
+    ["git -c alias.x='!git push' x", 'git push'], ['git stash'], ['git switch -c other'], ['git checkout -b other'],
+    ['git checkout main'], ['git branch -D x'], ['git tag v1'], ['git merge x'], ['git rebase main'],
+    ['git cherry-pick abc'], ['git revert HEAD'], ['git am x.patch'], ['git update-ref refs/heads/x HEAD'],
+    ['git fetch'], ['git pull'], ['git remote add o x'], ['git reset --soft HEAD~1 && git push', 'git push'],
+    ['gh pr create --fill', 'gh'], ['gh api repos/x/y', 'gh'], ['gh.exe pr create', 'gh'], ['hub pull-request', 'hub'],
+  ];
+  for (const [command, name] of cases) {
+    const out = bash(dir, command);
+    assert.ok(denied(out), `${command}: expected a deny, got ${JSON.stringify(out)}`);
+    assert.match(why(out), name ? new RegExp(`may not run ${esc(name)}\\b`) : /may not run /, command);
+    assert.match(why(out), /\/speckit-patch/, command);
+  }
+});
+
+// FR-011, FR-014, constitution II, spec audit finding M5, plan.md decision 16 point 3, research R7.
+test('patch: wholesale restores are denied, naming restores and read-only commands pass (FR-011, FR-014, M5)', () => {
+  const { dir, sha } = cmdRepo();
+  const wip = fs.readFileSync(path.join(dir, 'src/wip.js'));
+  const cases = [
+    ['git reset --hard', 'git reset --hard'], [`git reset --hard ${sha}`], ['git reset -q --hard'],
+    ['git clean -fd', 'git clean'], ['git clean -n'], ['git -C . clean -fdx'],
+    ['git checkout -- .', 'git checkout -- .'], [`git checkout ${sha} -- .`],
+    ['git restore .', 'git restore .'], ['git restore -- .'], ['git restore --staged --worktree .'],
+    ['git restore ..'], ['git restore src'], ['git restore src/'], ['git checkout -- src'],
+    ["git restore 'src/*.js'"], ["git checkout -- 'src/?.js'"], ["git restore ':/'"],
+    ['git restore --pathspec-from-file=list.txt'], ['git checkout -- src/wip.js'], ['git restore src/wip.js'],
+    [`git checkout ${sha} -- src/a.js src/wip.js`], ['npm test && git restore .'], ['sh -c "git checkout -- ."'],
+  ];
+  for (const [command, name] of cases) {
+    const out = bash(dir, command);
+    assert.ok(denied(out), `${command}: expected a deny, got ${JSON.stringify(out)}`);
+    assert.match(why(out), name ? new RegExp(`may not run ${esc(name)}`) : /may not run /, command);
+    assert.match(why(out), /uncommitted/, command);
+    assert.match(why(out), /ESCALATE/, command);
+    assert.deepEqual(fs.readFileSync(path.join(dir, 'src/wip.js')), wip, `${command}: the hook ran nothing`);
+  }
+  for (const command of ['git stash', 'git stash push -- src/a.js']) {
+    const out = bash(dir, command);
+    assert.ok(denied(out), command);
+    assert.match(why(out), /may not run git stash/, command);
+  }
+  const allowed = [
+    'git status --short', 'git diff', 'git log --oneline -3', 'git show HEAD', 'git mv src/a.js src/b.js',
+    'git add src/a.js', `git checkout ${sha} -- src/a.js`, 'git checkout -- src/a.js', 'git restore src/a.js',
+    `git restore --source=${sha} src/a.js`, `git restore -s ${sha} src/a.js`, `git reset --soft ${sha}`,
+    'git reset -- src/a.js', 'git checkout -- src/a.js && npm test', 'npm test', 'node --test',
+    'grep -rn commit src', 'echo committed', 'ls highlights', 'cat github.txt', 'echo reset --hard',
+  ];
+  for (const command of allowed) {
+    const out = bash(dir, command);
+    assert.equal(out, null, `${command}: expected null, got ${JSON.stringify(out)}`);
+  }
+});
+
+test('patch: a non-string command gets no command deny and does not crash (constitution II)', () => {
+  const { dir } = cmdRepo();
+  for (const tool_input of [{ command: ['git', 'push'] }, { command: 42 }, {}]) {
+    const out = patchTool(dir, 'Bash', tool_input);
+    assert.ok(!denied(out), `${JSON.stringify(tool_input)}: ${why(out)}`);
+  }
+  // Guard: the deny exists at all, so the lines above are not green because the step is absent.
+  assert.match(why(bash(dir, 'git push')), /may not run git push/);
+});
+
+test('patch: a Write mentioning git push is not a command; the deny holds with only a session_id (FR-006)', () => {
+  const { dir } = cmdRepo();
+  const out = patchTool(dir, 'Write', { file_path: path.join(dir, 'src/n.js'), content: 'git push\n' });
+  assert.ok(!denied(out), why(out));
+  const s = fresh();
+  const key = { agent_id: undefined, session_id: 's1' };
+  begin(s.dir, key, 's1');
+  const d = bash(s.dir, 'git push', key);
+  assert.ok(denied(d), JSON.stringify(d));
+  assert.match(why(d), /may not run git push/);
+});
