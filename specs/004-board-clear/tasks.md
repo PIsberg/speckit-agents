@@ -86,7 +86,7 @@ One round of three slices.
 - [X] T007 [P] [US1] Tests in `mods/speckit-board/tests/board.test.tsx` for the band's button (FR-001, US1-2, US1-5, SC-006 band, D3 A). Red before T008: no Button `clear` in the band.
   - The band at `band()` on both surfaces draws a Button with key `clear`, label `clear`, `dimColor`.
   - No pane mounted, 2 finished: `ui.press({ key: 'clear' })` on the band adds one toast, `cleared 2 agent rows and the band.`; the band then draws no `◐ build`; a pane mounted after it draws no Text `implementer` (US1-2).
-- [ ] T008 [US1] Implement the band's button.
+- [X] T008 [US1] Implement the band's button.
   - `mods/speckit-board/hooks/model.ts`: `BandItem`'s button `key: 'board' | 'clear' | 'hide'`; `BandVariant` gains `isClearShown: boolean`; `VARIANTS` becomes eight: the first four with all three buttons, then `hide` dropped, then `clear` dropped, then the two without buttons (`head`, then `only-head`), as plan.md D2 A orders them; the layout pushes `{ kind: 'button', text: '[ clear ]', key: 'clear', label: 'clear' }` between `board` and `hide`. Update the comment above `VARIANTS`.
   - `mods/speckit-board/hooks/register.tsx`: the band's `case 'button'` draws `<Button key="clear" label="clear" dimColor onPress={() => pressClear($)} />` for `key === 'clear'`.
 
