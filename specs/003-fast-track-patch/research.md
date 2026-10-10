@@ -84,8 +84,11 @@ R15 and R16 are new with it.
   - A path is **protected** first (R4), then a **test** if it matches the built-in `TEST_PATTERNS` or
     a line of `.specify/test-paths` **as committed at the run's start commit**
     (`git cat-file blob <start>:.specify/test-paths`; no such file means the built-in patterns only),
-    then **documentation** if it ends in `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc`, `.asciidoc` or
-    `.txt` (case-insensitive). Everything else is **production**. Only production files count toward
+    then **documentation** if it ends in `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc` or `.asciidoc`
+    (anywhere), or is a `.txt` file under the top-level `docs/` folder or named `README`,
+    `CHANGELOG`, `CHANGES`, `HISTORY`, `NEWS`, `LICENSE`, `NOTICE`, `AUTHORS`, `CONTRIBUTING` or
+    `COPYING` (any folder), all case-insensitive. Any other `.txt` file (`requirements.txt`,
+    `CMakeLists.txt`) and everything else is **production**. Only production files count toward
     the budget (FR-005).
 - **Rationale**: the owner's rule (2026-10-09): a small fix is usually an in-place edit, and a modified
   line is one line of change to a reviewer. A reviewer can still check the hook's number by hand:
@@ -95,7 +98,12 @@ R15 and R16 are new with it.
   rename across classes without detection keeps a test moved into production code from reading as a
   free file, the reason the plan first chose `--no-renames` (the lane check's choice, unchanged). A
   docs folder is not a doc rule because folders hold code too (`docs/media/record.mjs` in this
-  repo). **Test patterns from the start commit** (owner decision, 2026-10-09, plan.md decision 14):
+  repo). **`.txt` is narrowed** (owner decision, 2026-10-10, at the spec-gatekeeper review; plan.md
+  decision 17 point 1): `requirements.txt` and `CMakeLists.txt` are build input, so counting every
+  `.txt` as a doc let a dependency or build change through at no cost. The folder is used for `.txt`
+  only, because a `.txt` under `docs/` is text, not code; the documentation names cover the usual
+  top-level text files. Tested by `test/hook.test.mjs`, "patch: a .txt production file counts,
+  documentation .txt does not". **Test patterns from the start commit** (owner decision, 2026-10-09, plan.md decision 14):
   the existing `testPaths` reads `.specify/test-paths` from the working tree
   (`hooks/speckit-team.mjs` lines 133 to 141), so a Bash edit adding `^src/` made production code
   count as tests for the rest of the run (spec audit finding H1). A file read from a commit cannot be
@@ -292,6 +300,10 @@ R15 and R16 are new with it.
   the same split `/speckit-team` has (implementer's `RESULT: GREEN` is its own claim, checked by
   spec-gatekeeper running the gates). Unit tests can only show the installed agent and skill carry
   the rules; the live checks (quickstart L1, L2, L8) are the behavioural evidence.
+- **Owner acceptance** (2026-10-10, at the spec-gatekeeper review; plan.md decision 17 point 2):
+  FR-003, FR-004 and FR-013 (R11: triage suggests and runs nothing) are accepted as prompt rules.
+  Their coverage is the text tests of the installed `agents/patcher.md` and skills plus live checks
+  L1 and L2; no hook test covers them, and none is owed.
 
 ## R11. Triage is its own skill and runs nothing
 
@@ -434,7 +446,7 @@ planner's (decision 15), confirmed by the owner on 2026-10-10.
   `git reset --soft <start>` (R6 step 2) is the right undo.
 - **What remains** (README, Known limits, T018). The fast track guards against an agent's mistakes
   and drift, not against deliberate evasion through the shell (the spec's threat model), so the
-  first and third items below are known limits by design, not defects to close later:
+  first, second and fourth items below are known limits by design, not defects to close later:
   - A commit, push or pull request made by a program whose command does not name it is not denied
     before it runs: a git alias (`git ci`), `npm version`, a script, `make release`, `curl` to the
     GitHub API. A commit is still caught: the end check blocks until `git reset --soft <start>`, and
@@ -442,6 +454,10 @@ planner's (decision 15), confirmed by the owner on 2026-10-10.
     already reached the remote; the skill never force-pushes, so its own push to a branch the
     program already pushed fails instead of overwriting it, and the developer deletes the stray
     branch or pull request.
+  - Forge CLIs other than `gh` and `hub`, such as `glab` and `tea`, are not denied (owner decision,
+    2026-10-10, at the spec-gatekeeper review: a documented gap; plan.md decision 17 point 3). A
+    commit made through one is still caught by the end check as above; a merge request, issue or
+    push it made on the forge is not undone by the hook.
   - The match is on words, not on what runs: a command that only mentions a denied word (for example
     `echo "git push"`, or `ls ~/.config/gh`) is denied too. The message says what to do instead.
   - The guardrail state under the git directory is protected from `Write` and `Edit`, not from Bash

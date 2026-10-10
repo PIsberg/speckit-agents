@@ -26,7 +26,13 @@ Every changed repo-relative path (forward slashes) gets exactly one class, check
 2. **test**: in `patch`, `testsAt(start.sha).isTest(rel)`: the built-in `TEST_PATTERNS` plus the
    lines of `.specify/test-paths` as committed at the start commit (research R3). `scope` and `lane`
    keep the existing `isTest(rel)`, which reads the working tree.
-3. **doc**: `isDoc(rel)`, `DOC_PATTERNS = [/\.(md|mdx|markdown|rst|adoc|asciidoc|txt)$/i]`.
+3. **doc**: `isDoc(rel)`, true when any of `DOC_PATTERNS` matches (owner decision 2026-10-10,
+   plan.md decision 17 point 1; any other `.txt`, such as `requirements.txt` or `CMakeLists.txt`,
+   is production):
+   - `/\.(md|mdx|markdown|rst|adoc|asciidoc)$/i`, in any folder;
+   - `/^docs\/.*\.txt$/i`, a `.txt` under the top-level `docs/` folder;
+   - `/(^|\/)(README|CHANGELOG|CHANGES|HISTORY|NEWS|LICENSE|NOTICE|AUTHORS|CONTRIBUTING|COPYING)\.txt$/i`,
+     a `.txt` with a documentation name in any folder.
 4. **production**: anything else.
 
 `isOwnRepo(rev)`: true when `git cat-file blob <rev>:package.json` (the top-level file as committed

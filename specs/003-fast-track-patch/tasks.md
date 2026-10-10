@@ -129,7 +129,7 @@ commit.
   - After every case: no hook output contains `PATCH-CONTENT-7f3a` (FR-014), and `.git/speckit-team/` holds no `verdicts/`, `retries/` or `ends/` folder (FR-009).
 - [X] T004 [US2] Implement the `patch` mode's PreToolUse path in `hooks/speckit-team.mjs`, per contracts/hook-cli.md "patch" steps 1, 2, 3, 5 and 7 (step 4 is T006, step 6 is T008), research R3, R5, R8, R9 and R14, and data-model.md. New names:
   - `const PATCH_LINES = 30;`, `const PATCH_FILES = 2;`
-  - `const DOC_PATTERNS: RegExp[] = [/\.(md|mdx|markdown|rst|adoc|asciidoc|txt)$/i];` and `const isDoc = (rel: string): boolean`.
+  - `const DOC_PATTERNS: RegExp[] = [/\.(md|mdx|markdown|rst|adoc|asciidoc)$/i, /^docs\/.*\.txt$/i, /(^|\/)(README|CHANGELOG|CHANGES|HISTORY|NEWS|LICENSE|NOTICE|AUTHORS|CONTRIBUTING|COPYING)\.txt$/i];` and `const isDoc = (rel: string): boolean`. A `.txt` is a doc only under the top-level `docs/` folder or with a documentation name; any other `.txt` (`requirements.txt`, `CMakeLists.txt`) is production (plan.md decision 17 point 1, data-model.md "Path class" item 3).
   - `function parseTestPaths(text: string): { patterns: RegExp[], bad: string | null }`: the body of today's `testPaths` IIFE, which now calls it with the working-tree file (no change in `scope` or `lane`).
   - `function testsAt(rev: string): { isTest: (rel: string) => boolean, bad: string | null }`: `parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '')`, memoised per `rev`.
   - `const patchFile = (key: string): string` returning `path.join(stateDir, 'patch', `${key}.json`)`.

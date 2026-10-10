@@ -183,7 +183,8 @@ and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 an
    only protected files still to be restored.
 8. **FR-002, FR-003 and FR-004 are prompt rules** in `agents/patcher.md` and the skill, not hooks: no
    hook can know a repo's test command or its result. Unit tests only show the installed agent and
-   skill carry them; the live check is the behavioural evidence. Confirmed 2026-10-09.
+   skill carry them; the live check is the behavioural evidence. Confirmed 2026-10-09. Extended to
+   FR-013 by decision 17, point 2.
 9. **No installer flag and no `settings.json` change**: the fast track is always installed with the
    team. Confirmed 2026-10-09.
 10. **`ROLE_COLOR` in the retired board mod gains `patcher`**, because `test/board-mod.test.mjs`
@@ -295,6 +296,24 @@ and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 an
     makes the skill's own push fail (never forced), but cannot be undone by the hook. Guardrail state
     under the git directory is not protected from Bash; a protected change hidden that way stays
     uncommitted. A Bash write outside the repo and outside the hashed team set is not caught.
+    Forge CLIs other than `gh` and `hub` (`glab`, `tea`) are not denied (decision 17, point 3).
+
+17. **Decisions at the spec-gatekeeper review** (owner, 2026-10-10; the build was done).
+    1. *`.txt` is a doc only where it is documentation* (research R3, data-model.md "Path classes").
+       `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc` and `.asciidoc` stay docs in any folder. A `.txt`
+       file is a doc only under the top-level `docs/` folder or when named `README`, `CHANGELOG`,
+       `CHANGES`, `HISTORY`, `NEWS`, `LICENSE`, `NOTICE`, `AUTHORS`, `CONTRIBUTING` or `COPYING`
+       (any folder), case-insensitive; any other `.txt` (`requirements.txt`, `CMakeLists.txt`) is
+       production and counts toward the budget (FR-005). Built in `DOC_PATTERNS` of
+       `hooks/speckit-team.mjs` (commit dda6eee); tested by `test/hook.test.mjs`, "patch: a .txt
+       production file counts, documentation .txt does not".
+    2. *FR-003, FR-004 and FR-013 are accepted as prompt rules* (extends decision 8; research R10,
+       R11). Their coverage is the text tests of the installed `agents/patcher.md` and skills plus
+       live checks L1 and L2 (quickstart.md), not hook tests.
+    3. *Forge CLIs other than `gh` and `hub` are a documented gap* (research R15, "What remains").
+       `glab` and `tea` are not in the deny list; a commit made through them is still caught by the
+       end check (decision 15, point 4), but a push, merge request or issue they made on the forge
+       is not undone by the hook.
 
 ## Documentation plan
 
