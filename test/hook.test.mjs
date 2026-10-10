@@ -50,6 +50,7 @@ test('every mode is a no-op outside a Spec Kit repo', () => {
   assert.equal(write(dir, ['scope', 'only', 'specs/'], 'src/main/App.java'), null);
   assert.equal(write(dir, ['scope', 'protected'], '.github/workflows/x.yml'), null, 'scope protected');
   assert.equal(run(dir, ['gate'], { hook_event_name: 'UserPromptExpansion', command_name: 'speckit-implement' }), null);
+  assert.equal(run(dir, ['patch'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, agent_id: 'p1' }), null, 'patch');
 });
 
 test('scope only: planning agents write specs and CLAUDE.md, nothing else', () => {
@@ -289,7 +290,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -317,7 +318,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -713,4 +714,350 @@ test('scope protected: the guardrail state under .git/ is denied (FR-007)', () =
   const out = write(dir, PROT, '.git/speckit-team/retries/x.json');
   assert.ok(denied(out));
   assert.match(out.hookSpecificOutput.permissionDecisionReason, /guardrail state/);
+});
+
+// ---- patch, PreToolUse: the budget stops the run (feature 003, T003) ----------------------------
+const MARK = 'PATCH-CONTENT-7f3a';
+const nl = (n, tag = 'l') => Array.from({ length: n }, (_, i) => `${tag}${i} ${MARK}\n`).join('');
+const why = (out) => out?.hookSpecificOutput?.permissionDecisionReason ?? '';
+// FR-014: a hook never echoes file content. FR-009: patch writes no verdict, retry or ends state.
+function patchTool(dir, tool_name, tool_input = {}, extra = {}) {
+  const out = run(dir, ['patch'], { hook_event_name: 'PreToolUse', agent_id: 'p1', agent_type: 'patcher', tool_name, tool_input, ...extra });
+  assert.ok(!JSON.stringify(out ?? {}).includes(MARK), 'FR-014: output must not carry file content');
+  for (const d of ['verdicts', 'retries', 'ends']) assert.ok(!fs.existsSync(path.join(stateDir(dir), d)), `FR-009: ${d}/ must not exist`);
+  return out;
+}
+const bash = (dir, command = 'npm test', extra = {}) => patchTool(dir, 'Bash', { command }, extra);
+const startFile = (dir, key = 'p1') => path.join(stateDir(dir), 'patch', `${key}.json`);
+const RECORD = /\.git[\\/]speckit-team[\\/]patch[\\/]p1\.json/;
+// The first call of a run records the start and is allowed.
+function begin(dir, extra = {}, key = 'p1') {
+  const out = patchTool(dir, 'Read', { file_path: path.join(dir, 'src/main/App.java') }, extra);
+  assert.ok(!denied(out), `first call: ${why(out)}`);
+  assert.ok(fs.existsSync(startFile(dir, key)), 'the first call writes the start record');
+}
+const put = (dir, rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
+const edit = (dir, rel, from, to) => {
+  const ls = fs.readFileSync(path.join(dir, rel), 'utf8').split('\n');
+  for (let i = from; i < to; i++) ls[i] = `x${i} ${MARK}`;
+  fs.writeFileSync(path.join(dir, rel), ls.join('\n'));
+};
+function fresh(files = {}) {
+  const r = repo();
+  for (const [rel, text] of Object.entries(files)) put(r.dir, rel, text);
+  if (Object.keys(files).length) commitAll(r, 'setup');
+  return r;
+}
+const forty = () => fresh({ 'src/forty.js': nl(40, 'f') });
+const okBash = (dir, msg) => { const out = bash(dir); assert.ok(!denied(out), `${msg}: ${why(out)}`); };
+function overBash(dir, ...res) {
+  const out = bash(dir);
+  assert.ok(denied(out), 'expected a deny, got ' + JSON.stringify(out));
+  for (const re of res) assert.match(why(out), re);
+  return why(out);
+}
+const bin = () => Buffer.concat([Buffer.from(MARK), Buffer.from([0, 1, 2])]);
+// A committed 10-line src/old.js with 50 lines appended, and an untracked 100-line src/wip.js.
+function dirtyRepo() {
+  const r = fresh({ 'src/old.js': nl(10, 'o') });
+  put(r.dir, 'src/old.js', nl(10, 'o') + nl(50, 'a')); put(r.dir, 'src/wip.js', nl(100, 'w'));
+  return r;
+}
+
+test('patch: 30 lines in 2 files is allowed, the 31st line is denied (FR-005, FR-006, US2-1, SC-002)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(20, 'a')); put(dir, 'src/b.js', nl(10, 'b'));
+  okBash(dir, '30 lines in 2 files');
+  fs.appendFileSync(path.join(dir, 'src/b.js'), `one more ${MARK}\n`);
+  overBash(dir, /31 changed production lines in 2 files/, /limit 30 lines, 2 files/, /\/speckit-team/, /uncommitted/);
+});
+
+test('patch: a modified line counts 1 (FR-005, Edge 30/31 lines)', () => {
+  const { dir } = forty();
+  begin(dir);
+  edit(dir, 'src/forty.js', 0, 30);
+  okBash(dir, '30 lines changed in place');
+  edit(dir, 'src/forty.js', 30, 31);
+  overBash(dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: modified and new lines add up (FR-005)', () => {
+  const { dir } = forty();
+  begin(dir);
+  edit(dir, 'src/forty.js', 0, 20); put(dir, 'src/b.js', nl(10, 'b'));
+  okBash(dir, '20 changed + 10 new');
+  edit(dir, 'src/forty.js', 20, 21);
+  overBash(dir, /31 changed production lines in 2 files/);
+});
+
+test('patch: a file counts the larger of its insertions and deletions; deletions count (FR-005)', () => {
+  const { dir } = forty();
+  begin(dir);
+  const orig = fs.readFileSync(path.join(dir, 'src/forty.js'), 'utf8').split('\n');
+  put(dir, 'src/forty.js', nl(8, 'u') + orig.slice(5).join('\n')); // 5 lines replaced by 8: counts 8
+  put(dir, 'src/b.js', nl(22, 'b'));
+  okBash(dir, '8 + 22');
+  fs.appendFileSync(path.join(dir, 'src/b.js'), `one more ${MARK}\n`);
+  overBash(dir, /31 changed production lines in 2 files/);
+
+  const other = forty();
+  begin(other.dir);
+  put(other.dir, 'src/forty.js', fs.readFileSync(path.join(other.dir, 'src/forty.js'), 'utf8').split('\n').slice(31).join('\n'));
+  overBash(other.dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: a third production file is over budget (FR-005, FR-006)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  for (const f of ['a', 'b', 'c']) put(dir, `src/${f}.js`, nl(1, f));
+  overBash(dir, /3 files/);
+});
+
+test('patch: tests and docs do not count, a docs folder is not a doc rule (FR-005, built-in and committed patterns)', () => {
+  const { dir } = fresh({ '.specify/test-paths': '^checks/golden/\n' });
+  begin(dir);
+  put(dir, 'src/a.js', nl(5, 'a'));
+  for (const f of ['test/a.test.js', 'src/test/java/BigTest.java', 'fixtures/data.json', 'README.md', 'docs/guide.mdx',
+    'notes.rst', 'CHANGES.txt', 'guide.adoc', 'checks/golden/x.out']) put(dir, f, nl(22, 'd'));
+  okBash(dir, '5 production lines plus 200 of tests and docs');
+  const other = fresh();
+  begin(other.dir);
+  put(other.dir, 'docs/tool.mjs', nl(31, 't'));
+  overBash(other.dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: test patterns come from the start commit, not the working tree (FR-005, decision 14 point 3)', () => {
+  const { dir } = fresh({ '.specify/test-paths': '# none\n' });
+  begin(dir);
+  fs.appendFileSync(path.join(dir, '.specify/test-paths'), '^src/\n');
+  put(dir, 'src/big.js', nl(31, 'b'));
+  overBash(dir, /31 changed production lines/);
+
+  const other = fresh();
+  put(other.dir, '.specify/test-paths', '^checks/golden/\n'); // never committed
+  begin(other.dir);
+  put(other.dir, 'checks/golden/x.out', nl(31, 'g'));
+  overBash(other.dir, /31 changed production lines/);
+});
+
+test('patch: binary production files are not allowed (FR-005)', () => {
+  const a = fresh(); begin(a.dir);
+  put(a.dir, 'src/logo.png', bin());
+  overBash(a.dir, /binary production files are not allowed: src\/logo\.png/);
+
+  const b = fresh({ 'src/logo.png': bin() }); begin(b.dir);
+  put(b.dir, 'src/logo.png', Buffer.concat([bin(), Buffer.from([9])]));
+  overBash(b.dir, /binary/);
+
+  const c = fresh({ 'src/logo.png': bin() }); begin(c.dir);
+  fs.unlinkSync(path.join(c.dir, 'src/logo.png'));
+  okBash(c.dir, 'a deleted binary is 1 file and not a binary violation');
+  put(c.dir, 'src/a.js', nl(1, 'a')); put(c.dir, 'src/b.js', nl(1, 'b'));
+  const reason = overBash(c.dir, /3 files/);
+  assert.doesNotMatch(reason, /binary/);
+
+  const d = fresh(); begin(d.dir);
+  put(d.dir, 'test/fixtures/x.bin', bin());
+  okBash(d.dir, 'a binary test fixture');
+  put(d.dir, 'src/a.js', nl(31, 'a'));
+  overBash(d.dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: renames count by the edited lines, one file (FR-005, decision 3, research R3)', () => {
+  const a = forty(); begin(a.dir);
+  a.g('mv', 'src/forty.js', 'src/moved.js');
+  put(a.dir, 'src/b.js', nl(29, 'b')); put(a.dir, 'src/c.js', nl(1, 'c'));
+  overBash(a.dir, /30 changed production lines in 3 files/);
+
+  const b = forty(); begin(b.dir);
+  b.g('mv', 'src/forty.js', 'src/moved.js');
+  put(b.dir, 'src/b.js', nl(30, 'b'));
+  okBash(b.dir, 'pure rename plus 30 lines is 30 lines in 2 files');
+  put(b.dir, 'src/c.js', nl(1, 'c'));
+  overBash(b.dir, /30 changed production lines in 3 files/);
+
+  const c = forty(); begin(c.dir);
+  c.g('mv', 'src/forty.js', 'src/moved.js');
+  edit(c.dir, 'src/moved.js', 0, 5); put(c.dir, 'src/b.js', nl(25, 'b'));
+  okBash(c.dir, 'rename with 5 edited lines');
+  edit(c.dir, 'src/moved.js', 5, 6);
+  overBash(c.dir, /31 changed production lines in 2 files/);
+});
+
+test('patch: a pure rename of a committed binary is not binary (research R3)', () => {
+  const { dir, g } = fresh({ 'src/logo.png': bin() }); begin(dir);
+  g('mv', 'src/logo.png', 'src/pic.png');
+  okBash(dir, 'pure binary rename');
+  put(dir, 'src/a.js', nl(31, 'a'));
+  const reason = overBash(dir, /31 changed production lines/);
+  assert.doesNotMatch(reason, /binary/);
+});
+
+test('patch: a rename across classes counts the production side (owner rule 2026-10-09, research R3)', () => {
+  const { dir, g } = fresh({ 'test/old.test.js': nl(40, 'o') }); begin(dir);
+  g('mv', 'test/old.test.js', 'src/old.js');
+  overBash(dir, /40 changed production lines in 1 files/);
+});
+
+test('patch: a move git does not pair is a deletion plus a new file (decision 3)', () => {
+  const { dir } = fresh({ 'src/small.js': nl(3, 's') }); begin(dir);
+  fs.renameSync(path.join(dir, 'src/small.js'), path.join(dir, 'src/tiny.js'));
+  put(dir, 'src/c.js', nl(1, 'c'));
+  overBash(dir, /7 changed production lines in 3 files/);
+});
+
+test('patch: deleting a committed production file counts its lines and 1 file (FR-005)', () => {
+  const { dir } = fresh({ 'src/s.js': nl(3, 's') }); begin(dir);
+  fs.unlinkSync(path.join(dir, 'src/s.js'));
+  okBash(dir, 'a deletion alone');
+  put(dir, 'src/a.js', nl(1, 'a')); put(dir, 'src/b.js', nl(1, 'b'));
+  overBash(dir, /3 files/);
+});
+
+test('patch: committed work counts, measured from the start commit (FR-005)', () => {
+  const r = fresh(); begin(r.dir);
+  put(r.dir, 'src/c.js', nl(31, 'c'));
+  commitAll(r, 'sneaky');
+  overBash(r.dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: files dirty at the start are left out of the count (FR-005, Edge, decision 13)', () => {
+  const { dir } = dirtyRepo(); begin(dir);
+  put(dir, 'src/b.js', nl(30, 'b'));
+  okBash(dir, '30 lines in 1 file, dirty files not counted');
+  put(dir, 'src/wip.js', nl(100, 'w')); // byte-identical rewrite: content decides, not time
+  okBash(dir, 'identical rewrite');
+  fs.appendFileSync(path.join(dir, 'src/b.js'), `one more ${MARK}\n`);
+  overBash(dir, /31 changed production lines in 1 files/);
+});
+
+test('patch: a Write, Edit or MultiEdit to a file dirty at the start is denied (research R14, contract step 3)', () => {
+  const { dir } = dirtyRepo(); begin(dir);
+  const cases = [
+    ['Write', { file_path: path.join(dir, 'src/wip.js') }, /src\/wip\.js/],
+    ['Edit', { file_path: path.join(dir, 'src/old.js') }, /src\/old\.js/],
+    ['MultiEdit', { file_path: path.resolve(dir, 'src/old.js') }, /src\/old\.js/],
+    ['Write', { file_path: `${dir}/src/./wip.js` }, /src\/wip\.js/],
+  ];
+  for (const [tool, input, re] of cases) {
+    const out = patchTool(dir, tool, input);
+    assert.ok(denied(out), `${tool} ${input.file_path}`);
+    assert.match(why(out), re); assert.match(why(out), /uncommitted/); assert.match(why(out), /\/speckit-team/);
+  }
+  assert.ok(!denied(patchTool(dir, 'Write', { file_path: path.join(dir, 'src/new.js') })), 'a clean file is fine');
+
+  const first = dirtyRepo();
+  const out = patchTool(first.dir, 'Write', { file_path: path.join(first.dir, 'src/wip.js') });
+  assert.ok(denied(out), 'denied as the first call too');
+  assert.ok(fs.existsSync(startFile(first.dir)), 'the start record is written first');
+});
+
+test('patch: a dirty-at-start file changed through Bash is named and denied (research R14)', () => {
+  const a = dirtyRepo(); begin(a.dir);
+  fs.appendFileSync(path.join(a.dir, 'src/wip.js'), `more ${MARK}\n`);
+  overBash(a.dir, /src\/wip\.js/, /uncommitted/, /\/speckit-team/);
+
+  const b = dirtyRepo(); begin(b.dir);
+  fs.appendFileSync(path.join(b.dir, 'src/old.js'), `more ${MARK}\n`);
+  overBash(b.dir, /src\/old\.js/, /uncommitted/);
+
+  const c = dirtyRepo(); begin(c.dir);
+  fs.unlinkSync(path.join(c.dir, 'src/wip.js'));
+  overBash(c.dir, /src\/wip\.js/, /uncommitted/);
+
+  const d = fresh();
+  fs.appendFileSync(path.join(d.dir, '.specify/memory/constitution.md'), `one ${MARK}\n`);
+  begin(d.dir);
+  fs.appendFileSync(path.join(d.dir, '.specify/memory/constitution.md'), `two ${MARK}\n`);
+  const reason = overBash(d.dir, /\.specify\/memory\/constitution\.md/, /uncommitted/);
+  assert.doesNotMatch(reason, /protected files/);
+});
+
+test('patch: committing a file dirty at the start is caught (research R14)', () => {
+  const a = dirtyRepo(); begin(a.dir);
+  a.g('add', 'src/wip.js'); a.g('commit', '-qm', 'x');
+  overBash(a.dir, /src\/wip\.js/);
+  const b = dirtyRepo(); begin(b.dir);
+  b.g('commit', '-qam', 'x');
+  overBash(b.dir, /src\/old\.js/);
+});
+
+test('patch: SubagentHandback is never denied for the budget; a commit command is denied (FR-006, US2-3)', () => {
+  const r = fresh(); begin(r.dir);
+  put(r.dir, 'src/a.js', nl(31, 'a'));
+  overBash(r.dir, /31 changed production lines/);
+  assert.ok(!denied(patchTool(r.dir, 'SubagentHandback', {})), 'handback passes');
+  const git = (...a) => execFileSync('git', a, { cwd: r.dir, encoding: 'utf8' });
+  const head = git('rev-parse', 'HEAD');
+  assert.ok(denied(bash(r.dir, 'git add -A && git commit -qm x')));
+  assert.equal(git('rev-parse', 'HEAD'), head, 'HEAD is the start commit');
+  assert.match(git('status', '--porcelain'), /src\/a\.js/);
+});
+
+test('patch: needs no active feature (FR-002)', () => {
+  const { dir } = fresh();
+  fs.unlinkSync(path.join(dir, '.specify/feature.json'));
+  begin(dir);
+  put(dir, 'src/a.js', nl(31, 'a'));
+  overBash(dir, /31 changed production lines/);
+});
+
+test('patch fails closed when the budget cannot be measured (research R9)', () => {
+  const setRecord = (dir, f) => { const rec = JSON.parse(fs.readFileSync(startFile(dir), 'utf8')); f(rec); fs.writeFileSync(startFile(dir), JSON.stringify(rec)); };
+
+  const a = fresh(); begin(a.dir);
+  fs.writeFileSync(startFile(a.dir), '{not json');
+  overBash(a.dir, RECORD);
+
+  const b = fresh(); begin(b.dir);
+  setRecord(b.dir, (rec) => { rec.sha = 'a'.repeat(40); });
+  overBash(b.dir, RECORD);
+
+  const c = fresh({ '.specify/test-paths': '[unclosed\n' });
+  const out = patchTool(c.dir, 'Bash', { command: 'ls' });
+  assert.ok(denied(out), 'an invalid committed test-paths line');
+  assert.match(why(out), /\[unclosed/); assert.match(why(out), /line 1/);
+
+  const d = fresh();
+  put(d.dir, '.specify/test-paths', '[unclosed\n'); // working tree only
+  begin(d.dir);
+  put(d.dir, 'src/a.js', nl(1, 'a'));
+  okBash(d.dir, 'a bad line that was never committed');
+
+  const e = repo();
+  fs.rmSync(path.join(e.dir, '.git'), { recursive: true, force: true });
+  execFileSync('git', ['init', '-q'], { cwd: e.dir, stdio: 'ignore' });
+  const none = patchTool(e.dir, 'Bash', { command: 'ls' });
+  assert.ok(denied(none)); assert.match(why(none), /no commit/);
+
+  for (const dirty of [['src/wip.js'], { 'src/wip.js': 'x' }]) {
+    const f = fresh(); begin(f.dir);
+    setRecord(f.dir, (rec) => { rec.dirty = dirty; });
+    overBash(f.dir, RECORD);
+  }
+});
+
+test('patch: input it cannot key a start record by gets no decision and a message (research R9)', () => {
+  const { dir } = fresh();
+  for (const extra of [{ agent_id: undefined }, { agent_id: '../x' }]) {
+    const out = bash(dir, 'ls', extra);
+    assert.ok(!decided(out), JSON.stringify(extra));
+    assert.match(out?.systemMessage ?? '', /speckit-team: patch got unusable input/);
+  }
+  const s = fresh();
+  const key = { agent_id: undefined, session_id: 's1' };
+  begin(s.dir, key, 's1');
+  put(s.dir, 'src/a.js', nl(31, 'a'));
+  assert.ok(denied(bash(s.dir, 'npm test', key)), 'a session_id keys the record');
+});
+
+test('patch reads committed test patterns while scope tests keeps the working tree (FR-009)', () => {
+  const { dir } = fresh();
+  put(dir, '.specify/test-paths', '^checks/golden/\n'); // uncommitted
+  assert.equal(write(dir, ['scope', 'tests'], 'checks/golden/x.out'), null);
+  begin(dir);
+  put(dir, 'checks/golden/x.out', nl(31, 'g'));
+  overBash(dir, /31 changed production lines/);
+  assert.equal(write(dir, ['scope', 'tests'], 'checks/golden/x.out'), null, 'scope tests unchanged');
 });
