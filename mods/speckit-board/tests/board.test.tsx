@@ -36,7 +36,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on)
   // git answers only inside a repo, as the real one does.
-  const runs = { n: 0 }
+  const runs = { n: 0, reads: 0 }
   on('process.run', (_$, e) => {
     runs.n++
     const root = [ROOT, OTHER].find(r => posix(e.init?.cwd ?? '').startsWith(r))
@@ -50,6 +50,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   // A real read takes time. Without it here, tests that let the poll run passed on Windows and
   // Linux and failed only on the slower macOS runner in CI; with it, they fail on any machine.
   on('fs.read', async (_$, e) => {
+    runs.reads++
     await new Promise(r => setTimeout(r, 5))
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
@@ -800,4 +801,91 @@ test('the band\'s clear button clears the rows and the band with one toast', asy
   const p = await mountPane($)
   expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
   await p.unmount()
+})
+
+// ---- slice 4: the next team agent ends the cleared state ----
+
+// FR-006, US2-1, SC-004: the start event itself ends the clear, not the 4-second poll
+test('the next team agent after a clear brings its row and the band back at its start event', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  await $.classic.SubagentStart({ agent_id: 'a9', agent_type: 'spec-auditor' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const b = await mountBand($, surface)
+    expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeDefined()
+    await b.unmount()
+    const p = await mountPane($, surface)
+    const r = await around(p, 'spec-auditor')
+    expect(r.after?.text).toBe('running')
+    expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+    await p.unmount()
+  }
+})
+
+// D4 A: the band argument and the pane's band button after a clear
+test('after a clear the band toggle first shows the band, then hides, then shows', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  const band$ = () => $.command.run({ command: 'speckit-board', args: 'band' } as never)
+  const drawn = async () => {
+    const b = await mountBand($)
+    const found = await b.find({ type: 'Text', text: /◆ 001-x/ })
+    await b.unmount()
+    return found !== undefined
+  }
+  expect(await band$()).toMatchObject({ text: 'band shown.' })
+  expect(await drawn()).toBe(true)
+  expect(await band$()).toMatchObject({ text: 'band hidden.' })
+  expect(await drawn()).toBe(false)
+  expect(await band$()).toMatchObject({ text: 'band shown.' })
+  expect(await drawn()).toBe(true)
+  await clearCmd($)
+  expect(await drawn()).toBe(false)
+  const p = await mountPane($)
+  await p.press({ key: 'band' })
+  await p.unmount()
+  expect(await drawn()).toBe(true)
+})
+
+// constitution III budget: the clear-ending write adds no fs.read or process.run to the start event
+test('SubagentStart after a clear costs the same fs.read and process.run events as without one', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  const measure = async (id: string) => {
+    const r0 = seen.runs.reads, p0 = seen.runs.n
+    const res = await $.classic.SubagentStart({ agent_id: id, agent_type: 'implementer' } as never)
+    expect(res).toEqual({})
+    return [seen.runs.reads - r0, seen.runs.n - p0]
+  }
+  const first = await measure('x1')
+  await $.classic.SubagentStop(stop('x1', 'implementer', 'RESULT: GREEN'))
+  await clearCmd($)
+  const second = await measure('x2')
+  expect(second).toEqual(first)
+})
+
+// constitution III: a refused isCleared write is toasted and does not stop the start
+test('SubagentStart after a clear toasts a refused isCleared write and goes on', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 1)
+  const deny = denyState(on, 'isCleared')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  deny.isArmed = true
+  const toasts = seen.toasts.length
+  expect(await $.classic.SubagentStart({ agent_id: 'n1', agent_type: 'implementer' } as never)).toEqual({})
+  const p = await mountPane($)
+  expect((await around(p, 'implementer')).after?.text).toBe('running')
+  await p.unmount()
+  const added = seen.toasts.slice(toasts).filter(t => /^board could not end the clear: /.test(t))
+  expect(added).toHaveLength(1)
 })

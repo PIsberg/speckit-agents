@@ -103,7 +103,7 @@ toggle shows a cleared band in one step.
 
 ### Slice 4: the next team agent ends the cleared state (FR-006, SC-004, plan.md D4, constitution III budget)
 
-- [ ] T009 [US2] Tests in `mods/speckit-board/tests/board.test.tsx` (FR-006, US2-1, SC-004, D4 A, constitution III).
+- [X] T009 [US2] Tests in `mods/speckit-board/tests/board.test.tsx` (FR-006, US2-1, SC-004, D4 A, constitution III).
   - 3 finished, `clear`, then `$.classic.SubagentStart({ agent_id: 'a9', agent_type: 'spec-auditor' })` with no clock advance: a band mounted after it draws `◆ 001-x`; the pane draws `spec-auditor` followed by `running` and no Text `implementer` (US2-1, SC-004: at the start event, not the 4-second poll). Red before T010: the band stays away.
   - D4: after a clear, `/speckit-board band` answers `band shown.` and the band draws `◆ 001-x`; again, `band hidden.` and nothing; again, `band shown.`. After another clear, a press of the pane's `band` Button draws the band again. Red before T010: the first answer is `band hidden.`
   - Budget (plan.md, Technical Context): with recorders for `fs.read` and `process.run`, count the events during the `SubagentStart` of `x1` in a session that has not cleared; stop `x1`, clear, and count the events during the `SubagentStart` of `x2`: the two counts are equal, and each `SubagentStart` resolves to the next handler's `{}`. This case holds before T010; show it red once by adding a second `await refresh($)` to the start handler, then revert.
