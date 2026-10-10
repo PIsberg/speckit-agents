@@ -236,7 +236,7 @@ protected repo files keep blocking (plan.md decision 14 point 4, decision 15 poi
   - A config dir with no `skills/` folder and no `settings.json` (both removed before the first call): the start record is written and stop accepts.
   - A start record whose `team` is `[]` or `{"agents/x.md":"zz"}`: the next PreToolUse is denied as unusable, the reason naming the record file; stop gives `fast-track check could not run` and no record.
   - No hook output contains `PATCH-CONTENT-7f3a`.
-- [ ] T010 [US3] Implement the team check in `hooks/speckit-team.mjs`, per contracts/hook-cli.md "End of run" (the team row and message C), research R16 and plan.md decision 16 point 2. New names:
+- [X] T010 [US3] Implement the team check in `hooks/speckit-team.mjs`, per contracts/hook-cli.md "End of run" (the team row and message C), research R16 and plan.md decision 16 point 2. New names:
   - `function teamState(): Record<string, string | null>`: the SHA-256 of each regular file directly in `TEAM_DIR/agents/`, directly in `TEAM_DIR/hooks/` and directly in each `TEAM_DIR/skills/<name>/`, keyed by its `TEAM_DIR`-relative forward-slash path, plus `settings.json` and `settings.local.json` always present (`null` when missing); `fs.readdirSync(dir, { withFileTypes: true })` without `recursive`; a folder that cannot be listed contributes nothing; never throws.
   - `function teamChanged(before: Record<string, string | null>): string[]`: the sorted paths present in `before` or `teamState()` whose values differ (a path on one side only differs).
   - The start record gains `team: teamState()`; validation requires `team` to be a plain object of 64-hex-or-`null` values.
