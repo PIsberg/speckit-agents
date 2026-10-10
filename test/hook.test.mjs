@@ -32,8 +32,8 @@ function repo({ speckit = true } = {}) {
   return { dir, write, g };
 }
 
-function run(dir, args, payload) {
-  const r = spawnSync('node', [HOOK, ...args], {
+function run(dir, args, payload, hook = HOOK) {
+  const r = spawnSync('node', [hook, ...args], {
     input: JSON.stringify({ cwd: dir, ...payload }), encoding: 'utf8',
   });
   assert.equal(r.status, 0, r.stderr);
@@ -1463,4 +1463,159 @@ test('patch end: package.json is protected by the name at the start commit (owne
   const out = stop(app);
   noStop(out);
   assert.match(msg(out), /1 of 30 production lines, 1 of 2 production files/);
+});
+
+// ---- patch, end of run: the installed team is hashed at the start and checked at the end (feature 003, T009) ----
+// The copied hook's team directory is <tmp>/cfg, so the cases change files there, never the checkout.
+function teamCopy() {
+  const cfg = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skteam-cfg-')), 'cfg');
+  const files = { 'agents/patcher.md': '# patcher\n', 'agents/implementer.md': '# implementer\n', 'skills/speckit-patch/SKILL.md': '# skill\n', 'settings.json': '{}' };
+  for (const [rel, text] of Object.entries(files)) put(cfg, rel, text);
+  fs.mkdirSync(path.join(cfg, 'hooks'), { recursive: true });
+  const hook = path.join(cfg, 'hooks', 'speckit-team.mjs');
+  fs.copyFileSync(HOOK, hook);
+  return hook;
+}
+const cfgOf = (hook) => path.dirname(path.dirname(hook));
+const tcall = (dir, hook, base, extra = {}) => {
+  const out = run(dir, ['patch'], { ...base, ...extra }, hook);
+  assert.ok(!JSON.stringify(out ?? {}).includes(MARK), 'FR-014: output must not carry file content');
+  return out;
+};
+const tstop = (dir, hook, extra) => tcall(dir, hook, STOP, extra);
+const thand = (dir, hook, message = 'Fixed.\nDONE') => tcall(dir, hook, HAND, { tool_input: { message } });
+const tpre = (dir, hook, tool_name, tool_input) => tcall(dir, hook, { hook_event_name: 'PreToolUse', agent_id: 'p1', agent_type: 'patcher', tool_name, tool_input });
+// A run through the copied hook: first call, then a new 1-line src/a.js (within budget).
+function teamRun({ prepare } = {}) {
+  const hook = teamCopy();
+  if (prepare) prepare(cfgOf(hook));
+  const { dir } = fresh();
+  const out = tpre(dir, hook, 'Read', { file_path: path.join(dir, 'src/main/App.java') });
+  assert.ok(!denied(out), `first call: ${why(out)}`);
+  assert.ok(fs.existsSync(startFile(dir)), 'the first call writes the start record');
+  put(dir, 'src/a.js', nl(1, 'a'));
+  return { dir, hook, cfg: cfgOf(hook) };
+}
+const cfgFile = (cfg, rel) => path.join(cfg, ...rel.split('/'));
+const rel2 = (rel) => new RegExp(esc(rel).replace(/\//g, '[\\\\/]'));
+// Message C of contracts/hook-cli.md: FAILED, never a block, names each path, no checkout command.
+function isFailed(out, ...paths) {
+  noStop(out, 'a team change must not block');
+  const m = msg(out);
+  for (const re of [/installed agent team/, /FAILED/, /commits nothing/, ...paths.map(rel2)]) assert.match(m, re);
+  assert.doesNotMatch(m, /git checkout/);
+}
+
+const TEAM_CHANGES = [
+  ['agents/patcher.md', (cfg) => fs.appendFileSync(cfgFile(cfg, 'agents/patcher.md'), `${MARK}\n`)],
+  ['skills/evil/SKILL.md', (cfg) => put(cfg, 'skills/evil/SKILL.md', `# evil ${MARK}\n`)],
+  ['agents/implementer.md', (cfg) => fs.rmSync(cfgFile(cfg, 'agents/implementer.md'))],
+  ['hooks/speckit-team.mjs', (cfg) => fs.appendFileSync(cfgFile(cfg, 'hooks/speckit-team.mjs'), '\n// changed during the run\n')],
+  ['settings.json', (cfg) => fs.writeFileSync(cfgFile(cfg, 'settings.json'), '{"x":1}')],
+  ['settings.local.json', (cfg) => fs.writeFileSync(cfgFile(cfg, 'settings.local.json'), '{}')],
+];
+
+test('patch team: any changed team file ends the run FAILED, never blocks, writes no record (FR-007, FR-011, FR-014, US3-2, SC-003, M2)', () => {
+  for (const [rel, change] of TEAM_CHANGES) {
+    const { dir, hook, cfg } = teamRun();
+    change(cfg);
+    isFailed(tstop(dir, hook), rel);
+    assert.equal(record(dir), null, `${rel}: no record after stop`);
+    isFailed(tstop(dir, hook, { stop_hook_active: true }), rel);
+    assert.equal(record(dir), null, `${rel}: no record after stop_hook_active`);
+    isFailed(thand(dir, hook), rel);
+    assert.equal(record(dir), null, `${rel}: no record after DONE`);
+    isFailed(thand(dir, hook, 'Over budget.\nESCALATE'), rel);
+    assert.equal(record(dir), null, `${rel}: no record after ESCALATE`);
+  }
+});
+
+test('patch team: putting the original back lets the run be accepted (FR-007, FR-011)', () => {
+  for (const rel of ['agents/patcher.md', 'settings.json']) {
+    const { dir, hook, cfg } = teamRun();
+    const f = cfgFile(cfg, rel);
+    const original = fs.readFileSync(f);
+    TEAM_CHANGES.find(([r]) => r === rel)[1](cfg);
+    isFailed(tstop(dir, hook), rel);
+    fs.writeFileSync(f, original);
+    noStop(tstop(dir, hook), rel);
+    assert.ok(record(dir), `${rel}: the record is written once the original is back`);
+  }
+  const { dir, hook, cfg } = teamRun();
+  put(cfg, 'settings.local.json', '{}');
+  isFailed(tstop(dir, hook), 'settings.local.json');
+  fs.rmSync(cfgFile(cfg, 'settings.local.json'));
+  noStop(tstop(dir, hook));
+  assert.ok(record(dir), 'a created file removed again is accepted');
+});
+
+test('patch team: two changed team files are both named in message C (FR-011, M2)', () => {
+  const { dir, hook, cfg } = teamRun();
+  TEAM_CHANGES[4][1](cfg); TEAM_CHANGES[0][1](cfg);
+  isFailed(tstop(dir, hook), 'settings.json', 'agents/patcher.md');
+  assert.equal(record(dir), null);
+});
+
+test('patch team: a protected repo file still blocks, and is the only file the block names (FR-007, M2)', () => {
+  const { dir, hook, cfg } = teamRun();
+  TEAM_CHANGES[0][1](cfg);
+  fs.appendFileSync(path.join(dir, CONST), 'extra\n');
+  const out = tstop(dir, hook);
+  isBlocked(out, new RegExp(esc(CONST)), co(dir, CONST));
+  assert.doesNotMatch(out.reason, /agents[\\/]patcher\.md/);
+  assert.equal(record(dir), null);
+  git(dir, 'checkout', startSha(dir), '--', CONST);
+  isFailed(tstop(dir, hook), 'agents/patcher.md');
+  assert.equal(record(dir), null);
+});
+
+test('patch team: only agents/, hooks/, skills/<name>/ and the two settings files are hashed (research R16)', () => {
+  const { dir, hook, cfg } = teamRun({ prepare: (c) => { put(c, 'projects/x.jsonl', '{}'); put(c, 'skills/x/sub/deep.md', 'deep'); } });
+  const { team } = JSON.parse(fs.readFileSync(startFile(dir), 'utf8'));
+  assert.match(String(team?.['agents/patcher.md']), /^[0-9a-f]{64}$/, 'a team file is hashed');
+  assert.deepEqual(Object.keys(team ?? {}).filter((k) => /^projects[\/]|sub[\/]/.test(k)), []);
+  put(cfg, 'projects/x.jsonl', '{"changed":1}'); put(cfg, 'skills/x/sub/deep.md', 'changed');
+  noStop(tstop(dir, hook));
+  assert.ok(record(dir), 'a change outside the hashed set is accepted');
+});
+
+test('patch team: the start record holds a hash per team file, null for a missing settings file (FR-007, research R16)', () => {
+  const { dir } = teamRun();
+  const { team } = JSON.parse(fs.readFileSync(startFile(dir), 'utf8'));
+  assert.ok(team && typeof team === 'object' && !Array.isArray(team), 'team is an object');
+  for (const rel of ['agents/patcher.md', 'agents/implementer.md', 'skills/speckit-patch/SKILL.md', 'hooks/speckit-team.mjs', 'settings.json']) assert.match(String(team[rel]), /^[0-9a-f]{64}$/, rel);
+  assert.equal(team['settings.local.json'], null);
+});
+
+test('patch team: over budget with a team change opens no restore allowance, and message C comes first (research R7, M2)', () => {
+  const { dir, hook, cfg } = teamRun();
+  put(dir, 'src/a.js', nl(31, 'a'));
+  TEAM_CHANGES[0][1](cfg);
+  const out = tpre(dir, hook, 'Bash', { command: `git checkout ${startSha(dir)} -- src/a.js` });
+  assert.ok(denied(out), 'denied: ' + JSON.stringify(out));
+  isFailed(tstop(dir, hook), 'agents/patcher.md');
+  assert.equal(record(dir), null);
+});
+
+test('patch team: a config dir with no skills/ and no settings.json is hashed and accepted (FR-011)', () => {
+  const { dir, hook } = teamRun({ prepare: (cfg) => { fs.rmSync(path.join(cfg, 'skills'), { recursive: true }); fs.rmSync(path.join(cfg, 'settings.json')); } });
+  const { team } = JSON.parse(fs.readFileSync(startFile(dir), 'utf8'));
+  assert.ok(team && typeof team === 'object', 'the start record has team');
+  assert.equal(team['settings.json'], null);
+  noStop(tstop(dir, hook));
+  assert.ok(record(dir), 'accepted');
+});
+
+test('patch team: an unusable team in the start record is denied and the end check cannot run (FR-011, data-model)', () => {
+  for (const team of [[], { 'agents/x.md': 'zz' }]) {
+    const { dir, hook } = teamRun();
+    const f = startFile(dir);
+    fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), team }));
+    const out = tpre(dir, hook, 'Bash', { command: 'npm test' });
+    assert.ok(denied(out), `${JSON.stringify(team)}: expected a deny, got ${JSON.stringify(out)}`);
+    assert.match(why(out), RECORD);
+    const end = tstop(dir, hook);
+    assert.match(msg(end), /fast-track check could not run/);
+    assert.equal(record(dir), null);
+  }
 });
