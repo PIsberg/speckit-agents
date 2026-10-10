@@ -294,7 +294,7 @@ test("architect's and product-owner's scope hooks deny a Write outside their lan
   assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'a Write went through');
 });
 
-test('test-writer may not write production code, and its report must end in RED or BLOCKED', { skip: noClaude, timeout: 120_000 }, async () => {
+test('test-writer may not write production code, and its report must end in RED, BLOCKED or FIXED', { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);
   const r = await session(s, {
@@ -307,7 +307,7 @@ test('test-writer may not write production code, and its report must end in RED 
   }, { permissionMode: 'auto' });
   assert.match(lastResult(r.requests['e2e test-writer'][1]), /test-writer writes only test files and ticks tasks\.md; src\/greet\.js is production code/, story(r));
   assert.ok(lastResultIsError(r.requests['e2e test-writer'][2]), story(r));
-  assert.match(lastResult(r.requests['e2e test-writer'][2]), /Your report must end with a final line that is exactly one of: RED, BLOCKED/, story(r));
+  assert.match(lastResult(r.requests['e2e test-writer'][2]), /Your report must end with a final line that is exactly one of: RED, BLOCKED, FIXED/, story(r));
   assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
 });
 
@@ -428,7 +428,7 @@ test("spec-gatekeeper's report must end in APPROVED or REJECTED, and the word is
   assert.equal(state(s, 'ends', '001-x.json').word, 'APPROVED', story(r));
 });
 
-test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED or BLOCKED", { skip: noClaude, timeout: 120_000 }, async () => {
+test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED, BLOCKED or FIXED", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);
   const r = await session(s, {
@@ -437,7 +437,7 @@ test("test-writer's Stop: the lane check catches production code written through
   });
   assert.ok(fs.existsSync(path.join(s.repo, 'prod.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e test-writer'][2]), /Lane check: test-writer changed files outside its lane: prod\.js/, story(r));
-  assert.match(shown(r.requests['e2e test-writer'][2]), /Your report must end with a final line that is exactly one of: RED, BLOCKED/, story(r));
+  assert.match(shown(r.requests['e2e test-writer'][2]), /Your report must end with a final line that is exactly one of: RED, BLOCKED, FIXED/, story(r));
 });
 
 // 003 fast track: patcher under `claude -p`. "The record" is .git/speckit-team/patch-accepted.json.

@@ -33,7 +33,7 @@ export const PHASE_ROLES: Record<SpeckitPhaseId, readonly string[]> = {
 const WORDS: Record<string, { good: readonly string[]; bad: readonly string[] }> = {
   'product-owner': { good: ['READY FOR PLAN'], bad: [] },
   'spec-auditor': { good: ['PASS'], bad: ['FAIL'] },
-  'test-writer': { good: ['RED'], bad: ['BLOCKED'] },
+  'test-writer': { good: ['RED', 'FIXED'], bad: ['BLOCKED'] },
   implementer: { good: ['GREEN'], bad: ['RED'] },
   'spec-gatekeeper': { good: ['APPROVED'], bad: ['REJECTED'] },
 }

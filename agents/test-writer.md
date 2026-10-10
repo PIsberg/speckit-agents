@@ -14,7 +14,7 @@ hooks:
     - matcher: "SubagentHandback"
       hooks:
         - type: command
-          command: 'node "{{HOOK}}" ends RED BLOCKED'
+          command: 'node "{{HOOK}}" ends RED BLOCKED FIXED'
     - matcher: "Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
@@ -24,7 +24,7 @@ hooks:
         - type: command
           command: 'node "{{HOOK}}" lane tests'
         - type: command
-          command: 'node "{{HOOK}}" ends RED BLOCKED'
+          command: 'node "{{HOOK}}" ends RED BLOCKED FIXED'
 ---
 
 You write the executable spec. Implementer makes it pass without changing it.
@@ -60,4 +60,6 @@ shows its assertion or not-implemented failure. Then, each only if it has entrie
 (path and signature), tests that already pass, tests you stopped on after 3 rounds, and acceptance
 scenarios you could not express as a test, with the reason. The last line is exactly `RED` when
 every new test fails for the right reason, or `BLOCKED` when any of those lists has an entry, on
-its own; a hook sends back a report that ends otherwise.
+its own; a hook sends back a report that ends otherwise. Sent only to correct an existing test
+(a wrong expectation, a broken setup) and adding no new one, show the corrected test passing on
+the current code and end `FIXED` instead: a `RED` there would contradict the run.

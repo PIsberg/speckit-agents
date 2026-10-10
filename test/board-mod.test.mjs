@@ -53,6 +53,28 @@ test('the board mod draws each role in the color of its agent file', () => {
   assert.deepEqual(board, agents);
 });
 
+// The board reads an agent's word as the hook's `ends` check accepts it, and WORDS in model.ts copies
+// the words each agent file passes to `ends`. A word added to one alone (#74's FIXED) was accepted by
+// the hook and shown as no word on the board, or the other way round.
+test('the board mod knows the report words each agent file passes to ends', () => {
+  const model = fs.readFileSync(path.join(MOD, 'hooks', 'model.ts'), 'utf8');
+  const table = /^const WORDS[^=]*=\s*\{\n([^]*?)\n\}/m.exec(model);
+  assert.ok(table, 'WORDS not found in mods/speckit-board/hooks/model.ts');
+  const board = Object.fromEntries([...table[1].matchAll(/'?([\w-]+)'?:\s*\{([^}]*)\}/g)]
+    .map((m) => [m[1], [...m[2].matchAll(/'([^']+)'/g)].map((w) => w[1]).sort()]));
+  let checked = 0;
+  for (const f of fs.readdirSync(path.join(ROOT, 'agents')).filter((n) => n.endsWith('.md'))) {
+    const text = fs.readFileSync(path.join(ROOT, 'agents', f), 'utf8');
+    const role = /^name:\s*(\S+)/m.exec(text)[1];
+    const ends = [...new Set([...text.matchAll(/" ends (?:--record )?([A-Z ]+)'/g)].map((m) => m[1].trim()))];
+    if (!ends.length || !(role in board)) continue;
+    assert.equal(ends.length, 1, `${f}: its ends commands disagree`);
+    assert.deepEqual(board[role], ends[0].split(' ').sort(), `${role}: WORDS and ${f}`);
+    checked++;
+  }
+  assert.equal(checked, 2, 'test-writer and spec-gatekeeper');
+});
+
 // The board draws the retry meter and the build's `retry limit` from its own MAX_RED; with the hook's
 // changed alone, it would show the limit reached where the gate still lets implementer run, or not.
 test('the board mod counts REDs to the hook\'s retry limit', () => {

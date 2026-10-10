@@ -661,6 +661,20 @@ test('ends: a test-writer report without RED or BLOCKED is sent back once', () =
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
 });
 
+// #74: sent to correct an existing test, test-writer adds no failing test, so the suite ends green and
+// RED would contradict the run. It ends FIXED instead; the words are run as its agent file declares them.
+test("test-writer's own ends commands accept FIXED for a correction that adds no test", () => {
+  const { dir } = repo();
+  const text = fs.readFileSync(path.join(path.dirname(HOOK), '..', 'agents', 'test-writer.md'), 'utf8');
+  const commands = [...text.matchAll(/" (ends [A-Z ]+)'/g)].map((m) => m[1].split(' '));
+  assert.equal(commands.length, 2, 'the SubagentHandback and the Stop entry');
+  for (const [i, args] of commands.entries()) {
+    const report = 'test/a.test.mjs:12 expected 6 cases, now 7; suite green\n\nFIXED';
+    assert.equal(run(dir, args, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: report }, agent_id: `fx${i}` }), null, args.join(' '));
+    assert.equal(run(dir, args, { hook_event_name: 'SubagentStop', agent_id: `fy${i}`, last_assistant_message: report }), null, args.join(' '));
+  }
+});
+
 // The `ends` record is the gatekeeper's word, which the board's verify step reads. Without
 // --record, an accepted word is not written: a test-writer's RED after a REJECTED must not replace it.
 test('ends without --record leaves the recorded word alone', () => {

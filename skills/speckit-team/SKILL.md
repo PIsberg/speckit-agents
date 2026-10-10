@@ -123,7 +123,7 @@ For each slice:
    architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
 2. **Red** (test-writer, the slice's test task IDs): check the report before moving on. It ends
    `RED` or `BLOCKED`, and on `RED` the slice's test tasks are ticked; on `BLOCKED`, act on the
-   entries it lists. Every
+   entries it lists. A test-writer sent only to correct an existing test ends `FIXED`. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it.
