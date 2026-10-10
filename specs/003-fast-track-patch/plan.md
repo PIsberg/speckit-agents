@@ -296,7 +296,8 @@ and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 an
     makes the skill's own push fail (never forced), but cannot be undone by the hook. Guardrail state
     under the git directory is not protected from Bash; a protected change hidden that way stays
     uncommitted. A Bash write outside the repo and outside the hashed team set is not caught.
-    Forge CLIs other than `gh` and `hub` (`glab`, `tea`) are not denied (decision 17, point 3).
+    Forge CLIs other than `gh` and `hub` (`glab`, `tea`) are not denied (decision 17, point 3; since
+    #72 `glab` and `tea` are).
 
 17. **Decisions at the spec-gatekeeper review** (owner, 2026-10-10; the build was done).
     1. *`.txt` is a doc only where it is documentation* (research R3, data-model.md "Path classes").
@@ -313,7 +314,7 @@ and M5 (decision 16), which change decisions 7, 14 point 4 and 15 points 1, 3 an
     3. *Forge CLIs other than `gh` and `hub` are a documented gap* (research R15, "What remains").
        `glab` and `tea` are not in the deny list; a commit made through them is still caught by the
        end check (decision 15, point 4), but a push, merge request or issue they made on the forge
-       is not undone by the hook.
+       is not undone by the hook. (Closed for `glab` and `tea` by #72, after this feature merged.)
 
 ## Documentation plan
 

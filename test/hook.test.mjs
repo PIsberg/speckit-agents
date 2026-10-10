@@ -1190,6 +1190,36 @@ test('patch: commit, push, history and pull-request commands are denied within b
   }
 });
 
+// #72: forms the word match missed (other forge CLIs, split or variable git words, aliases, package
+// publishing, a shell write to the fast track's own state), and the read-only git branch live check L5
+// saw denied.
+test('patch: other forges, obfuscated git words, aliases, publishing and its own state are denied (#72)', () => {
+  const { dir } = cmdRepo();
+  const cases = [
+    ['glab mr create --fill', 'glab'], ['tea pr create', 'tea'], ['/usr/local/bin/glab api x', 'glab'],
+    ['g"it" push', 'git push'], ["g'it' commit -m x", 'git commit'], ['g\\it push', 'git push'],
+    ['G=git; $G push', 'git push'], ['G=git && ${G} commit -m x', 'git commit'], ['git${IFS}push', 'git push'],
+    ['git -c alias.p=push p', 'git -c alias'], ['git -c alias.s=status s', 'git -c alias'],
+    ['npm publish', 'npm publish'], ['pnpm publish --access public', 'pnpm publish'], ['yarn npm publish', 'yarn publish'],
+    ['echo {} > .git/speckit-team/patch/p1.json', "a command on the fast track's state"],
+    ["rm -rf '.git/speckit-team'", "a command on the fast track's state"],
+    ['del .git\\speckit-team\\patch-accepted.json', "a command on the fast track's state"],
+  ];
+  for (const [command, name] of cases) {
+    const out = bash(dir, command);
+    assert.ok(denied(out), `${command}: expected a deny, got ${JSON.stringify(out)}`);
+    assert.match(why(out), new RegExp(`may not run ${esc(name)}`), command);
+  }
+  for (const command of ['git branch --show-current', 'git branch', 'git branch -a', 'git branch --list', 'git branch -vv && npm test',
+    'echo "it" "push"', 'X=1 npm test', 'npm run build', 'grep -rn publish src', 'cat package.json']) {
+    const out = bash(dir, command);
+    assert.equal(out, null, `${command}: expected null, got ${JSON.stringify(out)}`);
+  }
+  for (const command of ['git branch x', 'git branch -D x', 'git branch -m y', 'git branch --show-current && git branch x']) {
+    assert.match(why(bash(dir, command)), /may not run git branch/, command);
+  }
+});
+
 // FR-011, FR-014, constitution II, spec audit finding M5, plan.md decision 16 point 3, research R7.
 test('patch: wholesale restores are denied, naming restores and read-only commands pass (FR-011, FR-014, M5)', () => {
   const { dir, sha } = cmdRepo();

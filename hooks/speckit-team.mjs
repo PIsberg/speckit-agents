@@ -631,20 +631,45 @@ function afterGitOptions(words, i) {
   while (j < words.length && words[j].startsWith('-')) j += GIT_OPTIONS_WITH_VALUE.has(words[j]) ? 2 : 1;
   return j;
 }
-function historyCommand(command) {
-  if (typeof command !== 'string') return null;
-  const words = command.split(/[\s;&|(){}<>`"'$!]+/).filter(Boolean);
-  for (let i = 0; i < words.length; i++) {
-    const prog = program(words[i]);
-    if (prog === 'gh' || prog === 'hub') return prog;
-    if (prog !== 'git') continue;
-    const j = afterGitOptions(words, i);
-    const sub = words[j];
-    if (sub === undefined) continue;
-    if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
-    if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
+const FORGE_CLIS = new Set(['gh', 'hub', 'glab', 'tea']);
+const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
+// git branch that only lists: live check L5 saw `git branch --show-current` denied (#72).
+const BRANCH_READ_ONLY = new Set(['--show-current', '--list', '-l', '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose', '--no-color', '--no-column']);
+// The command with quotes and backslashes taken out and $VAR / ${VAR} replaced by the value the command
+// assigns it, or a space: g"it" push, G=git; $G push and git${IFS}push all read as git push (#72).
+// The shell would run more than this sees; the end check still catches any commit that gets through.
+function unquoted(command) {
+  const vars = {};
+  for (const m of command.matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:'([^']*)'|"([^"]*)"|([^\s;&|)]*))/g)) vars[m[1]] = m[2] ?? m[3] ?? m[4];
+  return command.replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g, (_, a, b) => vars[a ?? b] ?? ' ').replace(/["'\\]/g, '');
+}
+function historyWords(command) {
+  for (const seg of command.split(/[\n;&|(){}<>`$!]+/)) {
+    const words = seg.split(/[\s"']+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      const prog = program(words[i]);
+      if (FORGE_CLIS.has(prog)) return prog;
+      if (PACKAGE_MANAGERS.has(prog) && words.slice(i + 1).includes('publish')) return `${prog} publish`;
+      if (prog !== 'git') continue;
+      const j = afterGitOptions(words, i);
+      const sub = words[j];
+      if (sub === undefined) continue;
+      if (sub === 'branch' && words.slice(j + 1).every((w) => BRANCH_READ_ONLY.has(w))) continue;
+      if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
+      if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
+    }
   }
   return null;
+}
+function historyCommand(command) {
+  if (typeof command !== 'string') return null;
+  // The fast track's start record and accepted record decide the end check; a shell write could reset them.
+  const state = /\.git[\\/]+speckit-team(?![\w.-])/i;
+  if (state.test(command) || state.test(unquoted(command))) return "a command on the fast track's state";
+  const found = historyWords(command) ?? historyWords(unquoted(command));
+  if (found) return found;
+  // An alias defined on the command line runs whatever it names, under a name no list can know.
+  return gitCalls(command).length && /(^|\s)-c\s*alias\./i.test(unquoted(command)) ? 'git -c alias' : null;
 }
 function gitCalls(command) {
   const calls = [];

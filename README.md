@@ -485,9 +485,14 @@ and any other change is caught at the end.
 - **Writes** (`scope protected`): a `Write`, `Edit`, `MultiEdit` or `NotebookEdit` to a protected
   path, the installed team or the git directory is denied before it runs.
 - **History and remote commands**: `patcher` may not run `git commit`, `merge`, `rebase`, `stash`,
-  `tag`, `branch`, `switch`, `push`, `pull`, `fetch`, a `git checkout` with no `--` and the other
-  subcommands in `HISTORY_SUBCOMMANDS`, nor `gh` or `hub`. The command is split into words and every
-  `git` word is checked, so `sh -c "git push"` and `git -C . commit` are caught.
+  `tag`, `branch` (except the listing forms such as `git branch --show-current`), `switch`, `push`,
+  `pull`, `fetch`, a `git checkout` with no `--` and the other subcommands in `HISTORY_SUBCOMMANDS`,
+  a `git -c alias.*` call, the forge CLIs `gh`, `hub`, `glab` and `tea`, or `npm`, `pnpm`, `yarn`
+  or `bun publish`, nor a command that names the fast track's own state (`.git/speckit-team`). The
+  command is split into words and every `git` word is checked, so `sh -c "git push"` and
+  `git -C . commit` are caught. It is checked again with quotes and backslashes removed and
+  `$VAR` or `${VAR}` replaced by the value the command assigns, so `g"it" push`, `G=git; $G push`
+  and `git${IFS}push` are caught too ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -1261,7 +1266,8 @@ changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and
   the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
   `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
   `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
-  word, as [Known limits](#known-limits) says, and the model went on without it.
+  word, as [Known limits](#known-limits) said, and the model went on without it. The listing forms
+  of `git branch` are allowed since [#72](https://github.com/PIsberg/speckit-agents/issues/72).
 - **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
   a new machine-readable output format, which is a public contract") and launched no agent.
   **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
@@ -1442,9 +1448,11 @@ reinstall the team (`node install.mjs` in the speckit-agents checkout), then run
 ### "may not run git commit" (and push, `gh` and the rest)
 
 `patcher` never commits, pushes or opens a PR; `/speckit-patch` does that after the end check. The
-denied commands are the history and remote commands in `HISTORY_SUBCOMMANDS` and the programs `gh`
-and `hub`. The match is on words, so a command that only mentions one, such as `echo "git push"`,
-is denied too.
+denied commands are the history and remote commands in `HISTORY_SUBCOMMANDS`, a `git -c alias.*`
+call, the programs `gh`, `hub`, `glab` and `tea`, a package manager's `publish`, and any command
+that names `.git/speckit-team`. The match is on words, so a command that only mentions one, such as
+`echo "git push"`, is denied too. The listing forms of `git branch` (`--show-current`, `--list`,
+`-a`, `-r`, `-v`) are allowed.
 
 ### "may not run git reset --hard" (and `git clean`)
 
@@ -1490,7 +1498,8 @@ up and replace it.
   that overreaches by accident. It does not cover one that evades the hooks on purpose through the
   shell. By category, the fast track does not guard against:
   - **git aliases:** a commit, push or PR made by a program whose command does not name it (a git
-    alias, `npm version`, a script, `make release`, `curl` to the GitHub API) is not denied before
+    alias from a config file, `npm version`, a script, `make release`, `curl` to the GitHub API, an
+    obfuscation the unquoting does not undo such as `$(printf git) push`) is not denied before
     it runs. A commit is still caught at the end, and the skill never force-pushes, so a stray
     push makes the skill's own push fail; you delete the stray branch or PR.
   - **scripts:** the same holds for any script `patcher` writes and runs.
@@ -1500,15 +1509,17 @@ up and replace it.
     Claude config directory is not caught.
   - **network access:** nothing limits what `patcher` fetches or sends over the network from Bash.
     Only the history and remote commands named above are denied.
-  - **other forge CLIs:** `patcher`'s command deny matches only `gh` and `hub`, so a `glab` (GitLab)
-    or `tea` (Gitea) command that opens a merge request is not stopped before it runs. A commit
-    made that way is still caught by the end check, and the skill makes the real commit and PR
-    only after that check.
+  - **other forge CLIs:** `patcher`'s command deny matches `gh`, `hub`, `glab` and `tea`. Any other
+    forge CLI that opens a merge request is not stopped before it runs. A commit made that way is
+    still caught by the end check, and the skill makes the real commit and PR only after that
+    check.
 - **The command check matches words.** A command that only mentions `git push` or `gh` is denied
   too.
-- **Fast-track state is protected from `Write` and `Edit`, not Bash.** A change hidden by rewriting
-  the start record stays uncommitted: a protected file hidden that way is not in the accepted
-  record, so the skill does not commit it.
+- **Fast-track state is protected from `Write` and `Edit`, and from Bash only by name.** A Bash
+  command that names `.git/speckit-team` is denied, but one that reaches it another way (a script,
+  a path built at run time) is not. A change hidden by rewriting the start record stays
+  uncommitted: a protected file hidden that way is not in the accepted record, so the skill does
+  not commit it.
 - **One fast-track run per worktree at a time.** Two runs share the accepted record and the
   working tree.
 - **Installed team files deeper than one folder level are not hashed.** `Write` and `Edit` to them
