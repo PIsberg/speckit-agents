@@ -1157,3 +1157,310 @@ test('patch: a Write mentioning git push is not a command; the deny holds with o
   assert.ok(denied(d), JSON.stringify(d));
   assert.match(why(d), /may not run git push/);
 });
+
+// ---- patch, end of run: the end check, the accepted record, the restore allowance (feature 003, T007) ----
+const CONST = '.specify/memory/constitution.md';
+const CI = '.github/workflows/ci.yml';
+const acceptedFile = (dir) => path.join(stateDir(dir), 'patch-accepted.json');
+const record = (dir) => (fs.existsSync(acceptedFile(dir)) ? JSON.parse(fs.readFileSync(acceptedFile(dir), 'utf8')) : null);
+const git = (dir, ...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' });
+const startSha = (dir) => JSON.parse(fs.readFileSync(startFile(dir), 'utf8')).sha;
+const s12 = (dir) => startSha(dir).slice(0, 12);
+const STOP = { hook_event_name: 'SubagentStop', agent_id: 'p1', agent_type: 'patcher' };
+const HAND = { hook_event_name: 'PreToolUse', agent_id: 'p1', agent_type: 'patcher', tool_name: 'SubagentHandback', tool_input: { message: 'Fixed.\nDONE' } };
+function endEv(dir, base, extra = {}) {
+  const out = run(dir, ['patch'], { ...base, ...extra });
+  assert.ok(!JSON.stringify(out ?? {}).includes(MARK), 'FR-014: output must not carry file content');
+  if (fs.existsSync(acceptedFile(dir))) assert.ok(!fs.readFileSync(acceptedFile(dir), 'utf8').includes(MARK), 'FR-014: record carries no content');
+  return out;
+}
+const stop = (dir, extra) => endEv(dir, STOP, extra);
+const hand = (dir, extra) => endEv(dir, HAND, extra);
+const msg = (out) => out?.systemMessage ?? '';
+const noStop = (out, label = '') => { assert.ok(out?.decision !== 'block' && !denied(out), `${label} expected no block: ${JSON.stringify(out)}`); };
+function isBlocked(out, ...res) {
+  assert.equal(out?.decision, 'block', `expected a block, got ${JSON.stringify(out)}`);
+  for (const re of res) assert.match(out.reason, re);
+}
+function isDenied(out, ...res) {
+  assert.ok(denied(out), `expected a handback deny, got ${JSON.stringify(out)}`);
+  for (const re of res) assert.match(why(out), re);
+}
+const co = (dir, rel) => new RegExp(`git checkout ${s12(dir)} -- ${esc(rel)}`);
+
+test('patch end: protected file changed with fs blocks stop and denies handback, until restored (FR-007, US2-2, FR-014)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  fs.appendFileSync(path.join(dir, CONST), 'extra\n');
+  const re = [new RegExp(esc(CONST)), co(dir, CONST)];
+  isBlocked(stop(dir), ...re);
+  isBlocked(stop(dir, { stop_hook_active: true }), ...re);
+  isDenied(hand(dir), ...re);
+  assert.equal(record(dir), null);
+  git(dir, 'checkout', startSha(dir), '--', CONST);
+  noStop(stop(dir), 'after restore');
+});
+
+test('patch end: a new workflow says delete, a deleted workflow gives its checkout (FR-007, US2-2)', () => {
+  const { dir } = fresh({ [CI]: 'on: push\n' });
+  begin(dir);
+  put(dir, '.github/workflows/new.yml', 'on: push\n');
+  isBlocked(stop(dir), /new\.yml/, /delet/i);
+  fs.rmSync(path.join(dir, CI));
+  isBlocked(stop(dir), co(dir, CI));
+  assert.equal(record(dir), null);
+});
+
+test('patch end: the hook changes nothing in the repo (FR-007, constitution II)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  fs.appendFileSync(path.join(dir, CONST), 'extra\n');
+  const head = git(dir, 'rev-parse', 'HEAD'), status = git(dir, 'status', '--porcelain');
+  isBlocked(stop(dir));
+  assert.equal(git(dir, 'rev-parse', 'HEAD'), head);
+  assert.equal(git(dir, 'status', '--porcelain'), status);
+  assert.equal(head.trim(), startSha(dir));
+  assert.match(fs.readFileSync(path.join(dir, CONST), 'utf8'), /extra\n$/);
+});
+
+test('patch end: a protected file dirty at the start is not named, blocked on or touched (US3-3)', () => {
+  const { dir } = fresh();
+  fs.appendFileSync(path.join(dir, CONST), 'mine\n');
+  const before = fs.readFileSync(path.join(dir, CONST));
+  begin(dir);
+  const out = stop(dir);
+  noStop(out);
+  assert.ok(!JSON.stringify(out ?? {}).includes('constitution'), JSON.stringify(out));
+  assert.match(msg(out), /of 30 production lines/, 'the end check ran and accepted');
+  assert.ok(record(dir) && !record(dir).files.includes(CONST), 'accepted, without the dirty file');
+  noStop(hand(dir));
+  assert.deepEqual(fs.readFileSync(path.join(dir, CONST)), before);
+});
+
+test('patch end: a dirty-at-start file changed through a shell command is message A, never a restore (R14, Edge)', () => {
+  const { dir } = fresh();
+  put(dir, 'src/wip.js', nl(100, 'w'));
+  begin(dir);
+  fs.appendFileSync(path.join(dir, 'src/wip.js'), 'more\n');
+  for (const out of [stop(dir), hand(dir)]) {
+    noStop(out);
+    assert.match(msg(out), /src\/wip\.js/);
+    assert.match(msg(out), /uncommitted/);
+    assert.match(msg(out), /\/speckit-team/);
+    assert.ok(!/git checkout/.test(JSON.stringify(out)), 'no restore command for it');
+  }
+  assert.equal(record(dir), null);
+  assert.match(fs.readFileSync(path.join(dir, 'src/wip.js'), 'utf8'), /more\n$/);
+});
+
+test('patch end: dirty work swept into a commit is blocked, then measured without it (H1, R14, FR-002)', () => {
+  const { dir } = fresh();
+  put(dir, 'src/wip.js', nl(100, 'w'));
+  const wip = fs.readFileSync(path.join(dir, 'src/wip.js'));
+  begin(dir);
+  put(dir, 'src/a.js', nl(3, 'a'));
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'x');
+  const re = new RegExp(`git reset --soft ${s12(dir)}`);
+  isBlocked(stop(dir), re);
+  isBlocked(stop(dir, { stop_hook_active: true }), re);
+  isDenied(hand(dir), re);
+  git(dir, 'reset', '--soft', startSha(dir));
+  const out = stop(dir);
+  noStop(out);
+  assert.match(msg(out), /3 of 30 production lines, 1 of 2 production files/);
+  assert.deepEqual(record(dir).files, ['src/a.js']);
+  assert.deepEqual(fs.readFileSync(path.join(dir, 'src/wip.js')), wip);
+});
+
+test('patch end: a commit within budget is blocked at any size, the working tree matching the start (H1, decision 14)', () => {
+  const { dir } = fresh({ [CI]: 'on: push\n' });
+  begin(dir);
+  fs.appendFileSync(path.join(dir, CI), 'x: 1\n');
+  git(dir, 'commit', '-qam', 'ci');
+  git(dir, 'checkout', startSha(dir), '--', CI);
+  const re = new RegExp(`git reset --soft ${s12(dir)}`);
+  isBlocked(stop(dir), re);
+  isBlocked(stop(dir, { stop_hook_active: true }), re);
+  isDenied(hand(dir), re);
+  assert.equal(record(dir), null);
+  git(dir, 'reset', '--soft', startSha(dir));
+  noStop(stop(dir));
+  const rec = record(dir);
+  assert.ok(rec, 'accepted once nothing is committed');
+  assert.ok(!rec.files.includes(CI));
+});
+
+test('patch end: a plain 3-line commit is blocked (FR-006, US2-2)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(3, 'a'));
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'x');
+  isBlocked(stop(dir), new RegExp(`git reset --soft ${s12(dir)}`));
+  assert.equal(record(dir), null);
+});
+
+test('patch end: test patterns edited during the run are protected (FR-007, decision 13)', () => {
+  const { dir } = fresh({ '.specify/test-paths': '^checks/\n' });
+  begin(dir);
+  fs.appendFileSync(path.join(dir, '.specify/test-paths'), '^src/\n');
+  put(dir, 'src/a.js', nl(3, 'a'));
+  isBlocked(stop(dir), /\.specify\/test-paths/, co(dir, '.specify/test-paths'));
+  assert.equal(record(dir), null);
+});
+
+test('patch end: over budget and uncommitted is message A, no block, no record (FR-006, US1-3)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(31, 'a'));
+  for (const out of [stop(dir), hand(dir)]) {
+    noStop(out);
+    for (const re of [/31 changed production lines/, /limit 30 lines, 2 files/, /uncommitted/, /\/speckit-team/]) assert.match(msg(out), re);
+  }
+  assert.equal(record(dir), null);
+});
+
+test('patch end: over budget and committed is blocked until reset, then message A (FR-006, H1)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(31, 'a'));
+  git(dir, 'add', '-A'); git(dir, 'commit', '-qm', 'x');
+  const re = new RegExp(`git reset --soft ${s12(dir)}`);
+  isBlocked(stop(dir), re);
+  isBlocked(stop(dir, { stop_hook_active: true }), re);
+  isDenied(hand(dir), re);
+  git(dir, 'reset', '--soft', startSha(dir));
+  const out = stop(dir);
+  noStop(out);
+  assert.match(msg(out), /31 changed production lines/);
+  assert.equal(record(dir), null);
+});
+
+const GOOD = {
+  files: ['docs/a.md', 'src/a.js', 'src/main/App.java', 'src/main/Main.java', 'test/a.test.js'],
+  untracked: ['docs/a.md', 'src/a.js', 'test/a.test.js'],
+};
+function acceptedRun() {
+  const { dir } = fresh();
+  put(dir, 'src/wip.js', nl(100, 'w'));
+  begin(dir);
+  put(dir, 'src/a.js', nl(3, 'a')); put(dir, 'test/a.test.js', nl(5, 't')); put(dir, 'docs/a.md', nl(5, 'd'));
+  git(dir, 'mv', 'src/main/App.java', 'src/main/Main.java');
+  return dir;
+}
+
+test('patch end: within budget writes the accepted record, on stop and on handback (FR-002, US1-1)', () => {
+  const dir = acceptedRun();
+  for (const ev of [stop, hand]) {
+    const out = ev(dir);
+    noStop(out);
+    assert.match(msg(out), /3 of 30 production lines, 2 of 2 production files/);
+    const { at, ...rest } = record(dir);
+    assert.equal(typeof at, 'string');
+    assert.deepEqual(rest, { key: 'p1', sha: startSha(dir), ...GOOD, lines: 3, filesTouched: 2 });
+    fs.rmSync(acceptedFile(dir));
+  }
+});
+
+test('patch end: every patch call removes the accepted record (research R15)', () => {
+  const stale = (d) => { fs.mkdirSync(stateDir(d), { recursive: true }); fs.writeFileSync(acceptedFile(d), '{"stale":true}'); };
+  const a = acceptedRun();
+  stop(a);
+  assert.ok(record(a), 'accepted');
+  patchTool(a, 'Read', { file_path: path.join(a, 'src/a.js') });
+  assert.equal(record(a), null, 'a later call removes it');
+
+  const b = fresh().dir; begin(b);
+  fs.appendFileSync(path.join(b, CONST), 'x\n'); stale(b);
+  isBlocked(stop(b));
+  assert.equal(record(b), null, 'blocked stop');
+
+  const c = fresh().dir; begin(c);
+  put(c, 'src/a.js', nl(31, 'a')); stale(c);
+  noStop(stop(c));
+  assert.equal(record(c), null, 'over budget');
+
+  const d = fresh().dir; begin(d); stale(d);
+  assert.equal(stop(d, { agent_id: 'other' }), null);
+  assert.equal(record(d), null, 'no start record for the key');
+
+  const e = fresh().dir; begin(e); stale(e);
+  fs.writeFileSync(startFile(e), '{not json');
+  const out = stop(e);
+  noStop(out);
+  assert.match(msg(out), /fast-track check could not run/);
+  assert.equal(record(e), null, 'unusable start record');
+});
+
+test('patch end: no start record for the key exits with no output', () => {
+  const { dir } = fresh();
+  assert.equal(stop(dir), null);
+  assert.equal(hand(dir), null);
+});
+
+// research R7 (narrowed 2026-10-10), plan.md decision 16 point 3, audit finding M5.
+test('patch restore allowance: only naming a protected file still to be restored passes (R7, M5, FR-011)', () => {
+  const { dir } = fresh();
+  put(dir, 'src/wip.js', nl(5, 'w'));
+  begin(dir);
+  put(dir, 'src/a.js', nl(31, 'a'));
+  fs.appendFileSync(path.join(dir, CONST), 'x\n');
+  put(dir, '.github/workflows/new.yml', 'on: push\n');
+  const sha = startSha(dir);
+  const snap = () => ['src/wip.js', 'src/a.js', CONST].map((f) => fs.readFileSync(path.join(dir, f), 'utf8'));
+  const before = snap();
+  const allowed = [
+    `git checkout ${sha} -- ${CONST}`, `git restore ${CONST}`, `git restore --source=${sha} ${CONST}`,
+    'rm .github/workflows/new.yml', 'rm -f -- .github/workflows/new.yml',
+  ];
+  for (const c of allowed) { const out = bash(dir, c); assert.ok(!denied(out), `${c} must be allowed: ${why(out)}`); }
+  const refused = [
+    `git checkout ${sha} -- ${CONST} src/a.js`, 'git restore .specify', `git checkout ${sha} -- '.specify/*'`,
+    `git checkout ${sha} -- src/wip.js`, 'rm src/wip.js', 'rm src/a.js', 'rm -rf .github', `rm ${CONST}`,
+    `git reset --soft ${sha}`, `git reset --hard ${sha}`, 'git restore .',
+    `git checkout ${sha} -- x && git commit -qm y`, 'rm a; rm b', 'git checkout $(echo x)',
+  ];
+  for (const c of refused) assert.ok(denied(bash(dir, c)), `${c} must be denied`);
+  assert.ok(denied(patchTool(dir, 'Write', { file_path: path.join(dir, CONST), content: 'x' })), 'Write denied');
+  assert.deepEqual(snap(), before);
+
+  const c2 = fresh().dir; begin(c2);
+  put(c2, 'src/a.js', nl(31, 'a'));
+  git(c2, 'add', '-A'); git(c2, 'commit', '-qm', 'x');
+  assert.ok(!denied(bash(c2, `git reset --soft ${startSha(c2)}`)), 'undoing a commit is allowed');
+
+  const c3 = fresh().dir; begin(c3);
+  put(c3, 'src/a.js', nl(31, 'a'));
+  assert.ok(denied(bash(c3, `git checkout ${startSha(c3)} -- src/a.js`)), 'nothing to restore');
+});
+
+test('patch end: the speckit-agents sources are protected in that repo only (decision 4)', () => {
+  const files = (name) => ({ 'package.json': `{"name":"${name}"}`, 'install.mjs': 'x\n' });
+  const own = fresh(files('speckit-agents')).dir;
+  begin(own);
+  fs.appendFileSync(path.join(own, 'install.mjs'), 'y\n');
+  isBlocked(stop(own), /install\.mjs/, co(own, 'install.mjs'));
+  const app = fresh(files('my-app')).dir;
+  begin(app);
+  fs.appendFileSync(path.join(app, 'install.mjs'), 'y\n');
+  const out = stop(app);
+  noStop(out);
+  assert.match(msg(out), /1 of 30 production lines, 1 of 2 production files/);
+});
+
+test('patch end: package.json is protected by the name at the start commit (owner 2026-10-09)', () => {
+  const own = fresh({ 'package.json': '{"name":"speckit-agents"}', 'install.mjs': 'x\n' }).dir;
+  begin(own);
+  fs.writeFileSync(path.join(own, 'package.json'), '{"name":"x"}');
+  fs.appendFileSync(path.join(own, 'install.mjs'), 'y\n');
+  const re = [/package\.json/, /install\.mjs/, co(own, 'package.json'), co(own, 'install.mjs')];
+  isBlocked(stop(own), ...re);
+  git(own, 'commit', '-qam', 'x');
+  isBlocked(stop(own), ...re);
+
+  const app = fresh({ 'package.json': '{"name":"my-app"}\n' }).dir;
+  begin(app);
+  fs.appendFileSync(path.join(app, 'package.json'), '\n');
+  const out = stop(app);
+  noStop(out);
+  assert.match(msg(out), /1 of 30 production lines, 1 of 2 production files/);
+});
