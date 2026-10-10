@@ -210,6 +210,14 @@ async function clear($: EngineInterface): Promise<string> {
   return clearText(rows, wasDrawn && running === 0, running)
 }
 
+// Without a clear this is the plain flip; with one, the band comes back (and `isCleared` ends).
+async function toggleBand($: EngineInterface): Promise<boolean> {
+  const hidden = !(await read($, isBandHidden)) && !(await read($, isCleared))
+  await update($, isBandHidden, () => hidden)
+  if (!hidden) await update($, isCleared, () => false)
+  return hidden
+}
+
 async function pressClear($: EngineInterface): Promise<void> {
   try { $.ui.toast(await clear($)) } catch (err) { $.ui.toast(clearFailedText(err)) }
 }
@@ -252,7 +260,7 @@ export const register: Register = on => {
     if (!repo) return { text: 'no .specify/ in this repository.' }
     const arg = e.args.trim()
     if (arg === 'band') {
-      const hidden = await update($, isBandHidden, h => !h)
+      const hidden = await toggleBand($)
       return { text: `band ${hidden ? 'hidden' : 'shown'}.` }
     }
     if (arg === 'clear') {
@@ -274,6 +282,11 @@ export const register: Register = on => {
   on('classic.SubagentStart', async ($, e, next) => {
     const role = teamRole(e.agent_type)
     if (role) {
+      if (await read($, isCleared)) {
+        try { await update($, isCleared, () => false) } catch (err) {
+          $.ui.toast(`board could not end the clear: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
       const now = await $.clock.now()
       const description = await descriptionOf($, e.agent_id)
       const agent: SpeckitAgent = { id: e.agent_id, type: role, description, isRunning: true, outcome: '', startedAt: now, endedAt: 0 }
@@ -468,7 +481,7 @@ export const register: Register = on => {
             key="tasks" label={isAll ? 'fold tasks' : 'all tasks'} hotkey="a"
             onPress={async () => { await update($, isAllTasksShown, v => !v); await openPane($) }}
           />
-          <Button key="band" label="toggle band" hotkey="t" onPress={() => update($, isBandHidden, h => !h)} />
+          <Button key="band" label="toggle band" hotkey="t" onPress={() => toggleBand($)} />
           <Button key="clear" label="clear" hotkey="c" onPress={() => pressClear($)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
