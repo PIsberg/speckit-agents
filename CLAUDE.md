@@ -43,7 +43,7 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 146 s on Windows (170 tests, 2026-10-10; the
+- `npm test`: all suites, no network beyond localhost, 152 s on Windows (171 tests, 2026-10-10; the
   four installer tests that run the real `claude plugin` and the 22 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and

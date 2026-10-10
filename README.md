@@ -785,7 +785,13 @@ surfaced while recording the README's GIFs
 ([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked on 2026-10-09 against a fake
 API, at no cost: in an interactive session an Agent call with `run_in_background: false` ran in
 the background with the variable unset, and in the foreground with it set to `0` or `false`, in
-the environment or in `settings.json`. Three tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
+the environment or in `settings.json`. Checked again on 2026-10-10 the same way, Claude Code
+2.1.296 in a terminal driven by vhs, with the variable only in the project's `.claude/settings.json`
+and nothing in the environment: the Agent tool had `run_in_background`, the spec-auditor's report
+came back as its result, and the main session made 2 requests. Without the file, the parameter was
+missing, the call returned "Async agent launched", and the main session made 3. (Start such a
+check with `--permission-mode default`: in auto mode a notice about the localhost API waits for
+Enter and the agent never starts.) Three tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
 the same behaviour under `claude -p`, the third that a project's `.claude/settings.json` wins over
 `CLAUDE_CODE_FORK_SUBAGENT=1` in the environment. With fork subagents on, the waiting cost 14.45M
 of input, 24% of the main session, in the one interactive run measured
@@ -1084,12 +1090,12 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 170 tests:
+`npm test` runs 171 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 28 | the installer, against throwaway config dirs |
+| [`test/install.test.mjs`](test/install.test.mjs) | 29 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
