@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState } from '../types'
 import {
-  COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, bandLayout, bar, boardText, current,
+  COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, wordColor, bandLayout, bar, boardText, current,
   derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
   roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
 } from './model'
@@ -420,7 +420,7 @@ export const register: Register = on => {
                 <Box width={15} flexShrink={0}><Text color={roleColor(a.type)}>{a.type}</Text></Box>
                 {/* The word keeps its width and the rest is cut: docked 60 columns wide, `running` wrapped. */}
                 <Box flexShrink={0}>
-                  <Text color={color} bold={tone !== 'neutral'}>{a.isRunning ? 'running' : a.outcome || 'done'}</Text>
+                  <Text color={a.isRunning ? color : wordColor(a.outcome, tone)} bold={tone !== 'neutral'}>{a.isRunning ? 'running' : a.outcome || 'done'}</Text>
                 </Box>
                 <Box flexShrink={1}>
                   <Text dimColor wrap="truncate-end">

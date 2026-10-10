@@ -916,10 +916,12 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     row with the progress bar and the retry meter;
   - the team agents of this session, running ones first, each name in its agent file's color, with
     the task its Agent call described: a spinner and the running time while it runs, then its
-    report word, how long it took and how long ago it ended. The word is green with `✓` when it is
-    the one the role should end on (`PASS`, `GREEN`, `APPROVED`, a test-writer's `RED`), red with
-    `✗` when not (`FAIL`, an implementer's `RED`, `BLOCKED`, `REJECTED`, `killed`, `failed`), and
-    dim otherwise. The latest six show, and the rest are counted;
+    report word, how long it took and how long ago it ended. A green `✓` marks the word the role
+    should end on (`PASS`, `GREEN`, `APPROVED`, a test-writer's `RED`), a red `✗` one it should not
+    (`FAIL`, an implementer's `RED`, `BLOCKED`, `REJECTED`, `killed`, `failed`), and a dim `•` any
+    other. The word takes the glyph's color, except that `RED` is always red and `GREEN` always
+    green, so a test-writer's `RED` reads `✓ RED` with a green tick and a red word. The latest six
+    show, and the rest are counted;
   - the buttons, and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
     A finished section, and one not started past the next task, folds to its title and count, and
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
