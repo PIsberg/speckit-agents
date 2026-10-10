@@ -10,15 +10,17 @@
 [![Node 18 or newer](https://img.shields.io/badge/Node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Linux, macOS and Windows](https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-0969da)](.github/workflows/test.yml)
 
-[Install](#install) · [Quick start](#quick-start) · [The team](#the-team) · [How it works](#how-it-works) · [Board mod](#board-mod-experimental) · [Troubleshooting](#troubleshooting)
+[Install](#install) · [Quick start](#quick-start) · [The team](#the-team) · [How it works](#how-it-works) · [The fast track](#the-fast-track) · [Board mod](#board-mod-experimental) · [Troubleshooting](#troubleshooting)
 
 </div>
 
-A team of six [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) that carries a
+A team of seven [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) that carries a
 feature through [GitHub Spec Kit](https://github.com/github/spec-kit), from idea to pull request.
-Each agent owns one phase. [Hooks](https://code.claude.com/docs/en/hooks), not prompt text, keep
+Six of them each own one phase. [Hooks](https://code.claude.com/docs/en/hooks), not prompt text, keep
 each one in its lane: the planner cannot write code, the implementer cannot touch tests, and
-nobody writes code until an independent auditor has passed the spec.
+nobody writes code until an independent auditor has passed the spec. The seventh, `patcher`, is a
+fast track beside the pipeline for a change of at most 30 production lines in 2 files
+(`/speckit-patch`), with no spec, plan or audit; hooks keep it inside that budget too.
 
 ```
 idea ─► product-owner ─► architect ─► spec-auditor ─► per slice: stubs ─► red ─► green ─► spec-gatekeeper ─► PR
@@ -47,6 +49,10 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - **You decide at three stops, and you merge.** The pipeline asks you to answer the spec's
   questions, approve the spec, and approve the plan, then stops at the pull request.
   ([Quick start](#quick-start))
+- **A fast track for small changes.** `/speckit-patch <change>` launches one agent, `patcher`, with a
+  budget of 30 production lines and 2 files, protected paths it cannot write, and no commit of its
+  own: the main session commits its files, and opens the PR, only after an end-of-run hook check
+  accepts the run. ([The fast track](#the-fast-track))
 - **Free everywhere else.** Installed once for your user; in a repo without `.specify/` every hook
   exits immediately and allows the action. ([Guardrails](#guardrails))
 
@@ -61,6 +67,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per slice:
 - [Why This Architecture Succeeds](#why-this-architecture-succeeds)
 - [How it works](#how-it-works)
   - [The pipeline skill](#the-pipeline-skill)
+  - [The fast track](#the-fast-track)
   - [Guardrails](#guardrails)
   - [The audit gate](#the-audit-gate)
   - [The retry limit](#the-retry-limit)
@@ -128,8 +135,10 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 
 | Installed file | What it is |
 |---|---|
-| `agents/{product-owner,architect,spec-auditor,test-writer,implementer,spec-gatekeeper}.md` | the six subagents |
+| `agents/{product-owner,architect,spec-auditor,test-writer,implementer,spec-gatekeeper,patcher}.md` | the seven subagents |
 | `skills/speckit-team/SKILL.md` | the `/speckit-team` command that runs the pipeline |
+| `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
+| `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `hooks/speckit-team.mjs` | every guardrail |
 | `settings.json` | two hook entries merged in; your other settings and hooks are kept |
 
@@ -143,6 +152,8 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--uninstall` | remove everything the installer wrote, and nothing else ([Uninstall](#uninstall)) |
 | `--board` | also install the experimental [board mod](#board-mod-experimental); later reruns keep it |
 | `--no-board` | remove the board mod and keep the team |
+
+There is no flag for the fast track: `patcher` and its two skills are always installed.
 
 #### How the installer treats your files
 
@@ -202,6 +213,30 @@ beforehand.
 After that it audits, then builds the feature one slice at a time (stubs, failing tests, code),
 verifies and opens a PR, which it does not merge.
 
+#### 3. A small change: the fast track
+
+For a typo, a config value or a small bug fix, skip the pipeline:
+
+```
+/speckit-patch Fix the typo "recieve" in README.md
+/speckit-triage Add a --json flag to the export command
+```
+
+`/speckit-patch` creates the branch `patch/<slug>` and launches `patcher` once. The hooks hold it
+to 30 production lines in 2 files (tests and docs are not counted) and keep it out of protected
+paths such as `specs/`, `.specify/`, `.claude/` and `.github/`. `patcher` ends with one of three
+words: `DONE` (the existing tests passed), `FAILED`, or `ESCALATE` (over budget or in need of a
+protected file: the work stays uncommitted and `/speckit-team` is the way on).
+
+Who commits: `patcher` never does. After `DONE` and an end check that accepts the run, the main
+session commits the files `patcher` changed, pushes the branch and opens a PR, which it does not
+merge. A run in which `patcher` changed no file commits nothing and opens no PR. Files you had
+uncommitted before the run are left out of the commit.
+
+`/speckit-triage <request>` only prints one line suggesting `/speckit-patch` or `/speckit-team`;
+it launches nothing and you type the command. How the budget and the checks work:
+[The fast track](#the-fast-track).
+
 #### Running one phase
 
 You can also run one phase at a time by @-mentioning an agent:
@@ -223,11 +258,11 @@ runs will word things differently. The three recordings that wait on agents are 
 ### The team in the `@` typeahead
 
 Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
-folders. Claude Code 2.1.296 stops the list at 15 entries, so it shows five of the team's six
-among its own six agents: test-writer, last in alphabetical order, is left out. Claude Code
+folders. Claude Code 2.1.296 stops the list at 15 entries, so it shows six of the team's seven
+among Claude Code's own five agents: test-writer, last in alphabetical order, is left out. Claude Code
 2.1.295 removed the `/agents` menu this section used to show.
 
-![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
+![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, patcher, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
 
 ### A subagent at work
 
@@ -261,11 +296,13 @@ main session puts them to you: the first of the pipeline's three stops.
 | [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it | sonnet |
 | [`implementer`](agents/implementer.md) | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
 | [`spec-gatekeeper`](agents/spec-gatekeeper.md) | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
+| [`patcher`](agents/patcher.md) | fast track | the working tree except protected paths, within 30 production lines and 2 files, never a commit | a report that `/speckit-patch` commits from, ending `DONE`, or `ESCALATE` or `FAILED` | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
 not say: its inputs, its lane, and the shape of its report. Those bodies are 26 to 43 lines on
-purpose.
+purpose. `patcher` is the exception to the preloaded skill: it runs no Spec Kit phase, so its
+31-line body carries the whole job.
 
 ### Why the prompts are short
 
@@ -275,13 +312,13 @@ rejection message tells the agent what to do instead.
 
 ### Why each agent has a narrow description
 
-Claude Code puts every agent's description into every session so it can route work. These six
-total about 1,700 characters, roughly 420 tokens. Each one says when to use the agent and what it
+Claude Code puts every agent's description into every session so it can route work. These seven
+total about 1,900 characters (1,872 counted in the `description:` lines), about 470 tokens. The token figure is an estimate, not a measurement: 1,872 characters at the usual 4 characters per token for English text (counting tokens needs a model call, which was not made). Each one says when to use the agent and what it
 will not do, so routing does not have to guess.
 
 ## Why This Architecture Succeeds
 
-![The four layers: /speckit-team and /speckit-board on top, the six agents with their models and lanes, the six pipeline stages with the audit and retry kick-backs, and the artifacts each stage produces](docs/media/architecture-visualized.svg)
+![The four layers: /speckit-team, /speckit-patch, /speckit-triage and /speckit-board on top, the seven agents with their models and lanes, the six pipeline stages with the audit and retry kick-backs, and the artifacts each stage produces](docs/media/architecture-visualized.svg)
 
 **Prevents "Garbage In, Garbage Out":** Most agent pipelines fail because the initial spec is
 vague, and the coding agent fills in the blanks with hallucinations. Your product-owner forcing a
@@ -300,8 +337,9 @@ the most reliable way to orchestrate multi-agent systems today.
 
 ## How it works
 
-[`/speckit-team`](skills/speckit-team/SKILL.md) is a skill that runs in the main session and
-launches each agent in turn. Every rule that must hold is a mode of one hook script,
+Two commands, both skills that run in the main session: [`/speckit-team`](skills/speckit-team/SKILL.md)
+launches each agent of the pipeline in turn, and [`/speckit-patch`](skills/speckit-patch/SKILL.md)
+launches `patcher` once. Every rule that must hold is a mode of one hook script,
 [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs): the skill decides what happens next, and the
 hooks decide what is allowed.
 
@@ -358,6 +396,141 @@ implementer gets the slice's task IDs and test-writer's report for them, and its
 it to read `tasks.md`, the failing tests and the code they touch, not `spec.md`, `plan.md`,
 `research.md` or `data-model.md`. The tests are its spec.
 
+### The fast track
+
+`/speckit-patch <change>` is for a change too small for the pipeline. One run:
+
+1. The skill (main session) checks that `.specify/` exists, notes the start commit and the
+   installed hook's hash, and creates `patch/<slug>` from the current commit.
+2. It launches `patcher` once, in the foreground. `patcher` changes the working tree and runs the
+   repo's existing tests, and a hook measures it on every tool call.
+3. When `patcher` reports, the end check decides whether the run is accepted (see below).
+4. Only if it is, and the report is `DONE` with the tests passed, the skill commits the files in the
+   accepted record, pushes `patch/<slug>` (never forced) and opens a PR if there is a GitHub remote.
+   It does not merge. `patcher` itself cannot commit, push or run `gh`.
+
+So the skill decides what happens next and the hooks decide what is allowed, as in the pipeline. A
+commit made before the end check would hold whatever the run did, and a push cannot be undone; this
+way nothing leaves the working tree until the check has looked at the whole run.
+
+#### The budget
+
+At most 30 changed production lines in at most 2 production files; 30 is within and 31 is over. No
+binary production file. The hook measures against the commit the run started from:
+
+- Per production file, the larger of its insertions and deletions in `git diff --numstat`, so a
+  modified line counts once and 30 modified lines fit. An untracked production file counts its
+  lines.
+- A rename between production files is 1 file and only its edited lines, so a pure rename is 0
+  lines. A test or doc moved into production code counts as a new production file. A move git does
+  not pair as a rename, such as a plain `mv`, counts as a deletion plus a new file, which is why
+  `patcher` moves files with `git mv`.
+- Files already uncommitted at the start are left out while they stay unchanged. A `Write` or `Edit`
+  to one is denied. A change to one by other means, or a commit containing one, stops the run: it
+  is over budget because the hook cannot separate your lines from `patcher`'s.
+
+Over budget, every tool except reporting back is denied and `patcher` ends `ESCALATE`. If a protected
+file was changed or a commit was made, it may still restore: a Bash command that is one
+`git checkout`, `git restore`, `git reset --soft` or `rm`, naming only protected files still to be
+restored.
+
+#### Path classes
+
+Each changed path gets one class, checked in this order:
+
+1. **Protected**: never written (the table below).
+2. **Test**: the [built-in patterns](#test-files) plus `.specify/test-paths` as committed at the
+   start commit, not as it is in the working tree, so commit a change to that file before a run.
+3. **Doc**: a file ending `.md`, `.mdx`, `.markdown`, `.rst`, `.adoc`, `.asciidoc`, or a `.txt` file under `docs/` or named
+   `README`, `CHANGELOG`, `CHANGES`, `HISTORY`, `NEWS`, `LICENSE`, `NOTICE`, `AUTHORS`, `CONTRIBUTING`
+   or `COPYING` (any directory), all case-insensitive. Any other `.txt` file, such as
+   `requirements.txt` or `CMakeLists.txt`, is production.
+   A `docs/` folder is not a doc rule for other files: a `.js` file in it is production.
+4. **Production**: anything else. Only production counts against the budget.
+
+| Protected path | Why |
+|---|---|
+| `.specify/` | Spec Kit's config and the constitution |
+| `specs/` | feature specs, plans and tasks, which belong to `/speckit-team` |
+| `.claude/` | the project's Claude Code agents, skills, hooks and settings |
+| `.github/` | CI workflows and repository settings |
+| `.gitlab-ci.yml`, `.circleci/`, `azure-pipelines.yml`, `Jenkinsfile`, `.pre-commit-config.yaml` | other CI and commit-hook configuration |
+
+The speckit-agents sources (`hooks/speckit-team.mjs`, `agents/*.md`, `skills/*/SKILL.md`,
+`install.mjs`) and the top-level `package.json` are protected too, but only in a repository whose
+top-level `package.json`, as committed at the start, is named `speckit-agents`. Elsewhere those are
+ordinary files. The installed team in the Claude config directory (`agents/`, `hooks/`, `skills/`,
+`settings.json`, `settings.local.json`) is protected everywhere: a `Write` or `Edit` there is denied,
+and any other change is caught at the end.
+
+#### What the hooks stop
+
+- **Writes** (`scope protected`): a `Write`, `Edit`, `MultiEdit` or `NotebookEdit` to a protected
+  path, the installed team or the git directory is denied before it runs.
+- **History and remote commands**: `patcher` may not run `git commit`, `merge`, `rebase`, `stash`,
+  `tag`, `branch`, `switch`, `push`, `pull`, `fetch`, a `git checkout` with no `--` and the other
+  subcommands in `HISTORY_SUBCOMMANDS`, nor `gh` or `hub`. The command is split into words and every
+  `git` word is checked, so `sh -c "git push"` and `git -C . commit` are caught.
+- **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
+  `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
+  they would destroy your uncommitted work.
+
+#### The end check
+
+When `patcher` finishes, the hook measures the run and the first rule that applies decides:
+
+| What it finds | Result |
+|---|---|
+| a protected repo file changed | blocks `patcher` from finishing until each is restored, on every attempt |
+| a commit made since the start | blocks until `git reset --soft <start>` |
+| an installed team file changed | the run ends `FAILED`: `patcher` may finish, nothing is committed |
+| over budget | `patcher` may finish; the run is not accepted, nothing is committed |
+| within budget | accepted: the hook writes the accepted record |
+
+The protected check blocks every time, repo files only, because `patcher` can restore a repo file by
+naming it. It cannot restore a file outside the repo, and blocking would leave no way out but
+stopping the run by hand, so a changed team file ends the run `FAILED` instead, with a message naming
+the files. In both cases there is no accepted record, so the skill commits nothing.
+
+The accepted record, `patch-accepted.json`, lists the files `patcher` changed (production, test and
+doc, never a protected file or one that was uncommitted at the start) and which of them are
+untracked. The skill commits exactly those with `git commit -- <files>`, which leaves your other
+staged changes out of the commit. If `files` is empty, `patcher` changed nothing and the skill
+commits nothing, pushes nothing and opens no PR. The skill also checks that the installed hook's hash,
+`HEAD` and the branch are as it left them.
+
+#### What is prompt text, and what was verified
+
+No hook can tell which command is a repo's test suite or whether it passed. These are rules in
+[`agents/patcher.md`](agents/patcher.md) and
+[`skills/speckit-patch/SKILL.md`](skills/speckit-patch/SKILL.md), not hooks: no PR unless the
+existing tests passed, reporting tests as passed, failed, skipped or not run, a regression test
+first for a change in behaviour, and never merging. The hook's part is that no accepted record exists
+unless the end check accepted the run.
+
+- **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](#live-results)):** one fix
+  through to a commit by the main session on a branch the skill created, with the end check's
+  `fast track ... accepted` message (L1, L8); `FAILED` on a change that breaks a test, with no commit
+  (L2); a write to a protected path denied and reported `ESCALATE` (L4); a new workflow file blocked
+  at the stop, deleted, and left out of the commit (L5); `/speckit-triage` launching no agent (L6);
+  the `/speckit-implement` gate unchanged (L7); and, over budget, the end check's message and no
+  accepted record (L3). Run with a Haiku main session, headless, on a repo with no remote, so no
+  push or pull request was made.
+- **Seen live, but not as the checks expected:** `/speckit-triage fix a typo in README.md`
+  suggested `/speckit-team` instead of `/speckit-patch` (L6, failed); the mid-run budget deny
+  never fired because the model wrote everything in one Bash call, and its report ended `DONE`,
+  not `ESCALATE` (L3); the deny of `patcher`'s own `git commit` and `git push` never fired because
+  the model never tried one, so it rests on the unit and end-to-end tests (L8).
+- **Verified by unit and end-to-end test only:** every hook decision above in
+  [`test/hook.test.mjs`](test/hook.test.mjs); the installed agent and skills in
+  [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
+  `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs).
+- **Not verified at all:** a real model following the prompt rules above, and whether Claude Code
+  delivers `patcher`'s hooks in an interactive session (every live run was headless, `claude -p`).
+
+The hooks guard against an agent's mistakes and drift, not against deliberate evasion through the
+shell. What that leaves open is in [Known limits](#known-limits).
+
 ### Guardrails
 
 Every guardrail is a mode of [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs). In a repo without
@@ -369,7 +542,10 @@ nothing elsewhere.
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
-| every `scope` rule | all four writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
+| `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
+| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; at the end, a protected change or a commit, and no accepted record unless the run is within budget |
+| `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
+| every `scope` rule | all five writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
@@ -449,7 +625,10 @@ Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#cu
 
 Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature,
-`agents/`). That is inside `.git`, so it is never committed, and it is shared by every worktree of
+`agents/`). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
+check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
+`retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
 the repo, which lets parallel implementers in worktrees pass the same gate.
 
 ### Context budget
@@ -498,6 +677,24 @@ Between the first two runs, each report's length was capped and two bugs were fi
 [Live results](#live-results), 2026-10-07). An earlier version of this table summed usage per
 transcript line, but Claude Code writes one response as several lines, so its token figures were
 1.6 to 1.7 times too high (4.63M and 3.97M for the main session).
+
+#### One fast-track run
+
+One `/speckit-patch` run (L1 of [Live results](#live-results), 2026-10-10: fix the spelling of
+"Hello" in a two-line function of a scratch repo), measured with `tools/usage.mjs` from its
+transcript. The main session ran on Haiku, because the run was capped with `--model haiku`;
+`patcher` ran on its own configured model, Sonnet. The cost is the `total_cost_usd` that
+`claude -p` reported. The run is not comparable with the four above: a one-line fix, no feature,
+and the repo has no remote, so the skill did not push or open a pull request.
+
+| Run | Agents launched | Main session: requests, peak, input | Main-session requests that only waited | Agent's input | Cost |
+|---|---|---|---|---|---|
+| 2026-10-10, `/speckit-patch`, one-line fix | 1, foreground | 8, 43k, 0.31M | none | 0.07M (5 requests, peak 15k) | $0.064 |
+
+The other `/speckit-patch` runs of that day (L2 to L5, L8) cost $0.03 to $0.06 each, with 4 to 10
+main-session requests peaking at 39k to 44k and a `patcher` input of 0.02M to 0.10M. Against
+`/speckit-team`'s $1.83 to $3.98 for a feature, that is what SC-005 asks about, for a change this
+small; a larger change would cost more.
 
 #### Foreground launches
 
@@ -555,6 +752,12 @@ elsewhere is not measured.
   ^checks/golden/
   ```
 
+- **The fast track's limits:** `PATCH_LINES` (30) and `PATCH_FILES` (2) in
+  [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs); `PROTECTED` there is the table of protected
+  paths ([The fast track](#the-fast-track)), `OWN_SOURCES` the team's own sources (protected only in
+  this repository), and `HISTORY_SUBCOMMANDS` the git subcommands `patcher` may not run.
+  `.specify/test-paths`, as committed at the start commit, also decides what the budget counts as a
+  test, so commit a change to it before a run.
 - **Models:** edit `model:` in [`agents/*.md`](agents/) and rerun the installer. Use `inherit` to
   follow the session's model.
 - **Agent colors:** `color:` in `agents/*.md`. The board mod draws each role in the same color
@@ -812,16 +1015,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 99 tests:
+`npm test` runs 169 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 43 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 24 | the installer, against throwaway config dirs |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 28 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 16 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 21 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -852,13 +1055,16 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 11
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 16
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
   `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 11
-  fail, as do the two blocking cases above (2026-10-09, Claude Code 2.1.296).
+  fire lets the action through. With the installed hook replaced by one that only exits, all 16
+  fail, as do the two blocking cases above (2026-10-10, Claude Code 2.1.296). Setting
+  `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
+  18 of the 21 tests fail (the 16 scripted ones and the two blocking no-model cases); the other three
+  do not depend on a hook.
 - **Claude Code's own behaviour.** Two tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report, and
   with `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
@@ -885,15 +1091,114 @@ Expect `"num_turns":0` and `"total_cost_usd":0`, meaning the gate stopped it bef
 call. (`MSYS_NO_PATHCONV=1` matters only in Git Bash, which otherwise rewrites `/speckit-implement`
 into `C:/Program Files/Git/speckit-implement`.)
 
+For the fast track, in a scratch Spec Kit repo with the team installed (a throwaway config
+directory works: `CLAUDE_CONFIG_DIR=<dir> node install.mjs`, then the same variable on every
+`claude` run, with folder trust for the repo accepted in that directory's `.claude.json`). Clear
+the `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` variables a Claude Code session exports before
+each child run, and pass `--model haiku` to cap the main session's cost:
+
+```sh
+MSYS_NO_PATHCONV=1 claude -p '/speckit-patch fix the spelling of "Hello" in the greeting' \
+  --model haiku --permission-mode acceptEdits --allowedTools "Bash Read Write Edit Glob Grep Skill Agent" \
+  --output-format json
+MSYS_NO_PATHCONV=1 claude -p '/speckit-triage add a --json flag to the CLI' --model haiku --output-format json
+node tools/usage.mjs <config dir>/projects/<project>/<session>.jsonl   # the run's tokens
+```
+
+Expect a `patch/...` branch, one `patcher` launch, the `fast track: ... accepted` message and one
+commit made by the main session.
+[`specs/003-fast-track-patch/quickstart.md`](specs/003-fast-track-patch/quickstart.md) lists all
+eight checks (L1 to L8) and what each expects.
+
 ### Live results
 
-Seen live from 2026-10-06 to 2026-10-08: the typed `/speckit-implement` gate, a scope denial, the
-audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices
-and full `/speckit-team` runs. The record for each day is below.
+Seen live from 2026-10-06 to 2026-10-10: the typed `/speckit-implement` gate, a scope denial, the
+audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
+full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day is below.
 
 > [!NOTE]
 > Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
-> did run). Those are covered by the unit tests only.
+> did run); for the fast track, the mid-run budget deny, the deny of `patcher`'s own `git commit`
+> and `git push`, a run on a repo with a remote (push and pull request), a larger change, and an
+> interactive session. Those are covered by the unit and end-to-end tests only.
+
+<details>
+<summary><b>2026-10-10</b>: Claude Code 2.1.296, Windows 11, the fast track (L1 to L8), Haiku main session</summary>
+
+Setup: the branch's team installed with `CLAUDE_CONFIG_DIR=<throwaway dir> node install.mjs` (the
+real config directory untouched), a fresh Spec Kit repo outside this checkout with one commit and
+no remote (`src/greet.js` with the typo "Helo", `src/math.js`, a passing test for each, a
+`package.json` whose test command is `node --test`), and folder trust pre-accepted in the
+throwaway directory's `.claude.json`. Every run was `claude -p ... --model haiku
+--output-format json`; the repo was reset to its commit between runs. `patcher` ran on its
+configured model, Sonnet (each run's `modelUsage` lists both models); no agent's `model:` line was
+changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and cache write) from
+`modelUsage`. Eleven runs, $0.41 in all.
+
+| Check | Result | Turns | Cost | Input tokens (Haiku main / Sonnet patcher) |
+|---|---|---|---|---|
+| L1 fix the spelling | passed, with a note | 8 | $0.064 | 314k / 70k |
+| L2 change that breaks a test | passed | 5 | $0.047 | 189k / 61k |
+| L3 a 60-line change, first prompt | not the check: escalated before writing | 5 | $0.032 | 188k / 23k |
+| L3 same, told not to estimate | partly: end check only | 7 | $0.055 | 275k / 48k |
+| L4 constitution edit | passed | 5 | $0.043 | 155k / 51k |
+| L5 `echo >>` into a workflow | passed | 6 | $0.059 | 231k / 104k |
+| L6 triage, `--json` flag | passed | 1 | $0.004 | 35k / none |
+| L6 triage, README typo | failed | 1 | $0.004 | 35k / none |
+| L7 `/speckit-implement`, no audit | passed | 0 | $0 | none |
+| L8 fix, then commit and push | deny not exercised | 10 | $0.058 | 401k / 71k |
+| L8 told `patcher` to commit and push | deny not exercised | 8 | $0.046 | 313k / 49k |
+
+- **L1** passed: the skill created `patch/fix-hello-spelling` from `main`; one `patcher` launch;
+  the patcher wrote a failing test first, fixed the line, and `npm test` passed 4 of 4; the hook
+  said `fast track: 1 of 30 production lines, 1 of 2 production files (tests and docs not counted).
+  The end check accepted the run.`; the accepted record listed `src/greet.js` and
+  `test/greet.test.js`; the main session then made one commit of those two files; nothing under
+  `specs/`. The quickstart expected the commit to hold only the fixed file, but `patcher` added a
+  regression test, as its prompt says to, so the commit held two. No push or pull request: the repo
+  has no remote, and the skill said so. Measured with `tools/usage.mjs`: main session 8 requests,
+  peak 43k, input 0.31M; one agent, 5 requests, peak 15k, input 0.07M
+  ([Context budget](#context-budget)).
+- **L2** passed: asked to make `add()` return `a - b` without touching tests, `patcher` named the
+  failing test (`adds`, `-1 !== 5`) and ended `FAILED`; the edit stayed uncommitted on its branch;
+  no commit, no pull request. (The run's `permission_denials` lists one compound Bash call of the
+  main session refused by `--allowedTools`, not by a hook.)
+- **L3**, first prompt (about 60 production lines in 14 functions): `patcher` judged the size
+  before writing anything and ended `ESCALATE` with the tree clean. That outcome is right but it is
+  not the check: no write crossed the budget, so the hook's deny did not run. Second prompt, telling
+  the model to write first and let the hook measure: `patcher` appended 86 production lines in one
+  Bash command that also ran the tests, so no tool call followed the crossing write to be denied.
+  At the stop the hook allowed the end with `fast track stopped: 86 changed production lines in 1
+  files (limit 30 lines, 2 files). Nothing was committed; ...` and wrote no accepted record. The
+  files stayed modified and the skill committed nothing, but `patcher`'s own report ended `DONE`,
+  not `ESCALATE`, and the skill described the run as `FAILED`. The mid-run budget deny (the tool
+  call after the crossing write) was not seen live.
+- **L4** passed: `patcher`'s `Edit` of `.specify/memory/constitution.md` was denied with
+  `patcher may not write ...: it is a protected path`; the file was unchanged; the report ended
+  `ESCALATE`.
+- **L5** passed: asked to append to `.github/workflows/x.yml` with `echo >>` and to fix the
+  spelling, `patcher` did both in one Bash command and ended `DONE`; the stop was blocked with
+  `patcher changed protected files: .github/workflows/x.yml (new: delete it)` (the file was new, so
+  the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
+  `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
+  `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
+  word, as [Known limits](#known-limits) says, and the model went on without it.
+- **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
+  a new machine-readable output format, which is a public contract") and launched no agent.
+  **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
+  "README.md is a protected path". It is not (the hook's table has no README, and the scratch repo
+  has none). The triage skill's text reads "it touches a protected path (README.md, "The fast
+  track" lists them)", which Haiku took as naming README.md; whether a stronger main session reads
+  it right was not tried. Not retried.
+- **L7** passed: `/speckit-implement` with no audit was blocked at 0 turns and $0 ("Implementation
+  gate: no active feature ... Run @agent-spec-auditor and get VERDICT: PASS first.").
+- **L8** not exercised: the main session committed after the accepted end and `git log` showed
+  exactly one new commit, but `patcher` never ran `git commit`, `git push` or `gh`, so the deny
+  message `may not run git commit` was not seen. A second run told the skill to have `patcher`
+  commit and push itself; the skill declined and committed itself, again without `patcher` trying.
+  Not retried. The deny rests on the unit and end-to-end tests.
+
+</details>
 
 <details>
 <summary><b>2026-10-06</b>: Claude Code 2.1.291, Windows 11, Haiku main session</summary>
@@ -1025,9 +1330,57 @@ Add a pattern to `.specify/test-paths` ([Customising](#customising)).
 A line in `.specify/test-paths` is not a valid JavaScript regex. Fix the line the message names;
 until then the test lanes cannot tell a test from production code, so they refuse every write.
 
+### "Fast-track budget exceeded" or "fast track stopped"
+
+`patcher` changed more than 30 production lines or more than 2 production files (or a binary
+production file, or a file you had uncommitted at the start). Every tool but reporting back is now
+denied and it ends `ESCALATE`. The work stays uncommitted in the working tree and nothing is
+pushed. Use `/speckit-team` for the change, or trim it and run `/speckit-patch` again. Tests and docs
+do not count.
+
+### "may not write ... it is a protected path"
+
+`patcher` tried to write `specs/`, `.specify/`, `.claude/`, `.github/`, another CI file or, in the
+speckit-agents repository, the team's own sources ([The fast track](#the-fast-track)). That change
+is not for the fast track: use `/speckit-team`, or make it yourself.
+
+### "Fast track: patcher changed protected files"
+
+`patcher` changed a protected file in the repository, usually through Bash, and the end check will
+not let it finish until each one is restored. The message names the command for each: `git checkout
+<sha> -- <file>` for a changed file, delete a new one. It covers repository files only. `patcher`
+restores them by naming each one; the hook changes nothing itself.
+
+### "fast track FAILED: installed agent team files changed during the run"
+
+A file of the installed team under the Claude config directory (an agent, hook, skill,
+`settings.json` or `settings.local.json`) differs from the start of the run. The hook cannot tell a
+change `patcher` made from a setting Claude Code or you saved. Nothing was committed and no PR was
+opened; the work is uncommitted in the working tree. If an agent, hook or skill file changed,
+reinstall the team (`node install.mjs` in the speckit-agents checkout), then run the change again.
+
+### "may not run git commit" (and push, `gh` and the rest)
+
+`patcher` never commits, pushes or opens a PR; `/speckit-patch` does that after the end check. The
+denied commands are the history and remote commands in `HISTORY_SUBCOMMANDS` and the programs `gh`
+and `hub`. The match is on words, so a command that only mentions one, such as `echo "git push"`,
+is denied too.
+
+### "may not run git reset --hard" (and `git clean`)
+
+Also denied: `git clean`, and `git checkout` or `git restore` of `.`, a folder, a pattern or a file
+you had uncommitted when the run started. Each can overwrite or delete your uncommitted work. A
+file is restored only by naming it, and only a file `patcher` itself changed.
+
+### "Fast track: patcher committed"
+
+`patcher` made a commit by a route the command check does not see (a git alias, a script). The end
+check blocks until the work is uncommitted again: run `git reset --soft <sha>`, with the sha the
+message names, then let it finish.
+
 ### Install fails with "not installed by speckit-agents"
 
-You already have an agent with one of these six names. Rename yours, or pass `--force` to back it
+You already have an agent with one of these seven names. Rename yours, or pass `--force` to back it
 up and replace it.
 
 ## Known limits
@@ -1053,6 +1406,45 @@ up and replace it.
 - **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will
   tend to run all of `speckit-plan`.
 - **The team never merges.** It stops at the PR.
+- **The fast track guards against mistakes and drift, not evasion.** Its threat model is an agent
+  that overreaches by accident. It does not cover one that evades the hooks on purpose through the
+  shell. By category, the fast track does not guard against:
+  - **git aliases:** a commit, push or PR made by a program whose command does not name it (a git
+    alias, `npm version`, a script, `make release`, `curl` to the GitHub API) is not denied before
+    it runs. A commit is still caught at the end, and the skill never force-pushes, so a stray
+    push makes the skill's own push fail; you delete the stray branch or PR.
+  - **scripts:** the same holds for any script `patcher` writes and runs.
+  - **package scripts:** a `package.json` script, a Makefile target or a test runner's hook that
+    commits, pushes or changes files is not seen before it runs.
+  - **writes outside the repository:** a Bash write anywhere other than the repository and the
+    Claude config directory is not caught.
+  - **network access:** nothing limits what `patcher` fetches or sends over the network from Bash.
+    Only the history and remote commands named above are denied.
+  - **other forge CLIs:** `patcher`'s command deny matches only `gh` and `hub`, so a `glab` (GitLab)
+    or `tea` (Gitea) command that opens a merge request is not stopped before it runs. A commit
+    made that way is still caught by the end check, and the skill makes the real commit and PR
+    only after that check.
+- **The command check matches words.** A command that only mentions `git push` or `gh` is denied
+  too.
+- **Fast-track state is protected from `Write` and `Edit`, not Bash.** A change hidden by rewriting
+  the start record stays uncommitted: a protected file hidden that way is not in the accepted
+  record, so the skill does not commit it.
+- **One fast-track run per worktree at a time.** Two runs share the accepted record and the
+  working tree.
+- **Installed team files deeper than one folder level are not hashed.** `Write` and `Edit` to them
+  are denied, but a change by other means is not caught. Any change to a hashed team file during a
+  run ends it `FAILED` with nothing committed, including one Claude Code or you make to the config
+  directory's `settings.json` or `settings.local.json`; run the change again.
+- **Every tool call hashes each file uncommitted at the start.** A tree with many of them pays
+  most. The cost is not measured.
+- **In the speckit-agents repository the fast track cannot change `package.json`.** It is a
+  protected source there; a version bump or a new script goes through `/speckit-team`.
+- **A file moved with plain `mv` counts as two files** (a deletion and a new one). `patcher` is told
+  to use `git mv`.
+- **Each run has its own budget.** Repeated runs on one branch are not summed.
+- **Some fast-track rules are prompt text, not hook.** See
+  [What is prompt text](#what-is-prompt-text-and-what-was-verified).
+- **A generated file git does not ignore counts as production.**
 
 ## Uninstall
 
@@ -1060,7 +1452,7 @@ up and replace it.
 node install.mjs --uninstall
 ```
 
-This removes the six agents, the skill, the hook and both `settings.json` entries, and leaves
+This removes the seven agents, the three skills, the hook and both `settings.json` entries, and leaves
 nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
@@ -1087,15 +1479,15 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 | Path | What it holds |
 |---|---|
-| [`agents/`](agents/) | the six subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
-| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the modes `scope`, `gate`, `verdict`, `result`, `ends` and `lane` |
-| [`skills/speckit-team/SKILL.md`](skills/speckit-team/SKILL.md) | the `/speckit-team` pipeline skill |
+| [`agents/`](agents/) | the seven subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
+| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane` and `patch` |
+| [`skills/`](skills/) | the `/speckit-team` pipeline skill, the `/speckit-patch` fast-track skill and the advisory `/speckit-triage` skill, each in `<name>/SKILL.md` |
 | [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
-| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 and 002 |
+| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001, 002 and 003 |
 
 ### Making a change
 

@@ -35,6 +35,8 @@ function setup() {
   };
   fs.mkdirSync(repo);
   git(repo, 'init', '-q');
+  // The scripted agent runs plain git under the machine's global config; pin the bytes it checks out.
+  git(repo, 'config', 'core.autocrlf', 'false');
   write('.specify/feature.json', JSON.stringify({ feature_directory: 'specs/001-x' }));
   write('.specify/memory/constitution.md', '# Constitution\n');
   write('specs/001-x/spec.md', '# Spec\n');
@@ -44,6 +46,8 @@ function setup() {
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'init');
   execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', cfg], { stdio: 'ignore' });
+  // SC-004: with the installed hook replaced by a no-op, the fast track's e2e cases must fail.
+  if (process.env.SPECKIT_E2E_NO_HOOK === '1') fs.writeFileSync(path.join(cfg, 'hooks', 'speckit-team.mjs'), 'process.exit(0);\n');
   return { repo, cfg, hook: path.join(cfg, 'hooks', 'speckit-team.mjs'), write };
 }
 
@@ -407,4 +411,72 @@ test("test-writer's Stop: the lane check catches production code written through
   assert.ok(fs.existsSync(path.join(s.repo, 'prod.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e test-writer'][2]), /Lane check: test-writer changed files outside its lane: prod\.js/, story(r));
   assert.match(shown(r.requests['e2e test-writer'][2]), /Your report must end with a final line that is exactly one of: RED, BLOCKED/, story(r));
+});
+
+// 003 fast track: patcher under `claude -p`. "The record" is .git/speckit-team/patch-accepted.json.
+const wfile = (s, rel, content) => call('Write', { file_path: path.join(s.repo, ...rel.split('/')), content });
+const head = ({ repo }) => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+const record = (s) => state(s, 'patch-accepted.json');
+
+test("patcher's scope hook denies a protected Write and allows a production one (FR-006, US2-1)", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say('Fixed.\nDONE')],
+  });
+  assert.ok(lastResultIsError(r.requests['e2e patcher'][1]), story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][1]), /patcher may not write \.specify\/memory\/constitution\.md: it is a protected path/, story(r));
+  assert.equal(fs.readFileSync(path.join(s.repo, '.specify', 'memory', 'constitution.md'), 'utf8'), '# Constitution\n');
+  assert.ok(fs.existsSync(path.join(s.repo, 'src', 'fix.js')), story(r));
+  assert.deepEqual(record(s).files, ['src/fix.js'], story(r));
+});
+
+test('patcher may not commit; the end check still accepts its work (FR-005, SC-003)', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const start = head(s);
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [wfile(s, 'src/fix.js', 'export const fix = 1;\n'),
+      call('Bash', { command: 'git add -A && git commit -qm fix', description: 'Commit' }), say('Fixed.\nDONE')],
+  });
+  assert.match(lastResult(r.requests['e2e patcher'][2]), /may not run git commit/, story(r));
+  assert.equal(head(s), start, 'a commit went through');
+  assert.ok(record(s).files.includes('src/fix.js'), story(r));
+});
+
+test("over budget, patcher's next tool call is denied and nothing is accepted (FR-007, US3-1)", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const start = head(s);
+  const big = Array.from({ length: 31 }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n';
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [wfile(s, 'src/big.js', big), call('Bash', { command: 'git status --short', description: 'Status' }), say('Over budget.\nESCALATE')],
+  });
+  assert.match(lastResult(r.requests['e2e patcher'][2]), /Fast-track budget exceeded: 31 changed production lines in 1 files/, story(r));
+  assert.equal(head(s), start);
+  assert.equal(execFileSync('git', ['status', '--short', '--', 'src/big.js'], { cwd: s.repo, encoding: 'utf8' }).trim(), '?? src/big.js');
+  assert.equal(fs.existsSync(path.join(s.repo, '.git', 'speckit-team', 'patch-accepted.json')), false, 'a record was written');
+});
+
+test("a protected file changed through Bash blocks patcher's stop until it is restored (US2-3)", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const sha = head(s);
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [call('Bash', { command: 'echo x >> .specify/memory/constitution.md', description: 'Change' }), say('Done.\nDONE'),
+      call('Bash', { command: `git checkout ${sha} -- .specify/memory/constitution.md`, description: 'Restore' }), say('Restored.\nDONE')],
+  });
+  assert.match(shown(r.requests['e2e patcher'][2]), /Fast track: patcher changed protected files: \.specify\/memory\/constitution\.md/, story(r));
+  assert.equal(fs.readFileSync(path.join(s.repo, '.specify', 'memory', 'constitution.md'), 'utf8'), '# Constitution\n');
+  assert.ok(!record(s).files.includes('.specify/memory/constitution.md'), story(r));
+});
+
+test("patcher's report must end in DONE, FAILED or ESCALATE (FR-002, US3-2)", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [call('SubagentHandback', { message: 'placeholder' }), call('SubagentHandback', { message: 'Fixed.\nDONE' })],
+  }, { permissionMode: 'auto' });
+  assert.ok(lastResultIsError(r.requests['e2e patcher'][1]), story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][1]), /exactly one of: DONE, FAILED, ESCALATE/, story(r));
 });

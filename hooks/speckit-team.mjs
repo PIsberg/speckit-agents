@@ -7,6 +7,8 @@
 //   scope only <prefix>...  PreToolUse Write/Edit: allow only paths under these prefixes
 //   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
 //   scope no-tests          PreToolUse Write/Edit: allow anything except test files and .specify/
+//   scope protected         PreToolUse Write/Edit: deny CI, Spec Kit, specs/ and .claude/ paths, the installed
+//                           team, and in the speckit-agents repo its own sources; allow the rest
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
@@ -15,10 +17,14 @@
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
 //                           --record keeps the accepted word for the feature (spec-gatekeeper's)
 //   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
+//   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
+//                           or it runs a history/remote command or a wholesale restore; SubagentHandback, SubagentStop and
+//                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TEST_PATTERNS = [
   /(^|\/)(test|tests|__tests__|testing|testdata|test-data|fixtures|e2e|spec)\//i,
@@ -36,6 +42,35 @@ const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
 const SPECKIT_CONFIG = /^\.specify\//;
 // Implementer may report RED this many times in a row on one plan and tasks, then the gate stops it.
 const MAX_RED = 3;
+// The fast track's budget: production lines and production files changed since the run started.
+const PATCH_LINES = 30;
+const PATCH_FILES = 2;
+// Documentation is not production code; a docs/ folder is not a doc rule (research R3).
+// .txt is documentation only under docs/ or with a documentation-style name (owner decision 2026-10-10);
+// requirements.txt and CMakeLists.txt are production.
+const DOC_PATTERNS = [
+  /\.(md|mdx|markdown|rst|adoc|asciidoc)$/i,
+  /^docs\/.*\.txt$/i,
+  /(^|\/)(README|CHANGELOG|CHANGES|HISTORY|NEWS|LICENSE|NOTICE|AUTHORS|CONTRIBUTING|COPYING)\.txt$/i,
+];
+const isDoc = (rel) => DOC_PATTERNS.some((re) => re.test(rel));
+
+// Paths the fast track never changes, repo-relative, matched case-insensitively from the start.
+const PROTECTED = [
+  [/^\.specify\//i, "Spec Kit's config and the constitution"],
+  [/^specs\//i, 'feature specs, plans and tasks, which belong to /speckit-team'],
+  [/^\.claude\//i, "the project's Claude Code agents, skills, hooks and settings"],
+  [/^\.github\//i, 'CI workflows and repository settings'],
+  [/^(\.gitlab-ci\.yml|\.circleci\/|azure-pipelines\.yml|Jenkinsfile|\.pre-commit-config\.yaml)/i, 'CI and commit-hook configuration'],
+];
+// Only in the speckit-agents repository itself (recognised by isOwnRepo).
+const OWN_SOURCES = [
+  [/^hooks\/speckit-team\.mjs$/i, "the agent team's own sources"],
+  [/^agents\/[^/]+\.md$/i, "the agent team's own sources"],
+  [/^skills\/[^/]+\/SKILL\.md$/i, "the agent team's own sources"],
+  [/^install\.mjs$/i, "the agent team's own sources"],
+  [/^package\.json$/i, 'its package name marks this repository as speckit-agents'],
+];
 
 const [mode, ...args] = process.argv.slice(2);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -72,6 +107,7 @@ const WIRED = {
   result: ['PreToolUse', 'SubagentStop', 'Stop'],
   ends: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
+  patch: ['PreToolUse', 'SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
 
@@ -128,18 +164,59 @@ function canonical(p) {
 const gitDirs = [...new Set([path.join(root, '.git'), path.dirname(stateDir)])].map(canonical);
 const inGitDir = (p) => { const c = canonical(p); return gitDirs.some((d) => c === d || c.startsWith(`${d}/`)); };
 
-// Read once per run. A line that is not a valid regex leaves the test lanes undecidable: scope denies
-// and lane says it could not run, instead of crashing, which would let every write through.
-const testPaths = (() => {
+const ownRepo = new Map();
+function isOwnRepo(rev) {
+  if (!ownRepo.has(rev)) {
+    let own = false;
+    try {
+      const pkg = JSON.parse(git(root, 'cat-file', 'blob', `${rev}:package.json`));
+      own = !!pkg && typeof pkg === 'object' && pkg.name === 'speckit-agents';
+    } catch { /* not JSON, or no such blob */ }
+    ownRepo.set(rev, own);
+  }
+  return ownRepo.get(rev);
+}
+function isProtected(rel, rev = 'HEAD') {
+  const hit = PROTECTED.find(([re]) => re.test(rel)) ?? (isOwnRepo(rev) ? OWN_SOURCES.find(([re]) => re.test(rel)) : undefined);
+  return hit ? hit[1] : null;
+}
+// The repo-relative, forward-slash path of file as the file system will resolve it, null when outside.
+// Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
+// and a symlinked or short-named way into the repo must not read as outside it.
+function repoRel(file) {
+  const rel = path.relative(real(root), real(path.resolve(cwd, file))).split(path.sep).join('/');
+  return rel.startsWith('..') || path.isAbsolute(rel) ? null : rel;
+}
+// The installed team: agents/, hooks/, skills/ and the settings files beside the running hook.
+const TEAM_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+function isTeamFile(abs) {
+  const c = canonical(abs); const t = canonical(TEAM_DIR);
+  return ['/agents/', '/hooks/', '/skills/'].some((d) => c.startsWith(t + d)) || c === `${t}/settings.json` || c === `${t}/settings.local.json`;
+}
+
+// A line that is not a valid regex leaves the test lanes undecidable: scope denies and lane says it
+// could not run, instead of crashing, which would let every write through.
+function parseTestPaths(text) {
   const patterns = [...TEST_PATTERNS]; const bad = [];
-  readOr(path.join(root, '.specify', 'test-paths'), '').split('\n').forEach((l, i) => {
+  text.split('\n').forEach((l, i) => {
     const t = l.trim();
     if (!t || t.startsWith('#')) return;
     try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
   });
   return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
-})();
+}
+// Read once per run, from the working tree.
+const testPaths = parseTestPaths(readOr(path.join(root, '.specify', 'test-paths'), ''));
 const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+// The same patterns as committed at a revision: the fast track measures with the rules the run started under.
+const testsAtMemo = new Map();
+function testsAt(rev) {
+  if (!testsAtMemo.has(rev)) {
+    const t = parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '');
+    testsAtMemo.set(rev, { isTest: (rel) => t.patterns.some((re) => re.test(rel)), bad: t.bad });
+  }
+  return testsAtMemo.get(rev);
+}
 const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
@@ -231,11 +308,21 @@ if (mode === 'scope') {
     deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
       + 'Report what you need instead; only the user resets that state.');
   }
-  // Both sides resolved alike: git reports the real root, Claude Code passes the path it was given,
-  // and a symlinked or short-named way into the repo must not read as outside it.
-  const rel = path.relative(real(root), real(target)).split(path.sep).join('/');
-  if (rel.startsWith('..') || path.isAbsolute(rel)) process.exit(0);
+  if (args[0] === 'protected' && isTeamFile(target)) {
+    deny(`${who} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
+  }
+  const rel = repoRel(file);
+  if (rel === null) process.exit(0);
   const [rule, ...prefixes] = args;
+  const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
+  if (why) {
+    // Name the path as the caller wrote it; matching used the case the disk reports.
+    const typed = path.relative(path.resolve(root), target).split(path.sep).join('/');
+    const shown = typed && !typed.startsWith('..') && !path.isAbsolute(typed) ? typed : rel;
+    deny(`${who} may not write ${shown}: it is a protected path (${why}). The fast track does not change it. `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
+  }
   if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
     deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
       + 'Report this to the user, who fixes the file; do not edit it yourself.');
@@ -416,5 +503,303 @@ if (mode === 'lane') {
   }
   fs.rmSync(f, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
+  process.exit(0);
+}
+
+// The fast track: patcher's change since its first tool call must stay within PATCH_LINES production
+// lines in PATCH_FILES production files. Tests and docs do not count (FR-005).
+const patchFile = (key) => path.join(stateDir, 'patch', `${key}.json`);
+const HEX64 = /^[0-9a-f]{64}$/;
+function stateOf(rel) {
+  try { return createHash('sha256').update(fs.readFileSync(path.join(root, rel))).digest('hex'); } catch { return null; }
+}
+// SHA-256 of each installed team file (agents/, hooks/, skills/<name>/, the two settings files), keyed by
+// its TEAM_DIR-relative path; null for a missing settings file. Never throws.
+function teamState() {
+  const out = {};
+  const hash = (rel) => { try { return createHash('sha256').update(fs.readFileSync(path.join(TEAM_DIR, rel))).digest('hex'); } catch { return null; } };
+  const entries = (rel) => { try { return fs.readdirSync(path.join(TEAM_DIR, rel), { withFileTypes: true }); } catch { return []; } };
+  const files = (rel) => { for (const e of entries(rel)) if (e.isFile()) out[`${rel}/${e.name}`] = hash(`${rel}/${e.name}`); };
+  try {
+    files('agents'); files('hooks');
+    for (const e of entries('skills')) if (e.isDirectory()) files(`skills/${e.name}`);
+    for (const f of ['settings.json', 'settings.local.json']) out[f] = hash(f);
+  } catch { /* contributes nothing */ }
+  return out;
+}
+const teamChanged = (before) => {
+  const now = teamState();
+  return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter((k) => (before[k] ?? null) !== (now[k] ?? null)).sort();
+};
+function measure(start) {
+  const sha = start.sha;
+  const must = (out) => { if (out === null) throw new Error('git could not measure the change'); return out; };
+  const tests = testsAt(sha);
+  const dirty = new Set(Object.keys(start.dirty));
+  const cls = (rel) => (isProtected(rel, sha) ? 'protected' : tests.isTest(rel) ? 'test' : isDoc(rel) ? 'doc' : 'prod');
+  const parseNumstat = (out) => {
+    const map = new Map(); const t = out.split('\0');
+    for (let i = 0; i < t.length;) {
+      const m = /^(-|\d+)\t(-|\d+)\t([^]*)$/.exec(t[i]);
+      if (!m) { i++; continue; }
+      const stat = { ins: Number(m[1]) || 0, del: Number(m[2]) || 0, bin: m[1] === '-' };
+      if (m[3] === '') { map.set(t[i + 2], stat); i += 3; } else { map.set(m[3], stat); i++; }
+    }
+    return map;
+  };
+  const stats = parseNumstat(must(git(root, 'diff', '--find-renames', '--numstat', '-z', sha)));
+  const tokens = must(git(root, 'diff', '--find-renames', '--name-status', '-z', sha)).split('\0');
+  const r = { lines: 0, files: 0, binary: [], protectedChanged: [], committed: false, dirtyTouched: [], changed: [], untracked: [] };
+  const changed = new Set(); const untracked = new Set();
+  const note = (rel, set) => { if (cls(rel) !== 'protected') { changed.add(rel); if (set) set.add(rel); } };
+  const prod = (rel, n, bin) => { r.files++; r.lines += n; if (bin) r.binary.push(rel); };
+  for (let i = 0; i < tokens.length && tokens[i];) {
+    const status = tokens[i];
+    const renamed = status[0] === 'R';
+    const old = renamed ? tokens[i + 1] : null;
+    const rel = renamed ? tokens[i + 2] : tokens[i + 1];
+    i += renamed ? 3 : 2;
+    if (dirty.has(rel) || (old !== null && dirty.has(old))) continue;
+    const st = stats.get(rel) ?? { ins: 0, del: 0, bin: false };
+    const c = cls(rel);
+    note(rel); if (old !== null) note(old);
+    if (!renamed) {
+      if (c === 'protected') r.protectedChanged.push({ path: rel, isNew: status === 'A' });
+      else if (c === 'prod') prod(rel, status === 'D' ? st.del : Math.max(st.ins, st.del), st.bin && status !== 'D');
+      continue;
+    }
+    const co = cls(old);
+    if (c === 'protected' || co === 'protected') {
+      r.protectedChanged.push({ path: old, isNew: false }, { path: rel, isNew: true });
+    } else if (co === 'prod' && c === 'prod') {
+      prod(rel, Math.max(st.ins, st.del), st.bin && status !== 'R100');
+    } else if (co === 'prod' || c === 'prod') {
+      const pair = parseNumstat(must(git(root, 'diff', '--no-renames', '--numstat', '-z', sha, '--', old, rel)));
+      if (co === 'prod') prod(old, (pair.get(old) ?? st).del, false);
+      else { const p = pair.get(rel) ?? st; prod(rel, p.ins, p.bin); }
+    }
+  }
+  for (const rel of must(git(root, 'ls-files', '--others', '--exclude-standard', '-z')).split('\0').filter(Boolean)) {
+    if (dirty.has(rel)) continue;
+    const c = cls(rel);
+    note(rel, untracked);
+    if (c === 'protected') { r.protectedChanged.push({ path: rel, isNew: true }); continue; }
+    if (c !== 'prod') continue;
+    let buf; try { buf = fs.readFileSync(path.join(root, rel)); } catch { buf = Buffer.alloc(0); }
+    if (buf.subarray(0, 8000).includes(0)) prod(rel, 0, true);
+    else prod(rel, buf.length ? buf.toString('latin1').split('\n').length - (buf[buf.length - 1] === 10 ? 1 : 0) : 0, false);
+  }
+  r.committed = git(root, 'rev-parse', 'HEAD') !== sha;
+  const swept = r.committed
+    ? new Set(must(git(root, 'diff', '--no-renames', '--name-only', '-z', sha, 'HEAD')).split('\0')) : new Set();
+  r.dirtyTouched = [...dirty].filter((rel) => stateOf(rel) !== start.dirty[rel] || swept.has(rel)).sort();
+  r.changed = [...changed].sort(); r.untracked = [...untracked].sort();
+  return r;
+}
+
+// Bash commands the fast track may not run: history and remote commands (research R15) and wholesale
+// restores that can overwrite the developer's uncommitted work (plan.md decision 16 point 3).
+const HISTORY_SUBCOMMANDS = new Set(['commit', 'commit-tree', 'merge', 'rebase', 'cherry-pick', 'revert', 'am', 'stash', 'tag',
+  'branch', 'switch', 'update-ref', 'symbolic-ref', 'notes', 'replace', 'filter-branch', 'push', 'pull', 'fetch', 'clone', 'remote',
+  'ls-remote', 'submodule', 'send-email', 'request-pull']);
+const GIT_OPTIONS_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env']);
+const program = (w) => w.split(/[\\/]/).pop().toLowerCase().replace(/\.exe$/, '');
+// The subcommand index after the git word at words[i], skipping git's options.
+function afterGitOptions(words, i) {
+  let j = i + 1;
+  while (j < words.length && words[j].startsWith('-')) j += GIT_OPTIONS_WITH_VALUE.has(words[j]) ? 2 : 1;
+  return j;
+}
+function historyCommand(command) {
+  if (typeof command !== 'string') return null;
+  const words = command.split(/[\s;&|(){}<>`"'$!]+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    const prog = program(words[i]);
+    if (prog === 'gh' || prog === 'hub') return prog;
+    if (prog !== 'git') continue;
+    const j = afterGitOptions(words, i);
+    const sub = words[j];
+    if (sub === undefined) continue;
+    if (HISTORY_SUBCOMMANDS.has(sub)) return `git ${sub}`;
+    if (sub === 'checkout' && !words.slice(j + 1).includes('--')) return 'git checkout';
+  }
+  return null;
+}
+function gitCalls(command) {
+  const calls = [];
+  for (const seg of command.split(/[\n;&|()]+/)) {
+    const words = seg.split(/[\s"'`]+/).filter(Boolean);
+    for (let i = 0; i < words.length; i++) {
+      if (program(words[i]) !== 'git') continue;
+      const j = afterGitOptions(words, i);
+      if (j < words.length) calls.push({ sub: words[j], args: words.slice(j + 1) });
+    }
+  }
+  return calls;
+}
+function treeCommand(command, start) {
+  if (typeof command !== 'string') return null;
+  const wholesale = (w) => {
+    if (w === '.' || w === '..' || w.endsWith('/') || /[*?[]/.test(w) || w.startsWith(':')) return true;
+    try { if (fs.statSync(path.resolve(cwd, w)).isDirectory()) return true; } catch { /* not an existing path */ }
+    const rel = repoRel(w);
+    return rel !== null && Object.prototype.hasOwnProperty.call(start.dirty, rel);
+  };
+  for (const { sub, args } of gitCalls(command)) {
+    if (sub === 'reset' && args.includes('--hard')) return 'git reset --hard';
+    if (sub === 'clean') return 'git clean';
+    let paths = null;
+    if (sub === 'checkout' && args.includes('--')) paths = args.slice(args.indexOf('--') + 1);
+    else if (sub === 'restore') {
+      if (args.some((a) => a === '--pathspec-from-file' || a.startsWith('--pathspec-from-file='))) return 'git restore --pathspec-from-file';
+      const dd = args.indexOf('--');
+      if (dd >= 0) paths = args.slice(dd + 1);
+      else paths = args.filter((a, k) => !a.startsWith('-') && !['-s', '--source'].includes(args[k - 1]));
+    }
+    const hit = paths?.find(wholesale);
+    if (hit !== undefined) return sub === 'checkout' ? `git checkout -- ${hit}` : `git restore ${hit}`;
+  }
+  return null;
+}
+
+// Step 6 of the patch PreToolUse path: a command that only restores protected files (contracts/hook-cli.md).
+function restoreAllowed(command, start, m) {
+  if (typeof command !== 'string' || /[;&|`$<>\n\r]/.test(command)) return false;
+  const w = command.trim().split(/\s+/);
+  const entry = (word, isNew) => { const rel = repoRel(word); return rel !== null && m.protectedChanged.some((e) => e.path === rel && e.isNew === isNew); };
+  if (w[0] === 'rm') {
+    let k = 1;
+    if (w[k] === '-f') k++;
+    if (w[k] === '--') k++;
+    const paths = w.slice(k);
+    return paths.length > 0 && paths.every((p) => !p.startsWith('-') && entry(p, true));
+  }
+  if (w[0] !== 'git') return false;
+  if (w[1] === 'reset') return m.committed && w.length === 4 && w[2] === '--soft' && !w[3].startsWith('-');
+  const args = w.slice(2);
+  let paths;
+  if (w[1] === 'checkout') {
+    const dd = args.indexOf('--');
+    if (dd < 0 || dd > 1 || (dd === 1 && args[0].startsWith('-'))) return false;
+    paths = args.slice(dd + 1);
+  } else if (w[1] === 'restore') {
+    paths = [];
+    for (let k = 0; k < args.length; k++) {
+      const a = args[k];
+      if (a === '--') { paths.push(...args.slice(k + 1)); break; }
+      if (a === '-s') { k++; continue; }
+      if (a.startsWith('--source=') || a === '--staged' || a === '--worktree') continue;
+      if (a.startsWith('-')) return false;
+      paths.push(a);
+    }
+  } else return false;
+  return paths.length > 0 && paths.every((p) => entry(p, false));
+}
+
+// The end of a fast-track run (contracts/hook-cli.md "End of run"). Exits.
+function endCheck(start, viaHandback, key, acceptedFile) {
+  const s12 = start.sha.slice(0, 12);
+  let m;
+  try { m = measure(start); } catch (e) {
+    emit({ systemMessage: `speckit-team: fast-track check could not run for ${who}: ${e?.message ?? e}.` });
+  }
+  const refuse = (reason) => (viaHandback ? deny(reason) : block(reason));
+  if (m.protectedChanged.length) {
+    refuse(`Fast track: ${who} changed protected files: `
+      + m.protectedChanged.map((e) => (e.isNew ? `${e.path} (new: delete it)` : `${e.path} (git checkout ${s12} -- ${e.path})`)).join(', ')
+      + '. Restore them, then finish. The hook changes nothing itself.');
+  }
+  if (m.committed) {
+    refuse(`Fast track: ${who} committed (${m.lines} lines in ${m.files} files since ${s12}). The fast track never commits; /speckit-patch commits after this check. `
+      + `Run git reset --soft ${s12} so the work stays uncommitted, then finish.`);
+  }
+  const team = teamChanged(start.team);
+  if (team.length) {
+    emit({ systemMessage: `fast track FAILED: installed agent team files changed during the run: ${team.map((t) => `${TEAM_DIR}/${t}`).join(', ')}. `
+      + 'The fast track cannot restore them, and cannot tell a change patcher made from a setting Claude Code or you saved. '
+      + 'The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
+      + 'Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.' });
+  }
+  if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
+    emit({ systemMessage: `fast track stopped: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
+      + (m.binary.length ? `; binary production files: ${m.binary.join(', ')}` : '')
+      + (m.dirtyTouched.length ? `; changed although they had uncommitted changes when the run started: ${m.dirtyTouched.join(', ')}` : '')
+      + '. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.' });
+  }
+  writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });
+  emit({ systemMessage: `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.` });
+}
+
+if (mode === 'patch') {
+  // Every call removes the accepted record: it stands only while the last call was an accepting end check.
+  const acceptedFile = path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json');
+  fs.rmSync(acceptedFile, { force: true });
+  const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
+  const isEnd = viaHandback || event !== 'PreToolUse';
+  const key = str(input.agent_id) ?? str(input.session_id);
+  if (!key || !/^[\w-]{1,128}$/.test(key)) noDecision('no agent_id or session_id to keep the start record under');
+  const f = patchFile(key);
+  if (isEnd && !fs.existsSync(f)) process.exit(0);
+  if (!fs.existsSync(f)) {
+    const sha = git(root, 'rev-parse', 'HEAD');
+    if (!sha) deny('Fast track: this repo has no commit to measure the change from. Commit first, or use /speckit-team.');
+    const dirty = Object.fromEntries(changedSince('HEAD').map((rel) => [rel, stateOf(rel)]));
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, team: teamState(), at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
+  }
+  const start = readState(f);
+  const plain = (o) => o && typeof o === 'object' && !Array.isArray(o);
+  if (!plain(start) || typeof start.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(start.sha) || !plain(start.dirty)
+    || !plain(start.team) || !Object.values(start.team).every((v) => v === null || (typeof v === 'string' && HEX64.test(v)))
+    || !Object.values(start.dirty).every((v) => v === null || (typeof v === 'string' && HEX64.test(v)))
+    || git(root, 'cat-file', '-e', `${start.sha}^{commit}`) === null) {
+    if (isEnd) emit({ systemMessage: `speckit-team: fast-track check could not run for ${who}: ${f} is unreadable or names a commit this repo does not have.` });
+    deny(`Fast track: the budget cannot be measured: ${f} is unreadable or names a commit this repo does not have. `
+      + 'Report this; the user deletes the file to start over.');
+  }
+  const bad = testsAt(start.sha).bad;
+  if (bad) {
+    if (isEnd) emit({ systemMessage: `speckit-team: fast-track check could not run for ${who}: ${bad} (as committed at ${start.sha.slice(0, 12)}).` });
+    deny(`Fast track: the budget cannot be measured: ${bad} (as committed at ${start.sha.slice(0, 12)}). `
+      + 'Report this to the user, who fixes and commits the file, then starts a new run.');
+  }
+  if (isEnd) endCheck(start, viaHandback, key, acceptedFile);
+  const ti = input.tool_input || {};
+  const given = ti.file_path ?? ti.notebook_path;
+  if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name) && str(given)) {
+    const rel = repoRel(given);
+    const same = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+    const hit = rel === null ? undefined : Object.keys(start.dirty).find((k) => same(k, rel));
+    if (hit) {
+      deny(`Fast track: ${hit} had uncommitted changes when the run started. They are the developer's work, so the fast track leaves the file alone. `
+        + 'If the change needs this file, report ESCALATE; the developer commits or stashes that work first, or uses /speckit-team.');
+    }
+  }
+  if (input.tool_name === 'Bash') {
+    const cmd = ti.command;
+    const h = historyCommand(cmd);
+    if (h) {
+      deny(`Fast track: ${who} may not run ${h}: the fast track never commits, pushes or opens a pull request; /speckit-patch does that after the end-of-run check accepts the run. `
+        + 'Change the working tree only, run the tests, and report DONE, FAILED or ESCALATE.');
+    }
+    const t = treeCommand(cmd, start);
+    if (t) {
+      deny(`Fast track: ${who} may not run ${t}: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. `
+        + 'Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.');
+    }
+  }
+  let m;
+  try { m = measure(start); } catch (e) {
+    deny(`Fast track: the budget cannot be measured: ${e?.message ?? e}. Report this; the user starts a new run.`);
+  }
+  const pending = m.protectedChanged.length > 0 || m.committed;
+  if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
+    if (input.tool_name === 'Bash' && restoreAllowed(ti.command, start, m)) process.exit(0);
+    deny(`Fast-track budget exceeded: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
+      + (m.binary.length ? `; binary production files are not allowed: ${m.binary.join(', ')}` : '')
+      + (m.dirtyTouched.length ? `; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: ${m.dirtyTouched.join(', ')}` : '')
+      + '. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.'
+      + (pending ? ` First restore the protected files, naming each one (git checkout ${start.sha.slice(0, 12)} -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft ${start.sha.slice(0, 12)}).` : ''));
+  }
   process.exit(0);
 }

@@ -4,8 +4,9 @@
 # agents (@agent- the agents' .md files, @impl every path containing it), and also any other Claude
 # session on the machine whose name starts with it, which a bare @ never lists. The list puts the
 # repo's folders first, then the agents in alphabetical order, and stops at 15 entries: 4 folders,
-# Claude Code's 6 agents and 5 of the team's, without test-writer. One take showed only 10 entries,
-# so check the frames for all five. The 14 steps end on the last entry. record.mjs fills in the
+# Claude Code's 5 agents and 6 of the team's, without test-writer (the seventh, last in the order).
+# One take showed only 10 entries, so check the frames for all six. The 14 steps end on the
+# last entry. record.mjs fills in the
 # {{...}} fields and runs the tape from a drive letter mapped onto the demo folder, so paths on
 # screen read R:\repo rather than one with the user name in it.
 Output "{{OUTPUT}}"
