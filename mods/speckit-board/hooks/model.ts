@@ -323,22 +323,23 @@ export type BandItem =
   | { kind: 'red'; text: string; isLimit: boolean }
   // `room`: the columns it is laid out in, its running time counted as wide as `59m 59s`.
   | { kind: 'agent'; text: string; spin: string; role: string; rest: string; room: number }
-  | { kind: 'button'; text: string; key: 'board' | 'hide'; label: string }
+  | { kind: 'button'; text: string; key: 'board' | 'clear' | 'hide'; label: string }
 
-type BandVariant = { names: 'all' | 'head' | 'only-head'; bar: number; isHideShown: boolean; isBoardShown: boolean }
+type BandVariant = { names: 'all' | 'head' | 'only-head'; bar: number; isHideShown: boolean; isClearShown: boolean; isBoardShown: boolean }
 
 // Richest first; the band draws the first that fits its columns, so it never wraps. The current
 // phase stays named in every one: bare glyphs said nothing below 100 columns. The buttons go before
-// the other phases' glyphs: /speckit-board does what `board` does, and beside a docked pane, the band
-// at its narrowest there, the pane is open already.
+// the other phases' glyphs, `hide` first, then `clear`, then `board`: /speckit-board does what
+// `board` does, and beside a docked pane, the band at its narrowest there, the pane is open already.
 const VARIANTS: readonly BandVariant[] = [
-  { names: 'all', bar: 10, isHideShown: true, isBoardShown: true },
-  { names: 'head', bar: 10, isHideShown: true, isBoardShown: true },
-  { names: 'head', bar: 5, isHideShown: true, isBoardShown: true },
-  { names: 'head', bar: 0, isHideShown: true, isBoardShown: true },
-  { names: 'head', bar: 0, isHideShown: false, isBoardShown: true },
-  { names: 'head', bar: 0, isHideShown: false, isBoardShown: false },
-  { names: 'only-head', bar: 0, isHideShown: false, isBoardShown: false },
+  { names: 'all', bar: 10, isHideShown: true, isClearShown: true, isBoardShown: true },
+  { names: 'head', bar: 10, isHideShown: true, isClearShown: true, isBoardShown: true },
+  { names: 'head', bar: 5, isHideShown: true, isClearShown: true, isBoardShown: true },
+  { names: 'head', bar: 0, isHideShown: true, isClearShown: true, isBoardShown: true },
+  { names: 'head', bar: 0, isHideShown: false, isClearShown: true, isBoardShown: true },
+  { names: 'head', bar: 0, isHideShown: false, isClearShown: false, isBoardShown: true },
+  { names: 'head', bar: 0, isHideShown: false, isClearShown: false, isBoardShown: false },
+  { names: 'only-head', bar: 0, isHideShown: false, isClearShown: false, isBoardShown: false },
 ]
 
 const TIME_ROOM = '59m 59s'.length
@@ -376,9 +377,23 @@ export function bandLayout(
       items.push({ kind: 'agent', text: `${spin} ${first.type}${rest}`, spin, role: first.type, rest, room })
     }
     if (v.isBoardShown) items.push({ kind: 'button', text: '[ board ]', key: 'board', label: 'board' })
+    if (v.isClearShown) items.push({ kind: 'button', text: '[ clear ]', key: 'clear', label: 'clear' })
     if (v.isHideShown) items.push({ kind: 'button', text: '[ hide ]', key: 'hide', label: 'hide' })
     return items
   }
   const layouts = VARIANTS.map(layout)
   return layouts.find(items => widthOf(items) <= cols) ?? layouts.at(-1) ?? []
+}
+
+const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
+
+// The line a clear answers with, and a button toasts.
+export function clearText(rows: number, isBandCleared: boolean, running: number): string {
+  const what = [rows ? plural(rows, 'agent row') : '', isBandCleared ? 'the band' : ''].filter(Boolean)
+  const head = what.length ? `cleared ${what.join(' and ')}` : 'nothing to clear'
+  return `${head}${running ? `; ${plural(running, 'running agent')} kept` : ''}.`
+}
+
+export function clearFailedText(err: unknown): string {
+  return `clear failed: ${err instanceof Error ? err.message : String(err)}.`
 }

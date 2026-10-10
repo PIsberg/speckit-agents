@@ -5,7 +5,7 @@ import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState } from
 import {
   COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, wordColor, bandLayout, bar, boardText, current,
   derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
-  roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
+  clearFailedText, clearText, roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
 } from './model'
 
 const PANE = 'speckit-board'
@@ -16,6 +16,7 @@ const TEAM_ROWS = 6
 const board = atom({ plugin: 'speckit-board', key: 'board' } as const, null)
 const agents = atom({ plugin: 'speckit-board', key: 'agents' } as const, [])
 const isBandHidden = atom({ plugin: 'speckit-board', key: 'isBandHidden' } as const, false)
+const isCleared = atom({ plugin: 'speckit-board', key: 'isCleared' } as const, false)
 const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
 
 type Repo = { root: string; stateDir: string }
@@ -193,6 +194,26 @@ async function openPane($: EngineInterface) {
   return $.ui.open({ id: PANE, title: 'Spec Kit', rows })
 }
 
+// A board, and neither hidden nor cleared.
+async function isBandDrawn($: EngineInterface): Promise<boolean> {
+  return !!(await read($, board)) && !(await read($, isBandHidden)) && !(await read($, isCleared))
+}
+
+// Display only: plugin state, no file, store, process, status line or refresh. Throws on a refused write.
+async function clear($: EngineInterface): Promise<string> {
+  const team = await read($, agents)
+  const running = team.filter(a => a.isRunning).length
+  const rows = team.length - running
+  const wasDrawn = await isBandDrawn($)
+  await update($, agents, list => list.filter(a => a.isRunning))
+  if (running === 0) await update($, isCleared, () => true)
+  return clearText(rows, wasDrawn && running === 0, running)
+}
+
+async function pressClear($: EngineInterface): Promise<void> {
+  try { $.ui.toast(await clear($)) } catch (err) { $.ui.toast(clearFailedText(err)) }
+}
+
 // Spinners and running times move every second only while an agent of the team runs.
 async function keepTicking($: EngineInterface) {
   const isBusy = (await read($, agents)).some(a => a.isRunning)
@@ -205,7 +226,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'speckit-board',
       description: 'Show the Spec Kit team board',
-      argumentHint: '[status|refresh|band]',
+      argumentHint: '[status|refresh|band|clear]',
       // /speckit-team runs its agents in the foreground, so a whole pipeline is one turn: without
       // this, the command waited for the turn to end, and opened the board once the run was over.
       immediate: true,
@@ -234,8 +255,11 @@ export const register: Register = on => {
       const hidden = await update($, isBandHidden, h => !h)
       return { text: `band ${hidden ? 'hidden' : 'shown'}.` }
     }
+    if (arg === 'clear') {
+      try { return { text: await clear($) } } catch (err) { return { text: clearFailedText(err) } }
+    }
     // Any other argument opened the pane, so a typo looked as if it had worked.
-    if (arg && arg !== 'refresh' && arg !== 'status') return { text: `unknown argument "${arg}": use status, refresh or band.` }
+    if (arg && arg !== 'refresh' && arg !== 'status') return { text: `unknown argument "${arg}": use status, refresh, band or clear.` }
     await refresh($)
     if (arg === 'refresh') return { text: 'refreshed.' }
     if (arg === 'status') {
@@ -302,7 +326,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const b = await read($, board)
-    if (!b || e.props.hasSurvey || (await read($, isBandHidden))) return next(e)
+    if (!b || e.props.hasSurvey || !(await isBandDrawn($))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const running = (await read($, agents)).filter(a => a.isRunning)
     const items = bandLayout(b, running, await $.clock.now(), e.props.bodyColumns)
@@ -329,6 +353,8 @@ export const register: Register = on => {
             case 'button':
               return item.key === 'board'
                 ? <Button key="board" label="board" hotkey="b" onPress={() => openPane($)} />
+                : item.key === 'clear'
+                ? <Button key="clear" label="clear" dimColor onPress={() => pressClear($)} />
                 : <Button key="hide" label="hide" dimColor onPress={() => update($, isBandHidden, () => true)} />
           }
         })}
@@ -349,6 +375,7 @@ export const register: Register = on => {
     }
 
     const team = await read($, agents)
+    const isClearedNow = await read($, isCleared)
     const isAll = await read($, isAllTasksShown)
     const now = await $.clock.now()
     const head = current(b.phases)
@@ -409,7 +436,7 @@ export const register: Register = on => {
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         <Box flexDirection="column">
           <Text bold>Team</Text>
-          {team.length === 0 && <Text dimColor>no team agent has run this session</Text>}
+          {team.length === 0 && <Text dimColor>{isClearedNow ? 'cleared; no team agent has run since' : 'no team agent has run this session'}</Text>}
           {rows.slice(0, TEAM_ROWS).map(a => {
             const tone = toneOf(a.type, a.outcome)
             const color = a.isRunning ? 'claude' : TONE_COLOR[tone]
@@ -442,6 +469,7 @@ export const register: Register = on => {
             onPress={async () => { await update($, isAllTasksShown, v => !v); await openPane($) }}
           />
           <Button key="band" label="toggle band" hotkey="t" onPress={() => update($, isBandHidden, h => !h)} />
+          <Button key="clear" label="clear" hotkey="c" onPress={() => pressClear($)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
 
