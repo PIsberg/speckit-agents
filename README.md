@@ -498,9 +498,15 @@ and any other change is caught at the end.
   a `git -c alias.*` call, the forge CLIs `gh`, `hub`, `glab` and `tea`, or `npm`, `pnpm`, `yarn`
   or `bun publish`, nor a command that names the fast track's own state (`.git/speckit-team`). The
   command is split into words and every `git` word is checked, so `sh -c "git push"` and
-  `git -C . commit` are caught. It is checked again with quotes and backslashes removed and
-  `$VAR` or `${VAR}` replaced by the value the command assigns, so `g"it" push`, `G=git; $G push`
-  and `git${IFS}push` are caught too ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
+  `git -C . commit` are caught. It is then read again the way a shell reads it: quotes, escapes
+  and `$'...'`, variables where they are used (split on `IFS`, and once with each value a later
+  assignment or a `for` loop gives them), redirections dropped, `{a,b}` expanded, command and
+  process substitutions read as commands of their own, and a glob such as `/usr/bin/g?t` matched
+  against the denied programs. So `g"it" push`, `G=git; $G push`, `git${IFS}push`,
+  `git 2>/dev/null push`, `git -c x="a b" push` and `{git,} push` are caught too
+  ([#72](https://github.com/PIsberg/speckit-agents/issues/72) and two security reviews of it).
+  It is not a shell: a string built at run time (`eval "$(cmd)"`, `read`, a function) is not
+  seen, and the end check still catches any commit that gets through.
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -1111,16 +1117,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 171 tests:
+`npm test` runs 187 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 29 | the installer, against throwaway config dirs |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 36 | the installer, against throwaway config dirs |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 8 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 22 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 23 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.

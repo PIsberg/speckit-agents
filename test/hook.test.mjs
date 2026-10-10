@@ -1204,6 +1204,13 @@ test('patch: other forges, obfuscated git words, aliases, publishing and its own
     // runs git push (``git `` push`` was denied before #72), and a variable is read where it is used.
     ['git `` push', 'git push'], ['git $(true) push', 'git push'], ['git `true` commit -m x', 'git commit'],
     ['G=git; $G push; G=x', 'git push'], ['git \\\npush', 'git push'],
+    // The second review: read the command as a shell does, not by guessing at words.
+    ['git -c core.x="a b" push', 'git push'], ["git -c 'user.name=a;b' commit -m x", 'git commit'],
+    ['for i in 1 2; do $G push; G=git; done', 'git push'], ['G=x; for i in 1 2; do $G push; G=git; done', 'git push'],
+    ['git 2>/dev/null push', 'git push'], ['git >out.txt commit -m x', 'git commit'], ['git 2>&1 push', 'git push'],
+    ["$'\\x67it' push", 'git push'], ["$'\\147it' push", 'git push'], ['{git,} push', 'git push'],
+    ['/usr/bin/g?t push', 'git push'], ['/usr/bin/gi[t] push', 'git push'], ['X="git push"; $X', 'git push'],
+    ['IFS=,; X=git,push; $X', 'git push'], ['export G=git; $G push', 'git push'], ['env -i git push', 'git push'],
     ['npm publish', 'npm publish'], ['pnpm publish --access public', 'pnpm publish'], ['yarn npm publish', 'yarn publish'],
     ['echo {} > .git/speckit-team/patch/p1.json', "a command on the fast track's state"],
     ["rm -rf '.git/speckit-team'", "a command on the fast track's state"],
@@ -1216,7 +1223,9 @@ test('patch: other forges, obfuscated git words, aliases, publishing and its own
   }
   for (const command of ['git branch --show-current', 'git branch', 'git branch -a', 'git branch --list', 'git branch -vv && npm test',
     'echo "it" "push"', 'X=1 npm test', 'npm run build', 'grep -rn publish src', 'cat package.json',
-    'git log $(git rev-parse HEAD) --oneline', 'git diff `git merge-base HEAD main`']) {
+    'git log $(git rev-parse HEAD) --oneline', 'git diff `git merge-base HEAD main`',
+    // Input the shell reading cannot make sense of gets no deny and, above all, no crash.
+    '/usr/bin/g[ push', "echo 'unterminated", 'echo $(( 1 + 2 )) ${', 'echo {{,}']) {
     const out = bash(dir, command);
     assert.equal(out, null, `${command}: expected null, got ${JSON.stringify(out)}`);
   }

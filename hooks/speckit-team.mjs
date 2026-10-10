@@ -635,29 +635,168 @@ const FORGE_CLIS = new Set(['gh', 'hub', 'glab', 'tea']);
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 // git branch that only lists: live check L5 saw `git branch --show-current` denied (#72).
 const BRANCH_READ_ONLY = new Set(['--show-current', '--list', '-l', '-a', '--all', '-r', '--remotes', '-v', '-vv', '--verbose', '--no-color', '--no-column']);
-// The command as the shell would more likely run it: line continuations joined, command substitutions
-// dropped (their output is unknown, and empty is the reading that hides most), $VAR and ${VAR} replaced
-// by the value assigned before that point, or a space, then quotes and backslashes taken out. So
-// g"it" push, G=git; $G push, git${IFS}push and git $(true) push all read as git push (#72). The shell
-// can still run more than this sees; the end check catches any commit that gets through.
-function unquoted(command) {
-  const vars = {};
-  return command.replace(/\\\r?\n/g, ' ').replace(/\$\([^()]*\)|`[^`]*`/g, ' ')
-    .replace(/(?<=^|[\s;&|(])([A-Za-z_]\w*)=(?:'([^']*)'|"([^"]*)"|([^\s;&|)]*))|\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)/g,
-      (m, name, sq, dq, bare, braced, plain) => {
-        if (name) { vars[name] = sq ?? dq ?? bare; return m; }
-        return vars[braced ?? plain] ?? ' ';
-      })
-    .replace(/["'\\]/g, '');
+// A program word names a denied program by its last path segment, or as a glob that matches it
+// (/usr/bin/g?t runs git when the file is there).
+const DENIED_PROGRAMS = ['git', ...FORGE_CLIS, ...PACKAGE_MANAGERS];
+function programOf(w) {
+  const base = program(w);
+  if (DENIED_PROGRAMS.includes(base) || !/[*?[]/.test(base)) return base;
+  // A glob the shell would take literally (an unclosed [) is no regex either: it names itself.
+  let re;
+  try { re = new RegExp(`^${base.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/\[!/g, '[^')}$`); } catch { return base; }
+  return DENIED_PROGRAMS.find((p) => re.test(p)) ?? base;
+}
+
+// The command read as a shell reads it, enough to see which programs it runs (#72 and its two security
+// reviews): quotes and escapes, $'...', line continuations, $VAR and ${VAR} (read where they are used,
+// split on IFS when unquoted, ${X:-default}), for-loop variables, command and process substitutions
+// (empty, and their own text read as commands), redirections and their targets dropped, and {a,b}
+// brace expansion. Returns the simple commands, each a list of words. `pin` forces one variable to one
+// value everywhere, for a loop that may have assigned it later in the text. Not a shell: a string built
+// at run time (eval, read, a function) is not seen, and the end check still catches what gets through.
+const BRACE_OPEN = '\u0001'; const BRACE_COMMA = '\u0002'; const BRACE_CLOSE = '\u0003';
+function braceExpand(word) {
+  const open = word.indexOf(BRACE_OPEN);
+  if (open < 0) return [word];
+  let depth = 0; const commas = [];
+  for (let k = open; k < word.length; k++) {
+    if (word[k] === BRACE_OPEN) depth++;
+    else if (word[k] === BRACE_COMMA && depth === 1) commas.push(k);
+    else if (word[k] === BRACE_CLOSE && --depth === 0) {
+      const head = word.slice(0, open); const tail = word.slice(k + 1);
+      if (!commas.length) return braceExpand(`${head}{${word.slice(open + 1, k)}}${tail}`);
+      const cuts = [open, ...commas, k];
+      return cuts.slice(1).flatMap((c, n) => braceExpand(head + word.slice(cuts[n] + 1, c) + tail));
+    }
+  }
+  return [word.replace(/[\u0001-\u0003]/g, (m) => ({ [BRACE_OPEN]: '{', [BRACE_COMMA]: ',', [BRACE_CLOSE]: '}' })[m])];
+}
+function ansiC(body) {
+  const esc = { n: '\n', t: '\t', r: '\r', a: '\x07', b: '\b', e: '\x1b', E: '\x1b', f: '\f', v: '\v', '\\': '\\', "'": "'", '"': '"', '?': '?' };
+  return body.replace(/\\(x[0-9a-fA-F]{1,2}|u[0-9a-fA-F]{1,4}|U[0-9a-fA-F]{1,8}|[0-7]{1,3}|c.|.)/g, (_, e) => {
+    if (/^[xuU]/.test(e)) return String.fromCodePoint(parseInt(e.slice(1), 16));
+    if (/^[0-7]/.test(e)) return String.fromCharCode(parseInt(e, 8));
+    if (e[0] === 'c') return String.fromCharCode(e.charCodeAt(1) & 31);
+    return esc[e] ?? `\\${e}`;
+  });
+}
+// The text between the bracket at src[i] and its partner, and the index after the partner.
+function balanced(src, i, openCh, closeCh) {
+  let depth = 0;
+  for (let k = i; k < src.length; k++) {
+    if (src[k] === '\\') { k++; continue; }
+    if (src[k] === "'") { const e = src.indexOf("'", k + 1); k = e < 0 ? src.length : e; continue; }
+    if (src[k] === openCh) depth++;
+    else if (src[k] === closeCh && --depth === 0) return [src.slice(i + 1, k), k + 1];
+  }
+  return [src.slice(i + 1), src.length];
+}
+function shellCommands(src, pin = null, assigned = null, depth = 0) {
+  const cmds = []; const vars = {}; let cur = []; let word = null; let braces = 0;
+  const record = (name, value) => { vars[name] = value; if (assigned) (assigned[name] ??= new Set()).add(value); };
+  // IFS unset is the shell's default, so an unquoted ${IFS} splits words (git${IFS}push).
+  const value = (name) => (pin && pin.name === name ? pin.value : vars[name] ?? (name === 'IFS' ? ' \t\n' : undefined));
+  const push = () => {
+    if (word === null) return;
+    const w = word; word = null; braces = 0;
+    const m = /^([A-Za-z_]\w*)=([^]*)$/.exec(w);
+    if (m && cur.every((c) => ['export', 'declare', 'local', 'readonly', 'typeset'].includes(c) || c.startsWith('-'))) { record(m[1], m[2]); return; }
+    cur.push(...braceExpand(w).filter((x) => x !== '' || !w.includes(BRACE_OPEN)));
+  };
+  const end = () => {
+    push();
+    if (cur[0] === 'for' && cur[2] === 'in') for (const v of cur.slice(3)) record(cur[1], v);
+    if (cur.length) cmds.push(cur);
+    cur = [];
+  };
+  const add = (s) => { word = (word ?? '') + s; };
+  const sub = (inner) => { if (depth < 8) cmds.push(...shellCommands(inner, pin, assigned, depth + 1)); };
+  // An unquoted expansion is split into words on IFS (the command's own, if it sets one).
+  const addSplit = (v) => {
+    const ifs = vars.IFS ?? ' \t\n';
+    if (!v) return;
+    const parts = ifs ? v.split(new RegExp(`[${ifs.replace(/[\]\\^-]/g, '\\$&')}]`)) : [v];
+    parts.forEach((p, n) => { if (n) push(); if (p) add(p); });
+  };
+  // $... at src[i]: returns the index after it, having added its value to the word.
+  const dollar = (i, quoted) => {
+    const put = (v) => (quoted ? add(v ?? '') : addSplit(v ?? ''));
+    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); if (quoted) add(''); return e < 0 ? src.length : e + 1; }
+    const c = src[i + 1];
+    if (c === '(') {
+      if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); return after; }
+      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); if (quoted) add(''); return after;
+    }
+    if (c === '{') {
+      const [inner, after] = balanced(src, i + 1, '{', '}');
+      const m = /^#?([A-Za-z_]\w*)(?::?[-=+?]([^]*))?$/.exec(inner);
+      const v = m ? value(m[1]) : undefined;
+      put(m && !v && /^:?[-=]/.test(inner.slice(m[0].length - (m[2]?.length ?? 0) - 2)) ? m[2] : v);
+      return after;
+    }
+    const m = /^[A-Za-z_]\w*/.exec(src.slice(i + 1));
+    if (m) { put(value(m[0])); return i + 1 + m[0].length; }
+    if (c && /[0-9@*#?$!-]/.test(c)) return i + 2;
+    add('$'); return i + 1;
+  };
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '\\') { if (src[i + 1] === '\n') i += 2; else if (src.startsWith('\r\n', i + 1)) i += 3; else { add(src[i + 1] ?? ''); i += 2; } continue; }
+    if (c === "'") { const e = src.indexOf("'", i + 1); add(src.slice(i + 1, e < 0 ? undefined : e)); i = e < 0 ? src.length : e + 1; continue; }
+    if (c === '$' && src[i + 1] === "'") {
+      let k = i + 2; while (k < src.length && src[k] !== "'") k += src[k] === '\\' ? 2 : 1;
+      add(ansiC(src.slice(i + 2, k))); i = k + 1; continue;
+    }
+    if (c === '"') {
+      add(''); i++;
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === '\\' && '"\\$`\n'.includes(src[i + 1])) { if (src[i + 1] !== '\n') add(src[i + 1]); i += 2; continue; }
+        if (src[i] === '$' || src[i] === '`') { i = dollar(i, true); continue; }
+        add(src[i]); i++;
+      }
+      i++; continue;
+    }
+    if (c === '$' || c === '`') { i = dollar(i, false); continue; }
+    if (c === '<' || c === '>' || (c === '&' && src[i + 1] === '>')) {
+      if ((c === '<' || c === '>') && src[i + 1] === '(') { const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); i = after; continue; }
+      if (word !== null && /^\d+$/.test(word)) word = null; else push();
+      let k = i; while (k < src.length && /[<>&|]/.test(src[k])) k++;
+      if (src.slice(i, k).endsWith('&') && /[\d-]/.test(src[k] ?? '')) { i = k + 1; continue; }
+      while (k < src.length && /[ \t]/.test(src[k])) k++;
+      // The target: one word, quotes kept together.
+      while (k < src.length && !/[\s;&|<>()]/.test(src[k])) {
+        if (src[k] === "'" || src[k] === '"') { const e = src.indexOf(src[k], k + 1); k = e < 0 ? src.length : e + 1; } else k++;
+      }
+      i = k; continue;
+    }
+    if (c === '\n' || c === ';' || c === '&' || c === '|' || c === '(' || c === ')') { end(); i++; continue; }
+    if (/\s/.test(c)) { push(); i++; continue; }
+    if ((c === '{' || c === '}') && word === null && /[\s;]/.test(src[i + 1] ?? ' ')) { end(); i++; continue; }
+    if (c === '{') { braces++; add(BRACE_OPEN); i++; continue; }
+    if (c === ',' && braces > 0) { add(BRACE_COMMA); i++; continue; }
+    if (c === '}' && braces > 0) { braces--; add(BRACE_CLOSE); i++; continue; }
+    add(c); i++;
+  }
+  end();
+  return cmds;
+}
+// Every reading worth checking: the command as it runs once, then once per value each assigned
+// variable takes, so a loop that reassigns it later in the text is read with that value too.
+function readings(command) {
+  const assigned = {};
+  const first = shellCommands(command, null, assigned);
+  const pins = Object.entries(assigned).flatMap(([name, values]) => [...values].map((v) => ({ name, value: v }))).slice(0, 24);
+  return [first, ...pins.map((p) => shellCommands(command, p))].map((cmds) => cmds.flatMap((c) => [...c, SEP]));
 }
 // Words, with only a command separator (; & | newline) as a boundary between them: anything else the
 // shell drops or substitutes, such as `` or $(...), still leaves git next to its subcommand.
 const SEP = '\0';
-function historyWords(command) {
-  const words = command.split(/([;&|\n]+)|[\s(){}<>`"'$!]+/).filter((t) => t !== undefined && t !== '').map((t) => (/^[;&|\n]+$/.test(t) ? SEP : t));
+const flatWords = (command) => command.split(/([;&|\n]+)|[\s(){}<>`"'$!]+/).filter((t) => t !== undefined && t !== '').map((t) => (/^[;&|\n]+$/.test(t) ? SEP : t));
+function historyWords(words) {
   const simple = (k) => { const end = words.indexOf(SEP, k); return words.slice(k, end < 0 ? undefined : end); };
   for (let i = 0; i < words.length; i++) {
-    const prog = program(words[i]);
+    const prog = programOf(words[i]);
     if (FORGE_CLIS.has(prog)) return prog;
     if (PACKAGE_MANAGERS.has(prog) && simple(i + 1).includes('publish')) return `${prog} publish`;
     if (prog !== 'git') continue;
@@ -672,13 +811,16 @@ function historyWords(command) {
 }
 function historyCommand(command) {
   if (typeof command !== 'string') return null;
+  let read;
+  try { read = readings(command); } catch { read = []; }
   // The fast track's start record and accepted record decide the end check; a shell write could reset them.
   const state = /\.git[\\/]+speckit-team(?![\w.-])/i;
-  if (state.test(command) || state.test(unquoted(command))) return "a command on the fast track's state";
-  const found = historyWords(command) ?? historyWords(unquoted(command));
-  if (found) return found;
+  if (state.test(command) || read.some((ws) => ws.some((w) => state.test(w)))) return "a command on the fast track's state";
+  // The flat words keep the old rule that a command which only mentions git push is denied too.
+  for (const ws of [flatWords(command), ...read]) { const found = historyWords(ws); if (found) return found; }
   // An alias defined on the command line runs whatever it names, under a name no list can know.
-  return gitCalls(command).length && /(^|\s)-c\s*alias\./i.test(unquoted(command)) ? 'git -c alias' : null;
+  const alias = (ws) => ws.some((w, k) => programOf(w) === 'git' && ws.slice(k + 1).some((a, n, rest) => /^-c\s*alias\./i.test(a) || (a === '-c' && /^alias\./i.test(rest[n + 1] ?? ''))));
+  return [flatWords(command), ...read].some(alias) ? 'git -c alias' : null;
 }
 function gitCalls(command) {
   const calls = [];
