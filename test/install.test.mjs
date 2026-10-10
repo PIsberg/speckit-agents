@@ -105,6 +105,26 @@ test('installed speckit-patch skill commits only after the end check, and never 
   assert.ok(empty.index < text.indexOf('git commit -m'), 'the empty-record rule comes before the first git commit -m');
 });
 
+// #70: the plan stop and the dictated revision are a contract between the skill and the architect.
+// The skill greps plan.md for the section and starts a prompt with the prefix; renaming either on
+// one side only would quietly bring back a revision round per decision.
+test('installed speckit-team skill and architect agree on the decisions section and the dictated revision', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const architect = fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8');
+  const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
+  for (const [name, text] of [['architect.md', architect], ['speckit-team SKILL.md', skill]]) {
+    for (const term of ['`## Open Decisions`', '`dictated:`', '`needs revision`']) {
+      assert.ok(text.includes(term), `${name} names ${term}`);
+    }
+  }
+  // The read rule names the shell reads the 003 architects re-read files with, and the narrow form.
+  for (const re of [/`cat`/, /`sed`/, /grep -n "\^## "/, /forbidden/]) assert.match(architect, re);
+  // The decisions' reasoning stays in plan.md, so the report keeps its cap; the skill batches its questions.
+  assert.match(architect, /At most 15 lines/);
+  assert.match(skill, /at most 4 questions/);
+});
+
 // 003 FR-013, FR-012, US5-1, US5-2 (T015): the advisory triage skill.
 test('installed speckit-triage skill is advisory, names both commands and the four signals, and uninstalls', () => {
   const dir = claudeDir();

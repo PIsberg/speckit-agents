@@ -348,6 +348,23 @@ hooks decide what is allowed.
 `/speckit-team` runs in the main session, because only the main session can talk to you. It
 launches each agent with the inputs it needs and relays the product owner's questions to you.
 
+#### Settling decisions
+
+The architect writes each decision you should confirm (a new dependency, a schema or public API
+change, a rule with more than one reasonable reading) to an `## Open Decisions` section of
+`plan.md`: the options, its recommendation first, and what follows from each option (edge cases,
+counts, side effects, the requirements and tasks it changes). Its report names only the decision
+IDs, so the reasoning is not carried in the main session for the rest of the run. At the plan stop
+the skill asks you about every open decision at once, and one architect revision applies all the
+answers, moving each entry to a `## Decisions` section with the answer and the date.
+
+When your answers, or an audit's findings, fully determine the edits (a value, a list entry, a
+wording), the skill sends a *dictated* revision: each exact edit and where it goes, which the
+architect makes by grep without re-reading the artifacts. Anything that needs design judgement, and any edit the architect
+finds changes more than it was told, gets a full revision. The orchestrating session never edits
+the plan itself: a response there re-reads a much larger context than an architect's
+([Feature 003](#feature-003-interactive)).
+
 #### Routing findings
 
 On a FAIL it routes each CRITICAL and HIGH finding to the agent that owns it; MEDIUM and LOW
@@ -649,8 +666,9 @@ Measured from the transcripts of the 001 run (2026-10-06 and 2026-10-07):
 | a fresh agent before it reads anything | 1 | 11k to 14k | Claude Code's system prompt, tools and your own `CLAUDE.md` |
 
 So the skill launches a fresh agent for every phase and every fix round, and never sends a new
-task to an old one. The architect reads each artifact once and edits by grep; on a revision it
-reads only what the findings point to. spec-auditor reads the constitution, spec, plan and tasks
+task to an old one. The architect reads each file once, whether through Read, `cat` or `sed`,
+finds the part of a large file by grepping its headings before reading a line range, and edits by
+grep; on a revision it reads only what the findings point to. spec-auditor reads the constitution, spec, plan and tasks
 once each, greps the other artifacts, and keeps its report to 60 lines. test-writer greps the spec
 for the IDs its tasks cite instead of reading it whole. These are prompt rules, not hooks. On the
 small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
@@ -696,6 +714,46 @@ main-session requests peaking at 39k to 44k and a `patcher` input of 0.02M to 0.
 `/speckit-team`'s $1.83 to $3.98 for a feature, that is what SC-005 asks about, for a change this
 small; a larger change would cost more.
 
+#### Feature 003, interactive
+
+The run that built feature 003 (2026-10-09 and 2026-10-10) was interactive, with fork subagents on
+and the main session and the architect on Opus, and much larger than the `sum()` feature: 10
+architect runs and 6 audits. Measured with `tools/usage.mjs` and the subagent transcripts; one
+sample, and the session also held some work outside 003.
+
+| Where | Input | Share |
+|---|---|---|
+| main session: 223 responses, first 60k, peak 444k | 59.18M | 59% of the run |
+| of which responses that only waited for a background agent (53 launches, all background) | 14.45M | 24% of the main session |
+| agents: 53 runs | 41.41M | 41% of the run |
+| of which architect, 10 runs, peaks 32k to 232k | 18.72M | 45% of the agents |
+| of which spec-auditor, 6 runs | 5.58M | 13% of the agents |
+
+Three causes, and what changed for each (#70):
+- **Waiting requests.** Fork subagents were on, so no launch was in the foreground. This repository
+  now commits the setting that turns them off ([Foreground launches](#foreground-launches)).
+- **Decision rounds.** Four architect runs only applied the owner's answers, 7.37M together. One
+  of them (1.03M) answered two points, how a rename is counted among them, that came out only in
+  the revision before; another (3.30M) followed the owner reversing a decision, which no prompt
+  prevents.
+  The architect now writes what follows from each option, and the skill asks every open decision at
+  one stop ([Settling decisions](#settling-decisions)).
+- **Reads through Bash.** The architects returned 1,282k characters of tool output, mostly through
+  `cat` and `sed`, which the rule to read each artifact once did not name. Within single runs they
+  read the same files again and again: `plan.md` 16 times in one, README.md 6 times (67k
+  characters) in the first plan run, and whole source files such as `hooks/speckit-team.mjs` (27k).
+  The two largest runs peaked at 232k and 227k and took 4.46M and 3.30M. The rule now covers every
+  way of reading a file, and shows the grep-then-range form for large ones.
+
+Small edits cost a full architect too: 0.70M for one whose changes were fully decided but whose
+prompt named only the files, against 0.11M in 4 requests for one whose prompt named the line,
+hence the dictated revision, which gives each edit with where it goes.
+Editing from the main session instead would save wall-clock time but not tokens: its responses
+averaged 265k of input (59.18M over 223), an architect's about 60k. A turn cap on the architect was
+considered and left out: a first plan writes five or more files, so a cap low enough to matter
+would cut artifacts short and cost an audit round. None of these changes is measured yet; the next
+full run is the measurement.
+
 #### Foreground launches
 
 A background launch returns only a receipt, and the main session then spent a request that did
@@ -713,15 +771,32 @@ An interactive session needs one setting for this. Claude Code 2.1.296 turns on 
 default in an interactive session (not under `claude -p`, where the runs above were made), and
 with them on its Agent tool has no `run_in_background` parameter at all: every agent runs in the
 background, whatever the skill passes. `CLAUDE_CODE_FORK_SUBAGENT=0`, in the shell or under `env`
-in `~/.claude/settings.json`, turns them off, and the foreground launch comes back; it also takes
-away Claude Code's own `fork` agent type. The skill checks its Agent tool at the start of a run and
-tells you once if the parameter is missing. This surfaced while recording the README's GIFs
+in a `settings.json`, turns them off, and the foreground launch comes back; it also takes away
+Claude Code's own `fork` agent type. To keep that to the repositories where you run the team, put
+it in the project's `.claude/settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_FORK_SUBAGENT": "0" } }
+```
+
+This repository commits exactly that, since the team builds its own features here. The skill
+checks its Agent tool at the start of a run and tells you once if the parameter is missing. This
+surfaced while recording the README's GIFs
 ([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked on 2026-10-09 against a fake
 API, at no cost: in an interactive session an Agent call with `run_in_background: false` ran in
 the background with the variable unset, and in the foreground with it set to `0` or `false`, in
-the environment or in `settings.json`. Two tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
-the same behaviour under `claude -p`. How much the background launches cost in a full interactive
-run is not measured ([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
+the environment or in `settings.json`. Checked again on 2026-10-10 the same way, Claude Code
+2.1.296 in a terminal driven by vhs, with the variable only in the project's `.claude/settings.json`
+and nothing in the environment: the Agent tool had `run_in_background`, the spec-auditor's report
+came back as its result, and the main session made 2 requests. Without the file, the parameter was
+missing, the call returned "Async agent launched", and the main session made 3. (Start such a
+check with `--permission-mode default`: in auto mode a notice about the localhost API waits for
+Enter and the agent never starts.) Three tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
+the same behaviour under `claude -p`, the third that a project's `.claude/settings.json` wins over
+`CLAUDE_CODE_FORK_SUBAGENT=1` in the environment. With fork subagents on, the waiting cost 14.45M
+of input, 24% of the main session, in the one interactive run measured
+([Feature 003](#feature-003-interactive)); the same run with them off is not measured
+([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
@@ -1015,16 +1090,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 169 tests:
+`npm test` runs 171 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 28 | the installer, against throwaway config dirs |
+| [`test/install.test.mjs`](test/install.test.mjs) | 29 | the installer, against throwaway config dirs |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 7 | the board mod: its fingerprint, retry-limit and role-color twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 21 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 22 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1063,12 +1138,14 @@ need no login and cost nothing.
   fire lets the action through. With the installed hook replaced by one that only exits, all 16
   fail, as do the two blocking cases above (2026-10-10, Claude Code 2.1.296). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  18 of the 21 tests fail (the 16 scripted ones and the two blocking no-model cases); the other three
+  18 of the 22 tests fail (the 16 scripted ones and the two blocking no-model cases); the other four
   do not depend on a hook.
-- **Claude Code's own behaviour.** Two tests pin what the skill's foreground rule relies on: an
-  Agent call with `run_in_background: false` runs in the foreground and returns the report, and
-  with `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
-  agent runs in the background ([Foreground launches](#foreground-launches)).
+- **Claude Code's own behaviour.** Three tests pin what the skill's foreground rule relies on: an
+  Agent call with `run_in_background: false` runs in the foreground and returns the report; with
+  `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
+  agent runs in the background; and with `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in the
+  project's `.claude/settings.json`, the parameter and the foreground launch come back despite the
+  `1` in the environment ([Foreground launches](#foreground-launches)).
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -1302,8 +1379,9 @@ verdict is read from its `message`. Any new catch-all hook must do the same.
 
 In an interactive session, Claude Code 2.1.296 has fork subagents on, and then its Agent tool has
 no `run_in_background` parameter: every agent runs in the background, which costs a waiting
-request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0` and restart (see
-[Foreground launches](#foreground-launches)). The skill says so at the start of a run.
+request per agent. Set `CLAUDE_CODE_FORK_SUBAGENT=0`, for example under `env` in the project's
+`.claude/settings.json`, and restart (see [Foreground launches](#foreground-launches)). The skill
+says so at the start of a run.
 
 ### `/speckit-implement` is not gated
 
@@ -1488,6 +1566,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001, 002 and 003 |
+| [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
 ### Making a change
 
