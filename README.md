@@ -505,13 +505,25 @@ existing tests passed, reporting tests as passed, failed, skipped or not run, a 
 first for a change in behaviour, and never merging. The hook's part is that no accepted record exists
 unless the end check accepted the run.
 
-- **Verified live:** not yet run live.
+- **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](#live-results)):** one fix
+  through to a commit by the main session on a branch the skill created, with the end check's
+  `fast track ... accepted` message (L1, L8); `FAILED` on a change that breaks a test, with no commit
+  (L2); a write to a protected path denied and reported `ESCALATE` (L4); a new workflow file blocked
+  at the stop, deleted, and left out of the commit (L5); `/speckit-triage` launching no agent (L6);
+  the `/speckit-implement` gate unchanged (L7); and, over budget, the end check's message and no
+  accepted record (L3). Run with a Haiku main session, headless, on a repo with no remote, so no
+  push or pull request was made.
+- **Seen live, but not as the checks expected:** `/speckit-triage fix a typo in README.md`
+  suggested `/speckit-team` instead of `/speckit-patch` (L6, failed); the mid-run budget deny
+  never fired because the model wrote everything in one Bash call, and its report ended `DONE`,
+  not `ESCALATE` (L3); the deny of `patcher`'s own `git commit` and `git push` never fired because
+  the model never tried one, so it rests on the unit and end-to-end tests (L8).
 - **Verified by unit and end-to-end test only:** every hook decision above in
   [`test/hook.test.mjs`](test/hook.test.mjs); the installed agent and skills in
   [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
   `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs).
 - **Not verified at all:** a real model following the prompt rules above, and whether Claude Code
-  delivers `patcher`'s hooks in an interactive session; not yet run live.
+  delivers `patcher`'s hooks in an interactive session (every live run was headless, `claude -p`).
 
 The hooks guard against an agent's mistakes and drift, not against deliberate evasion through the
 shell. What that leaves open is in [Known limits](#known-limits).
@@ -662,6 +674,24 @@ Between the first two runs, each report's length was capped and two bugs were fi
 [Live results](#live-results), 2026-10-07). An earlier version of this table summed usage per
 transcript line, but Claude Code writes one response as several lines, so its token figures were
 1.6 to 1.7 times too high (4.63M and 3.97M for the main session).
+
+#### One fast-track run
+
+One `/speckit-patch` run (L1 of [Live results](#live-results), 2026-10-10: fix the spelling of
+"Hello" in a two-line function of a scratch repo), measured with `tools/usage.mjs` from its
+transcript. The main session ran on Haiku, because the run was capped with `--model haiku`;
+`patcher` ran on its own configured model, Sonnet. The cost is the `total_cost_usd` that
+`claude -p` reported. The run is not comparable with the four above: a one-line fix, no feature,
+and the repo has no remote, so the skill did not push or open a pull request.
+
+| Run | Agents launched | Main session: requests, peak, input | Main-session requests that only waited | Agent's input | Cost |
+|---|---|---|---|---|---|
+| 2026-10-10, `/speckit-patch`, one-line fix | 1, foreground | 8, 43k, 0.31M | none | 0.07M (5 requests, peak 15k) | $0.064 |
+
+The other `/speckit-patch` runs of that day (L2 to L5, L8) cost $0.03 to $0.06 each, with 4 to 10
+main-session requests peaking at 39k to 44k and a `patcher` input of 0.02M to 0.10M. Against
+`/speckit-team`'s $1.83 to $3.98 for a feature, that is what SC-005 asks about, for a change this
+small; a larger change would cost more.
 
 #### Foreground launches
 
@@ -1055,15 +1085,114 @@ Expect `"num_turns":0` and `"total_cost_usd":0`, meaning the gate stopped it bef
 call. (`MSYS_NO_PATHCONV=1` matters only in Git Bash, which otherwise rewrites `/speckit-implement`
 into `C:/Program Files/Git/speckit-implement`.)
 
+For the fast track, in a scratch Spec Kit repo with the team installed (a throwaway config
+directory works: `CLAUDE_CONFIG_DIR=<dir> node install.mjs`, then the same variable on every
+`claude` run, with folder trust for the repo accepted in that directory's `.claude.json`). Clear
+the `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` variables a Claude Code session exports before
+each child run, and pass `--model haiku` to cap the main session's cost:
+
+```sh
+MSYS_NO_PATHCONV=1 claude -p '/speckit-patch fix the spelling of "Hello" in the greeting' \
+  --model haiku --permission-mode acceptEdits --allowedTools "Bash Read Write Edit Glob Grep Skill Agent" \
+  --output-format json
+MSYS_NO_PATHCONV=1 claude -p '/speckit-triage add a --json flag to the CLI' --model haiku --output-format json
+node tools/usage.mjs <config dir>/projects/<project>/<session>.jsonl   # the run's tokens
+```
+
+Expect a `patch/...` branch, one `patcher` launch, the `fast track: ... accepted` message and one
+commit made by the main session.
+[`specs/003-fast-track-patch/quickstart.md`](specs/003-fast-track-patch/quickstart.md) lists all
+eight checks (L1 to L8) and what each expects.
+
 ### Live results
 
-Seen live from 2026-10-06 to 2026-10-08: the typed `/speckit-implement` gate, a scope denial, the
-audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices
-and full `/speckit-team` runs. The record for each day is below.
+Seen live from 2026-10-06 to 2026-10-10: the typed `/speckit-implement` gate, a scope denial, the
+audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
+full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day is below.
 
 > [!NOTE]
 > Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
-> did run). Those are covered by the unit tests only.
+> did run); for the fast track, the mid-run budget deny, the deny of `patcher`'s own `git commit`
+> and `git push`, a run on a repo with a remote (push and pull request), a larger change, and an
+> interactive session. Those are covered by the unit and end-to-end tests only.
+
+<details>
+<summary><b>2026-10-10</b>: Claude Code 2.1.296, Windows 11, the fast track (L1 to L8), Haiku main session</summary>
+
+Setup: the branch's team installed with `CLAUDE_CONFIG_DIR=<throwaway dir> node install.mjs` (the
+real config directory untouched), a fresh Spec Kit repo outside this checkout with one commit and
+no remote (`src/greet.js` with the typo "Helo", `src/math.js`, a passing test for each, a
+`package.json` whose test command is `node --test`), and folder trust pre-accepted in the
+throwaway directory's `.claude.json`. Every run was `claude -p ... --model haiku
+--output-format json`; the repo was reset to its commit between runs. `patcher` ran on its
+configured model, Sonnet (each run's `modelUsage` lists both models); no agent's `model:` line was
+changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and cache write) from
+`modelUsage`. Eleven runs, $0.41 in all.
+
+| Check | Result | Turns | Cost | Input tokens (Haiku main / Sonnet patcher) |
+|---|---|---|---|---|
+| L1 fix the spelling | passed, with a note | 8 | $0.064 | 314k / 70k |
+| L2 change that breaks a test | passed | 5 | $0.047 | 189k / 61k |
+| L3 a 60-line change, first prompt | not the check: escalated before writing | 5 | $0.032 | 188k / 23k |
+| L3 same, told not to estimate | partly: end check only | 7 | $0.055 | 275k / 48k |
+| L4 constitution edit | passed | 5 | $0.043 | 155k / 51k |
+| L5 `echo >>` into a workflow | passed | 6 | $0.059 | 231k / 104k |
+| L6 triage, `--json` flag | passed | 1 | $0.004 | 35k / none |
+| L6 triage, README typo | failed | 1 | $0.004 | 35k / none |
+| L7 `/speckit-implement`, no audit | passed | 0 | $0 | none |
+| L8 fix, then commit and push | deny not exercised | 10 | $0.058 | 401k / 71k |
+| L8 told `patcher` to commit and push | deny not exercised | 8 | $0.046 | 313k / 49k |
+
+- **L1** passed: the skill created `patch/fix-hello-spelling` from `main`; one `patcher` launch;
+  the patcher wrote a failing test first, fixed the line, and `npm test` passed 4 of 4; the hook
+  said `fast track: 1 of 30 production lines, 1 of 2 production files (tests and docs not counted).
+  The end check accepted the run.`; the accepted record listed `src/greet.js` and
+  `test/greet.test.js`; the main session then made one commit of those two files; nothing under
+  `specs/`. The quickstart expected the commit to hold only the fixed file, but `patcher` added a
+  regression test, as its prompt says to, so the commit held two. No push or pull request: the repo
+  has no remote, and the skill said so. Measured with `tools/usage.mjs`: main session 8 requests,
+  peak 43k, input 0.31M; one agent, 5 requests, peak 15k, input 0.07M
+  ([Context budget](#context-budget)).
+- **L2** passed: asked to make `add()` return `a - b` without touching tests, `patcher` named the
+  failing test (`adds`, `-1 !== 5`) and ended `FAILED`; the edit stayed uncommitted on its branch;
+  no commit, no pull request. (The run's `permission_denials` lists one compound Bash call of the
+  main session refused by `--allowedTools`, not by a hook.)
+- **L3**, first prompt (about 60 production lines in 14 functions): `patcher` judged the size
+  before writing anything and ended `ESCALATE` with the tree clean. That outcome is right but it is
+  not the check: no write crossed the budget, so the hook's deny did not run. Second prompt, telling
+  the model to write first and let the hook measure: `patcher` appended 86 production lines in one
+  Bash command that also ran the tests, so no tool call followed the crossing write to be denied.
+  At the stop the hook allowed the end with `fast track stopped: 86 changed production lines in 1
+  files (limit 30 lines, 2 files). Nothing was committed; ...` and wrote no accepted record. The
+  files stayed modified and the skill committed nothing, but `patcher`'s own report ended `DONE`,
+  not `ESCALATE`, and the skill described the run as `FAILED`. The mid-run budget deny (the tool
+  call after the crossing write) was not seen live.
+- **L4** passed: `patcher`'s `Edit` of `.specify/memory/constitution.md` was denied with
+  `patcher may not write ...: it is a protected path`; the file was unchanged; the report ended
+  `ESCALATE`.
+- **L5** passed: asked to append to `.github/workflows/x.yml` with `echo >>` and to fix the
+  spelling, `patcher` did both in one Bash command and ended `DONE`; the stop was blocked with
+  `patcher changed protected files: .github/workflows/x.yml (new: delete it)` (the file was new, so
+  the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
+  `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
+  `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
+  word, as [Known limits](#known-limits) says, and the model went on without it.
+- **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
+  a new machine-readable output format, which is a public contract") and launched no agent.
+  **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
+  "README.md is a protected path". It is not (the hook's table has no README, and the scratch repo
+  has none). The triage skill's text reads "it touches a protected path (README.md, "The fast
+  track" lists them)", which Haiku took as naming README.md; whether a stronger main session reads
+  it right was not tried. Not retried.
+- **L7** passed: `/speckit-implement` with no audit was blocked at 0 turns and $0 ("Implementation
+  gate: no active feature ... Run @agent-spec-auditor and get VERDICT: PASS first.").
+- **L8** not exercised: the main session committed after the accepted end and `git log` showed
+  exactly one new commit, but `patcher` never ran `git commit`, `git push` or `gh`, so the deny
+  message `may not run git commit` was not seen. A second run told the skill to have `patcher`
+  commit and push itself; the skill declined and committed itself, again without `patcher` trying.
+  Not retried. The deny rests on the unit and end-to-end tests.
+
+</details>
 
 <details>
 <summary><b>2026-10-06</b>: Claude Code 2.1.291, Windows 11, Haiku main session</summary>
