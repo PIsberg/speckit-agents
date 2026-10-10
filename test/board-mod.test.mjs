@@ -118,3 +118,20 @@ test('the board mod\'s own tests pass under claude plugin test', { skip: noClaud
   assert.equal(r.status, 0, out);
   assert.match(out, /\b0 fail\b/, out);
 });
+
+// FR-010: every command the README lists must match what the mod registers.
+test('the README\'s board commands are the arguments the mod registers', () => {
+  const reg = fs.readFileSync(path.join(MOD, 'hooks', 'register.tsx'), 'utf8');
+  const hint = /argumentHint:\s*'\[([^\]]*)\]'/.exec(reg);
+  assert.ok(hint, 'register.tsx has no argumentHint');
+  const registered = hint[1].split('|').map((s) => s.trim()).sort();
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n/g, '\n');
+  const board = readme.slice(readme.indexOf('## Board mod (experimental)'));
+  const from = board.indexOf('### Commands');
+  assert.ok(from >= 0, 'README has no Commands section under Board mod');
+  const rest = board.slice(from + '### Commands'.length);
+  const next = rest.indexOf('\n### ');
+  const section = next < 0 ? rest : rest.slice(0, next);
+  const documented = [...section.matchAll(/^\| `\/speckit-board ([^`\s]+)`/gm)].map((m) => m[1]).sort();
+  assert.deepEqual(documented, registered);
+});

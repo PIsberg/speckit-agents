@@ -43,7 +43,7 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 161 s on Windows (187 tests, 2026-10-10; the
+- `npm test`: all suites, no network beyond localhost, 161 s on Windows (188 tests, 2026-10-10; the
   four installer tests that run the real `claude plugin` and the 23 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
@@ -78,5 +78,5 @@ this file is how to work on it.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/003-fast-track-patch/plan.md`
+`specs/004-board-clear/plan.md`
 <!-- SPECKIT END -->

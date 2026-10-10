@@ -937,7 +937,8 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
   progress bar, `RED n/3` once implementer has reported RED on the current plan, and the team
   agent at work with a spinner and its running time. It stays one row: where the row is short it
   drops, in this order, the other phases' names, the bar, the buttons and the other phases' glyphs.
-  The current phase keeps its name.
+  The current phase keeps its name. The buttons are `board`, `clear` and `hide`; on a short row
+  they drop in the order `hide`, `clear`, `board`.
 - **A pane**, opened with `/speckit-board` or the band's `board` button:
   - the next step: while building, the next open task of `tasks.md`; otherwise what the pipeline
     needs (`spec-auditor: audit spec, plan and tasks`, `re-audit: spec, plan or tasks changed`,
@@ -952,7 +953,7 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     other. The word takes the glyph's color, except that `RED` is always red and `GREEN` always
     green, so a test-writer's `RED` reads `✓ RED` with a green tick and a red word. The latest six
     show, and the rest are counted;
-  - the buttons, and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
+  - the buttons (`board`, `clear`, `hide`), and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
     A finished section, and one not started past the next task, folds to its title and count, and
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
     Code draws inline code.
@@ -972,6 +973,7 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 | `/speckit-board` | opens the pane, as the band's `board` button does |
 | `/speckit-board refresh` | re-reads the files |
 | `/speckit-board band` | hides or shows the band |
+| `/speckit-board clear` | removes the finished agents' rows and the band, as the `clear` button does; running agents keep their rows, and the next team agent brings the band back. It changes no file under `.git/speckit-team/`, no spec file, and not the status line |
 | `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well and the model reads |
 
 The command runs at once, also during a turn: with its agents in the foreground
@@ -1036,12 +1038,13 @@ installs can still remove it.
 
 ### Verified
 
-**Automated.** `claude plugin validate` and `claude plugin test` (52 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (76 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
 `test/install.test.mjs`, which checks that the mod is read from this checkout and that uninstall
-restores `settings.json` byte for byte.
+restores `settings.json` byte for byte. The `[ clear ]` button and the `clear` argument are verified
+by the mod's tests only, not seen live, and `docs/media/board.png` predates the button.
 
 **Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09: the
 record is below. **Not seen live:** an interactive session on Linux (band, pane, agent rows; that
@@ -1122,13 +1125,13 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 187 tests:
+`npm test` runs 188 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
 | [`test/install.test.mjs`](test/install.test.mjs) | 36 | the installer, against throwaway config dirs |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 8 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 52 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 9 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 23 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |

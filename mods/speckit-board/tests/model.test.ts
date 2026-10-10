@@ -276,3 +276,24 @@ test('a short band drops its buttons before the phases, and does not change as t
     expect(shape(5_000)).toBe(shape(3_599_000))
   }
 })
+
+// 004-board-clear FR-001, SC-006 band, D2 A: the band's buttons are board, clear, hide, and drop
+// hide first, then clear, then board.
+test('the band carries a clear button between board and hide, and drops buttons in order', () => {
+  const b = board({ tasks: SLICE, red: 1 })
+  const buttons = bandLayout(b, [], 0, 135).filter(x => x.kind === 'button')
+  expect(buttons.map(x => x.text)).toEqual(['[ board ]', '[ clear ]', '[ hide ]'])
+  expect(buttons[1]).toMatchObject({ key: 'clear', label: 'clear' })
+  for (const running of [[], [{ type: 'implementer', startedAt: 0 }]]) {
+    const narrowest = widthOf(bandLayout(b, running, 0, 30))
+    for (let cols = 30; cols <= 140; cols++) {
+      const items = bandLayout(b, running, 0, cols)
+      const texts = items.map(x => x.text)
+      if (texts.includes('[ hide ]')) expect(texts).toContain('[ clear ]')
+      if (texts.includes('[ clear ]')) expect(texts).toContain('[ board ]')
+      // The narrowest layout (only-head) is wider than 30 columns with a running agent, with or
+      // without the button; the bound holds from that width up, and at every width with no agent.
+      if (running.length === 0 || cols >= narrowest) expect(widthOf(items)).toBeLessThanOrEqual(cols)
+    }
+  }
+})

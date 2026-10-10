@@ -36,7 +36,9 @@ async function world(on: On, extra: Record<string, string> = {}) {
   const clock = mock.clock(on, { now: 1_000_000 })
   mock.store(on)
   // git answers only inside a repo, as the real one does.
+  const runs = { n: 0, reads: 0 }
   on('process.run', (_$, e) => {
+    runs.n++
     const root = [ROOT, OTHER].find(r => posix(e.init?.cwd ?? '').startsWith(r))
     return { value: root
       ? { exitCode: 0, stderr: '', isStdoutTruncated: false, isStderrTruncated: false,
@@ -48,6 +50,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   // A real read takes time. Without it here, tests that let the poll run passed on Windows and
   // Linux and failed only on the slower macOS runner in CI; with it, they fail on any machine.
   on('fs.read', async (_$, e) => {
+    runs.reads++
     await new Promise(r => setTimeout(r, 5))
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
@@ -62,7 +65,7 @@ async function world(on: On, extra: Record<string, string> = {}) {
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
   on('ui.open', (_$, e) => { opens.push(e); return { value: { isPlaced: true } } })
-  return { toasts, status, commands, opens, files, fp, clock }
+  return { toasts, status, commands, opens, files, fp, clock, runs }
 }
 
 // The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
@@ -153,7 +156,13 @@ test('the pane lists the phases with their notes, the tasks by section, the retr
     expect(await ui.find({ type: 'Text', text: 'Phase 2: Story' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /T002 \[P\] Test greet/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: '●○○' }))?.props.color).toBe('warning')
-    expect(await ui.findAll({ type: 'Button' })).toHaveLength(4)
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(5)
+    // 004-board-clear FR-001: a `clear` button after `band` and before `close`.
+    const buttons = await ui.findAll({ type: 'Button' })
+    const keys = buttons.map(b => b.key)
+    expect(keys.indexOf('clear')).toBe(keys.indexOf('band') + 1)
+    expect(keys.indexOf('close')).toBe(keys.indexOf('clear') + 1)
+    expect(buttons[keys.indexOf('clear')]?.props).toMatchObject({ label: 'clear', hotkey: 'c' })
     await ui.unmount()
   }
 })
@@ -496,7 +505,7 @@ for (const [word, glyph, color] of [['APPROVED', '✓', 'success'], ['REJECTED',
 test('/speckit-board is registered to run at once, during a turn', async ($, on) => {
   const seen = await world(on)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
-  expect(seen.commands.find(c => c.name === 'speckit-board')).toMatchObject({ immediate: true, argumentHint: '[status|refresh|band]' })
+  expect(seen.commands.find(c => c.name === 'speckit-board')).toMatchObject({ immediate: true, argumentHint: '[status|refresh|band|clear]' })
 })
 
 test('/speckit-board status answers with the board as text', async ($, on) => {
@@ -514,7 +523,7 @@ test('an unknown argument says which ones there are', async ($, on) => {
   await world(on)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   expect(await $.command.run({ command: 'speckit-board', args: 'stauts' } as never))
-    .toMatchObject({ text: 'unknown argument "stauts": use status, refresh or band.' })
+    .toMatchObject({ text: 'unknown argument "stauts": use status, refresh, band or clear.' })
 })
 
 // The board follows .specify/feature.json. When a new feature became the active one, the old board
@@ -527,4 +536,356 @@ test('a switch of the active feature says which one the board follows now', asyn
   await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)
   expect(seen.toasts).toContain('002-y is the active feature now')
   expect(seen.status.at(-1)).toBe('002-y · ◐ spec (draft)')
+})
+
+// ---- 004-board-clear: the board's clear (slices 1 to 3) ----
+
+// Registers pass-through agent handlers; the returned function runs n finished implementers (i1..in).
+function finish($: Engine, on: On, n: number) {
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  return async () => {
+    for (let k = 1; k <= n; k++) {
+      await $.classic.SubagentStart({ agent_id: `i${k}`, agent_type: 'implementer' } as never)
+      await $.classic.SubagentStop(stop(`i${k}`, 'implementer', 'RESULT: GREEN'))
+    }
+  }
+}
+
+const clearCmd = ($: Engine) => $.command.run({ command: 'speckit-board', args: 'clear' } as never)
+const mountBand = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal', cols = 135) =>
+  $.ui.mount({ plugin: 'speckit-board', surface, ...BAND, ...band(cols) } as never)
+const mountPane = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') =>
+  $.ui.mount({ plugin: 'speckit-board', surface, ...PANE, ...pane } as never)
+
+// Counts fs.write events (nothing else in world() answers them): a clear must raise none. Register
+// it beside world(), before the first call on `$`. Store writes cannot be counted here: mock.store
+// owns the store events; the mod writes the store only in its SubagentStop handler.
+function recorders(on: On) {
+  const counts = { 'fs.write': 0 }
+  on('fs.write', ((_$: unknown, _e: unknown) => { counts['fs.write']++; return { value: undefined } }) as never)
+  return counts
+}
+
+// Refuses writes to one of the mod's state keys once armed.
+function denyState(on: On, key: string) {
+  const gate = { isArmed: false }
+  on('state.set', { plugin: 'speckit-board', key } as never, ((_$: unknown, e: unknown, next: (e: never) => unknown) =>
+    (gate.isArmed ? { deny: 'state is read-only' } : next(e as never))) as never)
+  return gate
+}
+
+// FR-011, FR-002, FR-003, FR-012, US1-1, SC-001
+test('/speckit-board clear removes the finished rows and the band, and raises no toast or status', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  const toasts = seen.toasts.length
+  const status = seen.status.length
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  expect(seen.toasts).toHaveLength(toasts)
+  expect(seen.status).toHaveLength(status)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const b = await mountBand($, surface)
+    expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
+    expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeUndefined()
+    await b.unmount()
+    const p = await mountPane($, surface)
+    expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+    expect(await p.find({ type: 'Text', text: /earlier/ })).toBeUndefined()
+    expect(await p.find({ type: 'Text', text: 'cleared; no team agent has run since' })).toBeDefined()
+    await p.unmount()
+  }
+})
+
+// FR-007, US2-2
+test('/speckit-board after a clear opens the pane with the phases and the next step', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  expect(await $.command.run({ command: 'speckit-board', args: '' } as never)).toMatchObject({ text: 'pane opened.' })
+  expect(seen.opens.length).toBeGreaterThan(0)
+  const p = await mountPane($)
+  expect((await p.find({ type: 'Text', text: /^next / }))?.text).toBe('next T002 Test greet')
+  expect((await around(p, 'audit')).after?.text).toBe('PASS')
+  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  await p.unmount()
+})
+
+// FR-005, D1 A
+test('/speckit-board clear keeps a running agent, its row and the band', async ($, on) => {
+  await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await $.classic.SubagentStart({ agent_id: 't1', agent_type: 'test-writer' } as never)
+  for (const k of [1, 2]) {
+    await $.classic.SubagentStart({ agent_id: `i${k}`, agent_type: 'implementer' } as never)
+    await $.classic.SubagentStop(stop(`i${k}`, 'implementer', 'RESULT: GREEN'))
+  }
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 2 agent rows; 1 running agent kept.' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const p = await mountPane($, surface)
+    expect((await around(p, 'test-writer')).after?.text).toBe('running')
+    expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+    await p.unmount()
+    const b = await mountBand($, surface)
+    expect(await b.find({ type: 'Text', text: '◐ build' })).toBeDefined()
+    expect(await b.find({ type: 'Text', text: /test-writer/ })).toBeDefined()
+    await b.unmount()
+  }
+})
+
+// US1-4, FR-008, SC-005
+test('/speckit-board clear with no feature and no agents says there is nothing to clear, twice', async ($, on) => {
+  const seen = await world(on)
+  delete seen.files[`${ROOT}/.specify/feature.json`]
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect(await clearCmd($)).toMatchObject({ text: 'nothing to clear.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'nothing to clear.' })
+})
+
+// US1-3 by command, SC-005
+test('/speckit-board clear with the band already hidden clears the rows only, then has nothing to clear', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 2)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  expect(await $.command.run({ command: 'speckit-board', args: 'band' } as never)).toMatchObject({ text: 'band hidden.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 2 agent rows.' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const b = await mountBand($, surface)
+    expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
+    expect(await b.find({ type: 'Button' })).toBeUndefined()
+    await b.unmount()
+  }
+  expect(await clearCmd($)).toMatchObject({ text: 'nothing to clear.' })
+})
+
+// Edge Case "narrow": at 45 columns the band draws no button
+test('/speckit-board clear clears a band too narrow to carry the button', async ($, on) => {
+  await world(on)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  const b = await mountBand($, 'terminal', 45)
+  expect(await b.find({ type: 'Button' })).toBeUndefined()
+  expect(await b.find({ type: 'Text', text: '◐ build' })).toBeDefined()
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the band.' })
+  expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
+  await b.unmount()
+})
+
+// FR-009
+test('/speckit-board clear answers as text in a headless session', async ($, on) => {
+  await world(on)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: false })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the band.' })
+})
+
+// constitution III, research R5
+test('/speckit-board clear says so when the state refuses the write', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 1)
+  const deny = denyState(on, 'agents')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  deny.isArmed = true
+  const answer = (await clearCmd($)) as { text: string }
+  expect(answer.text).toMatch(/^clear failed: .+\.$/)
+})
+
+// FR-004, US3-1, US3-2, SC-002, SC-003: clear is display-only, whatever state the gate is in
+const RETRIES = (n: number) => (fp: string) => ({ retries: JSON.stringify({ fingerprint: fp, red: Array.from({ length: n }, (_, i) => `r${i}`) }) })
+const CLEAR_STATES: [string, (fp: string) => { verdict?: string, retries?: string }][] = [
+  ['PASS', fp => ({ verdict: JSON.stringify({ verdict: 'PASS', fingerprint: fp }) })],
+  ['FAIL', fp => ({ verdict: JSON.stringify({ verdict: 'FAIL', fingerprint: fp }) })],
+  ['stale PASS', () => ({ verdict: JSON.stringify({ verdict: 'PASS', fingerprint: 'stale' }) })],
+  ...[0, 1, 2, 3].map(n => [`PASS with ${n} REDs`, RETRIES(n)] as [string, (fp: string) => { retries: string }]),
+]
+for (const [name, files] of CLEAR_STATES) {
+  test(`clear changes no file or process, nor the status text: ${name}`, async ($, on) => {
+    const seen = await world(on)
+    const f = files(seen.fp)
+    if (f.verdict) seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`] = f.verdict
+    if (f.retries) seen.files[`${ROOT}/.git/speckit-team/retries/001-x.json`] = f.retries
+    const run = finish($, on, 3)
+    const counts = recorders(on)
+    await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+    await run()
+    const before = JSON.stringify(seen.files)
+      const statusBefore = (await $.command.run({ command: 'speckit-board', args: 'status' } as never)) as { text: string }
+    const runs = seen.runs.n
+    expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+    expect(counts['fs.write']).toBe(0)
+    expect(seen.runs.n).toBe(runs)
+      expect(JSON.stringify(seen.files)).toBe(before)
+    const statusAfter = (await $.command.run({ command: 'speckit-board', args: 'status' } as never)) as { text: string }
+    expect(statusAfter.text).toBe(statusBefore.text)
+  })
+}
+
+// ---- slice 2: the pane's button ----
+
+// FR-001, FR-004, FR-012, US1-3, SC-005, D3 A
+test('the pane\'s clear button clears with one toast and changes nothing else', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 3)
+  const counts = recorders(on)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await $.command.run({ command: 'speckit-board', args: 'band' } as never)
+  const p = await mountPane($)
+  const before = JSON.stringify(seen.files)
+  const toasts = seen.toasts.length
+  const status = seen.status.length
+  const runs = seen.runs.n
+  await p.press({ key: 'clear' })
+  expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows.'])
+  expect(seen.status).toHaveLength(status)
+  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  expect(counts['fs.write']).toBe(0)
+  expect(seen.runs.n).toBe(runs)
+  expect(JSON.stringify(seen.files)).toBe(before)
+  const b = await mountBand($)
+  expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
+  await b.unmount()
+  await p.press({ key: 'clear' })
+  expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows.', 'nothing to clear.'])
+  await p.unmount()
+})
+
+test('the pane\'s clear button toasts a refused write', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 1)
+  const deny = denyState(on, 'agents')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  const p = await mountPane($)
+  deny.isArmed = true
+  const toasts = seen.toasts.length
+  await p.press({ key: 'clear' })
+  const added = seen.toasts.slice(toasts)
+  expect(added).toHaveLength(1)
+  expect(added[0]).toMatch(/^clear failed: .+\.$/)
+  await p.unmount()
+})
+
+// ---- slice 3: the band's button ----
+
+// FR-001, SC-006 band, D3 A
+test('the band draws a dim clear button', async ($, on) => {
+  await world(on)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const b = await mountBand($, surface)
+    const button = (await b.findAll({ type: 'Button' })).find(x => x.key === 'clear')
+    expect(button?.props).toMatchObject({ label: 'clear', dimColor: true })
+    await b.unmount()
+  }
+})
+
+// US1-2
+test('the band\'s clear button clears the rows and the band with one toast', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 2)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  const b = await mountBand($)
+  const toasts = seen.toasts.length
+  await b.press({ key: 'clear' })
+  expect(seen.toasts.slice(toasts)).toEqual(['cleared 2 agent rows and the band.'])
+  expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
+  await b.unmount()
+  const p = await mountPane($)
+  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  await p.unmount()
+})
+
+// ---- slice 4: the next team agent ends the cleared state ----
+
+// FR-006, US2-1, SC-004: the start event itself ends the clear, not the 4-second poll
+test('the next team agent after a clear brings its row and the band back at its start event', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  await $.classic.SubagentStart({ agent_id: 'a9', agent_type: 'spec-auditor' } as never)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const b = await mountBand($, surface)
+    expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeDefined()
+    await b.unmount()
+    const p = await mountPane($, surface)
+    const r = await around(p, 'spec-auditor')
+    expect(r.after?.text).toBe('running')
+    expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+    await p.unmount()
+  }
+})
+
+// D4 A: the band argument and the pane's band button after a clear
+test('after a clear the band toggle first shows the band, then hides, then shows', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  const band$ = () => $.command.run({ command: 'speckit-board', args: 'band' } as never)
+  const drawn = async () => {
+    const b = await mountBand($)
+    const found = await b.find({ type: 'Text', text: /◆ 001-x/ })
+    await b.unmount()
+    return found !== undefined
+  }
+  expect(await band$()).toMatchObject({ text: 'band shown.' })
+  expect(await drawn()).toBe(true)
+  expect(await band$()).toMatchObject({ text: 'band hidden.' })
+  expect(await drawn()).toBe(false)
+  expect(await band$()).toMatchObject({ text: 'band shown.' })
+  expect(await drawn()).toBe(true)
+  await clearCmd($)
+  expect(await drawn()).toBe(false)
+  const p = await mountPane($)
+  await p.press({ key: 'band' })
+  await p.unmount()
+  expect(await drawn()).toBe(true)
+})
+
+// constitution III budget: the clear-ending write adds no fs.read or process.run to the start event
+test('SubagentStart after a clear costs the same fs.read and process.run events as without one', async ($, on) => {
+  const seen = await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  const measure = async (id: string) => {
+    const r0 = seen.runs.reads, p0 = seen.runs.n
+    const res = await $.classic.SubagentStart({ agent_id: id, agent_type: 'implementer' } as never)
+    expect(res).toEqual({})
+    return [seen.runs.reads - r0, seen.runs.n - p0]
+  }
+  const first = await measure('x1')
+  await $.classic.SubagentStop(stop('x1', 'implementer', 'RESULT: GREEN'))
+  await clearCmd($)
+  const second = await measure('x2')
+  expect(second).toEqual(first)
+})
+
+// constitution III: a refused isCleared write is toasted and does not stop the start
+test('SubagentStart after a clear toasts a refused isCleared write and goes on', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 1)
+  const deny = denyState(on, 'isCleared')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  deny.isArmed = true
+  const toasts = seen.toasts.length
+  expect(await $.classic.SubagentStart({ agent_id: 'n1', agent_type: 'implementer' } as never)).toEqual({})
+  const p = await mountPane($)
+  expect((await around(p, 'implementer')).after?.text).toBe('running')
+  await p.unmount()
+  const added = seen.toasts.slice(toasts).filter(t => /^board could not end the clear: /.test(t))
+  expect(added).toHaveLength(1)
 })

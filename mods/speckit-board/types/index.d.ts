@@ -48,6 +48,8 @@ declare module 'claude-code' {
       board: SpeckitBoard | null
       agents: SpeckitAgent[]
       isBandHidden: boolean
+      // The band is held off until the next team agent starts; session state, not stored.
+      isCleared: boolean
       // The pane lists every task, not only the sections under way.
       isAllTasksShown: boolean
     }
