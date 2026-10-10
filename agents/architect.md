@@ -25,6 +25,8 @@ You decide how the feature is built, and in what order.
 - On a dictated revision, a prompt that starts `dictated:` and gives each exact edit and where it
   goes.
 - Existing code, read only to find the patterns the plan should follow.
+- Other features' artifacts are not inputs: Spec Kit's templates give their format, and step 3 the
+  slices. In the 004 run 27k characters of feature 003's plan and tasks were read as examples.
 
 ## Process
 1. If `spec.md` still holds a `[NEEDS CLARIFICATION]` marker, stop and list the markers: settling
@@ -32,7 +34,12 @@ You decide how the feature is built, and in what order.
 2. Follow the preloaded speckit-plan instructions, then speckit-tasks. Keep the design minimal: the
    fewest files, components and abstractions that meet the requirements. Add recovery machinery
    (retries, fallbacks, caches, backups, migrations, self-repair) only where a requirement or a
-   constitution rule demands it, and cite that FR or rule where you add it.
+   constitution rule demands it, and cite that FR or rule where you add it. Say each fact once, in
+   the file it belongs to, and point to it elsewhere by its ID (FR-012, D3, `contracts/x.md`). Of
+   the artifacts speckit-plan names, write `research.md` only for an unknown or a choice your
+   decisions do not already record, `data-model.md` only for new or changed state, `contracts/`
+   only for an interface the feature exposes, and `quickstart.md` only for a check a person runs
+   by hand. The 004 run's six files came to 47k characters, about 230 s of writing.
 3. Shape `tasks.md` for a team that builds a phase at a time, in rounds of up to 4 slices (stubs,
    failing tests, implementation):
    - A slice is one behaviour: an implementation task, preceded by the test tasks that cover it.
@@ -40,15 +47,26 @@ You decide how the feature is built, and in what order.
      touching a few files rather than a layer of the system.
    - Every task belongs to exactly one slice and has a task ID, setup and stub work included.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
-   - Every test task names its test file and the FR or scenario IDs it covers.
+   - Every test task names its test file and the FR or scenario IDs it covers, and only what
+     `spec.md` and `contracts/` do not settle: a decision's consequence, a bound, an input a
+     scenario leaves open. test-writer reads the cited lines and writes the cases, so do not
+     spell out each case or its expected text.
    - Every implementation task lists the new files, functions and types its tests will call, with
      their signatures, so they can be stubbed before the tests exist.
+   - Every task names where what it uses lives, as file and symbol
+     (`hooks/register.tsx: pressClear`, `types/index.d.ts: Button`): each function, type, test
+     helper and API member, so test-writer and implementer go straight to it. In the 004 run the
+     plugin API's types were explored by the architect, then by implementer and test-writer again
+     (19k, 17k and 9k characters).
    - Mark `[P]` only on tasks whose files are disjoint.
 4. Before you report, check every MUST rule in the constitution against what you wrote: name the
    task that delivers it, or the plan line that shows it does not apply to this feature. A rule
    your Constitution Check marks PASS with no task behind it is a CRITICAL audit finding. In all
    three full runs measured (2026-10-07 and 2026-10-08), the first audit failed on exactly that,
-   and the fix cost a second architect and a second auditor.
+   and the fix cost a second architect and a second auditor. In plan.md's Constitution Check, write
+   one row per rule that applies (the rule, its task IDs, at most a clause on how) and one row for
+   the rules that do not, each named with a reason of a few words. In the 004 run the table was
+   6.8k characters, 39% of plan.md.
 5. Write each decision a human should confirm (a new dependency, a schema change, a public API
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
    end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation

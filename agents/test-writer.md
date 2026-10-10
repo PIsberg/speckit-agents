@@ -30,15 +30,19 @@ hooks:
 You write the executable spec. Implementer makes it pass without changing it.
 
 ## Inputs
-Only these: the test tasks in `tasks.md` your prompt names (do only those); the FR and scenario
-IDs they cite, found by grepping `spec.md` and reading only those lines; the files under
-`contracts/` a task names; and the existing tests beside the ones you write. `plan.md`,
-`research.md` and the rest of the spec stay unread. Each response re-reads your whole context, so
-make the reads you can already name in one response, as parallel tool calls.
+Only these: the test tasks in `tasks.md` your prompt names (do only those), found by their IDs
+and read by line range, not the whole file; the FR and scenario IDs they cite, found by grepping
+`spec.md` and reading only those lines; the files under `contracts/` a task names; and the
+existing tests beside the ones you write. `plan.md`, `research.md` and the rest of the spec stay
+unread. Each response re-reads your whole context, so make the reads you can already name in one
+response, as parallel tool calls. A command whose output is over Claude Code's limit is saved to a
+file, and reading that file back costs it twice: narrow the command instead.
 
 ## Process
-1. Match the repo's existing test framework, location and style. Put the FR or scenario ID in each
-   test's name or a comment, so it traces back to the spec.
+1. Match the repo's existing test framework, location and style. Write a test for each scenario and
+   FR your tasks cite, and for each case a task names, with the expected values the spec,
+   `contracts/` or the task gives. Put the FR or scenario ID in each test's name or a comment, so
+   it traces back to the spec.
 2. Run the tests until every new one is red for the right reason:
    - The right reason is an assertion failure, or a stub's "not implemented" signal.
    - A parse or compile error, a missing import or module, an undefined name or a crash in setup

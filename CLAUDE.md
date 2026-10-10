@@ -43,8 +43,8 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 173 s on Windows (193 tests, 2026-10-10; the
-  four installer tests that run the real `claude plugin` and the 23 e2e tests take most of it, and
+- `npm test`: all suites, no network beyond localhost, 209 s on Windows (197 tests, 2026-10-10; the
+  four installer tests that run the real `claude plugin` and the 24 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
@@ -77,9 +77,10 @@ this file is how to work on it.
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`. A change to either
   changes both, and `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the
-  `dictated:` prefix, `Spec:` lines), and the Bash `timeout` sentence in the four agents that run
-  tests, are held together by `test/install.test.mjs`; so are the agent body lengths README.md
-  states. Change them with the test.
+  `dictated:` prefix, `Spec:` lines, `last round`), and the Bash `timeout` sentence in the four
+  agents that run tests, are held together by `test/install.test.mjs`; so are the agent body
+  lengths README.md states. Change them with the test. The skill's rule to commit with the next
+  launch relies on Claude Code running one message's calls in order, which `test/e2e.test.mjs` pins.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
