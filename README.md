@@ -1420,6 +1420,10 @@ up and replace it.
     Claude config directory is not caught.
   - **network access:** nothing limits what `patcher` fetches or sends over the network from Bash.
     Only the history and remote commands named above are denied.
+  - **other forge CLIs:** `patcher`'s command deny matches only `gh` and `hub`, so a `glab` (GitLab)
+    or `tea` (Gitea) command that opens a merge request is not stopped before it runs. A commit
+    made that way is still caught by the end check, and the skill makes the real commit and PR
+    only after that check.
 - **The command check matches words.** A command that only mentions `git push` or `gh` is denied
   too.
 - **Fast-track state is protected from `Write` and `Edit`, not Bash.** A change hidden by rewriting
