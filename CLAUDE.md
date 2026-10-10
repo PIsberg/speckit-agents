@@ -43,13 +43,15 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 161 s on Windows (188 tests, 2026-10-10; the
+- `npm test`: all suites, no network beyond localhost, 173 s on Windows (193 tests, 2026-10-10; the
   four installer tests that run the real `claude plugin` and the 23 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
-  tests that need `claude` fail instead of skip when it is missing. On Linux it then runs `tsc`
-  on the board mod (README.md, "Verifying", has the local command).
+  tests that need `claude` fail instead of skip when it is missing. On Linux it then type-checks
+  the board mod, its tests included: `npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`,
+  once a `claude --plugin-dir mods/speckit-board` session has laid its types (README.md,
+  "Verifying").
 - Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does, for every hook entry the
   installer writes, under `claude -p`. A new hook entry gets a case there; check that the case
   fails with the installed hook replaced by `process.exit(0)`. After changing a hook command, event
@@ -74,6 +76,10 @@ this file is how to work on it.
   guardrail file of the team gets an entry there and a case in `test/hook.test.mjs`.
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`. A change to either
   changes both, and `test/install.test.mjs`.
+- Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the
+  `dictated:` prefix, `Spec:` lines), and the Bash `timeout` sentence in the four agents that run
+  tests, are held together by `test/install.test.mjs`; so are the agent body lengths README.md
+  states. Change them with the test.
 
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,

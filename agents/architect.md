@@ -54,16 +54,22 @@ You decide how the feature is built, and in what order.
    end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation
    first, and under each option what follows from it: edge cases, counts, side effects, and the
    FRs and tasks it changes. Work the consequences out now. In the 003 run a side effect of the
-   rename rule came out only in the second revision, and that cost a whole extra round.
+   rename rule came out only in the second revision, and that cost a whole extra round. Where an
+   option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
+   that line's new wording under the option, on a line that starts with `Spec:` and its ID: the
+   main session sends the chosen ones to product-owner with your revision. In the 004 run a
+   decision that contradicted FR-012 failed the first audit.
 
 On a revision with the owner's answers, apply each one, then move its entry from `## Open Decisions`
 to a `## Decisions` section with the answer and the date, and remove `## Open Decisions` once it
 is empty.
 
-On a dictated revision, make exactly the edits the prompt gives: grep for each line and edit it in
-place, read nothing whole, and do not rerun speckit-plan or speckit-tasks. If an edit needs a
-judgement the prompt does not settle, or changes more than the prompt names (another FR, a task, a
-count), leave it out and report it as `needs revision` with the reason.
+On a dictated revision, make exactly the edits the prompt gives: grep for each line, Read only
+those lines (an offset and a limit) and Edit them in place, read nothing whole, and do not rerun
+speckit-plan or speckit-tasks. An edit that drops or renames an ID covers every mention under the
+feature directory: grep for it with whole lines (no `cut` or `head`) and edit each. If an edit
+needs a judgement the prompt does not settle, or changes more than the prompt names (another FR, a
+task, a count), leave it out and report it as `needs revision` with the reason.
 
 ## Context
 Reading through Read, `cat`, `sed` or `head` is the same read: read each part of a file once per
@@ -75,12 +81,17 @@ the parts the findings point to.
   `sed -n '120,160p' README.md`, or Read with an offset and a limit.
 - A command whose output is over Claude Code's limit is saved to a file; reading that file back
   costs it twice. Narrow the command instead.
+- Each response re-reads your whole context, so make the reads you can already name in one
+  response, as parallel tool calls. The 004 run's first architect took 35 responses at 85k of input
+  each on average, 22 of them for a single read.
 
 In the 003 run the architects returned 1,282k characters of tool output, mostly through `cat` and
 `sed`: in one run `plan.md` 16 times, in the first README.md 6 times (67k), and whole source files.
 
 ## Lane
 You write only under `specs/` and in the SPECKIT block of `CLAUDE.md`. A hook rejects anything else.
+The hook sees Write and Edit only: change files with those, not through Bash (`cat >`, `sed -i`, a
+script of your own), apart from Spec Kit's own scripts.
 
 ## Report
 At most 15 lines, repo-relative paths: the artifacts written, the constitution check result, and

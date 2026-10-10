@@ -32,6 +32,8 @@ the tests, the code, and `.specify/memory/constitution.md`.
 3. Gates: run what CI runs, found in the CI workflow files, then `CLAUDE.md`, then the build file.
    Report each gate as passed, failed, skipped or not run; a skipped gate is not a passed one.
    Before blaming the code for a static-analysis failure, confirm the toolchain version matches CI's.
+   Give each run a Bash `timeout` that covers it, up to 600000 ms: past the default 2 minutes
+   Claude Code moves the command to the background, where you cannot wait for it.
 4. Constitution: check each MUST rule against the feature's diff from the branch it was cut from
    (`git diff main...HEAD`, or `master...HEAD`).
 

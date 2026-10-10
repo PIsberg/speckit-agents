@@ -121,3 +121,33 @@ Idea: SKILL.md's dictated mode says to search for a removed ID without truncatin
 - The buttons were not pressed in a real TUI, and `docs/media/board.png` was not re-recorded
   (decision D5 B, issue #84).
 - CI on Linux and macOS: pending when this was written; see PR #87.
+
+## Acted on
+In the branch `perf/004-run-findings`, stacked on #87. None of it is measured yet; the next full
+run is the measurement (#79).
+
+1. An option that makes a spec line wrong carries its new wording on a `Spec:` line
+   (`agents/architect.md`), and the skill sends the chosen ones to product-owner in the same
+   message as the architect's revision.
+2. test-writer works out a value the existing code already decides, for the smallest and the
+   largest case a test covers, and reports a task number that cannot hold (`BLOCKED`) instead of
+   writing it. The skill sends it back with the number the code allows when the task's intent is
+   plain, and to the architect otherwise.
+3. test-writer runs the type check CI runs over tests; CLAUDE.md names the mod's `tsc` command.
+4. test-writer, implementer, spec-gatekeeper and patcher give a test run a Bash `timeout` that
+   covers it. The stall was not the agent's choice: its `npm test` passed the Bash tool's default
+   2 minutes, and Claude Code answered "Command did not complete within its 120s timeout and was
+   moved to the background". It waited 121 s and then 113 s, and ran the suite again (168 s).
+5. README.md says the lane check covers test-writer and implementer only, and product-owner's and
+   architect's prompts ask for Write and Edit. The hook that would catch their Bash writes: #88.
+6. The skill takes a report from the agent's hand-back message when the Agent result points there.
+7. The skill states the 4-question limit once, for every stop.
+8. With more than 4 open decisions, the first question takes every recommended option, with
+   exceptions as free text. Optional work as a decision that defaults to off: #89.
+9. An ID a decision drops is one dictated edit for every mention, which the architect greps for
+   with whole lines.
+10. Not acted on: the store assertion is #85, and the rest is the environment.
+
+Also from the run table: 22 of the first architect run's 35 responses made a single read, at 85k
+of input each on average. architect.md and test-writer.md now ask for the reads an agent can
+already name in one response.

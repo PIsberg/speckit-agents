@@ -244,9 +244,11 @@ function recordRed({ repo, hook }, id) {
   });
 }
 
-// The skill launches every agent with run_in_background: false and takes the report as the Agent
-// tool's result. These two pin the Claude Code behaviour that rule depends on (#64): -p has fork
-// subagents off, an interactive session has them on, and CLAUDE_CODE_FORK_SUBAGENT sets either.
+// The skill launches every agent with run_in_background: false and takes the report from the Agent
+// call: its result under -p, as here, or in an interactive 2.1.296 session the agent's hand-back
+// message, which the result points to. These two pin the Claude Code behaviour that rule depends on
+// (#64): -p has fork subagents off, an interactive session has them on, and
+// CLAUDE_CODE_FORK_SUBAGENT sets either.
 const agentSchema = (req) => req?.tools?.find((t) => t.name === 'Agent')?.input_schema?.properties ?? {};
 const launch = (r) => r.events.find((e) => e.type === 'system' && e.subtype === 'task_started');
 
