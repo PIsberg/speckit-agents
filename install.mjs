@@ -8,6 +8,8 @@
 //   node install.mjs --claude-dir D  target D instead of $CLAUDE_CONFIG_DIR or ~/.claude
 //   node install.mjs --board         also install the speckit-board mod; later reruns keep it
 //   node install.mjs --no-board      remove the speckit-board mod, keep the team
+//
+// After installing, /speckit-patch <change> is the fast track for small changes.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const MARKER = 'speckit-agents: managed by install.mjs';
 const HOOK_FILE = 'speckit-team.mjs';
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'patcher'];
 // settings.json gates for the main session. Agent-scoped hooks live in each agent's frontmatter.
 const SETTINGS_GATES = [
   // Claude calling the speckit-implement skill itself.
@@ -77,6 +79,7 @@ function files() {
   return [
     ...AGENTS.map((a) => ({ src: `agents/${a}.md`, dst: path.join(claudeDir, 'agents', `${a}.md`) })),
     { src: 'skills/speckit-team/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-team', 'SKILL.md') },
+    { src: 'skills/speckit-patch/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-patch', 'SKILL.md') },
     { src: `hooks/${HOOK_FILE}`, dst: path.join(claudeDir, 'hooks', HOOK_FILE) },
   ];
 }
@@ -408,5 +411,6 @@ console.log(`
 Done. Next:
   1. Restart Claude Code (agents load at session start).
   2. In a repo: specify init --here --integration claude (/speckit-team drafts the constitution with you).
-  3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...`);
+  3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...
+  4. A small change: /speckit-patch <change>`);
 if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');

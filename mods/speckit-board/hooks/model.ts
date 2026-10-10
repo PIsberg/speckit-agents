@@ -16,7 +16,7 @@ export const teamRole = (agentType: string): string | undefined =>
 // the theme key below. test/board-mod.test.mjs holds the two together.
 export const ROLE_COLOR: Record<string, string> = {
   'product-owner': 'blue', architect: 'purple', 'spec-auditor': 'yellow',
-  'test-writer': 'orange', implementer: 'green', 'spec-gatekeeper': 'red',
+  'test-writer': 'orange', implementer: 'green', 'spec-gatekeeper': 'red', patcher: 'cyan',
 }
 
 export const roleColor = (role: string): string | undefined =>
