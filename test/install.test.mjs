@@ -105,6 +105,25 @@ test('installed speckit-patch skill commits only after the end check, and never 
   assert.ok(empty.index < text.indexOf('git commit -m'), 'the empty-record rule comes before the first git commit -m');
 });
 
+// 003 FR-013, FR-012, US5-1, US5-2 (T015): the advisory triage skill.
+test('installed speckit-triage skill is advisory, names both commands and the four signals, and uninstalls', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const file = path.join(dir, 'skills', 'speckit-triage', 'SKILL.md');
+  assert.ok(fs.existsSync(file), 'skills/speckit-triage installed');
+  const text = fs.readFileSync(file, 'utf8');
+  assert.match(text, /speckit-agents: managed by install\.mjs/);
+  assert.match(text, /^name: speckit-triage$/m);
+  assert.match(text, /^disable-model-invocation: true$/m);
+  for (const re of [/\/speckit-patch/, /\/speckit-team/, /launches no agent/i, /invokes no skill/i,
+    /public contract/i, /protected path/i, /\b30\b/, /\b2\b/]) assert.match(text, re);
+  const u = install(dir, '--uninstall');
+  assert.equal(u.status, 0, u.stderr + u.stdout);
+  assert.ok(!fs.existsSync(path.join(dir, 'skills', 'speckit-triage')), 'skills/speckit-triage removed');
+  const h = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(h.stdout, /\/speckit-triage/, '--help names /speckit-triage');
+});
+
 test('refuses to replace a patcher.md it did not install', () => {
   const dir = claudeDir();
   const mine = path.join(dir, 'agents', 'patcher.md');
