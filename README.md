@@ -200,6 +200,10 @@ Then, in Claude Code:
 /speckit-team Let users export their reading list as CSV
 ```
 
+Start it in a fresh session (`/clear` first): every response of the run re-reads the conversation,
+earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
+([Feature 004](#feature-004-interactive)).
+
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 
 1. to answer the product owner's questions;
@@ -294,16 +298,16 @@ main session puts them to you: the first of the pipeline's three stops.
 | Agent | Spec Kit phase | May write | Hands over | Model |
 |---|---|---|---|---|
 | [`product-owner`](agents/product-owner.md) | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
-| [`architect`](agents/architect.md) | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md`, `data-model.md`, `contracts/`, `tasks.md`, with the minimal design that meets the spec | opus |
+| [`architect`](agents/architect.md) | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md` and `tasks.md`, plus `research.md`, `data-model.md`, `contracts/` or `quickstart.md` only when the feature has something for them: the minimal design that meets the spec, each fact said once | opus |
 | [`spec-auditor`](agents/spec-auditor.md) | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
 | [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it, or `FIXED` when it only corrected an existing test and the suite is green | sonnet |
-| [`implementer`](agents/implementer.md) | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the suite green (`RESULT: GREEN` / `RED`) | sonnet |
+| [`implementer`](agents/implementer.md) | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the tests that cover it green, and the full suite in the last round (`RESULT: GREEN` / `RED`) | sonnet |
 | [`spec-gatekeeper`](agents/spec-gatekeeper.md) | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
 | [`patcher`](agents/patcher.md) | fast track | the working tree except protected paths, within 30 production lines and 2 files, never a commit | a report that `/speckit-patch` commits from, ending `DONE`, or `ESCALATE` or `FAILED` | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 76 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 94 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -405,6 +409,9 @@ not measured yet. For each round:
    value an assertion compares with that the code already decides: a task asking for a number no
    implementation can meet is reported, before any implementer runs, not written as a red test.
 3. **Green.** implementer makes the round's tests pass, under the [retry limit](#the-retry-limit).
+   It runs the tests that cover its change; the full suite runs only in the last round, which the
+   skill names, and once more at spec-gatekeeper. In the 004 run every round ran it: 5 runs, about
+   14.5 of the 48 agent-minutes.
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
@@ -437,6 +444,25 @@ and never the chat, the product owner's questions and answers, or another agent'
 implementer gets the slice's task IDs and test-writer's report for them, and its own prompt tells
 it to read `tasks.md`, the failing tests and the code they touch, not `spec.md`, `plan.md`,
 `research.md` or `data-model.md`. The tests are its spec.
+
+What the architect found is handed on in `tasks.md`: every task names the file and symbol of each
+function, type, test helper and API member it uses, so test-writer and implementer go straight to
+it. In the 004 run the plugin API's types were explored by the architect, then by implementer and
+test-writer again (19k, 17k and 9k characters). A test task names its test file, the requirement
+and scenario IDs it covers and only what `spec.md` and `contracts/` leave open; test-writer reads
+the cited lines and writes the cases. No agent reads another feature's artifacts as an example:
+in the 004 run the architect and product-owner read 40k characters of them.
+
+The main session re-reads its whole context with every response, so the skill spends as few as it
+can. The approved spec and plan are committed in the message that launches the next agent: Claude
+Code runs the calls of one message in order, which [`test/e2e.test.mjs`](test/e2e.test.mjs) pins,
+so the commit lands before the agent starts and needs no request of its own.
+
+While an agent works, Claude Code shows the Agent call's description and the agent's tool calls,
+a Bash call as its command, and never the agent's own text or a Bash call's description (checked
+on 2026-10-10 against Claude Code 2.1.296's interface, driven by vhs against a fake API). So the
+skill makes the description name the step and its task IDs, says before each launch what the
+agent will do, and after each report what it changed and how long it took.
 
 ### The fast track
 
@@ -643,11 +669,12 @@ inside the repo, or the gate stays closed.
 ### The retry limit
 
 An implementer that cannot make its tests pass will otherwise keep trying small tweaks, and each
-attempt costs a full agent run. So every implementer report ends with `RESULT: GREEN` (its tests
-and the full suite pass), `RESULT: RED` (anything else) or `RESULT: STUB` (the signatures-only
-pass described under [Building in slices](#building-in-slices)). The `result` hook counts them per
-feature: GREEN resets the count, STUB leaves it, RED adds one, and a report that still has no
-`RESULT:` line after one request counts as RED. A handback and the Stop that follows it are one
+attempt costs a full agent run. So every implementer report ends with `RESULT: GREEN` (the tests
+it ran pass: those that cover its change, and in the last round the full suite), `RESULT: RED`
+(anything else) or `RESULT: STUB` (the signatures-only pass described under
+[Building in slices](#building-in-slices)). The `result` hook counts them per feature: GREEN resets
+the count, STUB leaves it, RED adds one, and a report that still has no `RESULT:` line after one
+request counts as RED. A handback and the Stop that follows it are one
 attempt, not two. A report made while the audit gate is closed is not counted: that implementer
 never got to work.
 
@@ -840,8 +867,26 @@ Five causes added launches or waiting, and what changed for each:
   away is now one edit for every mention, which the architect greps for.
 
 The first architect run made 22 of its 35 responses for a single read, at 85k of input each on
-average; its prompt now asks for every read it can already name in one response. None of these
-changes is measured yet: the next full run is the measurement
+average; its prompt now asks for every read it can already name in one response.
+
+What was left after those causes, and what changed for it:
+- **The main session:** its 58 run responses took 8.92M, and 2.73M of that was earlier
+  conversation re-read by every response. The skill now asks for a fresh session once, and commits
+  the approved spec and plan in the message that launches the next agent instead of in a request
+  of their own.
+- **What the architect writes:** 47k characters over six files, about 230 of its 654 s. 39% of
+  plan.md was the constitution table (6.8k characters, 8 of its 23 rows not applicable), and 1.3k
+  of quickstart.md's 1.9k described live checks the owner deferred. The architect now writes each
+  fact once, the optional artifacts only when they hold something, one table row per rule that
+  applies, and test tasks that cite the spec and `contracts/` instead of spelling out each case.
+- **Exploring again:** the plugin API's types were read by the architect, then by implementer and
+  test-writer (19k, 17k and 9k characters), and 40k characters of other features' artifacts were
+  read as examples. Tasks now name the file and symbol of what they use, and other features'
+  artifacts are no agent's input.
+- **The full suite:** it ran 5 times, about 14.5 of the 48 agent-minutes, the last two a minute
+  apart on the same commit. It now runs in the last round and at spec-gatekeeper.
+
+None of these changes is measured yet: the next full run is the measurement
 ([#79](https://github.com/PIsberg/speckit-agents/issues/79)).
 
 #### Foreground launches
@@ -1192,16 +1237,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 193 tests:
+`npm test` runs 197 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 41 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 44 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 9 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 23 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 24 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1232,22 +1277,25 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 16
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 17
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
   `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 16
+  fire lets the action through. With the installed hook replaced by one that only exits, all 17
   fail, as do the two blocking cases above (2026-10-10, Claude Code 2.1.296). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  18 of the 22 tests fail (the 16 scripted ones and the two blocking no-model cases); the other four
+  19 of the 24 tests fail (the 17 scripted ones and the two blocking no-model cases); the other five
   do not depend on a hook.
 - **Claude Code's own behaviour.** Three tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report; with
   `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the
   agent runs in the background; and with `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in the
   project's `.claude/settings.json`, the parameter and the foreground launch come back despite the
-  `1` in the environment ([Foreground launches](#foreground-launches)).
+  `1` in the environment ([Foreground launches](#foreground-launches)). A fourth pins that the
+  calls of one message run in order: a `git commit` and an Agent call sent together, the agent's
+  first `git log` shows the commit, and with the two swapped it does not. The skill's rule to
+  commit with the next launch relies on it.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either

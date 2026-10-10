@@ -30,7 +30,12 @@ requests; a fresh one starts near 14k.
 
 Every report you receive stays in your context for the rest of the run and is re-read with each
 later request, so each agent's Report section caps its length. Do not ask an agent for more
-detail than that, and do not restate a report to the user in full: summarise it in a line.
+detail than that, and do not restate a report to the user in full. Before each launch, tell the
+user in one line what the agent will do (for the architect's first pass, that it is the longest
+step: 654 s in the 004 run); after its report, one line with its last word, what it changed and
+how long it took (`duration_ms` in the result). While an agent works, the user sees only the Agent
+call's `description` and the agent's tool calls, never its text (Claude Code 2.1.296), so let the
+description name the step and the task IDs (`Red: T001 to T007`).
 
 A subagent starts with nothing but the prompt you write, so keep every prompt lossy: only what
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
@@ -50,8 +55,8 @@ and answers, or another agent's full report.
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
   implementer launch only to tick them.
 - implementer: the round's task IDs plus test-writer's report for them (test files and failing
-  output, trimmed); on a relaunch, the failing output of the last attempt instead. For a stub
-  pass, `stub` and the task IDs.
+  output, trimmed); on a relaunch, the failing output of the last attempt instead; `last round`
+  when no round follows (step 4-5). For a stub pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory.
 
 ## Pace
@@ -63,6 +68,9 @@ in as many calls as it takes, all before the next launch.
 
 ## 0. Preconditions
 - `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
+- The conversation holds nothing but this run. If it already holds other work, tell the user once,
+  in one line, that every response of the run re-reads it and that `/clear` before `/speckit-team`
+  avoids that (in the 004 run, 2.73M of the main session's 8.92M). Then go on.
 - The working tree is clean. If not, ask before going on.
 - `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
   (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
@@ -91,9 +99,11 @@ relaunch it with the answers. Repeat until `READY FOR PLAN`.
 Then make sure the work is on a feature branch. Spec Kit's git extension creates one during
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory
-(`git switch -c <its basename>`); uncommitted work moves with it. Commit `spec.md`, and the
-constitution if step 0b wrote it, on that branch.
-**Stop:** the user reviews `spec.md`.
+(`git switch -c <its basename>`); uncommitted work moves with it.
+**Stop:** the user reviews `spec.md`. Once they approve, commit it, and the constitution if step 0b
+wrote it, on that branch, in the message that launches the architect: Claude Code runs the calls of
+one message in order, so the commit lands before the architect starts and needs no request of its
+own, which would re-read your whole context.
 
 ## 2. Plan and tasks: architect
 **Stop:** the user settles every open decision and approves `plan.md`, `tasks.md` and the spec
@@ -118,8 +128,9 @@ costs more, since each `[P]` slice then gets its own agents instead of sharing i
 runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
-On FAIL, send each CRITICAL and HIGH finding to its owner (product-owner or architect), then
-re-audit. MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
+Commit the approved spec, plan and tasks in the message that launches it (see step 1). On FAIL,
+send each CRITICAL and HIGH finding to its owner (product-owner or architect), then re-audit.
+MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
 or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
 while building never call for a re-audit.
@@ -145,9 +156,12 @@ For each round:
    one: send it back. If test-writer reports a missing production symbol, run step 1 for it. If
    it reports a task number that cannot hold, send a test-writer the number the code allows when
    the task's intent is plain, and list the task at hand-over; otherwise the architect rewrites it.
-3. **Green** (implementer, the round's implementation task IDs). Every report ends with
-   `RESULT: GREEN` or `RESULT: RED`. On RED, relaunch it with the failing output. After 3 REDs in
-   a row the hook blocks implementer: do not retry, and never delete the retry record yourself.
+3. **Green** (implementer, the round's implementation task IDs, and `last round` when no round
+   follows). An implementer runs the tests that cover its change, and the full suite only in the
+   last round; spec-gatekeeper runs it once more. In the 004 run the full suite ran 5 times, about
+   14.5 of the 48 agent-minutes. Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
+   relaunch it with the failing output. After 3 REDs in a row the hook blocks implementer: do not
+   retry, and never delete the retry record yourself.
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
@@ -159,8 +173,9 @@ then merge their branches into the feature branch in task order.
 ## 6. Verify: spec-gatekeeper
 Start it as soon as the last round reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
 A task still unticked then (a final test run, a docs task no round took) is one more round: launch
-implementer for it, and verify after its GREEN. Hand to the user only a task no agent can do.
-On REJECTED, route each reason to test-writer or implementer, then re-run spec-gatekeeper.
+implementer for it with `last round`, and verify after its GREEN. Hand to the user only a task no
+agent can do. On REJECTED, route each reason to test-writer or implementer (an implementer then
+with `last round`), then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.

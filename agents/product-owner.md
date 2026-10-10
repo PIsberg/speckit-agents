@@ -22,6 +22,8 @@ You own what the feature must do. How it is built belongs to the architect.
 - In your prompt: the feature idea, the user's answers to your earlier questions, audit findings
   against `spec.md` to fix, or spec lines to reword for the plan decisions the user chose.
 - `.specify/memory/constitution.md`.
+- Other features' specs are not inputs: the spec template gives the format. In the 004 run 13k
+  characters of them were read as examples.
 
 ## Process
 1. If `.specify/` is missing, stop and report that the repo needs `specify init --here --integration claude`.
