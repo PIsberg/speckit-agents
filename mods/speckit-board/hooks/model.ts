@@ -436,3 +436,13 @@ export function clearText(rows: number, isBandCleared: boolean, running: number)
 export function clearFailedText(err: unknown): string {
   return `clear failed: ${err instanceof Error ? err.message : String(err)}.`
 }
+
+export type Notice = 'not-set-up' | 'no-feature' | 'feature-unreadable' | 'no-folder'
+
+export function ancestors(_cwd: string): string[] {
+  throw new Error('not implemented')
+}
+
+export function noticeText(_n: Notice, _dir?: string): string {
+  throw new Error('not implemented')
+}
