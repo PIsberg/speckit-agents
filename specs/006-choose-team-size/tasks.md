@@ -188,7 +188,7 @@ L1 shows it live (T018).
   launch; the full team is its first option and marked recommended; a free-text answer is checked
   by the same refusals as `--team`; a request with `--team` is never asked; the question is marked
   `**Stop:**`, the marker `## Pace` waits on (contract section 8).
-- [ ] T015 [US4] Implement in `skills/speckit-team/SKILL.md: ## Team` the question of contract
+- [X] T015 [US4] Implement in `skills/speckit-team/SKILL.md: ## Team` the question of contract
   section 8, marked `**Stop:**`, and its answer's path into the T009 checks.
 
 ---

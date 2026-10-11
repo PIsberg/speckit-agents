@@ -98,6 +98,14 @@ pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`,
 `spec-gatekeeper`; `patcher` is not a team role (it is the fast track's). All six named is the full
 team, the same run as without `--team`.
 
+With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
+1. Full team (Recommended): all six roles.
+2. Build only: test-writer, implementer.
+3. Implement only: implementer.
+4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.
+
+A free-text answer ("Other") is a role list read as above and checked by the same refusals below. A request with `--team` is not asked: the question is only for requests without it.
+
 Before anything is launched, refuse in one message that says why and lists the six valid names:
 - a name that is not a team role (also `--team` followed straight by the request: its first word
   is the unknown name): that name is not a team role;
