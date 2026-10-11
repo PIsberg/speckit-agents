@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  bandLayout, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
+  TEAM, bandLayout, boardText, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
   statusLine, taskSections, teamRole, toneOf,
 } from '../hooks/model'
 import type { BandItem, BoardInputs } from '../hooks/model'
@@ -137,7 +137,7 @@ const board = (over: Partial<BoardInputs> = {}): SpeckitBoard => {
   const i: BoardInputs = { ...base, verdict: { verdict: 'PASS', fingerprint: 'fp' }, ...over }
   return {
     feature: '001-x', phases: derivePhases(i), tasks: i.tasks ?? [], red: i.red, maxRed: 3,
-    isRetryUnreadable: i.isRetryUnreadable ?? false, fingerprint: 'fp',
+    isRetryUnreadable: i.isRetryUnreadable ?? false, fingerprint: 'fp', isStandalone: i.isStandalone,
   }
 }
 const SLICE = parseTasks('## Setup\n- [x] T001 a\n## Story\n- [ ] T002 [P] Test greet\n- [ ] T003 Implement greet')
@@ -296,4 +296,91 @@ test('the band carries a clear button between board and hide, and drops buttons 
       if (running.length === 0 || cols >= narrowest) expect(widthOf(items)).toBeLessThanOrEqual(cols)
     }
   }
+})
+
+// 005-standalone-board: a feature with no team record. Stages S-1 to S-8 of contracts/board-text.md.
+const ten = (ticked: number) => parseTasks(Array.from({ length: 10 }, (_, n) => `- [${n < ticked ? 'x' : ' '}] T${String(n + 1).padStart(3, '0')} item ${n + 1}`).join('\n'))
+const alone = (over: Partial<BoardInputs> = {}): Partial<BoardInputs> => ({ isStandalone: true, verdict: undefined, ...over })
+const none = { spec: undefined, plan: undefined, tasks: undefined }
+const STAGES: { id: string, over: Partial<BoardInputs>, status: string, phases: string, next: string }[] = [
+  { id: 'S-1', over: none, status: '001-x · ○ spec', phases: '○ spec ○ plan ○ tasks ○ build', next: 'start with /speckit-specify <idea>' },
+  { id: 'S-2', over: { ...none, spec: '**Status**: Draft' }, status: '001-x · ◐ spec (draft)',
+    phases: '◐ spec ○ plan ○ tasks ○ build', next: 'review spec.md, then /speckit-plan' },
+  { id: 'S-3', over: { plan: undefined, tasks: undefined }, status: '001-x · ○ plan',
+    phases: '✓ spec ○ plan ○ tasks ○ build', next: 'run /speckit-plan' },
+  { id: 'S-4', over: { tasks: undefined }, status: '001-x · ○ tasks', phases: '✓ spec ✓ plan ○ tasks ○ build', next: 'run /speckit-tasks' },
+  { id: 'S-5', over: { tasks: ten(0) }, status: '001-x · ○ build (0/10)', phases: '✓ spec ✓ plan ✓ tasks ○ build',
+    next: '/speckit-implement: T001 item 1' },
+  { id: 'S-6', over: { tasks: ten(4) }, status: '001-x · ◐ build (4/10)', phases: '✓ spec ✓ plan ✓ tasks ◐ build', next: 'T005 item 5' },
+  { id: 'S-7', over: { tasks: ten(10) }, status: '001-x · ✓ ready for the PR · 10/10 tasks',
+    phases: '✓ spec ✓ plan ✓ tasks ✓ build', next: 'ready for the PR' },
+  { id: 'S-8', over: { tasks: [] }, status: '001-x · ○ build', phases: '✓ spec ✓ plan ✓ tasks ○ build', next: 'tasks.md lists no tasks' },
+]
+const standalone = (over: Partial<BoardInputs>) => board(alone(over))
+
+test('standalone shows four phases, FR-004 FR-002', () => {
+  expect(derivePhases({ ...base, ...alone() }).map(p => p.id)).toEqual(['spec', 'plan', 'tasks', 'build'])
+  // Absent flag: the six phases, as today.
+  expect(derivePhases(base).map(p => p.id)).toEqual(['spec', 'plan', 'tasks', 'audit', 'build', 'verify'])
+  expect(derivePhases({ ...base, isStandalone: false }).map(p => p.id)).toHaveLength(6)
+})
+
+test('standalone build is current once tasks are done, with no gate, FR-006', () => {
+  expect(states({ ...base, ...alone() })).toEqual({ spec: 'done', plan: 'done', tasks: 'done', build: 'todo' })
+  expect(states({ ...base, ...alone({ tasks: ten(4) }) })).toMatchObject({ build: 'active' })
+  expect(states({ ...base, ...alone({ tasks: ten(10) }) })).toMatchObject({ build: 'done' })
+})
+
+test('standalone derivation ignores verdict, red, retry record, gate and running, FR-003', () => {
+  const noisy = { verdict: { verdict: 'FAIL', fingerprint: 'old' }, red: 5, isRetryUnreadable: true, gate: 'REJECTED', running: ['implementer', 'architect'] }
+  expect(derivePhases({ ...base, ...alone(), ...noisy })).toEqual(derivePhases({ ...base, ...alone() }))
+  // A running architect leaves plan todo, not active.
+  expect(states({ ...base, ...alone({ plan: undefined, tasks: undefined, running: ['architect'] }) })).toMatchObject({ plan: 'todo', tasks: 'todo' })
+  expect(states({ ...base, ...alone({ spec: undefined, plan: undefined, tasks: undefined, running: ['product-owner'] }) })).toMatchObject({ spec: 'todo' })
+})
+
+test('standalone: approved spec with no plan is spec done, plan todo (edge case)', () => {
+  expect(states({ ...base, ...alone({ plan: undefined, tasks: undefined }) })).toEqual({ spec: 'done', plan: 'todo', tasks: 'todo', build: 'todo' })
+})
+
+for (const st of STAGES) {
+  test(`${st.id}: standalone status line, phases line and next step`, () => {
+    const b = standalone(st.over)
+    expect(b.phases.map(p => p.id)).toEqual(['spec', 'plan', 'tasks', 'build'])
+    expect(statusLine(b)).toBe(st.status)
+    expect(boardText(b, [], 0)).toBe([st.status, st.phases, `next: ${st.next}`].join('\n'))
+    expect(nextStep(b, []).text).toBe(st.next)
+  })
+}
+
+test('S-5: the next step carries the command and the task', () => {
+  const step = nextStep(standalone({ tasks: ten(0) }), [])
+  expect(step).toMatchObject({ text: '/speckit-implement: T001 item 1', command: '/speckit-implement:', task: { id: 'T001' } })
+  expect(nextStep(standalone({ tasks: ten(4) }), []).command).toBeUndefined()
+})
+
+test('SC-001, FR-003: standalone texts name no team agent and no /speckit-team, no agent item, no running line', () => {
+  const agents = [{ type: 'implementer', startedAt: 0 }, { type: 'architect', startedAt: 0 }]
+  for (const st of STAGES) {
+    const b = standalone(st.over)
+    for (const running of [[], agents]) {
+      const strings = [
+        statusLine(b) ?? '', boardText(b, running, 5_000), nextStep(b, running.map(a => a.type)).text,
+        ...[135, 100, 70, 45, 30].flatMap(cols => bandLayout(b, running, 5_000, cols).map(x => x.text)),
+      ]
+      for (const text of strings) {
+        expect(text, `${st.id}: ${text}`).not.toContain('/speckit-team')
+        for (const name of TEAM) expect(text, `${st.id}: ${text}`).not.toContain(name)
+      }
+      expect(boardText(b, running, 5_000)).not.toContain('running:')
+      expect(boardText(b, running, 5_000).split('\n')).toHaveLength(3)
+      expect(bandLayout(b, running, 5_000, 135).some(x => x.kind === 'agent' || x.kind === 'red')).toBe(false)
+      expect(nextStep(b, running.map(a => a.type)).text).toBe(st.next)
+    }
+  }
+})
+
+test('team view is unchanged without the flag, FR-008', () => {
+  expect(boardText(board({ tasks: SLICE }), [{ type: 'implementer', startedAt: 0 }], 42_000)).toContain('running: implementer 42s')
+  expect(nextStep(board({ ...none, verdict: undefined }), []).text).toBe('start with /speckit-team <idea>')
 })
