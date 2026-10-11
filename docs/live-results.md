@@ -6,6 +6,26 @@ said where it was run. The README's [Live results](../README.md#live-results) is
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-12</b>: Claude Code 2.1.296, Windows 11, the fast track's hooks in an interactive session (#73), against a fake API</summary>
+
+Setup: a throwaway git repo with `.specify/memory/constitution.md` and one source file, the team
+installed into a throwaway config dir, an interactive session started by vhs with
+`--permission-mode default` and fork subagents on (Claude Code's default), talking to a fake API on
+localhost, so no model ran and nothing was spent. Typed prompt: the main session launched `patcher`,
+which wrote `.specify/memory/constitution.md`, then `src/fix.js`, then reported `Fixed.` and `DONE`.
+
+| What | Result |
+|---|---|
+| The launch | `patcher` ran in the background, as every agent does with fork subagents on. |
+| The scope hook (`patch`, PreToolUse) | Its protected Write was denied: its next request showed `patcher may not write .specify/memory/constitution.md: it is a protected path`, and the file was unchanged. |
+| Its production Write | Asked for permission ("Do you want to create fix.js?"); Enter on "1. Yes" let it through. |
+| The end check (`patch`, at its stop) | Wrote the accepted record with `["src/fix.js"]`. |
+
+`test/e2e.test.mjs` pins the same with fork subagents on under `claude -p`.
+
+</details>
+
+<details>
 <summary><b>2026-10-11</b>: Claude Code 2.1.296, Windows 11, choosing the team (006, L1 to L4), Haiku main session and agents</summary>
 
 Setup: a fresh Spec Kit repo outside this checkout, the branch's team installed into its own

@@ -699,9 +699,14 @@ unless the end check accepted the run.
 - **Verified by unit and end-to-end test only:** every hook decision above in
   [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs); the installed agent and skills in
   [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
-  `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs).
-- **Not verified at all:** a real model following the prompt rules above, and whether Claude Code
-  delivers `patcher`'s hooks in an interactive session (every live run was headless, `claude -p`).
+  `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs), and again with fork
+  subagents on, where `patcher` runs in the background as it does in an interactive session
+  ([#73](https://github.com/PIsberg/speckit-agents/issues/73)).
+- **Seen in an interactive session, against a fake API:** on 2026-10-12 a background `patcher`'s
+  protected Write was denied, its production Write went through once accepted at the permission
+  prompt, and its `DONE` report passed the end check, which wrote the accepted record
+  ([Live results](docs/live-results.md#the-team-and-the-fast-track)).
+- **Not verified at all:** a real model following the prompt rules above.
 
 The hooks guard against an agent's mistakes and drift, not against deliberate evasion through the
 shell. What that leaves open is in [Known limits](#known-limits).
@@ -1152,7 +1157,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 272 tests:
+`npm test` runs 273 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1162,7 +1167,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 33 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 34 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1203,7 +1208,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 24
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 25
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1213,11 +1218,12 @@ need no login and cost nothing.
   is denied. One runs an implementer in a git worktree, as side-by-side slices do: the gate there
   shuts it out until the main tree records a PASS, and then lets it in; the worktree holds the last
   commit and not the main tree's uncommitted test, and the Agent result names the worktree's
-  branch. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 24
-  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 26 failures, none of the 24 passed). Setting
+  branch. Another runs `patcher` with fork subagents on, so in the background as in an interactive
+  session, and its scope hook and end check still fire. They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 25
+  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 27 failures, none of the 25 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  26 of the 33 tests fail (the 24 scripted ones and the two blocking no-model cases); the other seven
+  27 of the 34 tests fail (the 25 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
