@@ -74,6 +74,20 @@ const activeFeature = async ($: EngineInterface, root: string): Promise<string> 
 // given in one repo showed in every other with a feature of that name, and with no time a later audit
 // could not void it. So it is kept as the hook keeps its own: per repo, with when it was given.
 const gateKey = (at: Repo, feature: string) => `gate:${JSON.stringify([at.stateDir ?? at.root, feature])}`
+// A session can switch repository, and two repositories can hold a feature of the same name: the
+// features a team agent started on are kept per repository too (#97).
+const teamKey = (at: Repo, feature: string) => JSON.stringify([at.stateDir ?? at.root, feature])
+
+// Notes that a team agent started on the feature, so it gets the team view (D1-A). A refused write is
+// toasted, and the event goes on (constitution II).
+async function noteTeamFeature($: EngineInterface, at: Repo, feature: string) {
+  const key = teamKey(at, feature)
+  try {
+    await update($, teamFeatures, list => (list.includes(key) ? list : [...list, key]))
+  } catch (err) {
+    $.ui.toast(`board could not note the team's feature: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
 
 // The gatekeeper's word from the hook's `ends` record or the store, with its time when it has one.
 function gateWord(record: unknown): { word: string; at: string | undefined } | undefined {
@@ -82,10 +96,13 @@ function gateWord(record: unknown): { word: string; at: string | undefined } | u
   return word === 'APPROVED' || word === 'REJECTED' ? { word, at: typeof at === 'string' ? at : undefined } : undefined
 }
 
-async function snapshot($: EngineInterface, at: Repo): Promise<{ board: SpeckitBoard | null; notice: string }> {
+// `isTeamStart`: a team agent is starting, so the feature this snapshot reads gets the team view. It is
+// noted here, from this read of feature.json, so the start event reads that file once (#95).
+async function snapshot($: EngineInterface, at: Repo, isTeamStart = false): Promise<{ board: SpeckitBoard | null; notice: string }> {
   const found = await featureOf($, at.root)
   const feature = found.feature
   if (!feature) return { board: null, notice: noticeText(found.notice ?? 'no-feature') }
+  if (isTeamStart) await noteTeamFeature($, at, feature)
   const name = feature.split('/').pop() ?? feature
 
   const paths = fingerprintFiles(feature)
@@ -114,7 +131,7 @@ async function snapshot($: EngineInterface, at: Repo): Promise<{ board: SpeckitB
   // or not), the store has its word, or a team agent started on it in this session.
   const hasRecord = state !== undefined && (await Promise.all(['verdicts', 'retries', 'ends'].map(dir =>
     $.fs.exists(`${state}/${dir}/${name}.json`).catch(() => false)))).some(Boolean)
-  const isStandalone = !(hasRecord || gate || (await read($, teamFeatures)).includes(feature))
+  const isStandalone = !(hasRecord || gate || (await read($, teamFeatures)).includes(teamKey(at, feature)))
 
   return {
     notice: '',
@@ -164,9 +181,9 @@ function announce($: EngineInterface, before: SpeckitBoard | null, after: Specki
 // only after a reload, which starts module variables over.
 let shown: SpeckitBoard | null | undefined
 
-async function refresh($: EngineInterface) {
+async function refresh($: EngineInterface, isTeamStart = false) {
   if (!repo) return
-  const { board: next, notice: why } = await snapshot($, repo)
+  const { board: next, notice: why } = await snapshot($, repo, isTeamStart)
   const before = shown === undefined ? await read($, board) : shown
   if (why !== (await read($, notice))) await update($, notice, () => why)
   if (JSON.stringify(before) === JSON.stringify(next)) return
@@ -270,7 +287,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'speckit-board',
-      description: 'Show the Spec Kit team board',
+      description: "Show the Spec Kit board: the feature's phases, tasks and next step",
       argumentHint: '[status|refresh|band|clear]',
       // /speckit-team runs its agents in the foreground, so a whole pipeline is one turn: without
       // this, the command waited for the turn to end, and opened the board once the run was over.
@@ -321,21 +338,12 @@ export const register: Register = on => {
           $.ui.toast(`board could not end the clear: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
-      if (repo) {
-        const at = repo
-        try {
-          const feature = await activeFeature($, at.root)
-          if (feature) await update($, teamFeatures, list => (list.includes(feature) ? list : [...list, feature]))
-        } catch (err) {
-          $.ui.toast(`board could not note the team's feature: ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
       const now = await $.clock.now()
       const description = await descriptionOf($, e.agent_id)
       const agent: SpeckitAgent = { id: e.agent_id, type: role, description, isRunning: true, outcome: '', startedAt: now, endedAt: 0 }
       await update($, agents, list => [...list.filter(a => a.id !== agent.id), agent].slice(-12))
       await keepTicking($)
-      await refresh($)
+      await refresh($, true)
     }
     return next(e)
   })

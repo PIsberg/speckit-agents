@@ -82,7 +82,7 @@ One round of three slices.
 
 - [X] T006 [P] [US1] Tests in `mods/speckit-board/tests/model.test.ts` for the band's row (FR-001, SC-006 band, D2 A). Red before T008: no `clear` item.
   - `bandLayout(board({ tasks: SLICE, red: 1 }), [], 0, 135)`: the button items, in order, are `[ board ]`, `[ clear ]`, `[ hide ]`; the `clear` item has `key: 'clear'`, `label: 'clear'`.
-  - For every `cols` from 30 to 140, with no agent and with `[{ type: 'implementer', startedAt: 0 }]`: a layout with `[ hide ]` has `[ clear ]`, a layout with `[ clear ]` has `[ board ]`, and `widthOf(items) <= cols`. The existing three band tests keep passing unchanged.
+  - For every `cols` from 30 to 140, with no agent and with `[{ type: 'implementer', startedAt: 0 }]`: a layout with `[ hide ]` has `[ clear ]`, a layout with `[ clear ]` has `[ board ]`, and `widthOf(items) <= cols` wherever a layout fits: at every width with no agent, and with the running agent from the width of its narrowest layout (44 columns) up, since no layout is narrower (amended 2026-10-11, #86). The existing three band tests keep passing unchanged.
 - [X] T007 [P] [US1] Tests in `mods/speckit-board/tests/board.test.tsx` for the band's button (FR-001, US1-2, US1-5, SC-006 band, D3 A). Red before T008: no Button `clear` in the band.
   - The band at `band()` on both surfaces draws a Button with key `clear`, label `clear`, `dimColor`.
   - No pane mounted, 2 finished: `ui.press({ key: 'clear' })` on the band adds one toast, `cleared 2 agent rows and the band.`; the band then draws no `◐ build`; a pane mounted after it draws no Text `implementer` (US1-2).

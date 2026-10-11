@@ -1,7 +1,7 @@
 {
   "name": "speckit-board",
   "version": "0.1.0",
-  "description": "Live board for the Spec Kit agent team: pipeline phases, audit gate, task progress, RED retries and running agents, as a pane, a band and a status line.",
+  "description": "Live board for a Spec Kit feature, with or without the speckit-agents team: its phases, task progress and next step, and with the team the audit gate, RED retries and running agents, as a pane, a band and a status line.",
   "author": { "name": "Peter Isberg" },
   "types": "./types/index.d.ts"
 }
