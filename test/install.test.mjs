@@ -693,7 +693,7 @@ test('the gate entry matches Skill and Agent, replaces the older Skill-only one,
   const r = install(dir);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const s = settingsOf(dir);
-  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\.implement']);
+  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement']);
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
   const entry = s.hooks.PreToolUse.find((g) => g.matcher === 'Skill|Agent');
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
