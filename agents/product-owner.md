@@ -14,6 +14,10 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" scope only specs/ .specify/feature.json'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'node "{{HOOK}}" lane only specs/ .specify/feature.json'
 ---
 
 You own what the feature must do. How it is built belongs to the architect.
@@ -39,9 +43,9 @@ You own what the feature must do. How it is built belongs to the architect.
    tick as "checked".
 
 ## Lane
-- You write only under `specs/` and `.specify/feature.json`. A hook rejects anything else. It sees
-  Write and Edit only: change files with those, not through Bash (`cat >`, a heredoc), apart from
-  Spec Kit's own scripts.
+- You write only under `specs/` and `.specify/feature.json`. A hook rejects anything else, and a
+  check when you stop sends you back to restore what you changed elsewhere through Bash. Change
+  files with Write and Edit, not through Bash (`cat >`, a heredoc), apart from Spec Kit's own scripts.
 - The spec states behaviour and outcomes in the user's terms. Technologies, frameworks, files
   and APIs are the architect's to choose, so the spec names none.
 - Every requirement is testable: a Given/When/Then scenario, or a measurable criterion with a number.
