@@ -39,6 +39,8 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   mock.store(on, opts.store)
   // git answers only inside a repo, as the real one does.
   const runs = { n: 0, reads: 0 }
+  // Paths that exist but whose read is denied, as a file the user cannot open.
+  const denied = new Set<string>()
   on('process.run', (_$, e) => {
     runs.n++
     const root = [ROOT, OTHER].find(r => posix(e.init?.cwd ?? '').startsWith(r))
@@ -59,6 +61,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   on('fs.read', async (_$, e) => {
     runs.reads++
     await new Promise(r => setTimeout(r, 5))
+    if (denied.has(posix(e.path))) return { deny: `EACCES ${e.path}` }
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
   })
@@ -72,7 +75,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
   on('ui.open', (_$, e) => { opens.push(e); return { value: { isPlaced: true } } })
-  return { toasts, status, commands, opens, files, fp, clock, runs }
+  return { toasts, status, commands, opens, files, fp, clock, runs, denied }
 }
 
 // The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
@@ -484,13 +487,6 @@ test('an unreadable retry record shows the build stopped', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^retry record unreadable/ })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /^next / }))?.text).toBe('next delete .git/speckit-team/retries/001-x.json')
   await ui.unmount()
-})
-
-test('outside a Spec Kit repo it says it loaded and found nothing', async ($, on) => {
-  const seen = await world(on)
-  await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
-  // The terminal names the plugin before a toast itself.
-  expect(seen.toasts.at(-1)).toBe('no .specify/ in the git repo at /elsewhere; nothing to show')
 })
 
 // The board saw no agent stop here: the gatekeeper's word comes only from the file the hook wrote.
@@ -1077,4 +1073,118 @@ test('005 FR-015 clear in standalone answers per clearText(0, true, 0), hides th
   expect(await drawn()).toBe(false)
   expect(await $.command.run({ command: 'speckit-board', args: 'band' } as never)).toMatchObject({ text: 'band shown.' })
   expect(await drawn()).toBe(true)
+})
+
+// ---- 005-standalone-board: no git, no repo, no feature (T010, T012) and unreadable files (T015) ----
+
+const N1 = 'Spec Kit is not set up here (no .specify/): specify init sets it up.'
+const N2 = 'no active feature in .specify/feature.json: /speckit-specify <idea> starts one.'
+const N3 = 'cannot read .specify/feature.json: /speckit-specify <idea> writes it again.'
+const N4 = (dir: string) => `${dir}, the active feature in .specify/feature.json, does not exist: /speckit-specify <idea> starts one.`
+const cmd = ($: Engine, args: string) => $.command.run({ command: 'speckit-board', args } as never) as Promise<{ text: string }>
+
+// US4-2, FR-013, FR-014, D4-A: a Spec Kit repository that is not a git repository draws its phases
+test('005 US4-2 FR-013 a Spec Kit folder that is not a git repo draws S-5 from the files', async ($, on) => {
+  const seen = await world(on, {
+    '/plain/.specify/feature.json': JSON.stringify({ feature_directory: FEATURE }),
+    [`/plain/${FEATURE}/spec.md`]: '**Status**: Approved',
+    [`/plain/${FEATURE}/plan.md`]: '# Plan',
+    [`/plain/${FEATURE}/tasks.md`]: UNTICKED,
+  }, NO_RECORDS)
+  await $.session.start({ cwd: '/plain/sub', surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('001-x · ○ build (0/2)')
+  expect((await cmd($, 'status')).text)
+    .toBe('001-x · ○ build (0/2)\n✓ spec ✓ plan ✓ tasks ○ build\nnext: /speckit-implement: T001 Create package.json')
+  const ui = await mountPane($)
+  expect(await ui.find({ type: 'Text', text: 'SPEC KIT · 001-x' })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /^next / }))?.text).toBe('next /speckit-implement: T001 Create package.json')
+  await ui.unmount()
+})
+
+// US4-3, FR-012, FR-013, D5-A, N-1
+test('005 US4-3 FR-013 FR-012 N-1 no .specify/ in any ancestor: no toast at start, N-1 to every command, no absolute path', async ($, on) => {
+  const seen = await world(on)
+  await $.session.start({ cwd: '/nowhere/sub', surface: 'terminal', isInteractive: true })
+  expect(seen.toasts).toEqual([])
+  for (const args of ['status', '', 'band']) {
+    const text = (await cmd($, args)).text
+    expect(text, `args "${args}"`).toBe(N1)
+    expect(text).not.toContain('/nowhere')
+  }
+  expect(seen.toasts).toEqual([])
+})
+
+// N-2 to N-4: the status answer, the pane's line and the start toast, with the status line cleared
+const NOTICES: { name: string, files: (r: Record<string, string>) => void, text: string }[] = [
+  { name: 'N-2 feature.json missing', files: r => { delete r[`${ROOT}/.specify/feature.json`] }, text: N2 },
+  { name: 'N-2 feature.json without feature_directory', files: r => { r[`${ROOT}/.specify/feature.json`] = '{}' }, text: N2 },
+  { name: 'N-2 feature_directory outside the repo',
+    files: r => { r[`${ROOT}/.specify/feature.json`] = JSON.stringify({ feature_directory: '/elsewhere/specs/001-x' }) }, text: N2 },
+  { name: 'N-3 feature.json is not JSON', files: r => { r[`${ROOT}/.specify/feature.json`] = '{"feature_directory": ' }, text: N3 },
+  { name: 'N-4 the folder does not exist',
+    files: r => { r[`${ROOT}/.specify/feature.json`] = JSON.stringify({ feature_directory: 'specs/009-gone' }) }, text: N4('specs/009-gone') },
+]
+for (const n of NOTICES) {
+  test(`005 FR-013 ${n.name}: status answer, pane line and start toast say it`, async ($, on) => {
+    const seen = await world(on, {}, NO_RECORDS)
+    n.files(seen.files)
+    await start($)
+    expect(seen.toasts.at(-1)).toBe(n.text)
+    expect(seen.status.at(-1)).toBeUndefined()
+    expect((await cmd($, 'status')).text).toBe(n.text)
+    const ui = await mountPane($)
+    expect(await ui.find({ type: 'Text', text: n.text })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^SPEC KIT/ })).toBeUndefined()
+    await ui.unmount()
+  })
+}
+
+test('005 FR-013 N-3 feature.json that exists but cannot be read says N-3', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  seen.denied.add(`${ROOT}/.specify/feature.json`)
+  await start($)
+  expect(seen.toasts.at(-1)).toBe(N3)
+  expect(seen.status.at(-1)).toBeUndefined()
+  expect((await cmd($, 'status')).text).toBe(N3)
+})
+
+// FR-011, D3-A: a file that exists and cannot be read is shown as unreadable, not missing
+test('005 FR-011 D3-A a tasks.md that exists but cannot be read shows ✗ tasks (unreadable)', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  seen.denied.add(`${ROOT}/${FEATURE}/tasks.md`)
+  await start($)
+  expect(seen.status.at(-1)).toBe('001-x · ✗ tasks (unreadable)')
+  expect((await cmd($, 'status')).text).toBe('001-x · ✗ tasks (unreadable)\n✓ spec ✓ plan ✗ tasks ○ build\nnext: cannot read tasks.md')
+  const ui = await mountPane($)
+  const row = await around(ui, 'tasks')
+  expect(row.before?.text).toBe('✗')
+  expect(row.after?.text).toBe('unreadable')
+  await ui.unmount()
+  // Missing is not unreadable: once the file is gone, the phase is todo again.
+  seen.denied.delete(`${ROOT}/${FEATURE}/tasks.md`)
+  delete seen.files[`${ROOT}/${FEATURE}/tasks.md`]
+  await cmd($, 'refresh')
+  expect((await cmd($, 'status')).text).toBe('001-x · ○ tasks\n✓ spec ✓ plan ○ tasks ○ build\nnext: run /speckit-tasks')
+})
+
+test('005 FR-011 D3-A a verdict file that exists but cannot be read selects the team view and shows ✗ audit (unreadable)', async ($, on) => {
+  const verdict = `${ROOT}/.git/speckit-team/verdicts/001-x.json`
+  const seen = await world(on, { [verdict]: '{}' }, NO_RECORDS)
+  seen.denied.add(verdict)
+  await start($)
+  const text = (await cmd($, 'status')).text
+  expect(text.split('\n')[0]).toContain('✗ audit (unreadable)')
+  expect(text.split('\n')[1]).toBe('✓ spec ✓ plan ✓ tasks ✗ audit ⊘ build ○ verify')
+  const ui = await mountPane($)
+  const row = await around(ui, 'audit')
+  expect(row.before?.text).toBe('✗')
+  expect(row.after?.text).toBe('unreadable')
+  await ui.unmount()
+  // Missing is not unreadable: the record is a team record only while it exists, so with the
+  // retry record beside it the team view stays and the audit is todo.
+  seen.denied.delete(verdict)
+  delete seen.files[verdict]
+  seen.files[`${ROOT}/.git/speckit-team/retries/001-x.json`] = JSON.stringify({ fingerprint: seen.fp, red: [] })
+  await cmd($, 'refresh')
+  expect((await cmd($, 'status')).text.split('\n')[1]).toBe('✓ spec ✓ plan ✓ tasks ○ audit ⊘ build ○ verify')
 })

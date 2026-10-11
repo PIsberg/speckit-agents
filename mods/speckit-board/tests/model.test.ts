@@ -1,8 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
-  TEAM, bandLayout, boardText, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
-  statusLine, taskSections, teamRole, toneOf,
+  TEAM, ancestors, bandLayout, boardText, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
+  noticeText, statusLine, taskSections, teamRole, toneOf,
 } from '../hooks/model'
 import type { BandItem, BoardInputs } from '../hooks/model'
 import type { SpeckitBoard } from '../types'
@@ -384,3 +384,48 @@ test('team view is unchanged without the flag, FR-008', () => {
   expect(boardText(board({ tasks: SLICE }), [{ type: 'implementer', startedAt: 0 }], 42_000)).toContain('running: implementer 42s')
   expect(nextStep(board({ ...none, verdict: undefined }), []).text).toBe('start with /speckit-team <idea>')
 })
+
+// ---- 005-standalone-board: ancestors (T009) and unreadable files (T014) ----
+
+test('005 FR-014 ancestors lists the folder and each parent, nearest first, forward slashes, no trailing slash', () => {
+  // The root is '' (POSIX) or the drive (Windows), so `${dir}/.specify` is the path to test.
+  expect(ancestors('/a/b')).toEqual(['/a/b', '/a', ''])
+  expect(ancestors('/a/b/')).toEqual(['/a/b', '/a', ''])
+  expect(ancestors(String.raw`C:\a\b`)).toEqual(['C:/a/b', 'C:/a', 'C:'])
+  expect(ancestors('C:/a/b/')).toEqual(['C:/a/b', 'C:/a', 'C:'])
+  expect(ancestors('/a/b').map(dir => `${dir}/.specify`)).toEqual(['/a/b/.specify', '/a/.specify', '/.specify'])
+  expect(ancestors(String.raw`C:\a\b`).map(dir => `${dir}/.specify`)).toEqual(['C:/a/b/.specify', 'C:/a/.specify', 'C:/.specify'])
+})
+
+test('005 contract N-1..N-4 noticeText gives the one-line texts', () => {
+  expect(noticeText('not-set-up')).toBe('Spec Kit is not set up here (no .specify/): specify init sets it up.')
+  expect(noticeText('no-feature')).toBe('no active feature in .specify/feature.json: /speckit-specify <idea> starts one.')
+  expect(noticeText('feature-unreadable')).toBe('cannot read .specify/feature.json: /speckit-specify <idea> writes it again.')
+  expect(noticeText('no-folder', 'specs/009-gone'))
+    .toBe('specs/009-gone, the active feature in .specify/feature.json, does not exist: /speckit-specify <idea> starts one.')
+})
+
+// null is unreadable, undefined missing (D3-A). The input types allow null once implemented.
+const UNREADABLE = null as unknown as undefined
+const FILES = [
+  { id: 'U-1', file: 'spec', over: { spec: UNREADABLE } },
+  { id: 'U-2', file: 'plan', over: { plan: UNREADABLE } },
+  { id: 'U-3', file: 'tasks', over: { tasks: UNREADABLE } },
+] as const
+for (const st of FILES) {
+  for (const view of [{ name: 'standalone', flag: true }, { name: 'team', flag: undefined }]) {
+    test(`005 FR-011 D3-A ${st.id}: ${st.file} unreadable is failed with its note in the ${view.name} view`, () => {
+      const i: BoardInputs = { ...base, ...(view.flag ? alone() : {}), verdict: view.flag ? undefined : { verdict: 'PASS', fingerprint: 'fp' }, ...st.over }
+      const phase = derivePhases(i).find(p => p.id === st.file)
+      expect(phase).toMatchObject({ state: 'failed', note: 'unreadable' })
+      const b = board(i)
+      expect(statusLine(b)).toContain(`✗ ${st.file} (unreadable)`)
+      expect(boardText(b, [], 0).split('\n')[1]).toContain(`✗ ${st.file}`)
+      expect(nextStep(b, []).text).toBe(`cannot read ${st.file}.md`)
+      // Missing stays missing.
+      const missing = derivePhases({ ...i, [st.file]: undefined }).find(p => p.id === st.file)
+      expect(missing?.state).not.toBe('failed')
+      expect(missing?.note).not.toBe('unreadable')
+    })
+  }
+}
