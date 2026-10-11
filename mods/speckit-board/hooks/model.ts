@@ -133,11 +133,14 @@ export type BoardInputs = {
   // When the hook recorded the gate word (ISO time); absent for a word from the plugin store.
   gateAt?: string
   running: readonly string[]
+  // Spec Kit alone: four phases, no gate, no agents; verdict, red, gate and running are ignored.
+  isStandalone?: boolean
 }
 
 const phase = (id: SpeckitPhase['id'], state: SpeckitPhaseState, note = ''): SpeckitPhase => ({ id, state, note })
 
 export function derivePhases(i: BoardInputs): SpeckitPhase[] {
+  if (i.isStandalone) return standalonePhases(i)
   const runs = (role: string) => i.running.includes(role)
   const idle = (role: string): SpeckitPhaseState => (runs(role) ? 'active' : 'todo')
 
@@ -200,6 +203,24 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
   return [spec, plan, tasks, audit, build, verify]
 }
 
+// Spec Kit alone: no agents and no gate, so a phase is what its file says and nothing else.
+function standalonePhases(i: BoardInputs): SpeckitPhase[] {
+  const spec = i.spec === undefined
+    ? phase('spec', 'todo')
+    : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
+      ? phase('spec', 'done', 'approved')
+      : i.plan !== undefined ? phase('spec', 'done') : phase('spec', 'active', 'draft')
+  const plan = i.plan === undefined ? phase('plan', 'todo') : phase('plan', 'done')
+  const tasks = i.tasks === undefined ? phase('tasks', 'todo') : phase('tasks', 'done', `${i.tasks.length} tasks`)
+  const list = i.tasks ?? []
+  const done = list.filter(t => t.isDone).length
+  const progress = `${done}/${list.length}`
+  const build = list.length > 0 && done === list.length
+    ? phase('build', 'done', progress)
+    : done > 0 ? phase('build', 'active', progress) : phase('build', 'todo', list.length ? progress : '')
+  return [spec, plan, tasks, build]
+}
+
 // The word an agent's report ends on, per the team's report rules; '' for a report without one, and
 // for architect, whose report has no word.
 export function outcomeOf(role: string | undefined, report: string): string {
@@ -251,16 +272,17 @@ export function statusLine(b: SpeckitBoard | null): string | undefined {
   if (!b) return undefined
   const now = current(b.phases)
   const progress = `${b.tasks.filter(t => t.isDone).length}/${b.tasks.length}`
-  const where = now ? `${GLYPH[now.state]} ${now.id}${now.note ? ` (${now.note})` : ''}` : '✓ verified'
+  const where = now ? `${GLYPH[now.state]} ${now.id}${now.note ? ` (${now.note})` : ''}` : b.isStandalone ? '✓ ready for the PR' : '✓ verified'
   const count = b.tasks.length && now?.note !== progress ? ` · ${progress} tasks` : ''
   return `${b.feature} · ${where}${count}${b.red ? ` · RED ${b.red}/${b.maxRed}` : ''}`
 }
 
 // What the pipeline needs next, as skills/speckit-team/SKILL.md runs it: while building, the next
 // open task in tasks.md order, whoever runs; otherwise who is at work, or what to start.
-export function nextStep(b: SpeckitBoard, running: readonly string[]): { text: string; task?: SpeckitTask } {
+export function nextStep(b: SpeckitBoard, running: readonly string[]): { text: string; task?: SpeckitTask; command?: string } {
   const head = current(b.phases)
   if (!head) return { text: 'ready for the PR' }
+  if (b.isStandalone) return standaloneStep(b, head)
   if (head.id === 'build' && head.state === 'failed') {
     return {
       text: b.isRetryUnreadable
@@ -272,6 +294,23 @@ export function nextStep(b: SpeckitBoard, running: readonly string[]): { text: s
   if (task) return { text: `${task.id} ${task.text}`, task }
   const busy = PHASE_ROLES[head.id].find(role => running.includes(role))
   return { text: busy ? `waiting for ${busy}` : idleStep(head) }
+}
+
+function standaloneStep(b: SpeckitBoard, head: SpeckitPhase): { text: string; task?: SpeckitTask; command?: string } {
+  if (head.id === 'build') {
+    const task = nextTask(b.tasks)
+    if (!task) return { text: 'tasks.md lists no tasks' }
+    if (!b.tasks.some(t => t.isDone)) {
+      const command = '/speckit-implement:'
+      return { text: `${command} ${task.id} ${task.text}`, task, command }
+    }
+    return { text: `${task.id} ${task.text}`, task }
+  }
+  switch (head.id) {
+    case 'spec': return { text: head.state === 'todo' ? 'start with /speckit-specify <idea>' : 'review spec.md, then /speckit-plan' }
+    case 'plan': return { text: 'run /speckit-plan' }
+    default: return { text: 'run /speckit-tasks' }
+  }
 }
 
 function idleStep(head: SpeckitPhase): string {
@@ -300,7 +339,7 @@ export function boardText(b: SpeckitBoard, running: readonly { type: string; sta
     b.phases.map(p => `${GLYPH[p.state]} ${p.id}`).join(' '),
     `next: ${nextStep(b, running.map(a => a.type)).text}`,
   ]
-  if (running.length) lines.push(`running: ${running.map(a => `${a.type} ${since(now - a.startedAt)}`).join(', ')}`)
+  if (running.length && !b.isStandalone) lines.push(`running: ${running.map(a => `${a.type} ${since(now - a.startedAt)}`).join(', ')}`)
   return lines.join('\n')
 }
 
@@ -367,8 +406,8 @@ export function bandLayout(
       if (v.bar) items.push({ kind: 'bar', text: bar(done, b.tasks.length, v.bar) })
       items.push({ kind: 'count', text: `${done}/${b.tasks.length}` })
     }
-    if (b.red > 0) items.push({ kind: 'red', text: `RED ${b.red}/${b.maxRed}`, isLimit: b.red >= b.maxRed })
-    const [first, ...others] = running
+    if (b.red > 0 && !b.isStandalone) items.push({ kind: 'red', text: `RED ${b.red}/${b.maxRed}`, isLimit: b.red >= b.maxRed })
+    const [first, ...others] = b.isStandalone ? [] : running
     if (first) {
       const spin = spinnerAt(now)
       const more = others.length ? ` +${others.length}` : ''

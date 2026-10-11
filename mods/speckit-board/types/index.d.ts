@@ -21,6 +21,8 @@ export type SpeckitBoard = {
   // The retry record cannot be read, so the gate blocks implementer whatever `red` says.
   isRetryUnreadable: boolean
   fingerprint: string
+  // Spec Kit alone: four phases (spec, plan, tasks, build), no gate, no agents drawn.
+  isStandalone?: boolean
 }
 
 export type SpeckitAgent = {
