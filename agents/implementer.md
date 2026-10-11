@@ -49,13 +49,15 @@ brief state.
    600000 ms: past the default 2 minutes Claude Code moves the command to the background, where
    you cannot wait for it.
 4. Tick finished tasks (`- [X]`) in `tasks.md` (for a brief, tick nothing), and commit on the feature branch, never on main
-   or master.
+   or master. When your prompt says `worktree`, tick nothing and commit on the worktree's own branch:
+   the main session merges it and ticks the tasks your report names.
 
 ## Stub pass
 When your prompt says `stub`, no tests exist yet for these tasks. Create only the files, functions
 and types the tasks list, with the listed signatures and bodies that only signal "not implemented"
 (throw, raise, panic or the language's equivalent), and keep the build compiling. Tick a task only
-if it asks for nothing beyond these stubs, commit as `stub: <task IDs>`, and end with `RESULT: STUB`.
+if it asks for nothing beyond these stubs (never with `worktree`), commit as `stub: <task IDs>`, and
+end with `RESULT: STUB`.
 
 ## Lane
 Everything except test files and `.specify/`. A hook rejects edits to either, and a stop check

@@ -504,11 +504,21 @@ made while building never void the audit.
 
 For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
 implementer in its own git worktree, merged back into the feature branch in task order. It does so
-only if you say so at the plan stop, and it recommends one at a time until a live run has
-confirmed side-by-side launches ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
-Side by side may save wall-clock time but costs more: each slice gets its own test-writer and
-implementer instead of sharing its round's, plus a few main-session requests for the merges, and
-several agents then draw on your usage limits at once.
+only if you say so at the plan stop. Side by side may save wall-clock time but costs more: each
+slice gets its own test-writer and implementer instead of sharing its round's, plus a few
+main-session requests for the merges, and several agents then draw on your usage limits at once.
+It recommends one at a time: no run with real models has built slices side by side yet
+([#114](https://github.com/PIsberg/speckit-agents/issues/114)).
+
+Claude Code does run them side by side: agents launched in one message overlap, in worktrees too,
+and the main session waits for all of them, checked against a fake API and pinned by
+[`test/e2e.test.mjs`](test/e2e.test.mjs) ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
+The same check shaped the rules for worktrees. A worktree starts from the last commit, without
+uncommitted work, so the main session commits the round's tests in the message that launches the
+implementers. An implementer there ticks nothing in `tasks.md`, because ticks on adjacent lines in
+two branches conflict when merged; after each implementer step the main session merges the branches,
+ticks the tasks the reports name, and removes each worktree and its branch, which `git add -A` would
+otherwise commit as an embedded repository.
 
 #### Handoffs are lossy on purpose
 
@@ -881,8 +891,10 @@ of input, 24% of the main session, in the one interactive run measured
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
 waits for you anyway. When you choose side by side, agents for `[P]` slices are launched together
-in one message so that they still run side by side, but no live run has had `[P]` slices yet
-([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
+in one message, and Claude Code runs them side by side: in a check against a fake API, two agents
+each running a 4 s command sent their first requests 35 ms apart (28 ms in worktrees), and the main
+session's next request came only after both had reported
+([#40](https://github.com/PIsberg/speckit-agents/issues/40), [Parallel slices](#parallel-slices)).
 
 ## Customising
 
@@ -1136,17 +1148,17 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 266 tests:
+`npm test` runs 269 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 80 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 58 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 76 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 77 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 31 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 33 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
@@ -1186,18 +1198,21 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 23
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 24
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), the `Skill|Agent` gate in
   `settings.json`, and its `UserPromptExpansion` gate on a typed `/speckit-team --team noagents`,
   whose session then calls `speckit-implement` with no audit while the same call without the flag
-  is denied. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 23
-  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 25 failures, none of the 23 passed). Setting
+  is denied. One runs an implementer in a git worktree, as side-by-side slices do: the gate there
+  shuts it out until the main tree records a PASS, and then lets it in; the worktree holds the last
+  commit and not the main tree's uncommitted test, and the Agent result names the worktree's
+  branch. They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 24
+  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 26 failures, none of the 24 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  25 of the 31 tests fail (the 23 scripted ones and the two blocking no-model cases); the other six
+  26 of the 33 tests fail (the 24 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1211,7 +1226,10 @@ need no login and cost nothing.
   `1` in the environment ([Foreground launches](#foreground-launches)). A fourth pins that the
   calls of one message run in order: a `git commit` and an Agent call sent together, the agent's
   first `git log` shows the commit, and with the two swapped it does not. The skill's rule to
-  commit with the next launch relies on it.
+  commit with the next launch relies on it. A fifth pins that two Agent calls in one message run
+  side by side, with and without `isolation: "worktree"`: each agent's Bash call waits 5 s, both
+  start before either finishes, and the main session's next request comes after both. With the
+  calls in two messages it fails. [Parallel slices](#parallel-slices) relies on it.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either

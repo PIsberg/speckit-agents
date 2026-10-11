@@ -193,6 +193,23 @@ missing, the call returned "Async agent launched", and the main session made 3. 
 check with `--permission-mode default`: in auto mode a notice about the localhost API waits for
 Enter and the agent never starts.)
 
+Side by side ([#40](https://github.com/PIsberg/speckit-agents/issues/40)) was checked on 2026-10-11
+the same way under `claude -p`, Claude Code 2.1.296: the main session's first reply held two
+general-purpose Agent calls with `run_in_background: false`, and each agent ran a 4 s command. Their
+first requests came 762 and 797 ms after the start, their second ones at about 7.4 s, and the main
+session's next request at 7474 ms, after both. With `isolation: "worktree"` on both calls the first
+requests came at 1387 and 1415 ms. Sent in two messages instead, the second agent started 260 ms
+after the first one's last request. The worktree, `.claude/worktrees/agent-<id>` on a new branch
+`worktree-agent-<id>`, held the last commit only: an uncommitted change, an untracked file and a
+staged file of the main tree were not in it. A worktree whose agent committed stays, with its branch,
+and the Agent result names both (`worktreePath:`, `worktreeBranch:`); one with no changes is removed.
+With git 2.55, two branches that tick adjacent lines of `tasks.md` conflict when merged, while ticks
+with an unchanged line between them merge cleanly, and `git add -A` in the main tree stages a
+worktree left in place as an embedded repository (mode 160000). Those findings are the side-by-side
+rules in "4-5. Red and green" of [the skill](../skills/speckit-team/SKILL.md). Not checked: a real
+main session following them, and what side by side saves against what it costs
+([#114](https://github.com/PIsberg/speckit-agents/issues/114)).
+
 ## The constitution check
 
 In each of the first three runs the first audit failed on the same CRITICAL finding: the plan's

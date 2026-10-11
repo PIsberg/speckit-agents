@@ -204,8 +204,8 @@ In the 004 run a decision that contradicted FR-012 failed the first audit, and t
 product-owner and a second audit (229 s, 0.59M tokens). In the 003 run four architect revisions
 only applied answers, 7.37M tokens together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
-same stop, with AskUserQuestion, whether to build them one at a time (recommended: no live run has confirmed
-side-by-side launches yet) or side by side. Say why it matters: side by side may be faster but
+same stop, with AskUserQuestion, whether to build them one at a time (recommended: it costs less, and
+no run with real models has built slices side by side yet) or side by side. Say why it matters: side by side may be faster but
 costs more, since each `[P]` slice then gets its own agents instead of sharing its round's, and it
 runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
@@ -263,8 +263,14 @@ For each round:
 
 Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
 touch disjoint files run side by side instead: one loop per slice, each step's agents launched
-together in one message, each implementer with `isolation: "worktree"`,
-then merge their branches into the feature branch in task order.
+together in one message, each implementer with `isolation: "worktree"` and `worktree` in its prompt,
+so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
+A worktree starts from the last commit, without uncommitted work: commit the round's tests and
+ticks in the message that launches the implementers. After each implementer step, in one Bash
+call chained with `&&`: merge the branches the results name (`worktreeBranch`) into the feature
+branch in task order, tick the tasks each report names as done and commit, then
+`git worktree remove` each `worktreePath` and `git branch -d` its branch, since `git add -A` would
+commit a worktree left in place.
 
 ## 6. Verify: spec-gatekeeper
 Only when spec-gatekeeper is in the team; without it, skip this step. Start it as soon as the last
