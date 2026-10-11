@@ -36,11 +36,13 @@ const STATUS = /^\s*(⚠ speckit-board: .*?)\s*$/m;
 // vhs's text output: one screen after each command of the tape, between lines of 80 box rules (the
 // TUI's own rules span the terminal, so they are longer).
 export const screens = (text) => text.split(/^─{80}$/m);
+// The terminal's width: Claude Code's rules span it, as does a wrapped line.
+export const widest = (text) => Math.max(0, ...text.split(/\r?\n/).map((l) => [...l].length));
 
 // The checks, read off the screens and the two hash files L6 writes from Claude Code's own shell.
 export function verdicts(text, { before, after, variant = 'band' }) {
   const all = screens(text);
-  const width = Math.max(...text.split(/\r?\n/).map((l) => [...l].length));
+  const width = widest(text);
   const opened = all.findIndex((s) => /pane opened/.test(s));
   const cleared = all.findIndex((s) => TOAST.test(s));
   const asked = all.findIndex((s, i) => i > cleared && cleared >= 0 && /❯ board one more/.test(s));
@@ -156,8 +158,41 @@ function fakeApi() {
   });
 }
 
+// vhs on Windows resolves `bash` to WSL, which has neither the environment nor claude; pwsh has both.
+const SHELL = process.platform === 'win32' ? 'pwsh' : 'bash';
+
+// Spawned, not spawnSync: the fake API answers from this process while vhs runs.
+function vhs(tapeFile, work, env) {
+  return new Promise((resolve) => {
+    const child = spawn('vhs', [tapeFile], { cwd: work, env, stdio: ['ignore', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (d) => { err += d; });
+    child.on('error', (e) => resolve({ code: 1, err: e.message }));
+    child.on('close', (code) => resolve({ code, err }));
+  });
+}
+
+// The font vhs finds differs by OS, and with it the pixels a column takes. A probe types a line longer
+// than the terminal, so its first row is as wide as the terminal; a few probes find the width in
+// pixels that gives COLUMNS columns. 1692 pixels gave 140 on Windows 11.
+export async function widthFor(work, env, start = 1692) {
+  let width = start;
+  for (let probe = 1; probe <= 4; probe++) {
+    const out = path.join(work, `probe-${probe}.txt`);
+    const file = path.join(work, `probe-${probe}.tape`);
+    fs.writeFileSync(file, [`Output "${out}"`, `Set Shell ${SHELL}`, 'Set FontSize 16', `Set Width ${width}`, 'Set Height 300',
+      'Set TypingSpeed 1ms', `Type "${'x'.repeat(COLUMNS * 2)}"`, 'Sleep 1s'].join('\n'));
+    const { code, err } = await vhs(file, work, env);
+    if (code !== 0) throw new Error(`the width probe failed: vhs exited ${code}\n${err.slice(-1500)}`);
+    const columns = widest(fs.readFileSync(out, 'utf8'));
+    if (columns === COLUMNS) return width;
+    width = Math.round(width * (COLUMNS + 0.5) / columns);
+  }
+  return width;
+}
+
 // The keys. L6 hashes the same files before and after the clear from Claude Code's own `!` shell.
-function tape({ work, repo, variant }) {
+function tape({ work, repo, variant, width }) {
   const hashes = (file) => `!git hash-object .git/speckit-team/*/*.json specs/*/spec.md specs/*/plan.md specs/*/tasks.md .specify/feature.json > '${path.join(work, file).replaceAll('\\', '/')}'`;
   const press = variant === 'band'
     ? ['Ctrl+X', 'Sleep 400ms', 'Tab', 'Sleep 800ms', 'Tab', 'Sleep 800ms', 'Enter', 'Sleep 3s', 'Escape', 'Sleep 1s']
@@ -165,9 +200,9 @@ function tape({ work, repo, variant }) {
       'Escape', 'Sleep 1s', 'Ctrl+X', 'Sleep 400ms', 'Ctrl+A', 'Sleep 2s'];
   return [
     `Output "${path.join(work, 'frames.txt')}"`,
-    `Set Shell ${process.platform === 'win32' ? 'pwsh' : 'bash'}`,
-    // 1692 pixels at font size 16 are 140 columns; L3 checks the width the screens show.
-    'Set FontSize 16', 'Set Width 1692', 'Set Height 900', 'Set TypingSpeed 10ms',
+    `Set Shell ${SHELL}`,
+    // The width widthFor found for 140 columns; L3 checks the width the screens show.
+    'Set FontSize 16', `Set Width ${width}`, 'Set Height 900', 'Set TypingSpeed 10ms',
     `Type "cd '${repo}'; claude --plugin-dir '${path.join(ROOT, 'mods', 'speckit-board')}' --permission-mode default"`,
     'Enter', 'Sleep 12s',
     'Type "/speckit-board"', 'Sleep 500ms', 'Enter', 'Sleep 4s',
@@ -190,7 +225,6 @@ async function main() {
   seed(cfg, repo);
   const server = fakeApi();
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  fs.writeFileSync(path.join(work, 'live.tape'), `${tape({ work, repo, variant })}\n`);
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|ANTHROPIC_|AI_AGENT$)/.test(k))),
     CLAUDE_CONFIG_DIR: cfg, ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, ANTHROPIC_API_KEY: KEY,
@@ -198,20 +232,15 @@ async function main() {
     // Foreground agents, and fullscreen, where the pane docks beside the transcript.
     CLAUDE_CODE_FORK_SUBAGENT: '0', CLAUDE_CODE_NO_FLICKER: '1',
   };
-  // Spawned, not spawnSync: the fake API answers from this process while vhs runs.
-  const code = await new Promise((resolve) => {
-    const child = spawn('vhs', [path.join(work, 'live.tape')], { cwd: work, env, stdio: ['ignore', 'ignore', 'pipe'] });
-    let err = '';
-    child.stderr.on('data', (d) => { err += d; });
-    child.on('error', (e) => { err += e.message; resolve(1); });
-    child.on('close', (c) => { if (c) console.error(err.slice(-2000)); resolve(c); });
-  });
+  const width = await widthFor(work, env);
+  fs.writeFileSync(path.join(work, 'live.tape'), `${tape({ work, repo, variant, width })}\n`);
+  const { code, err } = await vhs(path.join(work, 'live.tape'), work, env);
   server.close();
-  if (code !== 0) { console.error(`vhs exited ${code}; the files are in ${work}`); process.exit(1); }
+  if (code !== 0) { console.error(`${err.slice(-2000)}\nvhs exited ${code}; the files are in ${work}`); process.exit(1); }
   const read = (f) => (fs.existsSync(path.join(work, f)) ? fs.readFileSync(path.join(work, f), 'utf8') : '');
   const results = verdicts(read('frames.txt'), { before: read('before.sha'), after: read('after.sha'), variant });
   const version = /Claude Code v([\d.]+)/.exec(read('frames.txt'))?.[1] ?? 'unknown';
-  console.log(`Claude Code ${version}, ${variant} variant, screens and hashes in ${work}`);
+  console.log(`Claude Code ${version}, ${variant} variant, ${width} pixels wide, screens and hashes in ${work}`);
   for (const r of results) console.log(`${r.skipped ? '-' : r.ok ? '✓' : '✗'} ${r.id} ${r.name}${r.note ? ` (${r.note})` : ''}`);
   process.exit(results.every((r) => r.ok) ? 0 : 1);
 }
