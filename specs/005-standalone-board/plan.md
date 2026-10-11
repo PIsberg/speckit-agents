@@ -54,13 +54,13 @@ decided, see Decisions).
 | Rule | Tasks | How |
 |---|---|---|
 | I. Every behaviour change has a test under `npm test`, seen failing first, asserting what a caller observes | T001, T003, T005, T007, T009, T010, T012, T014, T015, T017, T019 | each slice's tests precede its implementation; they assert pane, band, status line, command answers and the installed plugins |
-| II. Every code path that can throw has a test | T010, T012, T015 | new paths: repo discovery without git, notices, a read that fails on an existing file |
+| II. Every code path that can throw has a test | T005, T006, T010, T012, T015 | new paths: the `teamFeatures` write on a team `SubagentStart` (refused write, no repo), repo discovery without git, notices, a read that fails on an existing file |
 | III. Observers never deny, delay or alter; a failure is visible | T015, T016, T012, T013 | no handler denies or rewrites (FR-011); unreadable files and `feature.json` are shown (D3); budget in Technical Context |
 | IV. Plugin code uses only the plugin API, shipped as source | T002-T016 | only `$.fs`, `$.store`, atoms; no package added |
 | V. Public contracts (slash command answers) documented | T020 | the new texts are in `contracts/board-text.md`; no event, no installer flag (D2-A) |
 | VI. Output local and metadata only, repo-relative paths | T010, T011, T012 | the not-set-up line drops the absolute cwd the start toast printed (FR-012) |
 | VII. Same behaviour on all three platforms, forward slashes | T009, T011 | `ancestors()` tested with Windows and POSIX spellings; CI runs the board tests on all three |
-| VIII. README, CLAUDE.md and installer help describe the change; every count matches | T019, T020 | README and CLAUDE.md in T020, with the test counts at README.md:1153, :1240, :1245, :1246 and CLAUDE.md:46; `install.mjs --help` unchanged because no flag changes (D2-A) |
+| VIII. README, CLAUDE.md and installer help describe the change; every count matches | T018, T019, T020 | README and CLAUDE.md in T020, with the `--no-board` text at README.md:155, :1016 and the test counts at README.md:1153, :1240, :1245, :1246 and CLAUDE.md:46; `install.mjs --help` (header comment :10) in T018: no flag changes (D2-A), but `--no-board` removes only a board the installer installed (D6-A) |
 | Installation: no output in repos without `.specify/` | T010, T011 | the start toast outside Spec Kit goes (D5-A); `/speckit-board` still answers |
 | Installation: idempotent; `--uninstall` removes what it added and nothing else | T017, T018 | the manifest records whether this installer installed the plugin; a board-only install survives `--board` then `--uninstall` or `--no-board` (D6-A) |
 
@@ -111,7 +111,7 @@ specs/005-standalone-board/
 └── tasks.md
 ```
 
-No `research.md`: the choices are D1-D5 under Decisions.
+No `research.md`: the choices are D1-D6 under Decisions.
 
 ### Source Code (repository root)
 
