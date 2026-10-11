@@ -34,7 +34,7 @@ same with `spec-auditor` in the line: denied with today's text.
   gets a `permissionDecision`, with or without a PASS (today `gate` would deny it); a launch from a
   subagent (`agent_id` set) records nothing; outside a Spec Kit repo (`repo({ speckit: false })`)
   there is no output and no record; a `session_id` of `../x` or 200 characters is unusable.
-- [ ] T002 [US3] Implement in `hooks/speckit-team.mjs`, inside `if (mode === 'gate')` before the
+- [X] T002 [US3] Implement in `hooks/speckit-team.mjs`, inside `if (mode === 'gate')` before the
   `Skill` branch: on `event === 'PreToolUse'` with `input.tool_name === 'Agent'` and no `agentId`,
   record or remove the team and `process.exit(0)` / `emit({ systemMessage })`, never `deny`. New:
   `const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];`
@@ -58,7 +58,7 @@ same with `spec-auditor` in the line: denied with today's text.
   instead of `not counted`; a `Skill` call to `speckit-implement` and a typed
   `UserPromptExpansion` without `agent_id` stay blocked whatever the record says. Every existing
   gate, result and retry test stays unchanged (SC-002).
-- [ ] T004 [US3] Implement in `hooks/speckit-team.mjs`: `function teamOf(): string[] | null` (the
+- [X] T004 [US3] Implement in `hooks/speckit-team.mjs`: `function teamOf(): string[] | null` (the
   roles in `teamFile(str(input.session_id))` when the id matches `^[\w-]{1,128}$` and `roles` is an
   array of `TEAM_ROLES` names, else null; uses `readState`) and `function auditSkipped(): boolean`
   (`Boolean(agentId)` and `teamOf()` lacks `spec-auditor`). In `if (mode === 'gate')` skip the

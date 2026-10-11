@@ -26,8 +26,9 @@ const HOOK_FILE = 'speckit-team.mjs';
 const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'patcher'];
 // settings.json gates for the main session. Agent-scoped hooks live in each agent's frontmatter.
 const SETTINGS_GATES = [
-  // Claude calling the speckit-implement skill itself.
-  { event: 'PreToolUse', matcher: 'Skill' },
+  // Claude calling the speckit-implement skill itself, and the main session launching an agent (the
+  // gate records the launch's Team line there and never decides).
+  { event: 'PreToolUse', matcher: 'Skill|Agent' },
   // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement' },
 ];
