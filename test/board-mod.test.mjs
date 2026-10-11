@@ -106,6 +106,18 @@ test('the repo\'s marketplace lists the board mod under its own name and folder'
   assert.equal(path.resolve(ROOT, entry.source), MOD);
 });
 
+// #96: since 005 the board runs with Spec Kit alone, and `/plugin` shows these two descriptions to
+// a user who installed only the board.
+test('the plugin and its marketplace describe the board for Spec Kit, with or without the team', () => {
+  const market = JSON.parse(fs.readFileSync(path.join(ROOT, '.claude-plugin', 'marketplace.json'), 'utf8'));
+  const plugin = JSON.parse(fs.readFileSync(path.join(MOD, '.claude-plugin', 'plugin.json'), 'utf8'));
+  for (const [name, d] of [['plugin.json', plugin.description], ['marketplace.json', market.description]]) {
+    assert.match(d, /Spec Kit/, name);
+    assert.doesNotMatch(d, /team board|for the Spec Kit agent team|go with the speckit-agents team/i, name);
+  }
+  assert.match(plugin.description, /without the team|with or without|Spec Kit alone/i, 'plugin.json says it works without the team');
+});
+
 test('claude plugin validate accepts the repo\'s marketplace', { skip: noClaude }, () => {
   const r = claude('plugin', 'validate', ROOT);
   assert.equal(r.status, 0, r.stdout + r.stderr);

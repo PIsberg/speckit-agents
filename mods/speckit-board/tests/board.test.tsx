@@ -36,11 +36,20 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   const commands: CommandSpec[] = []
   const opens: PaneOpenArgs[] = []
   const clock = mock.clock(on, { now: 1_000_000 })
-  mock.store(on, opts.store)
+  // The plugin store, answered here rather than by mock.store, which owns the store events, so that a
+  // test can count the writes: clear must make none (#85).
+  const store = new Map<string, unknown>(Object.entries(opts.store ?? {}))
+  const storeWrites = { set: 0, delete: 0 }
+  on('store.get', (_$, e) => ({ value: store.get(e.key) }))
+  on('store.set', (_$, e) => { storeWrites.set++; store.set(e.key, e.value); return { value: undefined } })
+  on('store.delete', (_$, e) => { storeWrites.delete++; store.delete(e.key); return { value: undefined } })
+  on('store.keys', () => ({ value: [...store.keys()] }))
   // git answers only inside a repo, as the real one does.
   const runs = { n: 0, reads: 0 }
   // Paths that exist but whose read is denied, as a file the user cannot open.
   const denied = new Set<string>()
+  // fs.exists of the paths this names rejects, as a call the engine refuses (#94).
+  const failures = { rejectsExists: (_path: string) => false }
   on('process.run', (_$, e) => {
     runs.n++
     const root = [ROOT, OTHER].find(r => posix(e.init?.cwd ?? '').startsWith(r))
@@ -53,6 +62,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   // True for every path in `files` and every folder above one, as the real one answers.
   on('fs.exists', (_$, e) => {
     const path = posix(e.path)
+    if (failures.rejectsExists(path)) return { deny: `EIO ${e.path}` }
     return { value: [ROOT, OTHER].some(r => path === `${r}/.specify`)
       || Object.keys(files).some(f => f === path || f.startsWith(`${path}/`)) }
   })
@@ -75,7 +85,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
   on('ui.open', (_$, e) => { opens.push(e); return { value: { isPlaced: true } } })
-  return { toasts, status, commands, opens, files, fp, clock, runs, denied }
+  return { toasts, status, commands, opens, files, fp, clock, runs, denied, storeWrites, failures }
 }
 
 // The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
@@ -562,8 +572,7 @@ const mountPane = ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') =>
   $.ui.mount({ plugin: 'speckit-board', surface, ...PANE, ...pane } as never)
 
 // Counts fs.write events (nothing else in world() answers them): a clear must raise none. Register
-// it beside world(), before the first call on `$`. Store writes cannot be counted here: mock.store
-// owns the store events; the mod writes the store only in its SubagentStop handler.
+// it beside world(), before the first call on `$`. world() counts the store writes itself.
 function recorders(on: On) {
   const counts = { 'fs.write': 0 }
   on('fs.write', ((_$: unknown, _e: unknown) => { counts['fs.write']++; return { value: undefined } }) as never)
@@ -720,9 +729,12 @@ for (const [name, files] of CLEAR_STATES) {
     const before = JSON.stringify(seen.files)
       const statusBefore = (await $.command.run({ command: 'speckit-board', args: 'status' } as never)) as { text: string }
     const runs = seen.runs.n
+    const stores = { ...seen.storeWrites }
     expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
     expect(counts['fs.write']).toBe(0)
     expect(seen.runs.n).toBe(runs)
+    // FR-004, #85: no store.set and no store.delete either
+    expect(seen.storeWrites).toEqual(stores)
       expect(JSON.stringify(seen.files)).toBe(before)
     const statusAfter = (await $.command.run({ command: 'speckit-board', args: 'status' } as never)) as { text: string }
     expect(statusAfter.text).toBe(statusBefore.text)
@@ -744,12 +756,14 @@ test('the pane\'s clear button clears with one toast and changes nothing else', 
   const toasts = seen.toasts.length
   const status = seen.status.length
   const runs = seen.runs.n
+  const stores = { ...seen.storeWrites }
   await p.press({ key: 'clear' })
   expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows.'])
   expect(seen.status).toHaveLength(status)
   expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
   expect(counts['fs.write']).toBe(0)
   expect(seen.runs.n).toBe(runs)
+  expect(seen.storeWrites).toEqual(stores)
   expect(JSON.stringify(seen.files)).toBe(before)
   const b = await mountBand($)
   expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
@@ -1013,6 +1027,82 @@ test('005 constitution II a team SubagentStart with no repo reaches next and doe
   on('classic.SubagentStart', () => ({}))
   await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
   expect(await $.classic.SubagentStart({ agent_id: 'n1', agent_type: 'implementer' } as never)).toEqual({})
+})
+
+// #94, constitution II: SubagentStart refreshes before next(e). The engine skips a handler that throws
+// and runs next in its place, so next is reached either way; what each fs.exists' catch buys is that
+// the refresh still finishes: the records check, the read-or-missing check and the feature-folder check.
+test('#94 with every fs.exists rejecting, a team SubagentStart still refreshes the board and reaches next', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  on('classic.SubagentStart', () => ({}))
+  await start($)
+  expect(seen.status.at(-1)).toBe('001-x · ◐ build (1/3)')
+  seen.failures.rejectsExists = () => true
+  expect(await $.classic.SubagentStart({ agent_id: 'e1', agent_type: 'implementer' } as never)).toEqual({})
+  expect(seen.status.at(-1)).toBe('001-x · ○ audit · 1/3 tasks')
+  // A read refused, and the fs.exists after it rejected too: counted as missing, not as a throw.
+  seen.denied.add(`${ROOT}/${FEATURE}/tasks.md`)
+  expect(await $.classic.SubagentStart({ agent_id: 'e2', agent_type: 'implementer' } as never)).toEqual({})
+  expect(seen.status.at(-1)).toBe('001-x · ○ tasks')
+  delete seen.files[`${ROOT}/${FEATURE}/spec.md`]
+  expect(await $.classic.SubagentStart({ agent_id: 'e3', agent_type: 'implementer' } as never)).toEqual({})
+  expect((await STATUS($)).text).toBe(`${FEATURE}, the active feature in .specify/feature.json, does not exist: /speckit-specify <idea> starts one.`)
+})
+
+// #94: the walk up from a folder that is not a git repository asks fs.exists of each ancestor; one
+// refused does not end the walk before the .specify/ above it.
+test('#94 a refused fs.exists on the way up does not hide the Spec Kit folder above it', async ($, on) => {
+  const seen = await world(on, {
+    '/plain/.specify/feature.json': JSON.stringify({ feature_directory: FEATURE }),
+    [`/plain/${FEATURE}/spec.md`]: '**Status**: Approved',
+    [`/plain/${FEATURE}/plan.md`]: '# Plan',
+    [`/plain/${FEATURE}/tasks.md`]: UNTICKED,
+  }, NO_RECORDS)
+  seen.failures.rejectsExists = path => path === '/plain/sub/.specify'
+  await $.session.start({ cwd: '/plain/sub', surface: 'terminal', isInteractive: true })
+  expect(seen.status.at(-1)).toBe('001-x · ○ build (0/2)')
+})
+
+// #95, constitution III: the team's start event refreshes once and reads feature.json there, not
+// once more before next(e) to note the team's feature.
+test('#95 a team SubagentStart costs the fs.read events of one refresh, and no more', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  on('classic.SubagentStart', () => ({}))
+  await start($)
+  const r0 = seen.runs.reads
+  await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)
+  const oneRefresh = seen.runs.reads - r0
+  expect(oneRefresh).toBeGreaterThan(0)
+  const r1 = seen.runs.reads
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'product-owner' } as never)
+  expect(seen.runs.reads - r1).toBe(oneRefresh)
+  expect((await STATUS($)).text).toMatch(/✓ tasks \S+ audit .* verify/)
+})
+
+// #97: the features a team agent started on are kept per repository, as the gatekeeper's word is.
+test('#97 a team agent start selects the team view only in the repository it ran in', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  Object.assign(seen.files, {
+    [`${OTHER}/.specify/feature.json`]: JSON.stringify({ feature_directory: FEATURE }),
+    ...Object.fromEntries(Object.entries(SPEC_FILES).map(([p, t]) => [`${OTHER}/${p}`, t])),
+  })
+  on('classic.SubagentStart', () => ({}))
+  await start($)
+  await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'product-owner' } as never)
+  expect((await STATUS($)).text).toMatch(/audit/)
+  await $.session.start({ cwd: OTHER, surface: 'terminal', isInteractive: true })
+  expect((await STATUS($)).text).toBe(STANDALONE_1_OF_3)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  expect((await STATUS($)).text).toMatch(/audit/)
+})
+
+// #96: a board-only user sees the command described for either view, not as the team's.
+test('#96 /speckit-board is described as the Spec Kit board, without naming the team', async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  await start($)
+  const description = seen.commands.find(c => c.name === 'speckit-board')?.description ?? ''
+  expect(description).toMatch(/Spec Kit/)
+  expect(description).not.toMatch(/team/i)
 })
 
 // ---- 005-standalone-board: the standalone pane (T007) ----
