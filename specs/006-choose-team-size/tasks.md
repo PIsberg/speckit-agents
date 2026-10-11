@@ -86,7 +86,9 @@ same with `spec-auditor` in the line: denied with today's text.
   with `Team: spec-auditor, architect, product-owner, test-writer` the `Read` gets `Implementation
   gate: spec-auditor has not passed specs/001-x`; a first launch with the subset line then a second
   launch with no `Team:` line in the same session gets the gate's denial. With
-  `SPECKIT_E2E_NO_HOOK=1` the second and third cases fail (CLAUDE.md, Verify).
+  `SPECKIT_E2E_NO_HOOK=1` the second and third cases fail (CLAUDE.md, Verify). The cases go after
+  the file's last test, inside the run of hook-firing tests that README.md "End-to-end tests" counts
+  (T016).
 - [ ] T007 [US3] Implement in `install.mjs: SETTINGS_GATES` the PreToolUse matcher `'Skill|Agent'`
   and its comment (Claude calling the speckit-implement skill, and the main session launching an
   agent). `install.mjs: withGates` needs no change: it rewrites `matcher` from `wanted.matcher`.
@@ -132,12 +134,20 @@ L1 shows it live (T018).
   `## Handoffs` names that line for spec-gatekeeper; step 4-5 says that with no active feature the
   main session stops relaunching implementer after 3 REDs in a row and hands the output to the user
   (D7); step 7's report lists the roles that ran, section 5's rows for the absent ones, the unticked
-  tasks and the D7 count; the existing assertions on `## 4-5.` (`installed speckit-team skill
-  builds a tasks.md phase per round`) and on step 6 still hold.
+  tasks and the D7 count; `## 0b.` runs only when architect, spec-auditor or spec-gatekeeper is
+  chosen, and without product-owner its draft is committed with the first launch (contract section
+  5, Constitution); with implementer absent, step 4-5's Red check counts a failure on a missing
+  production symbol or module that test-writer lists as red, still sends back a syntax error, and
+  runs no stub step (contract section 5, implementer row); the existing assertions on `## 4-5.`
+  (`installed speckit-team skill builds a tasks.md phase per round`) and on step 6 still hold.
 - [ ] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: a role condition at the head of
+  `## 0b. Constitution` (architect, spec-auditor or spec-gatekeeper) and, in its item 3, where the
+  draft is committed without product-owner (contract section 5, Constitution); at the head of
   `## 1. Spec: product-owner`, `## 2. Plan and tasks: architect`, `## 3. Audit: spec-auditor`,
   `## 6. Verify: spec-gatekeeper`; in `## 4-5.`, the one-round brief run of contract section 4,
-  the skip of an absent role's step and tasks, and in its step 3 (Green) the no-feature count of
+  the skip of an absent role's step and tasks, in its step 2 (Red) the implementer-absent exception
+  to `A syntax error, a missing import or module, an undefined name or a compile error is a broken
+  test` and to `run step 1 for it` (contract section 5, implementer row), and in its step 3 (Green) the no-feature count of
   contract section 5 (D7) beside `After 3 REDs in a row the hook blocks implementer`; in `## 6.`,
   the start condition and `Unbuilt:` line of contract section 5, with `A task still unticked then`
   limited to the chosen roles' tasks; in `## Handoffs`, the `Unbuilt:` line in the spec-gatekeeper
@@ -176,13 +186,14 @@ L1 shows it live (T018).
 - [ ] T014 [US4] Test in `test/install.test.mjs` that the installed skill asks contract section 8's
   question: covers FR-010, US4-1, US4-2. Not settled there: one AskUserQuestion call before any
   launch; the full team is its first option and marked recommended; a free-text answer is checked
-  by the same refusals as `--team`; a request with `--team` is never asked.
+  by the same refusals as `--team`; a request with `--team` is never asked; the question is marked
+  `**Stop:**`, the marker `## Pace` waits on (contract section 8).
 - [ ] T015 [US4] Implement in `skills/speckit-team/SKILL.md: ## Team` the question of contract
-  section 8 and its answer's path into the T009 checks.
+  section 8, marked `**Stop:**`, and its answer's path into the T009 checks.
 
 ---
 
-## Phase 4: Polish - documentation and the live check
+## Phase 4: Polish - documentation, the live check and the demo
 
 ### Slice 8: the docs say how to choose the team
 
@@ -190,11 +201,21 @@ L1 shows it live (T018).
   section on choosing the team whose table names every `TEAM_ROLES` role with the steps and
   guardrails its absence skips; README's guardrail table row for the `settings.json` `gate` names
   `Skill|Agent`; `node install.mjs --help` prints a `--team` line; CLAUDE.md's Rules name the
-  `Team:` and `Unbuilt:` lines as rules held by `test/install.test.mjs`.
+  `Team:` and `Unbuilt:` lines as rules held by `test/install.test.mjs`. Stop count (D4, contract
+  section 8): README's `You decide at ... stops` and `It stops for you at ... points` say four
+  (the third statement is T019's), and the numbered list after the second has four items, the first the team question, skipped when `--team` names the team. E2E count: README
+  "End-to-end tests"'s `The <n> tests fire every hook entry` and `all <n> fail` equal the number of
+  `test(` calls in `test/e2e.test.mjs` from `architect's and product-owner's scope hooks deny a
+  Write outside their lanes` to the end of the file, and the sentence names the `Skill|Agent` gate.
+  Pattern: `README states the agent bodies' length as agents/*.md has it` (`flat`, the repo root).
 - [ ] T017 Implement the docs: README.md: a `#### Choosing the team` subsection under "The pipeline
   skill" with contract sections 1, 3, 5 and 8, a `--team` example in Quick start "2. Run the
   pipeline", the `gate` rows of "Guardrails", a paragraph in "The audit gate" on the team record,
-  `team/` in "State", D6's and D7's lines in "Known limits", the test count in "Test suite";
+  `team/` in "State", D6's and D7's lines in "Known limits", the test count in "Test suite", the
+  stop count in "Highlights" (`You decide at three stops`), Quick start "2. Run the pipeline" (`It
+  stops for you at three points` and its list), and in "End-to-end tests" the e2e count, the `Skill|Agent` gate, and the `all <n> fail` claim measured again with
+  `SPECKIT_E2E_NO_HOOK=1`, with its date and Claude Code version (a case that does not fail is
+  named, constitution VIII);
   CLAUDE.md: the `Team:` line in Rules (skill, `TEAM_ROLES`, spec-gatekeeper, held by
   `test/install.test.mjs`) and beside it the `Unbuilt:` line (skill, spec-gatekeeper), and the test
   count in Verify; `install.mjs`'s header comment (its `--help` text): a line on
@@ -203,13 +224,33 @@ L1 shows it live (T018).
   date and the Claude Code version, in README.md "Live results"; say which were seen live and
   which only in tests (constitution II and VIII).
 
+### Slice 9: the pipeline demo shows the team question
+
+- [ ] T019 Test in `test/install.test.mjs` the demo of constitution VIII and CLAUDE.md's
+  `docs/media/` rule: covers FR-010, US4-1 as the README shows them. Not settled elsewhere:
+  `docs/media/pipeline.tape` (read as text) answers the team question with its first option after
+  the `Type "/speckit-team ..."` line and before the wait for product-owner's question dialog
+  (today's `Wait+Screen@10m /Submit|Esc to cancel/`), and its first-line comment names both stops;
+  README.md "What it looks like" > "The pipeline" names the team question as the first of the
+  pipeline's four stops and product-owner's questions as the second, in the paragraph (today
+  `the first of the pipeline's three stops`) and in the `pipeline.gif` alt text.
+  Pattern: `README states the agent bodies' length as agents/*.md has it` (`flat`, the repo root).
+- [ ] T020 Implement in `docs/media/pipeline.tape` (header comment, the steps after `Type
+  "/speckit-team ...`) the team question's answer, Enter on `Full team (Recommended)`, and a wait
+  for product-owner's dialog that starts once the team dialog has closed; in README.md "The
+  pipeline" the paragraph and alt text of T019; then re-record with `node docs/media/record.mjs
+  pipeline` (README "Recording the demo media": vhs, `specify`, `claude`, git on PATH, live Haiku
+  calls), which publishes `docs/media/pipeline.gif` only through `docs/media/leaks.mjs: publish`,
+  and look at every frame per that section's caution. If a tool is missing, the gif stays as it
+  was and the hand-over says it was not re-recorded.
+
 ---
 
 ## Dependencies and execution order
 
 - Phase 1 (T001 to T007) first: T006 needs T002 and T007, and T008 reads `TEAM_ROLES` from T002.
 - Phase 2 after Phase 1; Phase 3 after T009 (same section); Phase 4 last (T016 reads the skill and
-  the hook; T018 needs everything installed).
+  the hook; T018 and T020 need everything installed, T020 the skill of T009 to T015).
 - Within a round, slices run in task order: each pair shares a file (`test/hook.test.mjs`,
   `hooks/speckit-team.mjs`, `skills/speckit-team/SKILL.md`, `test/install.test.mjs`), so none is
   marked `[P]`.
@@ -217,4 +258,4 @@ L1 shows it live (T018).
 ## Implementation strategy
 
 Round 1 (slices 1 to 3) makes a subset run possible at all; round 2 (slices 4 to 6) is the MVP the
-user asked for; round 3 is convenience; round 4 is docs and the live check.
+user asked for; round 3 is convenience; round 4 is docs, the live check and the demo recording.

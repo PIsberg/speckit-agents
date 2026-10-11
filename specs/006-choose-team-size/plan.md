@@ -55,9 +55,9 @@ The hook keys the record by it; T006 runs it under `claude -p` and fails if it d
 
 | Rule | Tasks | How |
 |---|---|---|
-| I. Test in `test/` under `npm test` | T001, T003, T005, T006, T008, T010, T012, T014, T016 | every slice starts with its test task |
+| I. Test in `test/` under `npm test` | T001, T003, T005, T006, T008, T010, T012, T014, T016, T019 | every slice starts with its test task |
 | I. Failing first, evidence in the PR body | the same, each before its implementation task | test-writer's RED reports, carried into the PR body at hand-over (skill step 7) |
-| I. Assert what a caller observes | T001, T003, T005, T006, T008, T010, T012, T014, T016 | decision JSON, messages and the record file; installed settings and files; what the subagent sees |
+| I. Assert what a caller observes | T001, T003, T005, T006, T008, T010, T012, T014, T016, T019 | decision JSON, messages and the record file; installed settings and files; what the subagent sees |
 | I. No test that passes because the code never ran | T006 | fails with `SPECKIT_E2E_NO_HOOK=1` (CLAUDE.md, Verify) |
 | II. No throw on any input; a test per throwing path | T001, T003 (tests), T002, T004 | non-string prompt, bad `session_id`, unreadable record, no active feature |
 | II. Wiring change verified live, PR says what was seen | T018 | quickstart L1 to L4, recorded in README "Live results" |
@@ -67,7 +67,7 @@ The hook keys the record by it; T006 runs it under `claude -p` and fails if it d
 | V. Public contracts additive and documented | T007, T009, T017 | an optional argument and a matcher that matches one more tool; README lists both |
 | VI. Metadata only | T002 | the record holds role names, session id, time |
 | VII. Every platform | T006 | e2e runs in CI on all three; record path from `path.join` |
-| VIII. Docs in the same change, counts match, verified vs not | T004, T013, T017, T018 | hook header, agent body lengths, README, CLAUDE.md, installer help, Live results |
+| VIII. Docs in the same change, counts match, verified vs not | T004, T013, T016, T017, T018, T019, T020 | hook header, agent body lengths, README (stop count, e2e count re-measured, test count), CLAUDE.md, installer help, Live results, the pipeline demo |
 | Install: idempotent, uninstall removes all | T005 | an old `Skill` entry is rewritten, a rerun changes nothing, uninstall removes it |
 | Install: nothing outside `.specify/` | T001 | passes under constitution 1.1.0: no blocking, output or record outside a Spec Kit repo; the `Skill\|Agent` gate starts one hook process per Agent call (148 ms outside a Spec Kit repo) that exits with no output, as the amended bullet allows |
 | Workflow: feature branch | T011 | without product-owner the main session creates `team/<request>` |
@@ -103,12 +103,16 @@ skills/speckit-team/SKILL.md    # team choice, step guards, brief run, report (T
 agents/test-writer.md           # brief in place of task IDs (T013)
 agents/implementer.md           # brief in place of task IDs (T013)
 agents/spec-gatekeeper.md       # Team line, brief, skipped checks (T013)
-README.md, CLAUDE.md            # T013 (body lengths), T017, T018
+README.md, CLAUDE.md            # T013 (body lengths), T017, T018, T020
+docs/media/pipeline.tape, pipeline.gif  # the team question before product-owner's (T020)
 test/hook.test.mjs, test/install.test.mjs, test/e2e.test.mjs
 ```
 
 Unchanged: product-owner, architect, spec-auditor and patcher agents; the fast track; the board mod
-(it keeps drawing the active feature's files); `docs/media/` (a full-team run shows nothing new).
+(it keeps drawing the active feature's files); the other tapes (none runs `/speckit-team`) and
+`architecture-visualized.svg` (no agent's model or lane, stage or retry limit changes). The
+pipeline tape changes: it waits for the first question dialog (`pipeline.tape:29-35`), which is now
+the team question (D4).
 
 ## Known limits
 

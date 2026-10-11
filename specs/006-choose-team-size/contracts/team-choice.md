@@ -58,7 +58,7 @@ branch, so the main session does it before the first launch when the tree is on 
 | architect | plan and tasks, the plan stop and its open decisions, rounds by phase (one round instead) | spec-gatekeeper's open-task check (Process 2): there is no `tasks.md`; at the retry limit the user decides, there is no architect to rethink |
 | spec-auditor | the audit and its FAIL routing | the audit gate on test-writer and implementer (`gate`) |
 | test-writer | the red step; the test tasks of `tasks.md` are never launched, step 6's extra round included, and stay unticked | spec-gatekeeper's test trace (Process 1) and its open-task check on the test tasks (Process 2) |
-| implementer | the stub and green steps and step 6's extra round; every task of `tasks.md` that is not a test task stays unticked; spec-gatekeeper starts after the last round's test-writer `RED` | the stub pass: a test failing on a missing production symbol counts as red, listed in test-writer's report; spec-gatekeeper's passing tests (the red tests are the run's result) and its open-task check on those tasks (Process 2) |
+| implementer | the stub and green steps and step 6's extra round; every task of `tasks.md` that is not a test task stays unticked; spec-gatekeeper starts after the last round's test-writer `RED` | the stub pass: a test failing on a missing production symbol or module counts as red, listed in test-writer's report, so step 4-5's broken-test rule sends back only a syntax error or a missing test-side name and runs no stub step; spec-gatekeeper's passing tests (the red tests are the run's result) and its open-task check on those tasks (Process 2) |
 | spec-gatekeeper | verification and REJECTED routing | the recorded last word (`ends --record`) |
 
 Unbuilt tasks: in a run with `tasks.md` and without test-writer or implementer, the skill splits the
@@ -73,6 +73,12 @@ Unbuilt: T001, T003, T005
 with exactly the absent role's task IDs in task order. spec-gatekeeper's Process 2 skips those IDs
 and reports them as skipped, not as a REJECTED reason; any other open task still rejects. No
 `Unbuilt:` line, no skip.
+
+Constitution (skill step 0b): it runs only when the team has architect, spec-auditor or
+spec-gatekeeper, the roles that read the constitution; otherwise the template stays and the start
+notice names the step as skipped (FR-004, FR-005). With product-owner, step 1 commits the draft with
+the spec, as today. Without it, the draft is committed on the branch section 4 leaves the tree on,
+in the message of the first launch.
 
 Every run keeps: hand-over (PR and CI, spec Assumptions), every chosen agent's `scope`, `lane`,
 `ends` and `result` hooks, the retry limit while implementer is chosen, tests before implementation
@@ -132,3 +138,5 @@ When no roles are named, one AskUserQuestion question, single select, before any
 4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.
 
 Its free-text answer ("Other") is a role list read as section 1's list and checked by section 3.
+The question is a `**Stop:**` in the skill's sense (`## Pace`): the run waits for the answer, and in
+a full-team run it is the first of four stops (D4).
