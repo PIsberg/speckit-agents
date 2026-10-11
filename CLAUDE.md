@@ -6,7 +6,7 @@ this file is how to work on it.
 ## Layout
 - `agents/*.md`: subagent definitions. `{{HOOK}}` is replaced by the installer with the absolute
   path of the installed hook script. Never hard-code a path or use `$HOME` there. Seven agents, `patcher` (the fast track's) among them.
-- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane`, `patch`.
+- `hooks/speckit-team.mjs`: every guardrail. One script, modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane`, `patch`.
 - `skills/speckit-team/SKILL.md`: the `/speckit-team` orchestration skill. `skills/speckit-patch/SKILL.md`
   is the fast track (`/speckit-patch`, one `patcher` agent) and `skills/speckit-triage/SKILL.md` the
   advisory `/speckit-triage`, which suggests a track and runs nothing.
@@ -43,8 +43,8 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost: 256 tests, 231 s on an idle Windows machine
-  (2026-10-11); the four installer tests that run the real `claude plugin` and the 30 e2e tests take
+- `npm test`: all suites, no network beyond localhost: 264 tests, 231 s on an idle Windows machine
+  (2026-10-11); the four installer tests that run the real `claude plugin` and the 31 e2e tests take
   most of it, and a run on a busy machine took twice as long.
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
