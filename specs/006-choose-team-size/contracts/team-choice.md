@@ -8,9 +8,14 @@ share; `test/install.test.mjs` and `test/hook.test.mjs` hold them together.
 
 ```text
 /speckit-team [--team <role>[,<role>...]] <request>
+/speckit-team --team noagents <request>
 ```
 
 - `--team` counts only as the first word of the arguments.
+- `--team noagents` (amended 2026-10-11, FR-013): the role list is exactly the one word `noagents`,
+  in any case. No agent runs; the main session runs Spec Kit's own skills (section 9). It counts only
+  when typed: the hook reads it from the typed command (section 7), so it is not one of section 8's
+  options.
 - The role list is the words after it up to and including the first word that does not end in a
   comma: `--team test-writer, implementer add a flag` and `--team test-writer,implementer add a flag`
   both name two roles; the request is `add a flag`.
@@ -32,6 +37,7 @@ valid names.
 | Choice | Why given |
 |---|---|
 | a name not in section 2 (also `--team` followed straight by the request: its first word is the unknown name) | that name is not a team role |
+| `noagents` together with a role (amended 2026-10-11) | no agents means no roles |
 | neither `test-writer` nor `implementer` | one of them is required |
 | `architect` without `product-owner` | architect plans from product-owner's spec |
 | `spec-auditor` without `architect` | spec-auditor audits architect's plan and tasks |
@@ -101,24 +107,40 @@ Team: test-writer, implementer
 ```
 
 with the chosen roles in section 2's order, lower case, separated by a comma and a space. A full-team
-run carries no such line, so its prompts are as before (FR-002). Readers: the hook (section 7) and
-spec-gatekeeper, which reports a check whose role is absent (section 5) as skipped, not as a
-rejection.
+run carries no such line, so its prompts are as before (FR-002), and a `--team noagents` run launches
+nothing. `Team: noagents` is no team: the hook reads it as a line naming a non-role. Readers: the
+hook (section 7) and spec-gatekeeper, which reports a check whose role is absent (section 5) as
+skipped, not as a rejection.
 
 ## 7. Hook behaviour (D1)
 
 The installer's `settings.json` PreToolUse gate entry changes its matcher from `Skill` to
 `Skill|Agent`. Same command (`node "<hook>" gate`), same timeout.
 
-On PreToolUse `Agent` from the main session (no `agent_id`), `gate` never makes a permission
-decision:
+On PreToolUse `Agent` from the main session (no `agent_id`) whose `subagent_type` is a section 2 role
+in any case, `gate` never makes a permission decision (amended 2026-10-11, #101 and #103):
 
 | Launch prompt | Effect | Message |
 |---|---|---|
 | a `Team:` line naming only section 2 roles | writes the session's team record (`data-model.md`) | `speckit-team: team for this session: <roles>; audit gate off, spec-auditor is not in the team` or `...; audit gate on` |
-| no `Team:` line | removes the session's team record | none |
-| a `Team:` line naming anything else, or no role | removes the session's team record | `speckit-team: the Team line names <word>, not a team role; the full team's gates apply` |
+| no `Team:` line | writes the full team | none |
+| a `Team:` line naming anything else, or no role | writes the full team | `speckit-team: the Team line names <word>, not a team role; the full team's gates apply` |
+| any of these, when the record has `spec-auditor` and the new team lacks it | nothing: within a request the team never loses spec-auditor | `speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team.` |
+| any of these, when the record was `noagents` | as above | `speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here` (unless a message above applies) |
 | not a string, or no usable `session_id` | nothing | none |
+
+A launch of any other agent type (an Explore agent, `patcher`, a user's own agent) changes nothing
+(#103). An `Agent` call made by a subagent (`agent_id` set) changes nothing and makes no decision,
+whether or not the audit has passed (#102): launching an agent is not implementing, and the agents
+of the team have no Agent tool.
+
+On `UserPromptExpansion` of a typed `/speckit-team` (the installer's matcher is
+`speckit-implement|speckit\.implement|speckit-team`; a command name ending in `:speckit-team` counts
+too), `gate` never makes a decision. It removes the session's team record, which starts a request
+(FR-009). When the typed arguments (`command_args`, or else the typed `prompt` after the command
+name) name exactly `--team noagents` by section 1, it then writes the `noagents` record and says
+`speckit-team: no agents for this request: /speckit-implement in this session skips the audit gate
+until the next /speckit-team or team agent launch`. No usable `session_id`: nothing.
 
 In a subagent (`agent_id` set), `gate` and `gate retries` skip the audit check when the session's team
 record is readable and lacks `spec-auditor`; otherwise they deny with today's text. With the audit
@@ -126,7 +148,10 @@ check skipped and no active feature, `gate retries` makes no decision and still 
 start record (`agents/<agent_id>.json`, which `lane` needs); the skill's count of section 5 caps the
 relaunches instead (D7). `result` counts a report as an attempt under the same rule instead of `not
 counted` while the audit is unpassed; with no active feature it counts nothing, as today. Without
-`agent_id` (`/speckit-implement`, typed or as a Skill call) the record is never read.
+`agent_id` (`/speckit-implement`, typed or as a Skill call) only a `noagents` record skips the audit
+check; any other record is never read. At the retry limit, a readable record without `architect`
+turns the deny's last sentence into `There is no architect in this run's team, so the user decides,
+and only the user retries unchanged by deleting <file>.` (#106).
 
 ## 8. The team question (FR-010, D5)
 
@@ -139,4 +164,16 @@ When no roles are named, one AskUserQuestion question, single select, before any
 
 Its free-text answer ("Other") is a role list read as section 1's list and checked by section 3.
 The question is a `**Stop:**` in the skill's sense (`## Pace`): the run waits for the answer, and in
-a full-team run it is the first of four stops (D4).
+a full-team run it is the first of four stops (D4). A free-text `noagents` is not the no-agents
+choice, which only a typed command makes (section 7): the skill says in one line to type
+`/speckit-team --team noagents <request>`, and stops.
+
+## 9. No agents (FR-013, added 2026-10-11)
+
+With `--team noagents` the skill's `## No agents` replaces steps 0b to 6: no Agent call and no
+`Team:` line. The main session invokes `speckit-specify`, asks the spec's open questions (at most 5)
+with AskUserQuestion, and stops for the spec review; invokes `speckit-plan` and `speckit-tasks` and
+stops for the plan approval; invokes `speckit-implement`, which section 7 lets past the audit gate;
+runs the tests, stopping after 3 failed runs of the same tests in a row; and hands over by step 7.
+Skipped: the audit, verification and every agent hook. If the gate still denies
+`speckit-implement`, the hook did not see the typed command, and the skill stops and says so.

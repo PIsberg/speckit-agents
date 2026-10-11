@@ -50,6 +50,9 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **You decide at four stops, and you merge.** The pipeline asks which team to use, then asks you to
   answer the spec's questions, approve the spec, and approve the plan, then stops at the pull request.
   ([Quick start](#quick-start))
+- **Or no agents at all.** `/speckit-team --team noagents <request>` runs Spec Kit's own commands
+  in your session, with the spec and plan stops and no audit; only your typed flag turns the audit
+  gate off. ([Choosing the team](#choosing-the-team))
 - **A fast track for small changes.** `/speckit-patch <change>` launches one agent, `patcher`, with a
   budget of 30 production lines and 2 files, protected paths it cannot write, and no commit of its
   own: the main session commits its files, and opens the PR, only after an end-of-run hook check
@@ -156,7 +159,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
 | `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
 
-`--team` is not an installer flag: it is the first word of a `/speckit-team` request ([Choosing the team](#choosing-the-team)), and `node install.mjs --help` prints a line on it.
+`--team` is not an installer flag: it is the first word of a `/speckit-team` request ([Choosing the team](#choosing-the-team)). `node install.mjs --help` lists it after the flags, under its own heading with the other slash commands.
 
 There is no flag for the fast track: `patcher` and its two skills are always installed.
 
@@ -203,7 +206,9 @@ Then, in Claude Code:
 ```
 
 To run only some of the roles, name them: `/speckit-team --team test-writer,implementer add a hello.txt
-that says hello` skips the team question ([Choosing the team](#choosing-the-team)).
+that says hello` skips the team question ([Choosing the team](#choosing-the-team)). To run no agent
+at all, `/speckit-team --team noagents <request>` has the session run Spec Kit's own commands
+itself, with the spec and plan stops and no audit.
 
 Start it in a fresh session (`/clear` first): every response of the run re-reads the conversation,
 earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
@@ -375,7 +380,21 @@ architect, test-writer, implementer). Its free-text answer is a role list. All s
 team. `patcher` is not a team role.
 
 The skill refuses before launching anything, naming the six valid roles: a name that is not a role;
-neither test-writer nor implementer; architect without product-owner; spec-auditor without architect.
+`noagents` with a role; neither test-writer nor implementer; architect without product-owner;
+spec-auditor without architect.
+
+`/speckit-team --team noagents <request>` runs no agent at all. The session runs Spec Kit's own
+skills itself, `speckit-specify`, `speckit-plan`, `speckit-tasks` and `speckit-implement` in that
+order, asks you the spec's open questions, and stops for you to approve the spec and then the plan
+and tasks. There is no audit, no verification by spec-gatekeeper and no agent hook; the session
+runs the tests itself, stops fixing after 3 failed runs of the same tests in a row, and opens the PR
+as any run does. Each agent of the full team starts from 11k to 14k tokens before it reads a file
+and reads the code again ([Context budget](#context-budget)); here nothing is launched, though what
+that saves on a whole run is not measured yet. It is chosen only by typing it: the typed command reaches the hook
+(`UserPromptExpansion`), which records it for the session, so this request's `speckit-implement`
+passes the [audit gate](#the-audit-gate). That is why the team question does not offer it, and why
+a model's `Team:` line can never ask for it. The record ends at your next `/speckit-team`, or at a
+launch of a team agent, after which the full gates apply again.
 
 What an absent role skips, and the guardrails that go with it:
 
@@ -678,7 +697,7 @@ nothing elsewhere.
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed; on an `Agent` launch from the main session it only records the launch's `Team:` line and never decides |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; on the main session's launch of a team role it only records the launch's `Team:` line, and on a typed `/speckit-team` it only starts a new team record (`noagents`, or none); it never decides on either |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
@@ -707,11 +726,21 @@ The gate recomputes the fingerprint on every check. Any edit to those four files
 voids it, so the auditor has to look again. Task checkboxes are normalised before hashing, so
 ticking `- [X]` while implementing does not.
 
-When the run's team lacks spec-auditor, the main session's launch writes a team record for its session
-(`speckit-team: team for this session: ...; audit gate off, spec-auditor is not in the team`), and test-writer
-and implementer of that session skip the audit check. A record that cannot be read, a record of another
-session, and a launch with no valid `Team:` line (which removes the record) all leave the full gate on. A
-typed `/speckit-implement` never reads the record.
+Each launch of a team role from the main session writes a team record for its session. With a
+`Team:` line that lacks spec-auditor it says so (`speckit-team: team for this session: ...; audit gate
+off, spec-auditor is not in the team`), and test-writer and implementer of that session skip the
+audit check. A launch with no `Team:` line, or one naming a non-role, records the full team. A
+record that cannot be read and a record of another session leave the full gate on, and launches of
+other agents (an Explore agent, `patcher`) or agents launched by a subagent change nothing.
+
+Within one request the team never loses spec-auditor: once the record has it, a later `Team:` line
+without it changes nothing (`speckit-team: the Team line drops spec-auditor, which this request's
+team has; the audit gate stays on`), so a main session that meets the gate cannot talk its way past
+it by rewriting the line ([#101](https://github.com/PIsberg/speckit-agents/issues/101)). A request
+starts when you type `/speckit-team`, which removes the session's record. Typed as
+`/speckit-team --team noagents`, it records that no agent runs, and that is the only record a typed
+`/speckit-implement` or Claude's `speckit-implement` call reads: they pass without an audit until
+your next `/speckit-team` or a launch of a team role.
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
 `feature_directory` may be relative to the repo or absolute; either way it must name a folder
@@ -733,7 +762,9 @@ After 3 REDs in a row, `gate retries` denies the implementer every tool except r
 and says why. The count belongs to the plan and tasks it was made on (the audit fingerprint), so
 the way forward is to send the failing task to the architect: the revised `plan.md` or `tasks.md`
 needs a new audit and starts the count from zero. Or the user decides, and to retry unchanged
-deletes `.git/speckit-team/retries/<feature>.json`. A retry record that cannot be read keeps the
+deletes `.git/speckit-team/retries/<feature>.json`. In a run whose team has no architect, the
+denial says the user decides, since nobody is there to rethink the plan
+([#106](https://github.com/PIsberg/speckit-agents/issues/106)). A retry record that cannot be read keeps the
 gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-team.mjs`
 ([Customising](#customising)).
 
@@ -766,7 +797,8 @@ Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#cu
 
 Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature,
-`agents/`, `team/`: one small record per session that ran a subset team). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+`agents/`, `team/`: one small record per session that launched a team role or typed
+`--team noagents`). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
@@ -1324,16 +1356,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 242 tests:
+`npm test` runs 254 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 126 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 70 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 133 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 73 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 124 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 27 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 29 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1364,15 +1396,17 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 20
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 22
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
-  `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill|Agent` gate in
-  `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 20
-  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 22 failures, none of the 20 passed). Setting
+  `SubagentHandback` tool Claude Code gives a subagent in auto mode), the `Skill|Agent` gate in
+  `settings.json`, and its `UserPromptExpansion` gate on a typed `/speckit-team --team noagents`,
+  whose session then calls `speckit-implement` with no audit while the same call without the flag
+  is denied. They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 22
+  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 24 failures, none of the 22 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  22 of the 27 tests fail (the 20 scripted ones and the two blocking no-model cases); the other five
+  24 of the 29 tests fail (the 22 scripted ones and the two blocking no-model cases); the other five
   do not depend on a hook.
 - **Claude Code's own behaviour.** Three tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report; with
@@ -1654,6 +1688,17 @@ installer if a tool that rewrites `settings.json` dropped them.
 Run `@agent-spec-auditor`. If it passed and you then edited the spec, plan, tasks or constitution,
 the PASS is void by design: run it again.
 
+In a `/speckit-team --team noagents` run this means the hook did not see the typed command: the
+installed `UserPromptExpansion` entry predates it (rerun the installer, which widens it to
+`speckit-team`), or the request was not typed as `/speckit-team --team noagents <request>`.
+
+### "the Team line drops spec-auditor, which this request's team has"
+
+The request started with the full team, or with a team that has spec-auditor, and a later launch
+asked for a team without it. The team of a request never loses its audit; the gate stays on. To
+build without an audit, start a new request: type `/speckit-team --team test-writer,implementer
+<request>`, or `--team noagents`.
+
 ### "Retry limit: implementer reported RESULT: RED 3 times in a row"
 
 The plan or tasks need rethinking: send the failing task to the architect and re-audit, which
@@ -1739,6 +1784,17 @@ up and replace it.
   implementer's `RESULT: RED` reports against the feature `.specify/feature.json` names: 3 in a row
   block implementer there until a GREEN, a new audit, or you delete the record, and
   spec-gatekeeper's word replaces that feature's.
+- **The first `Team:` line of a request is trusted.** The hook cannot check that the team on a
+  request's first launch is the one you chose at the team question: the main session writes it.
+  Once a request's team has spec-auditor, no later line can drop it, but a first line without it
+  opens the gate for that request's test-writer and implementer. Only `--team noagents` comes from
+  your own typing, which is why only it opens the gate for the main session. Telling requests apart
+  needs Claude Code to send the typed `/speckit-team` to the `UserPromptExpansion` hook (seen on
+  2.1.293 in CI and 2.1.296); without that, a second request in the same session keeps the first
+  one's team if it had spec-auditor, and a new session starts afresh.
+- **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
+  hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
+  only stop on a failing build is the skill's 3 failed runs in a row.
 - **Without an active feature the retry limit is the skill's.** With implementer chosen and no
   `.specify/feature.json` naming a feature directory, no hook counts; the skill stops relaunching
   implementer after 3 `RESULT: RED` in a row and hands you the failing output. Nothing enforces it:
@@ -1843,7 +1899,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
-| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 004 |
+| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 006 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
 ### Making a change

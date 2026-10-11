@@ -43,9 +43,9 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 455 s on Windows (242 tests, 2026-10-11; the
-  four installer tests that run the real `claude plugin` and the 24 e2e tests take most of it, and
-  a run on a busy machine took twice as long).
+- `npm test`: all suites, no network beyond localhost: 254 tests, 231 s on an idle Windows machine
+  (2026-10-11); the four installer tests that run the real `claude plugin` and the 29 e2e tests take
+  most of it, and a run on a busy machine took twice as long.
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing. On Linux it then type-checks
@@ -79,6 +79,10 @@ this file is how to work on it.
   a check whose role is absent as skipped. `Unbuilt:` line, after it: the task IDs of an absent
   test-writer or implementer, which spec-gatekeeper's open-task check skips. Both halves are held
   together by `test/install.test.mjs`.
+- `--team noagents` reaches the hook only from the user's typed `/speckit-team` (`UserPromptExpansion`,
+  `typedRoles` in the hook), never from a launch prompt, because it opens the main session's
+  `/speckit-implement` gate. The skill's `## No agents` and the hook's syntax are held together by
+  `test/install.test.mjs` and `test/hook.test.mjs`; the typed path by `test/e2e.test.mjs`.
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`. A change to either
   changes both, and `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the
