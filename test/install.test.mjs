@@ -587,6 +587,25 @@ test('--board and --no-board together are refused before anything is written', (
   assert.deepEqual(fs.readdirSync(dir), []);
 });
 
+// The installer warns about git, claude or specify missing from PATH. It used to run `<cmd> --version`
+// through a shell for each, and `specify --version` (a Python start through uv) took 548 of an
+// install's 750 ms on Windows. It now looks for the file on PATH, as a shell would, and runs nothing.
+test('the PATH check finds a command by its file and never runs it; a missing one is still named', () => {
+  const dir = claudeDir();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'skpath-'));
+  const ran = path.join(bin, 'ran');
+  fs.writeFileSync(path.join(bin, 'specify'), `#!/bin/sh\necho x > "${ran}"\nexit 1\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'specify.cmd'), `@echo x> "${ran}"\r\n@exit /b 1\r\n`);
+  const pathKey = Object.keys(process.env).find((k) => k.toUpperCase() === 'PATH') ?? 'PATH';
+  const nodeDir = path.dirname(process.execPath);
+  const r = spawnSync(process.execPath, [INSTALL, '--claude-dir', dir], { encoding: 'utf8', env: { ...process.env, [pathKey]: `${bin}${path.delimiter}${nodeDir}` } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stdout, /`specify` not found on PATH/, 'a specify file on PATH counts as found');
+  assert.ok(!fs.existsSync(ran), 'and it was never run');
+  const onNodePath = (cmd) => ['', '.exe', '.cmd'].some((x) => fs.existsSync(path.join(nodeDir, cmd + x)));
+  if (!onNodePath('git')) assert.match(r.stdout, /WARNING: `git` not found on PATH/, 'a command on no PATH folder is named');
+});
+
 // The board goes in through `claude plugin`. When that fails (no claude, a broken one) the team
 // still installs, the run fails naming the board, and uninstall warns and still removes the team.
 // A claude that always fails goes first on PATH: CI's setup-node folder holds node and the real
