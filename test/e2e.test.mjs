@@ -190,7 +190,7 @@ function reply(res, stream, step, id) {
 // Runs `claude -p MAIN` with the script as the model. Returns every request each sender made, the
 // stream-json events and the exit code. bypassPermissions by default: a guardrail that does not fire
 // then lets the action through, instead of a permission check stopping it in the hook's place.
-async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {} } = {}) {
+async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
   let ids = 0;
@@ -220,7 +220,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
     return await new Promise((resolve, reject) => {
       let out = '';
       let err = '';
-      const child = spawn('claude', ['-p', MAIN, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode],
+      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode],
         { cwd: repo, env: fakeEnv(cfg, server.address().port, env), stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout.on('data', (d) => { out += d; });
       child.stderr.on('data', (d) => { err += d; });
@@ -557,7 +557,7 @@ test('a Team line with spec-auditor keeps the audit gate shut for test-writer (0
   assert.ok(state(s, 'team', `${sessionId(r)}.json`).roles.includes('spec-auditor'), story(r));
 });
 
-test('a later launch with no Team line in the same session removes the record, so the gate is shut again (006 FR-009)', { skip: noClaude, timeout: 180_000 }, async () => {
+test('a later launch with no Team line in the same session records the full team, so the gate is shut again (006 FR-009)', { skip: noClaude, timeout: 180_000 }, async () => {
   const s = setup();
   const r = await session(s, {
     [MAIN]: [
@@ -569,4 +569,31 @@ test('a later launch with no Team line in the same session removes the record, s
   });
   assert.match(lastResult(r.requests['e2e test-writer'][1]), /# Spec/, story(r));
   assert.match(lastResult(r.requests['e2e second'][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+});
+
+// #101: within one request, a Team line written by the main session cannot drop spec-auditor from
+// a team that has it. Needs the Agent gate to fire; with SPECKIT_E2E_NO_HOOK=1 the Read goes through.
+test('after a full-team launch, a Team line without spec-auditor leaves the audit gate shut (#101)', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [teamAgent('e2e first', 'e2e first: go'), teamAgent('e2e second', 'e2e second: go\nTeam: test-writer, implementer')],
+    'e2e first': [say('T001 fails on its assertion.\nRED')],
+    'e2e second': [call('Read', { file_path: spec(s) })],
+  });
+  assert.match(lastResult(r.requests['e2e second'][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+  assert.ok(state(s, 'team', `${sessionId(r)}.json`).roles.includes('spec-auditor'), story(r));
+});
+
+// --team noagents: Claude Code hands the typed /speckit-team to the UserPromptExpansion gate, which
+// records that no agent runs, so the main session's own speckit-implement call needs no audit. Without
+// the flag the same call is denied, which shows the gate ran in both sessions.
+test('a typed /speckit-team --team noagents lets the main session call speckit-implement with no audit; without it the call is denied', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const script = { [MAIN]: [call('Skill', { skill: 'speckit-implement' })] };
+  const team = await session(s, script, { prompt: `/speckit-team ${MAIN}` });
+  assert.match(lastResult(team.requests[MAIN][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(team));
+  const none = await session(s, script, { prompt: `/speckit-team --team noagents ${MAIN}` });
+  assert.ok(none.requests[MAIN].length >= 2, story(none));
+  assert.doesNotMatch(lastResult(none.requests[MAIN][1]), /Implementation gate/, story(none));
+  assert.equal(state(s, 'team', `${sessionId(none)}.json`).noagents, true, story(none));
 });
