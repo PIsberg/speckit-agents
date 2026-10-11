@@ -227,8 +227,19 @@ function withFork(current, want, added) {
   return { next, added: false };
 }
 
+// Whether a command is on PATH, found by its file as a shell would find it. Running `<cmd> --version`
+// instead cost 548 of an install's 750 ms on Windows for `specify` alone, a Python start through uv.
 function have(cmd) {
-  return spawnSync(`${cmd} --version`, { encoding: 'utf8', shell: true, stdio: 'ignore' }).status === 0;
+  const exts = process.platform === 'win32' ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [''];
+  const runnable = (file) => {
+    try {
+      if (!fs.statSync(file).isFile()) return false;
+      if (process.platform !== 'win32') fs.accessSync(file, fs.constants.X_OK);
+      return true;
+    } catch { return false; }
+  };
+  return (process.env.PATH ?? process.env.Path ?? '').split(path.delimiter).filter(Boolean)
+    .some((dir) => exts.some((ext) => runnable(path.join(dir.replace(/^"(.*)"$/, '$1'), cmd + ext))));
 }
 
 // The board mod is a Claude Code plugin, so Claude Code's own plugin commands install it, into the
