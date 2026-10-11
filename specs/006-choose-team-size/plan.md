@@ -40,7 +40,8 @@ today's (FR-002).
 
 **Performance Goals**: one hook process per main-session `Agent` launch: 172 ms mean inside a Spec
 Kit repo and 148 ms outside one (10 runs each of today's `gate` path, Windows, 2026-10-11); budget
-500 ms (constitution III)
+500 ms (constitution III). The 148 ms outside a Spec Kit repo is allowed by constitution 1.1.0,
+Installation Constraints
 
 **Constraints**: the audit gate fails closed: a missing, unreadable or other-session team record
 means the full team's gates
@@ -68,7 +69,7 @@ The hook keys the record by it; T006 runs it under `claude -p` and fails if it d
 | VII. Every platform | T006 | e2e runs in CI on all three; record path from `path.join` |
 | VIII. Docs in the same change, counts match, verified vs not | T004, T013, T017, T018 | hook header, agent body lengths, README, CLAUDE.md, installer help, Live results |
 | Install: idempotent, uninstall removes all | T005 | an old `Skill` entry is rewritten, a rerun changes nothing, uninstall removes it |
-| Install: nothing outside `.specify/` | T001 | no output and no record outside a Spec Kit repo; D1 states the process start |
+| Install: nothing outside `.specify/` | T001 | passes under constitution 1.1.0: no blocking, output or record outside a Spec Kit repo; the `Skill\|Agent` gate starts one hook process per Agent call (148 ms outside a Spec Kit repo) that exits with no output, as the amended bullet allows |
 | Workflow: feature branch | T011 | without product-owner the main session creates `team/<request>` |
 
 Not applicable: IV's plugin rule and new-dependency amendment (no plugin code, no dependency); V's
@@ -129,8 +130,8 @@ None.
   - `install.mjs`: one string in `SETTINGS_GATES`; `withGates` rewrites an installed `Skill` entry
     on reinstall (T005, T007).
   - Every `Agent` launch in every repo starts one node process: 148 ms outside a Spec Kit repo,
-    exiting with no output, the cost the `Skill` gate has on every Skill call today. The
-    Installation Constraints' "no measurable delay" is read against an agent run of minutes.
+    exiting with no output, the cost the `Skill` gate has on every Skill call today. Allowed by
+    constitution 1.1.0, Installation Constraints.
   - Needs the main session's `session_id` in the subagent's hook input; T006 fails if it is not.
   - A hand-typed `@agent-implementer` after a subset run in the same session is a launch without a
     `Team:` line, so it removes the record and meets the full gate (FR-009).

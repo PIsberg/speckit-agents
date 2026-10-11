@@ -50,13 +50,16 @@ the run ended with a report from the two chosen roles.
 
 ### User Story 2 - No choice means the full team, exactly as today (Priority: P1)
 
-A user who names no roles gets the full team and the pipeline as it runs today: same agents, same
-order, same stops, same guardrails.
+A user who names no roles is asked one team question. Accepting the full team (or naming all six
+roles with --team) runs the pipeline as it runs today: same agents, same order, same stops, same
+guardrails.
 
-**Why this priority**: The default must not regress; existing users never see a change.
+**Why this priority**: The full-team path must not regress; the only change an existing user sees
+is the one team question.
 
-**Independent Test**: Start a request with no team named and compare the sequence of launches
-and stops with the pre-change behaviour: identical.
+**Independent Test**: Start a request with no team named, accept the full team at the team
+question, and compare the sequence of launches and stops from then on with the pre-change
+behaviour: identical. Repeat with all six roles named with --team and no question: identical.
 
 **Acceptance Scenarios**:
 
@@ -165,8 +168,8 @@ accepting the recommendation yields the full team. Start one that names roles: n
 
 ### Key Entities
 
-- **Team choice**: the set of roles taking part in one request. Defaults to the six roles of the full
-  pipeline. Lives for one request.
+- **Team choice**: the set of roles taking part in one request. The full team of six roles is the
+  recommended answer to the team question. Lives for one request.
 - **Role**: one of the team's agents (product-owner, architect, spec-auditor, test-writer,
   implementer, spec-gatekeeper; the fast-track patcher is a separate track and not part of this
   choice).
