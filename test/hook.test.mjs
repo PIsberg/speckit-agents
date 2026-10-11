@@ -1767,3 +1767,163 @@ test('patch team: an unusable team in the start record is denied and the end che
     assert.equal(record(dir), null);
   }
 });
+
+// ---- 006 choose the team size: the team record and the gate that follows it ----
+const agentLaunch = (dir, prompt, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1',
+  tool_input: { subagent_type: 'test-writer', prompt }, ...extra,
+});
+const teamFile = (dir, id = 's1') => path.join(stateDir(dir), 'team', `${id}.json`);
+const teamRecord = (dir, id = 's1') => JSON.parse(fs.readFileSync(teamFile(dir, id), 'utf8'));
+const noTeamFiles = (dir) => !fs.existsSync(path.join(stateDir(dir), 'team')) || fs.readdirSync(path.join(stateDir(dir), 'team')).length === 0;
+const subTool = (dir, args = ['gate'], extra = {}) => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'sub1', session_id: 's1', ...extra,
+});
+
+test('team: an Agent launch with a Team line writes the session record and never decides (FR-009, constitution II)', () => {
+  const { dir } = repo();
+  const out = agentLaunch(dir, 'go\nTeam: test-writer, implementer');
+  assert.ok(!denied(out), 'no permission decision, though no audit has passed');
+  assert.match(out?.systemMessage ?? '', /speckit-team: team for this session: .*test-writer.*implementer.*; audit gate off, spec-auditor is not in the team/);
+  const rec = teamRecord(dir);
+  assert.deepEqual(rec.roles, ['test-writer', 'implementer']);
+  assert.equal(rec.session_id, 's1');
+  assert.ok(!Number.isNaN(Date.parse(rec.at)));
+  assert.ok(!JSON.stringify(rec).includes('go\\n'), 'no prompt text in the record');
+  pass(dir);
+  assert.ok(!denied(agentLaunch(dir, 'go\nTeam: test-writer')), 'with a PASS too');
+});
+
+test('team: a team with spec-auditor says the audit gate is on (FR-009)', () => {
+  const { dir } = repo();
+  const out = agentLaunch(dir, 'Team: spec-auditor, architect, product-owner, test-writer');
+  assert.match(out?.systemMessage ?? '', /; audit gate on/);
+  assert.deepEqual(teamRecord(dir).roles, ['product-owner', 'architect', 'spec-auditor', 'test-writer']);
+});
+
+test('team: case and order are normalised, a name given twice counts once (Edge Cases)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: Implementer, TEST-WRITER, implementer');
+  assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer']);
+});
+
+test('team: a launch with no Team line removes the record, silently (FR-009)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: implementer');
+  assert.ok(fs.existsSync(teamFile(dir)));
+  const out = agentLaunch(dir, 'plain prompt');
+  assert.equal(out, null);
+  assert.ok(!fs.existsSync(teamFile(dir)));
+});
+
+test('team: a Team line naming a non-role removes the record and names the word (FR-006)', () => {
+  const { dir } = repo();
+  for (const [line, word] of [['Team: test-writer, patcher', 'patcher'], ['Team:', '']]) {
+    agentLaunch(dir, 'Team: implementer');
+    const out = agentLaunch(dir, `go\n${line}`);
+    assert.ok(!denied(out), line);
+    assert.match(out?.systemMessage ?? '', /speckit-team: the Team line names .*, not a team role; the full team's gates apply/, line);
+    if (word) assert.match(out.systemMessage, new RegExp(`names ${word},`), line);
+    assert.ok(!fs.existsSync(teamFile(dir)), line);
+  }
+});
+
+test('team: a subagent launch records nothing; a non-string prompt or an unusable session_id does nothing (constitution III)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: implementer', { agent_id: 'sub9' });
+  assert.ok(noTeamFiles(dir));
+  agentLaunch(dir, 'Team: implementer');
+  for (const prompt of [7, null, { a: 1 }]) {
+    const out = run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { prompt } });
+    assert.equal(out, null);
+    assert.ok(fs.existsSync(teamFile(dir)), 'a non-string prompt leaves the record alone');
+  }
+  const { dir: d2 } = repo();
+  for (const session_id of ['../x', 'a'.repeat(200), undefined, 7]) {
+    assert.equal(agentLaunch(d2, 'Team: implementer', { session_id }), null, String(session_id));
+  }
+  assert.ok(noTeamFiles(d2));
+  assert.ok(!fs.existsSync(path.join(stateDir(d2), 'x.json')));
+});
+
+test('team: outside a Spec Kit repo an Agent launch gives no output and no record (constitution III)', () => {
+  const { dir } = repo({ speckit: false });
+  assert.equal(agentLaunch(dir, 'Team: implementer'), null);
+  assert.ok(!fs.existsSync(path.join(stateDir(dir), 'team')));
+  const { dir: d2 } = repo();
+  agentLaunch(d2, 'Team: implementer');
+  assert.ok(fs.existsSync(teamFile(d2)), 'the same launch in a Spec Kit repo records');
+});
+
+test('team gate: a subset without spec-auditor skips the audit check for a subagent of the same session (US3-1, FR-007, SC-003)', () => {
+  const { dir } = repo();
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/, 'no record: today');
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  assert.equal(subTool(dir), null);
+  assert.equal(subTool(dir, ['gate', 'retries']), null);
+  assert.ok(fs.existsSync(path.join(stateDir(dir), 'agents', 'sub1.json')), 'lane start record still written');
+});
+
+test('team gate: a team with spec-auditor keeps the audit gate (US3-2)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: spec-auditor, architect, test-writer');
+  assert.ok(fs.existsSync(teamFile(dir)), 'the record is written, so the deny below is the audit rule');
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+});
+
+test("team gate: another session's record is ignored (FR-009)", () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer', { session_id: 'other' });
+  assert.ok(fs.existsSync(teamFile(dir, 'other')), 'the record exists');
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+  assert.match(subTool(dir, ['gate'], { session_id: undefined }).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+});
+
+test("team gate: an unreadable record keeps the gate shut with today's text (fail closed)", () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  assert.equal(subTool(dir), null, 'a readable record opens the audit check');
+  fs.mkdirSync(path.dirname(teamFile(dir)), { recursive: true });
+  for (const body of ['{', '{"roles": 3}', '{"roles": ["nobody"]}']) {
+    fs.writeFileSync(teamFile(dir), body);
+    assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/, body);
+  }
+});
+
+test('team gate: the record is never read without agent_id; the implement skill and typed command stay blocked (SC-004, US2-2)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  assert.ok(fs.existsSync(teamFile(dir)), 'the record exists, so the blocks below are the rule, not a missing record');
+  assert.ok(denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Skill', session_id: 's1', tool_input: { skill_name: 'speckit-implement' } })));
+  assert.equal(run(dir, ['gate'], {
+    hook_event_name: 'UserPromptExpansion', expansion_type: 'slash_command', command_name: 'speckit-implement', prompt: '/speckit-implement', session_id: 's1',
+  })?.decision, 'block');
+});
+
+test('team gate retries: without a feature and with the audit skipped, no decision and the lane start record is written (D7)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  fs.rmSync(path.join(dir, '.specify', 'feature.json'));
+  assert.equal(subTool(dir, ['gate', 'retries'], { agent_id: 'nofeat' }), null);
+  assert.ok(fs.existsSync(path.join(stateDir(dir), 'agents', 'nofeat.json')));
+});
+
+test('team gate retries: with a feature, 3 REDs still deny when the audit is skipped (D6, FR-007)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  for (const id of ['r1', 'r2']) report(dir, 'RESULT: RED', id, { session_id: 's1' });
+  assert.equal(subTool(dir, ['gate', 'retries']), null, 'two REDs leave it open');
+  report(dir, 'RESULT: RED', 'r3', { session_id: 's1' });
+  const out = subTool(dir, ['gate', 'retries']);
+  assert.ok(denied(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /3 times in a row/);
+});
+
+test('team result: with the audit skipped a RED is counted, not "not counted" (FR-007)', () => {
+  const { dir } = repo();
+  assert.match(report(dir, 'RESULT: RED', 'x1', { session_id: 's1' }).systemMessage, /not counted/, 'full team, no PASS: today');
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  const msg = report(dir, 'RESULT: RED', 'x2', { session_id: 's1' }).systemMessage;
+  assert.doesNotMatch(msg, /not counted/);
+  assert.match(msg, /RED.*1 of 3/);
+});

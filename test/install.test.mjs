@@ -71,7 +71,7 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   const s = settingsOf(dir);
   assert.equal(s.model, 'opus');
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
-  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill', 'UserPromptExpansion:speckit-implement|speckit\\.implement']);
+  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement']);
   assert.ok(!JSON.stringify(s).includes('C:/old/place'), 'stale gate replaced, not duplicated');
   assert.equal(backups(dir).length, 1, 'settings.json backed up before the change');
   assert.match(r.stdout, /verified\s+installed hook runs/);
@@ -684,4 +684,26 @@ test('005 D6-A: a board --board installed is still removed, also from a manifest
   assert.equal(u.status, 0, u.stdout + u.stderr);
   assert.equal(boardIn(dir), undefined);
   assert.ok(!marketsIn(dir).includes('speckit-agents'));
+});
+
+// 006 D1, contract section 7: the gate also sees Agent launches, to record the team.
+test('the gate entry matches Skill and Agent, replaces the older Skill-only one, and goes on uninstall (006 T005, contract 7)', () => {
+  const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED, {
+    matcher: 'Skill', hooks: [{ type: 'command', command: 'node "C:/old/place/speckit-team.mjs" gate' }] }] } });
+  const r = install(dir);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const s = settingsOf(dir);
+  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\.implement']);
+  assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
+  const entry = s.hooks.PreToolUse.find((g) => g.matcher === 'Skill|Agent');
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  assert.equal(entry.hooks.length, 1);
+  assert.equal(entry.hooks[0].command, `node "${hookPath}" gate`);
+  assert.ok(!s.hooks.PreToolUse.some((g) => g.matcher === 'Skill'), 'no Skill-only entry of ours left');
+  const first = bytes(dir);
+  assert.equal(install(dir).status, 0);
+  assert.ok(bytes(dir).equals(first), 'a second install changes no byte');
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(gates(settingsOf(dir)), []);
+  assert.deepEqual(settingsOf(dir).hooks, { PreToolUse: [UNRELATED] });
 });

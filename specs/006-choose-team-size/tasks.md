@@ -27,7 +27,7 @@ same with `spec-auditor` in the line: denied with today's text.
 
 ### Slice 1: the team record at an Agent launch
 
-- [ ] T001 [US3] Test in `test/hook.test.mjs` (helpers `repo`, `run`, `stateDir`, `denied`) the
+- [X] T001 [US3] Test in `test/hook.test.mjs` (helpers `repo`, `run`, `stateDir`, `denied`) the
   recorder of `contracts/team-choice.md` section 7, first table, and the record of `data-model.md`:
   covers FR-009, FR-006 (the hook's side), the Edge Cases on a name given twice and on case and
   order, constitution II and III. Not settled there: no `Agent` launch from the main session ever
@@ -46,7 +46,7 @@ same with `spec-auditor` in the line: denied with today's text.
 
 ### Slice 2: the gate and the retry count follow the record
 
-- [ ] T003 [US3] Test in `test/hook.test.mjs` (helpers `repo`, `run`, `pass`, `report`, `denied`,
+- [X] T003 [US3] Test in `test/hook.test.mjs` (helpers `repo`, `run`, `pass`, `report`, `denied`,
   `stateDir`, `FEAT`) contract section 7's subagent rules: covers US3-1, US3-2, FR-007, SC-003,
   SC-004, US2-2. Not settled there: the record is written by a T002 launch with the same
   `session_id` as the subagent call; another session's record is ignored; a record holding `{` or
@@ -71,14 +71,14 @@ same with `spec-auditor` in the line: denied with today's text.
 
 ### Slice 3: Claude Code calls the gate on Agent launches
 
-- [ ] T005 [US3] Test in `test/install.test.mjs` (helpers `claudeDir`, `install`, `settingsOf`,
+- [X] T005 [US3] Test in `test/install.test.mjs` (helpers `claudeDir`, `install`, `settingsOf`,
   `gates`, `UNRELATED`) the installer side of D1: covers contract section 7's first sentence. Not
   settled there: `gates(settingsOf(dir))` holds `PreToolUse:Skill|Agent` and
   `UserPromptExpansion:speckit-implement|speckit\.implement`; a settings file with an older
   `matcher: 'Skill'` entry of ours ends with one `Skill|Agent` entry and `UNRELATED` kept; the
   entry's command is still `node "<absolute hook path>" gate`; a second install changes no byte;
   `--uninstall` leaves no entry.
-- [ ] T006 [US3] Test in `test/e2e.test.mjs` (helpers `setup`, `session`, `call`, `MAIN`,
+- [X] T006 [US3] Test in `test/e2e.test.mjs` (helpers `setup`, `session`, `call`, `MAIN`,
   `lastResult`, `story`, `spec`, `state`) the wiring under `claude -p`: covers US3-1, US3-2, FR-007,
   FR-009 and the plan's `session_id` assumption. Not settled elsewhere: `MAIN` launches test-writer
   with `call('Agent', { ..., prompt: 'e2e test-writer: go\nTeam: test-writer, implementer' })` and its

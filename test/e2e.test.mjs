@@ -529,3 +529,44 @@ test("patcher's report must end in DONE, FAILED or ESCALATE (FR-002, US3-2)", { 
   assert.ok(lastResultIsError(r.requests['e2e patcher'][1]), story(r));
   assert.match(lastResult(r.requests['e2e patcher'][1]), /exactly one of: DONE, FAILED, ESCALATE/, story(r));
 });
+
+// 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
+// The three cases below need the installed hook to fire on PreToolUse Agent; with SPECKIT_E2E_NO_HOOK=1
+// the second and third fail.
+const teamAgent = (marker, prompt) => call('Agent', { description: marker, subagent_type: 'test-writer', prompt, run_in_background: false });
+const sessionId = (r) => r.events.find((e) => e.session_id)?.session_id;
+
+test('a Team line without spec-auditor opens the audit gate for test-writer, and the record holds the roles (006 US3-1, FR-007)', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [teamAgent('e2e test-writer', 'e2e test-writer: go\nTeam: test-writer, implementer')],
+    'e2e test-writer': [call('Read', { file_path: spec(s) })],
+  });
+  assert.doesNotMatch(lastResult(r.requests['e2e test-writer'][1]), /Implementation gate/, story(r));
+  assert.match(lastResult(r.requests['e2e test-writer'][1]), /# Spec/, story(r));
+  assert.deepEqual(state(s, 'team', `${sessionId(r)}.json`).roles, ['test-writer', 'implementer'], story(r));
+});
+
+test('a Team line with spec-auditor keeps the audit gate shut for test-writer (006 US3-2, FR-007)', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [teamAgent('e2e test-writer', 'e2e test-writer: go\nTeam: spec-auditor, architect, product-owner, test-writer')],
+    'e2e test-writer': [call('Read', { file_path: spec(s) })],
+  });
+  assert.match(lastResult(r.requests['e2e test-writer'][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+  assert.ok(state(s, 'team', `${sessionId(r)}.json`).roles.includes('spec-auditor'), story(r));
+});
+
+test('a later launch with no Team line in the same session removes the record, so the gate is shut again (006 FR-009)', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [
+      teamAgent('e2e test-writer', 'e2e test-writer: go\nTeam: test-writer, implementer'),
+      teamAgent('e2e second', 'e2e second: go'),
+    ],
+    'e2e test-writer': [call('Read', { file_path: spec(s) })],
+    'e2e second': [call('Read', { file_path: spec(s) })],
+  });
+  assert.match(lastResult(r.requests['e2e test-writer'][1]), /# Spec/, story(r));
+  assert.match(lastResult(r.requests['e2e second'][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+});
