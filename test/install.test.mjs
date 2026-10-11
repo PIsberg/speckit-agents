@@ -901,3 +901,108 @@ test('006 T014 FR-010 US4-1 US4-2 contract 8: with no --team the skill asks one 
   const stopAt = team.indexOf('**Stop:**');
   assert.ok(stopAt > team.indexOf('AskUserQuestion'), 'the Stop marker belongs to the question');
 });
+
+// 006 T016 FR-011, constitution VIII, contract section 8: the docs say how to choose the team.
+const repoText = (...p) => fs.readFileSync(path.join(path.dirname(INSTALL), ...p), 'utf8').replace(/\r\n/g, '\n');
+const mdSection = (text, heading) => {
+  const level = heading.match(/^#+/)[0].length;
+  const start = text.indexOf('\n' + heading + '\n');
+  if (start < 0) return '';
+  const rest = text.slice(start + heading.length + 2);
+  const end = rest.search(new RegExp(`^#{1,${level}} `, 'm'));
+  return end < 0 ? rest : rest.slice(0, end);
+};
+const WORD_NUM = { three: 3, four: 4 };
+
+test('006 T016 FR-011: README has a "Choosing the team" section whose table names every role', () => {
+  const sec = mdSection(repoText('README.md'), '#### Choosing the team');
+  assert.ok(sec, 'README.md has a "#### Choosing the team" subsection');
+  const hookSrc = repoText('hooks', 'speckit-team.mjs');
+  const roles = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  assert.equal(roles.length, 6);
+  const rows = sec.split('\n').filter((l) => l.trim().startsWith('|'));
+  for (const r of roles) {
+    const row = rows.find((l) => l.includes(r));
+    assert.ok(row, `the table has a row for ${r}`);
+    assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${r}'s row names the steps and the guardrails skipped`);
+  }
+  assert.match(sec, /--team/);
+});
+
+test('006 T016 FR-011: README guardrail table names Skill|Agent for the settings.json gate', () => {
+  const row = repoText('README.md').split('\n').find((l) => /^\| `gate` \| `settings\.json`/.test(l));
+  assert.ok(row, 'the gate row of the settings.json guardrail table');
+  assert.ok(row.includes('Skill|Agent'), row);
+});
+
+test('006 T016 FR-011: node install.mjs --help prints a --team line', () => {
+  const h = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.ok(h.stdout.split('\n').some((l) => l.includes('--team')), '--help has a --team line');
+});
+
+test('006 T016 FR-011: CLAUDE.md Rules name the Team: and Unbuilt: lines as held by test/install.test.mjs', () => {
+  const rules = mdSection(repoText('CLAUDE.md'), '## Rules');
+  for (const word of ['Team:', 'Unbuilt:']) {
+    const para = rules.split(/\n(?=- )/).find((p) => p.includes(word));
+    assert.ok(para, `a Rules bullet names ${word}`);
+    assert.ok(flat(para).includes('test/install.test.mjs'), `${word} is held by test/install.test.mjs`);
+  }
+});
+
+test('006 T016 D4 contract 8: README says four stops, and the list names the team question first', () => {
+  const readme = repoText('README.md');
+  const a = flat(readme).match(/You decide at (\w+) stops/);
+  assert.ok(a && WORD_NUM[a[1]] === 4, `"You decide at ... stops": ${a && a[0]}`);
+  const b = flat(readme).match(/It stops for you at (\w+) points/);
+  assert.ok(b && WORD_NUM[b[1]] === 4, `"It stops for you at ... points": ${b && b[0]}`);
+  const after = readme.slice(readme.indexOf('It stops for you at')).split('\n').slice(1);
+  const items = [];
+  let cur = null;
+  for (const l of after) {
+    if (/^\d+\. /.test(l)) { cur = l; items.push(l); }
+    else if (cur && /^\s+\S/.test(l)) items[items.length - 1] += ' ' + l.trim();
+    else if (items.length && !l.trim()) break;
+    else if (items.length) break;
+  }
+  assert.equal(items.length, 4, items.join(' / '));
+  assert.match(items[0], /team/i, 'the first item is the team question');
+  assert.match(flat(items[0]), /--team/, 'skipped when --team names the team');
+});
+
+test('006 T016 constitution VIII: README e2e counts equal the tests from the scope-hook case to the end of e2e.test.mjs', () => {
+  const e2e = repoText('test', 'e2e.test.mjs');
+  const from = e2e.indexOf("test(\"architect's and product-owner's scope hooks deny a Write outside their lanes\"");
+  assert.ok(from >= 0, 'the anchor test exists');
+  const n = (e2e.slice(from).match(/^test\(/gm) || []).length;
+  const sec = flat(mdSection(repoText('README.md'), '### End-to-end tests'));
+  assert.ok(sec.includes(`The ${n} tests fire every hook entry`), `README says "The ${n} tests fire every hook entry"`);
+  assert.ok(sec.includes(`all ${n} fail`), `README says "all ${n} fail"`);
+  assert.ok(sec.includes('Skill|Agent'), 'the sentence names the Skill|Agent gate');
+});
+
+// 006 T019 FR-010, US4-1, constitution VIII: the pipeline demo shows the team question.
+test('006 T019 FR-010 US4-1: pipeline.tape answers the team question before the wait for the product owner dialog', () => {
+  const tape = repoText('docs', 'media', 'pipeline.tape');
+  const lines = tape.split('\n');
+  assert.match(lines[0], /team/i, 'first-line comment names the team question');
+  assert.match(lines[0], /product.owner/i, 'first-line comment names the product owner stop');
+  const type = lines.findIndex((l) => /^Type "\/speckit-team /.test(l));
+  const wait = lines.findIndex((l) => /^Wait\+Screen@10m \/Submit\|Esc to cancel\//.test(l));
+  assert.ok(type >= 0 && wait > type, 'Type line, then the product owner wait');
+  const between = lines.slice(type + 1, wait).join('\n');
+  assert.match(between, /Wait\S* .*(Full team|team)/i, 'waits for the team dialog');
+  assert.match(between, /^Enter$/m, 'answers with Enter (the first option, Full team)');
+  const firstEnter = lines.slice(type + 1, wait).findIndex((l) => l === 'Enter');
+  const teamWait = lines.slice(type + 1, wait).findIndex((l) => /Wait\S* .*team/i.test(l));
+  assert.ok(teamWait >= 0 && firstEnter > teamWait, 'the Enter follows the wait for the team dialog');
+});
+
+test('006 T019 FR-010 US4-1: README "The pipeline" names the team question as the first of four stops', () => {
+  const sec = flat(mdSection(repoText('README.md'), '### The pipeline'));
+  assert.ok(!sec.includes("the first of the pipeline's three stops"), 'the old three-stop wording is gone');
+  assert.match(sec, /team question[^.]*first of the pipeline's four stops/i, 'paragraph: team question is the first of four');
+  assert.match(sec, /product-owner's questions[^.]*second/i, "product-owner's questions are the second");
+  const alt = sec.match(/!\[([^\]]*)\]\(docs\/media\/pipeline\.gif\)/);
+  assert.ok(alt, 'pipeline.gif image');
+  assert.match(alt[1], /team/i, 'alt text names the team question');
+});

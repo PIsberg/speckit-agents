@@ -197,7 +197,7 @@ L1 shows it live (T018).
 
 ### Slice 8: the docs say how to choose the team
 
-- [ ] T016 Test in `test/install.test.mjs` the docs of FR-011 and constitution VIII: README.md has a
+- [X] T016 Test in `test/install.test.mjs` the docs of FR-011 and constitution VIII: README.md has a
   section on choosing the team whose table names every `TEAM_ROLES` role with the steps and
   guardrails its absence skips; README's guardrail table row for the `settings.json` `gate` names
   `Skill|Agent`; `node install.mjs --help` prints a `--team` line; CLAUDE.md's Rules name the
@@ -226,7 +226,7 @@ L1 shows it live (T018).
 
 ### Slice 9: the pipeline demo shows the team question
 
-- [ ] T019 Test in `test/install.test.mjs` the demo of constitution VIII and CLAUDE.md's
+- [X] T019 Test in `test/install.test.mjs` the demo of constitution VIII and CLAUDE.md's
   `docs/media/` rule: covers FR-010, US4-1 as the README shows them. Not settled elsewhere:
   `docs/media/pipeline.tape` (read as text) answers the team question with its first option after
   the `Type "/speckit-team ..."` line and before the wait for product-owner's question dialog
