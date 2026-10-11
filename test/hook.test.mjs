@@ -350,7 +350,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -378,7 +378,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
