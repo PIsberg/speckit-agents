@@ -26,7 +26,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   checkout as the marketplace. A prototype retired once feature 001's view ships (owner decision,
   #11): build neither 001 nor 002 on it, and do not change 001's spec for it.
 - `tools/usage.mjs`: a session's input tokens from its transcript; measure a skill or agent change
-  before and after.
+  before and after. `tools/live-board.mjs`: the board's interactive checks, vhs driving a real session
+  against a fake API at $0; run it after changing what the board draws or its buttons do.
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
   `architecture-visualized.svg` is drawn by hand: edit it when a model, lane, stage or the retry limit
   changes.
@@ -34,7 +35,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 269 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 272 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`

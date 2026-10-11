@@ -27,5 +27,8 @@ mid-build), with the board loaded by `--plugin-dir <checkout>/mods/speckit-board
 | L6 | interactive | before and after L4, `sha256sum .git/speckit-team/*/*.json specs/*/spec.md specs/*/plan.md specs/*/tasks.md .specify/feature.json` | identical |
 
 L1, L2 and the screenshot are deferred to a follow-up issue (D5 B), not run by this feature. L1 and L2
-were run on 2026-10-11 (README.md, "Board mod", "Verified"); `test/e2e.test.mjs` now runs both in CI. L3 to L6 need a person at the keyboard; the README says
-which were seen live and which were not.
+were run on 2026-10-11 (README.md, "Board mod", "Verified"); `test/e2e.test.mjs` now runs both in CI. L3 to L6
+were run on 2026-10-12 in an interactive session that vhs drove against a fake API, the two
+spec-auditors scripted stand-ins: `node tools/live-board.mjs` repeats them and prints each result
+(docs/live-results.md, "The board"). It hashes L6's files with `git hash-object`, which every OS has,
+in place of `sha256sum`. The screenshot is still deferred (#84).

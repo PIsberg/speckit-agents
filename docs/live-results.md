@@ -181,6 +181,20 @@ agent's `model:` line ([#39](https://github.com/PIsberg/speckit-agents/issues/39
 
 ## The board
 
+- **The `[ clear ]` button, interactive ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).**
+  On 2026-10-12 (Windows 11, Claude Code 2.1.296, vhs 0.11.0), at $0: an interactive session 140
+  columns wide that vhs drove against a fake API, in a throwaway Spec Kit repo with the team installed
+  and the board loaded by `--plugin-dir` (`node tools/live-board.mjs`, which writes every screen as
+  text). L3: after `/speckit-board` the docked pane showed `[ clear ]` and the band
+  `[ board ] [ clear ] [ hide ]`. L4: after two spec-auditors reported PASS, ctrl+x tab, Tab, Tab and
+  Enter pressed the band's `[ clear ]`. The toast read `cleared 2 agent rows and the band.`, the pane
+  `cleared; no team agent has run since`, the band was gone, and the status line still read
+  `speckit-board: 001-greet · ◐ build (1/3)`. The pane's `[ clear ]`, pressed by its hotkey `c`, did
+  the same. ctrl+x tab gives an open pane the keyboard only while the band has no buttons, so that run
+  hid the band first. L5: a third spec-auditor's row and the band were back on the screen taken 4 s
+  after it was asked for. L6: `git hash-object` gave the same hashes for the six files (the team
+  record, the verdict record, spec, plan, tasks and `feature.json`) before and after the clear. Not
+  checked: a click, and Linux or macOS.
 - **The board-only install and the standalone view ([#92](https://github.com/PIsberg/speckit-agents/issues/92)).**
   On 2026-10-11 (Windows 11, Claude Code 2.1.296, Spec Kit 1.1.2), headless and at $0, in a throwaway
   config dir: `claude plugin marketplace add PIsberg/speckit-agents` cloned this repository from
