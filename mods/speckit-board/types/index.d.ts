@@ -54,6 +54,8 @@ declare module 'claude-code' {
       isCleared: boolean
       // The pane lists every task, not only the sections under way.
       isAllTasksShown: boolean
+      // Features a team agent started on in this session; they get the team view (D1-A).
+      teamFeatures: string[]
     }
   }
 }

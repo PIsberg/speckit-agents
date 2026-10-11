@@ -17,6 +17,8 @@ const board = atom({ plugin: 'speckit-board', key: 'board' } as const, null)
 const agents = atom({ plugin: 'speckit-board', key: 'agents' } as const, [])
 const isBandHidden = atom({ plugin: 'speckit-board', key: 'isBandHidden' } as const, false)
 const isCleared = atom({ plugin: 'speckit-board', key: 'isCleared' } as const, false)
+// Features a team agent started on in this session (D1-A); clear does not touch it.
+const teamFeatures = atom({ plugin: 'speckit-board', key: 'teamFeatures' } as const, [])
 const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
 
 type Repo = { root: string; stateDir: string }
@@ -84,18 +86,24 @@ async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | nu
   const gate = gateWord(await readJson($, `${at.stateDir}/ends/${name}.json`))
     ?? gateWord(await $.store.get(gateKey(at, feature)).catch(() => undefined))
   const running = (await read($, agents)).filter(a => a.isRunning).map(a => a.type)
+  // The team view if the team recorded anything for the feature (a file that exists counts, readable
+  // or not), the store has its word, or a team agent started on it in this session.
+  const hasRecord = (await Promise.all(['verdicts', 'retries', 'ends'].map(dir =>
+    $.fs.exists(`${at.stateDir}/${dir}/${name}.json`).catch(() => false)))).some(Boolean)
+  const isStandalone = !(hasRecord || gate || (await read($, teamFeatures)).includes(feature))
 
   return {
     feature: name,
     phases: derivePhases({
       spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
-      gate: gate?.word, gateAt: gate?.at, running,
+      gate: gate?.word, gateAt: gate?.at, running, isStandalone,
     }),
     tasks: tasks ?? [],
     red,
     maxRed: MAX_RED,
     isRetryUnreadable,
     fingerprint: fp,
+    ...(isStandalone ? { isStandalone } : {}),
   }
 }
 
@@ -183,9 +191,10 @@ async function poll($: EngineInterface) {
 // sections, a blank row between each two.
 function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean): number {
   if (!b) return 2
+  const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
+  if (b.isStandalone) return 2 + b.phases.length + 1 + taskCount + 3
   const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
-  const taskRows = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
-  return 2 + b.phases.length + teamRows + 1 + taskRows + 4
+  return 2 + b.phases.length + teamRows + 1 + taskCount + 4
 }
 
 // Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
@@ -285,6 +294,15 @@ export const register: Register = on => {
       if (await read($, isCleared)) {
         try { await update($, isCleared, () => false) } catch (err) {
           $.ui.toast(`board could not end the clear: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      if (repo) {
+        const at = repo
+        try {
+          const feature = await activeFeature($, at.root)
+          if (feature) await update($, teamFeatures, list => (list.includes(feature) ? list : [...list, feature]))
+        } catch (err) {
+          $.ui.toast(`board could not note the team's feature: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
       const now = await $.clock.now()
@@ -417,7 +435,7 @@ export const register: Register = on => {
           <Text bold color="claude" wrap="truncate-end">SPEC KIT · {b.feature}</Text>
           <Text wrap="truncate-end">
             <Text dimColor>next </Text>
-            {step.task ? [<Text bold>{step.task.id}</Text>, ' ', taskText(step.task.text)] : step.text}
+            {step.task ? [step.command ? `${step.command} ` : '', <Text bold>{step.task.id}</Text>, ' ', taskText(step.task.text)] : step.text}
           </Text>
         </Box>
 
@@ -447,7 +465,7 @@ export const register: Register = on => {
         </Box>
 
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
-        <Box flexDirection="column">
+        {!b.isStandalone && <Box flexDirection="column">
           <Text bold>Team</Text>
           {team.length === 0 && <Text dimColor>{isClearedNow ? 'cleared; no team agent has run since' : 'no team agent has run this session'}</Text>}
           {rows.slice(0, TEAM_ROWS).map(a => {
@@ -473,7 +491,7 @@ export const register: Register = on => {
             )
           })}
           {rows.length > TEAM_ROWS && <Text dimColor>+{rows.length - TEAM_ROWS} earlier</Text>}
-        </Box>
+        </Box>}
 
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />
