@@ -43,7 +43,7 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 393 s on Windows (201 tests, 2026-10-11; the
+- `npm test`: all suites, no network beyond localhost, 455 s on Windows (242 tests, 2026-10-11; the
   four installer tests that run the real `claude plugin` and the 24 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
@@ -74,6 +74,11 @@ this file is how to work on it.
   them only in this repository, recognised by the `name` in the committed top-level `package.json`,
   which is itself in `OWN_SOURCES`, so the fast track cannot change `package.json` here. A new
   guardrail file of the team gets an entry there and a case in `test/hook.test.mjs`.
+- `Team:` line of every launch prompt in a run with a chosen team: the skill writes it, the hook reads
+  it with `TEAM_ROLES` (the six roles of `agents/*.md` without `patcher`), and spec-gatekeeper reports
+  a check whose role is absent as skipped. `Unbuilt:` line, after it: the task IDs of an absent
+  test-writer or implementer, which spec-gatekeeper's open-task check skips. Both halves are held
+  together by `test/install.test.mjs`.
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`. A change to either
   changes both, and `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the

@@ -14,6 +14,10 @@
 //
 // After installing, /speckit-patch <change> is the fast track for small changes, and
 // /speckit-triage <request> suggests which track fits.
+//
+//   /speckit-team --team <roles> <request>   run only the roles you name (comma-separated, from
+//                                            product-owner, architect, spec-auditor, test-writer,
+//                                            implementer, spec-gatekeeper); without --team it asks
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

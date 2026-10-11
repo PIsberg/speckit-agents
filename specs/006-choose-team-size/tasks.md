@@ -208,7 +208,7 @@ L1 shows it live (T018).
   `test(` calls in `test/e2e.test.mjs` from `architect's and product-owner's scope hooks deny a
   Write outside their lanes` to the end of the file, and the sentence names the `Skill|Agent` gate.
   Pattern: `README states the agent bodies' length as agents/*.md has it` (`flat`, the repo root).
-- [ ] T017 Implement the docs: README.md: a `#### Choosing the team` subsection under "The pipeline
+- [X] T017 Implement the docs: README.md: a `#### Choosing the team` subsection under "The pipeline
   skill" with contract sections 1, 3, 5 and 8, a `--team` example in Quick start "2. Run the
   pipeline", the `gate` rows of "Guardrails", a paragraph in "The audit gate" on the team record,
   `team/` in "State", D6's and D7's lines in "Known limits", the test count in "Test suite", the
@@ -220,7 +220,7 @@ L1 shows it live (T018).
   `test/install.test.mjs`) and beside it the `Unbuilt:` line (skill, spec-gatekeeper), and the test
   count in Verify; `install.mjs`'s header comment (its `--help` text): a line on
   `/speckit-team --team <roles> <request>`.
-- [ ] T018 Run `specs/006-choose-team-size/quickstart.md` L1 to L4 and record each result, with the
+- [X] T018 Run `specs/006-choose-team-size/quickstart.md` L1 to L4 and record each result, with the
   date and the Claude Code version, in README.md "Live results"; say which were seen live and
   which only in tests (constitution II and VIII).
 
