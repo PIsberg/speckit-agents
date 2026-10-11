@@ -106,8 +106,8 @@ The board works in a repo that Spec Kit initialised, with or without a git repos
 - **FR-004**: In standalone mode the audit and verify phases MUST be hidden: the band, pane and status line list only the spec, plan, tasks and build phases, and no line, mark or placeholder stands in for the two hidden ones. In team mode they are shown as before.
 - **FR-005**: In standalone mode the next step MUST name only Spec Kit's own commands and the open task, never `/speckit-team` or a team agent. Examples: no spec yet leads to the specify command; spec without plan leads to the plan command; plan without tasks leads to the tasks command; open tasks lead to the first open task (and the implement command when none is ticked); all ticked leads to "ready for the PR".
 - **FR-006**: In standalone mode build MUST NOT be shown as blocked by a closed gate: with a task list present, build is current as soon as the tasks phase is done.
-- **FR-007**: The board MUST pick the standalone view per feature, by whether the team has recorded anything for that feature or a team agent has started in this session while it was the active feature, not by whether the team is installed.
-- **FR-008**: When the active feature has any team record, the board's output MUST be identical to what it was before this feature (no regression for team users), except that a file that exists but cannot be read shows as unreadable rather than missing (FR-011).
+- **FR-007** (amended 2026-10-11, #97): The board MUST pick the standalone view per feature, by whether the team has recorded anything for that feature or a team agent has started in this session while it was the active feature of the same repository, not by whether the team is installed.
+- **FR-008** (amended 2026-10-11, #93): When the active feature has any team record, the board's output MUST be identical to what it was before this feature (no regression for team users), except that a file that exists but cannot be read shows as unreadable rather than missing (FR-011), and a missing feature folder shows its one-line notice instead of phases (FR-013).
 - **FR-009**: The board MUST be installable without installing any of the team's agents, skills or hooks, by a route the README documents, and MUST NOT add any of them on its own.
 - **FR-010**: The board MUST update after a Spec Kit command or a hand edit changes a feature file, within the interval it already uses, without a board command.
 - **FR-011**: The board MUST NOT deny, delay or alter any Spec Kit command or any tool call, and a failure to read a file MUST be shown to the user, not swallowed (constitution III).
@@ -120,7 +120,7 @@ The board works in a repo that Spec Kit initialised, with or without a git repos
 ### Key Entities
 
 - **Feature**: the active Spec Kit feature, with a spec, an optional plan and an optional task list.
-- **Team record**: anything the team's hooks keep about a feature (an audit verdict, a retry count, a gatekeeper word), or a team agent started in this session while the feature was active. Its presence for a feature selects the team view for that feature.
+- **Team record**: anything the team's hooks keep about a feature (an audit verdict, a retry count, a gatekeeper word), or a team agent started in this session while the feature was active, in that repository. Its presence for a feature selects the team view for that feature.
 - **View**: standalone (no team record for the feature) or team (at least one).
 
 ## Success Criteria *(mandatory)*

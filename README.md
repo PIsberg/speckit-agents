@@ -1201,8 +1201,9 @@ and a command that waited for the turn opened the board only once the run was ov
 It reads what the guardrails already keep, so it cannot disagree with the gate:
 
 - **Which view.** The team view once a team agent has run in the repository (a verdict, retry or
-  gatekeeper record under `.git/speckit-team/`, or an agent seen this session); otherwise the
-  standalone view. The rule is `isStandalone` in `mods/speckit-board/hooks/model.ts`.
+  gatekeeper record under `.git/speckit-team/`, or a team agent seen this session starting on that
+  feature of that repository, [#97](https://github.com/PIsberg/speckit-agents/issues/97)); otherwise
+  the standalone view. The rule is `isStandalone` in `mods/speckit-board/hooks/model.ts`.
 - **Notices.** When there is nothing to draw, the board says why in one line instead of staying
   blank: no `.specify/` (`Spec Kit is not set up here`), no active feature, an unreadable or
   non-JSON `.specify/feature.json`, or a feature folder that does not exist. It also works in a
@@ -1267,23 +1268,45 @@ installs can still remove it.
 
 ### Verified
 
-**Automated.** `claude plugin validate` and `claude plugin test` (124 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (129 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
 `test/install.test.mjs`, which checks that the mod is read from this checkout and that uninstall
 restores `settings.json` byte for byte. The standalone view, the notices and the unreadable-file cases are covered by the mod's unit tests
-and by `test/install.test.mjs` for the board-only install; the checks in
-`specs/005-standalone-board/quickstart.md` have not yet been run live. The `[ clear ]` button and the `clear` argument are verified
-by the mod's tests only, not seen live, and `docs/media/board.png` predates the button.
+and by `test/install.test.mjs` for the board-only install. One end-to-end test loads the mod with
+`--plugin-dir` in a headless session against the fake API ([End-to-end tests](#end-to-end-tests)),
+so CI sees on Linux, macOS and Windows that Claude Code starts it, that it sets its status line and
+raises its startup toast, and that `/speckit-board status`, `clear` and an unknown argument answer
+at 0 turns ([#19](https://github.com/PIsberg/speckit-agents/issues/19)). The `[ clear ]` button is
+verified by the mod's tests only, not seen live, and `docs/media/board.png` predates it.
 
-**Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09: the
-record is below. **Not seen live:** an interactive session on Linux (band, pane, agent rows; that
-Claude Code stopped at first-run login), and any session on macOS
-([#19](https://github.com/PIsberg/speckit-agents/issues/19)).
+**Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09, and
+headless on Windows on 2026-10-11 for the board-only install and the `clear` argument: the record is
+below. **Not seen live:** an interactive session on Linux or macOS (band, pane, agent rows; on Linux
+Claude Code stopped at first-run login), the status line updating within the 4-second poll without a
+command, and the `[ clear ]` button.
 
 <details>
-<summary><b>Live record</b>: Windows and Linux, 2026-10-08 and 09</summary>
+<summary><b>Live record</b>: Windows and Linux, 2026-10-08 to 11</summary>
+
+- **The board-only install and the standalone view ([#92](https://github.com/PIsberg/speckit-agents/issues/92)).**
+  On 2026-10-11 (Windows 11, Claude Code 2.1.296, Spec Kit 1.1.2), headless and at $0, in a throwaway
+  config dir: `claude plugin marketplace add PIsberg/speckit-agents` cloned this repository from
+  GitHub and `claude plugin install speckit-board@speckit-agents --scope user` installed the board
+  from main (`claude plugin list`: enabled, version 0.1.0), with no `agents/` or `skills/` folder and
+  no `speckit-team` entry in `settings.json`. In a repo `specify init --here --integration claude`
+  made, with the files Spec Kit's commands write put in place by hand (no model), a headless
+  `claude -p "/speckit-board status"` against a fake API answered at 0 turns with the contract's
+  texts in order: the no-feature notice, then S-2 `001-greeting · ◐ spec (draft)`, S-3 `○ plan`,
+  S-4 `○ tasks`, S-5 `○ build (0/3)` with `next: /speckit-implement: T001 Create greet.js`, and S-6
+  `◐ build (1/3)`; each run also raised its `ui_status` and startup `ui_toast`, and no line named a
+  team agent or `/speckit-team`. A copy of the repo without `.git` answered S-6 and S-3 the same.
+- **The clear argument ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).** The same day,
+  board from this checkout by `--plugin-dir`: `claude -p "/speckit-board clear"` answered
+  `cleared the band.` at 0 turns, exit 0 (the band of a fresh headless session is drawn, so there is
+  a band to clear; the quickstart had expected `nothing to clear.`), and `/speckit-board foo`
+  answered `unknown argument "foo": use status, refresh, band or clear.`
 
 - **Installed from this checkout.** On Windows, 2026-10-08, with the board installed from this
   checkout and no `--plugin-dir`: a headless `claude -p "/speckit-board refresh"` in a scratch Spec
@@ -1356,16 +1379,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 254 tests:
+`npm test` runs 256 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 133 | the hook, fed hook JSON on stdin, against throwaway git repos |
 | [`test/install.test.mjs`](test/install.test.mjs) | 73 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 124 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 29 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 30 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1406,8 +1429,12 @@ need no login and cost nothing.
   fire lets the action through. With the installed hook replaced by one that only exits, all 22
   fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 24 failures, none of the 22 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  24 of the 29 tests fail (the 22 scripted ones and the two blocking no-model cases); the other five
+  24 of the 30 tests fail (the 22 scripted ones and the two blocking no-model cases); the other six
   do not depend on a hook.
+- **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
+  checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
+  argument answer at 0 turns and $0. It is the board's live check on every OS CI runs
+  ([#19](https://github.com/PIsberg/speckit-agents/issues/19)); with no plugin loaded it fails.
 - **Claude Code's own behaviour.** Three tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report; with
   `CLAUDE_CODE_FORK_SUBAGENT=1`, as in an interactive session, the parameter is gone and the

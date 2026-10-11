@@ -32,3 +32,8 @@ In a fresh Spec Kit repo (`specify init`) with the board from check 1 and no tea
 5. Read every line printed: none names a team agent or `/speckit-team`.
 
 Repeat steps 1 and 3 in a copy of the repo with its `.git` folder removed (US4 scenario 2).
+
+Run on 2026-10-11, headless and at $0 (README.md, "Board mod", "Verified"): check 1 in full; check 2
+with the files Spec Kit's commands write put in place by hand instead of running the commands, each
+state read with `claude -p "/speckit-board status"` against a fake API. Not seen: the status line
+updating within 4 s with no command (steps 2 and 4), which needs an interactive session.

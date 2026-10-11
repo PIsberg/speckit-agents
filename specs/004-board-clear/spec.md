@@ -77,13 +77,13 @@ Clearing is about what is drawn. The pipeline's own records (verdicts, retry cou
 
 ### Functional Requirements
 
-- **FR-001**: The board MUST show a [clear] button, in the pane and in the band, that the user can press to clear the board and the band.
+- **FR-001** (amended 2026-10-11 for D2 A, #86): The board MUST show a [clear] button, in the pane and in the band, that the user can press to clear the board and the band. On a short row (about 80 columns and below, and beside a docked pane) the band's button drops with its other buttons, in the order `hide`, `clear`, `board`; the pane's button and `/speckit-board clear` remain at every width.
 - **FR-011**: The board MUST also accept `/speckit-board clear` alongside the existing `refresh`, `band` and `status`, with the same effect as the button, so a session without a clickable board can clear.
 - **FR-002**: Running clear MUST remove every finished agent's row from the pane in one step, so the pane shows no agent row that existed before the clear.
-- **FR-003**: Running clear MUST remove the band from above the prompt in one step.
+- **FR-003** (amended 2026-10-11 for D1 A, #86): Running clear while no team agent runs MUST remove the band from above the prompt in one step. While a team agent runs, clear removes the finished rows only and leaves the band, which stays after that agent finishes until another clear removes it.
 - **FR-004**: Clear MUST be display-only: it MUST NOT modify, delete or reset the verdict, retry, gatekeeper or other files under `.git/speckit-team/`, nor `spec.md`, `plan.md`, `tasks.md` or `.specify/feature.json`.
 - **FR-005**: Clear MUST NOT remove the row of an agent that is still running.
-- **FR-006**: After a clear, the next team agent that starts MUST show its own row and bring the band back, without the user pressing or running anything. The cleared state ends at that point; rows cleared earlier stay gone.
+- **FR-006** (amended 2026-10-11 for D4 A, #86): After a clear, the next team agent that starts MUST show its own row and bring the band back, without the user pressing or running anything. The cleared state ends at that point, and also at `/speckit-board band` or the pane's `toggle band`, which then show the band; rows cleared earlier stay gone.
 - **FR-007**: After a clear, `/speckit-board` MUST still open the pane, showing the phases and next step from the records and no pre-clear agent rows.
 - **FR-008**: Clear MUST show one line saying what it cleared, or that there was nothing to clear, and MUST NOT error when there is nothing to clear, when the band is already hidden, or when run twice.
 - **FR-009**: The button MUST work in an interactive session; the `/speckit-board clear` argument MUST answer as text in a headless `claude -p` session.
@@ -104,7 +104,7 @@ Clearing is about what is drawn. The pipeline's own records (verdicts, retry cou
 - **SC-002**: The files named in FR-004 are byte-identical before and after a clear in 100% of tested cases.
 - **SC-003**: The gate returns the same decision before and after a clear for each case tested (audit PASS, FAIL, stale, RED count 0 to 3).
 - **SC-004**: The first team agent started after a clear has its row and the band on screen within 4 seconds, the board's poll interval.
-- **SC-006**: The [clear] button is present in the pane and in the band in 100% of tested states where they are drawn.
+- **SC-006** (amended 2026-10-11 for D2 A, #86): The [clear] button is present in the pane in 100% of tested states where it is drawn, and in the band wherever the band draws its buttons.
 - **SC-005**: A clear on an empty board, a repeated clear, and a clear with the band hidden each finish with 0 errors.
 
 ## Assumptions
