@@ -48,6 +48,8 @@ declare module 'claude-code' {
   interface PluginState {
     'speckit-board': {
       board: SpeckitBoard | null
+      // Why there is no board: one of noticeText's lines; '' while there is one.
+      notice: string
       agents: SpeckitAgent[]
       isBandHidden: boolean
       // The band is held off until the next team agent starts; session state, not stored.

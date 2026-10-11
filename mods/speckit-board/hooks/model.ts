@@ -121,9 +121,10 @@ export const redCount = (r: Retries, fp: string): number =>
   r && r.fingerprint === fp && Array.isArray(r.red) ? r.red.length : 0
 
 export type BoardInputs = {
-  spec: string | undefined
-  plan: string | undefined
-  tasks: SpeckitTask[] | undefined
+  // `undefined` missing, `null` exists but cannot be read.
+  spec: string | null | undefined
+  plan: string | null | undefined
+  tasks: SpeckitTask[] | null | undefined
   verdict: Verdict
   fingerprint: string
   red: number
@@ -148,15 +149,20 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
   // (which the architect writes only after that approval) also counts as the spec being approved.
   const spec = i.spec === undefined
     ? phase('spec', idle('product-owner'))
-    : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
+    : i.spec === null
+      ? phase('spec', 'failed', 'unreadable')
+      : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
       ? phase('spec', 'done', 'approved')
       : i.plan !== undefined
         ? phase('spec', 'done')
         : phase('spec', 'active', 'draft')
-  const plan = i.plan === undefined ? phase('plan', idle('architect')) : phase('plan', 'done')
+  const plan = i.plan === undefined ? phase('plan', idle('architect'))
+    : i.plan === null ? phase('plan', 'failed', 'unreadable') : phase('plan', 'done')
   const tasks = i.tasks === undefined
     ? phase('tasks', idle('architect'))
-    : phase('tasks', 'done', `${i.tasks.length} tasks`)
+    : i.tasks === null
+      ? phase('tasks', 'failed', 'unreadable')
+      : phase('tasks', 'done', `${i.tasks.length} tasks`)
 
   // A verdict on files since changed is about files nobody has audited, a FAIL as much as a PASS:
   // they want a new audit, not the FAIL's findings fixed again.
@@ -207,11 +213,15 @@ export function derivePhases(i: BoardInputs): SpeckitPhase[] {
 function standalonePhases(i: BoardInputs): SpeckitPhase[] {
   const spec = i.spec === undefined
     ? phase('spec', 'todo')
-    : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
+    : i.spec === null
+      ? phase('spec', 'failed', 'unreadable')
+      : /\*\*Status\*\*:\s*Approved/i.test(i.spec)
       ? phase('spec', 'done', 'approved')
       : i.plan !== undefined ? phase('spec', 'done') : phase('spec', 'active', 'draft')
-  const plan = i.plan === undefined ? phase('plan', 'todo') : phase('plan', 'done')
-  const tasks = i.tasks === undefined ? phase('tasks', 'todo') : phase('tasks', 'done', `${i.tasks.length} tasks`)
+  const plan = i.plan === undefined ? phase('plan', 'todo')
+    : i.plan === null ? phase('plan', 'failed', 'unreadable') : phase('plan', 'done')
+  const tasks = i.tasks === undefined ? phase('tasks', 'todo')
+    : i.tasks === null ? phase('tasks', 'failed', 'unreadable') : phase('tasks', 'done', `${i.tasks.length} tasks`)
   const list = i.tasks ?? []
   const done = list.filter(t => t.isDone).length
   const progress = `${done}/${list.length}`
@@ -282,6 +292,7 @@ export function statusLine(b: SpeckitBoard | null): string | undefined {
 export function nextStep(b: SpeckitBoard, running: readonly string[]): { text: string; task?: SpeckitTask; command?: string } {
   const head = current(b.phases)
   if (!head) return { text: 'ready for the PR' }
+  if (head.state === 'failed' && head.note === 'unreadable' && head.id !== 'audit') return { text: `cannot read ${head.id}.md` }
   if (b.isStandalone) return standaloneStep(b, head)
   if (head.id === 'build' && head.state === 'failed') {
     return {
@@ -439,10 +450,25 @@ export function clearFailedText(err: unknown): string {
 
 export type Notice = 'not-set-up' | 'no-feature' | 'feature-unreadable' | 'no-folder'
 
-export function ancestors(_cwd: string): string[] {
-  throw new Error('not implemented')
+// The folder and each parent, nearest first, with forward slashes and no trailing one; the root is ''
+// (POSIX) or the drive (Windows), so `${dir}/.specify` is the path to test.
+export function ancestors(cwd: string): string[] {
+  let dir = cwd.replace(/\\/g, '/').replace(/\/+$/, '')
+  const out: string[] = []
+  for (;;) {
+    out.push(dir)
+    const i = dir.lastIndexOf('/')
+    if (i < 0) return out
+    dir = dir.slice(0, i)
+  }
 }
 
-export function noticeText(_n: Notice, _dir?: string): string {
-  throw new Error('not implemented')
+// One line each, contracts/board-text.md N-1 to N-4. `dir` is the repo-relative feature folder.
+export function noticeText(n: Notice, dir = ''): string {
+  switch (n) {
+    case 'not-set-up': return 'Spec Kit is not set up here (no .specify/): specify init sets it up.'
+    case 'no-feature': return 'no active feature in .specify/feature.json: /speckit-specify <idea> starts one.'
+    case 'feature-unreadable': return 'cannot read .specify/feature.json: /speckit-specify <idea> writes it again.'
+    case 'no-folder': return `${dir}, the active feature in .specify/feature.json, does not exist: /speckit-specify <idea> starts one.`
+  }
 }
