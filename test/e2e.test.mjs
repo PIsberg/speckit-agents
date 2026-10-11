@@ -33,7 +33,9 @@ const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'u
 // A Spec Kit repo as far as the gate can tell: an active feature, its four fingerprinted files, and
 // a speckit-implement skill for the typed command to expand. The team goes into its own config dir.
 function setup() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-'));
+  // The long path: on the Windows runner the temp dir is an 8.3 name (RUNNER~1), and Claude Code
+  // refuses an isolation worktree whose path git spells differently (2.1.293, #40).
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-')));
   const repo = path.join(tmp, 'repo');
   const cfg = path.join(tmp, 'config');
   const write = (rel, text) => {
