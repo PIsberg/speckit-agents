@@ -879,3 +879,25 @@ test('006 T012 FR-007 SC-003 SC-005 contract 5: spec-gatekeeper reads Team: and 
   assert.match(body, /skipped[^.]*not (as )?a (REJECTED )?(reason|rejection)|not (as )?a REJECTED reason[^.]*skipped/i, 'a check whose role is absent is skipped, not a reason');
   assert.match(body, /no `?spec\.md`?[^.]*brief|brief[^.]*no `?spec\.md`?/i, 'traces the brief when there is no spec.md');
 });
+
+// 006 slice 7 (T014): contract section 8, the team question, in the installed skill's `## Team`.
+test('006 T014 FR-010 US4-1 US4-2 contract 8: with no --team the skill asks one AskUserQuestion, full team first and recommended, answer checked like --team, a **Stop:**', () => {
+  const team = skillSection(teamSkill(), '## Team');
+  const flatTeam = flat(team);
+  assert.match(flatTeam, /AskUserQuestion/, 'the question is an AskUserQuestion call');
+  assert.match(flatTeam, /(no|without) (roles|`--team`)[^.]*ask|ask[^.]*(no roles|without `--team`|no `--team`)/i, 'asked when no roles are named');
+  assert.match(flatTeam, /before (any|the first) (launch|agent)|before anything is launched/i, 'asked before any launch');
+  assert.match(flatTeam, /single[- ]select|one choice|pick one/i, 'single select');
+  assert.match(flatTeam, /Full team \(Recommended\)/, 'full team is the recommended option');
+  const options = ['Full team', 'Build only', 'Implement only', 'Spec and build'].map((o) => flatTeam.indexOf(o));
+  assert.ok(options.every((i) => i >= 0), 'all four options are listed');
+  assert.deepEqual([...options].sort((a, b) => a - b), options, 'full team first, in contract order');
+  assert.match(flatTeam, /Spec and build, no audit or verification[^.]*product-owner[^.]*architect[^.]*test-writer[^.]*implementer/i, 'fourth option carries its four roles');
+  assert.match(flatTeam, /Other|free[- ]text/i, 'a free-text answer is possible');
+  assert.match(flatTeam, /(free[- ]text|Other)[^.]*(refus|check)|(refus|check)[^.]*(free[- ]text|Other)/i, 'the free-text answer is checked by the same refusals');
+  assert.match(flatTeam, /(never|not|no longer) asked|(is|are) not asked|does not ask|asks? nothing|only when/i, 'a request with --team is not asked');
+  assert.match(flatTeam, /once/i, 'asked once');
+  assert.ok(/\*\*Stop:\*\*/.test(team), 'the question is marked **Stop:**');
+  const stopAt = team.indexOf('**Stop:**');
+  assert.ok(stopAt > team.indexOf('AskUserQuestion'), 'the Stop marker belongs to the question');
+});

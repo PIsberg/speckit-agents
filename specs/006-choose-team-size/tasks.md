@@ -183,7 +183,7 @@ L1 shows it live (T018).
 
 ### Slice 7: the team question
 
-- [ ] T014 [US4] Test in `test/install.test.mjs` that the installed skill asks contract section 8's
+- [X] T014 [US4] Test in `test/install.test.mjs` that the installed skill asks contract section 8's
   question: covers FR-010, US4-1, US4-2. Not settled there: one AskUserQuestion call before any
   launch; the full team is its first option and marked recommended; a free-text answer is checked
   by the same refusals as `--team`; a request with `--team` is never asked; the question is marked
