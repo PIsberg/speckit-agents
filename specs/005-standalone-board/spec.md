@@ -13,6 +13,11 @@
 ### Session 2026-10-11
 
 - Q: How does the board show the audit and verify phases when the feature has no team record? → A: Hidden (FR-004).
+- Owner decision D1-A: the view is chosen per feature by a team record or a team agent started in this session while the feature was active (FR-007, Team record).
+- Owner decision D2-A: removing the team and keeping the board leaves standalone mode working; a board installed with `--board` is reinstalled with the README's board-only command (US2 scenario 3).
+- Owner decision D3-A: a team-recorded feature's output is unchanged except that an unreadable file shows as unreadable, not missing (FR-008).
+- Owner decision D4-A: no feature, missing feature folder and no Spec Kit repository (git or not) get a one-line message and no throw; a Spec Kit repository without git draws its phases (FR-013).
+- Owner decision D5-A: no spec change.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -46,7 +51,7 @@ A user who does not want the team's agents, hooks or skills installs only the bo
 
 1. **Given** a machine without the team installed, **When** the user follows the README's board-only instructions, **Then** the board is available and no team agent, team skill or team hook has been added.
 2. **Given** the board was installed alone, **When** the user later installs the team, **Then** the board keeps working and now also shows the team's audit, build gate and agents.
-3. **Given** the board and the team are both installed, **When** the user removes the team and keeps the board, **Then** the board keeps working in standalone mode.
+3. **Given** the board and the team are both installed, **When** the user removes the team and keeps the board (a board installed with `--board` is installed again with the README's board-only command), **Then** the board keeps working in standalone mode.
 
 ---
 
@@ -101,13 +106,13 @@ The board works in a repo that Spec Kit initialised, with or without a git repos
 - **FR-004**: In standalone mode the audit and verify phases MUST be hidden: the band, pane and status line list only the spec, plan, tasks and build phases, and no line, mark or placeholder stands in for the two hidden ones. In team mode they are shown as before.
 - **FR-005**: In standalone mode the next step MUST name only Spec Kit's own commands and the open task, never `/speckit-team` or a team agent. Examples: no spec yet leads to the specify command; spec without plan leads to the plan command; plan without tasks leads to the tasks command; open tasks lead to the first open task (and the implement command when none is ticked); all ticked leads to "ready for the PR".
 - **FR-006**: In standalone mode build MUST NOT be shown as blocked by a closed gate: with a task list present, build is current as soon as the tasks phase is done.
-- **FR-007**: The board MUST pick the standalone view per feature, by whether the team has recorded anything for that feature, not by whether the team is installed.
-- **FR-008**: When the active feature has any team record, the board's output MUST be identical to what it was before this feature (no regression for team users).
+- **FR-007**: The board MUST pick the standalone view per feature, by whether the team has recorded anything for that feature or a team agent has started in this session while it was the active feature, not by whether the team is installed.
+- **FR-008**: When the active feature has any team record, the board's output MUST be identical to what it was before this feature (no regression for team users), except that a file that exists but cannot be read shows as unreadable rather than missing (FR-011).
 - **FR-009**: The board MUST be installable without installing any of the team's agents, skills or hooks, by a route the README documents, and MUST NOT add any of them on its own.
 - **FR-010**: The board MUST update after a Spec Kit command or a hand edit changes a feature file, within the interval it already uses, without a board command.
 - **FR-011**: The board MUST NOT deny, delay or alter any Spec Kit command or any tool call, and a failure to read a file MUST be shown to the user, not swallowed (constitution III).
 - **FR-012**: The board MUST read and write nothing outside the machine, and its output MUST contain only repo-relative paths, phase names, counts and task titles taken from the feature's own task list (constitution VI).
-- **FR-013**: With no active feature, with a missing feature folder, outside a git repository, and outside a Spec Kit repository, the board MUST answer with a one-line message that says what is missing and what starts it, and MUST NOT throw.
+- **FR-013**: With no active feature, with a missing feature folder, and outside a Spec Kit repository (git or not), the board MUST answer with a one-line message that says what is missing and what starts it, and MUST NOT throw. A Spec Kit repository that is not a git repository draws its phases (US4 scenario 2).
 - **FR-014**: The standalone view MUST work on Windows, macOS and Linux, with the same output for the same files (constitution VII).
 - **FR-015**: Removing or never installing the team MUST NOT change the board's clear, hide and refresh behaviour.
 - **FR-016**: The README MUST describe the standalone use, what the board shows with and without the team, and the board-only install, in the same change (constitution VIII).
@@ -115,7 +120,7 @@ The board works in a repo that Spec Kit initialised, with or without a git repos
 ### Key Entities
 
 - **Feature**: the active Spec Kit feature, with a spec, an optional plan and an optional task list.
-- **Team record**: anything the team's hooks keep about a feature (an audit verdict, a retry count, a gatekeeper word). Its presence for a feature selects the team view for that feature.
+- **Team record**: anything the team's hooks keep about a feature (an audit verdict, a retry count, a gatekeeper word), or a team agent started in this session while the feature was active. Its presence for a feature selects the team view for that feature.
 - **View**: standalone (no team record for the feature) or team (at least one).
 
 ## Success Criteria *(mandatory)*
@@ -126,7 +131,7 @@ The board works in a repo that Spec Kit initialised, with or without a git repos
 - **SC-002**: At each of those 5 stages the current phase and next step are correct on the first refresh after the file changes, within the board's existing refresh interval (4 seconds today).
 - **SC-003**: For a team-recorded feature the board's output is byte-identical before and after this feature across the existing board test cases (0 differences).
 - **SC-004**: A user with Spec Kit installed reaches a working standalone board in at most 2 commands and with 0 team files added.
-- **SC-005**: The 4 degraded cases in User Story 4 and the edge cases each produce a message and no thrown error in 100% of test runs on all three platforms.
+- **SC-005**: The degraded cases in FR-013 and User Story 4 and the edge cases each produce a message and no thrown error in 100% of test runs on all three platforms.
 
 ## Assumptions
 
