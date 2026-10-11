@@ -20,7 +20,7 @@ const SPEC_FILES: Record<string, string> = {
   [`${FEATURE}/tasks.md`]: TASKS,
 }
 
-async function world(on: On, extra: Record<string, string> = {}, opts: { hasRecords?: boolean } = {}) {
+async function world(on: On, extra: Record<string, string> = {}, opts: { hasRecords?: boolean, store?: Record<string, unknown> } = {}) {
   const fp = await fingerprint(fingerprintFiles(FEATURE).map(path => ({ path, text: SPEC_FILES[path] ?? '<missing>' })))
   const files: Record<string, string> = {
     [`${ROOT}/.specify/feature.json`]: JSON.stringify({ feature_directory: FEATURE }),
@@ -36,7 +36,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   const commands: CommandSpec[] = []
   const opens: PaneOpenArgs[] = []
   const clock = mock.clock(on, { now: 1_000_000 })
-  mock.store(on)
+  mock.store(on, opts.store)
   // git answers only inside a repo, as the real one does.
   const runs = { n: 0, reads: 0 }
   on('process.run', (_$, e) => {
@@ -928,10 +928,9 @@ for (const [kind, record] of RECORDS) {
 }
 
 test('005 FR-007 a gatekeeper word in the plugin store alone selects the team view', async ($, on) => {
-  await world(on, {}, NO_RECORDS)
   const key = `gate:${JSON.stringify([`${ROOT}/.git/speckit-team`, FEATURE])}`
-  // The test engine has no $.store: the word is answered at the store event, as the mod's own set would leave it.
-  on('store.get', { key } as never, (() => ({ value: { word: 'APPROVED', at: new Date(1_000_000).toISOString() } })) as never)
+  // Seeded in mock.store's own entries, as the mod's own set would leave it.
+  await world(on, {}, { ...NO_RECORDS, store: { [key]: { word: 'APPROVED', at: new Date(1_000_000).toISOString() } } })
   await start($)
   expect((await STATUS($)).text).toMatch(/audit .* verify/)
 })
