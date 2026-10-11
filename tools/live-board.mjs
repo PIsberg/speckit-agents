@@ -14,7 +14,8 @@
 //     ignores that chord while the cleared band draws nothing, so the band stays hidden and L5 is
 //     not checked.
 // Needs vhs (with ttyd), git and claude on PATH; vhs runs pwsh on Windows. Exits 1 if a check fails.
-// Written against Claude Code 2.1.296 and vhs 0.11.0.
+// Written against Claude Code 2.1.296 and vhs 0.11.0; CI's live-board job runs it with 2.1.293 on
+// Linux and macOS (.github/workflows/test.yml).
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';

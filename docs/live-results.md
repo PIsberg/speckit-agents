@@ -213,8 +213,19 @@ agent's `model:` line ([#39](https://github.com/PIsberg/speckit-agents/issues/39
   the same. ctrl+x tab gives an open pane the keyboard only while the band has no buttons, so that run
   hid the band first. L5: a third spec-auditor's row and the band were back on the screen taken 4 s
   after it was asked for. L6: `git hash-object` gave the same hashes for the six files (the team
-  record, the verdict record, spec, plan, tasks and `feature.json`) before and after the clear. Not
-  checked: a click, and Linux or macOS.
+  record, the verdict record, spec, plan, tasks and `feature.json`) before and after the clear.
+- **A click on `[ clear ]` ([#117](https://github.com/PIsberg/speckit-agents/issues/117)).** The same
+  day and setup, with the keys replaced by the mouse report a terminal sends the app for a click: an
+  SGR press and release at column 57, row 34, inside the band's `[ clear ]` at 140 columns and 41
+  rows, typed with no delay so the bytes arrive together. Claude Code took it as a click: the same
+  toast, the pane's agent rows gone, the band gone and back with the third agent, the same hashes,
+  and none of the report's characters in the prompt. vhs has no mouse, so the terminal's own
+  translation of a physical click was not exercised; the bytes it would send were.
+- **In CI on Linux and macOS ([#116](https://github.com/PIsberg/speckit-agents/issues/116)).** The
+  same day, the `live-board` job (Claude Code 2.1.293, vhs 0.11.0) ran `tools/live-board.mjs` on
+  ubuntu-latest (ttyd 1.7.4) and macos-latest (ttyd 1.7.7): on both the width probe found 1549
+  pixels for 140 columns (1692 on Windows), and L3 to L6 passed with the band's `[ clear ]`, L3, L4
+  and L6 with the pane's. It runs for every pull request since.
 - **The board-only install and the standalone view ([#92](https://github.com/PIsberg/speckit-agents/issues/92)).**
   On 2026-10-11 (Windows 11, Claude Code 2.1.296, Spec Kit 1.1.2), headless and at $0, in a throwaway
   config dir: `claude plugin marketplace add PIsberg/speckit-agents` cloned this repository from

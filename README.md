@@ -1145,11 +1145,11 @@ predates the `[ clear ]` button ([#84](https://github.com/PIsberg/speckit-agents
 headless on Windows on 2026-10-11 for the board-only install and the `clear` argument. On
 2026-10-12, in an interactive session on Windows that vhs drove against a fake API at no cost,
 `[ clear ]` in the band and in the pane cleared the agent rows and the band without changing a state
-file, and a new team agent brought both back within 4 s (feature 004's checks L3 to L6).
-[`tools/live-board.mjs`](tools/live-board.mjs) repeats those checks. The record is below. **Not seen
-live:** an interactive session on Linux or macOS (band, pane, agent rows; on Linux Claude Code
-stopped at first-run login), the status line updating within the 4-second poll without a command,
-and a click on a button rather than its keys.
+file, and a new team agent brought both back within 4 s (feature 004's checks L3 to L6); a click on
+the band's `[ clear ]`, sent as the mouse report a terminal sends for one, did the same.
+[`tools/live-board.mjs`](tools/live-board.mjs) repeats those checks, and CI runs it on Linux and macOS
+for every pull request ([CI](#ci)). The record is below. **Not seen live:** the status line updating
+within the 4-second poll without a command.
 
 The record: [Live results, The board](docs/live-results.md#the-board).
 
@@ -1194,6 +1194,13 @@ run:
 ```sh
 npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
 ```
+
+A second job, `live-board`, runs the board's interactive checks on Linux and macOS
+([#116](https://github.com/PIsberg/speckit-agents/issues/116)): it installs vhs 0.11.0 from its
+release, the checksum pinned, and ttyd and ffmpeg from apt or Homebrew, then runs
+`node tools/live-board.mjs` and `node tools/live-board.mjs pane`, a real interactive Claude Code
+session against the fake API ([Board mod](#board-mod-experimental)). A failed check fails the job and
+keeps the screens vhs wrote as an artifact.
 
 ### End-to-end tests
 
