@@ -1,5 +1,18 @@
 <!--
 Sync Impact Report
+- Version change: 1.0.0 -> 1.1.0 (MINOR, 2026-10-11)
+- Modified sections: Installation Constraints, the "cost nothing without .specify/" bullet: "no
+  measurable delay" replaced by an allowance for one hook process per gated tool call, exiting with
+  no output (148 ms measured on Windows). The existing Skill gate already paid that cost; feature
+  006 adds the same gate on Agent.
+- Principles modified: none
+- Added sections: none
+- Removed sections: none
+- Templates: .specify/templates/plan-template.md (OK, Constitution Check derives gates from this file),
+  .specify/templates/spec-template.md (OK), .specify/templates/tasks-template.md (OK)
+- Deferred TODOs: none
+
+Previous report (1.0.0):
 - Version change: template -> 1.0.0 (first ratification)
 - Principles defined: I. Test-First; II. Guardrails Never Fail Silently; III. Observers Never Block;
   IV. Zero Runtime Dependencies; V. Versioned Public Contracts; VI. Local and Private by Default;
@@ -90,8 +103,9 @@ failing test or a live run exposed.
   after backing it up. Ownership is decided by the `speckit-agents: managed by install.mjs` marker.
 - It MUST validate everything it will read before writing anything, so a failure never leaves a
   half install.
-- Installed components MUST cost nothing in repositories without `.specify/`: no blocking, no
-  output, no measurable delay.
+- Installed components MUST cost nothing in repositories without `.specify/`: no blocking and no
+  output. A settings gate MAY start one hook process per gated tool call, which exits with no output
+  (148 ms measured on Windows).
 - `--uninstall` MUST remove every file and settings entry the installer added, and nothing else.
 
 ## Workflow and Quality Gates
@@ -116,4 +130,4 @@ failing test or a live run exposed.
   redefining a principle, MINOR for adding one, PATCH for wording. Each amendment updates the
   Sync Impact Report above.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-06
+**Version**: 1.1.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-11

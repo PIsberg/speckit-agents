@@ -1,4 +1,4 @@
-# /speckit-team from the idea to the product owner's first questions, the pipeline's first stop.
+# /speckit-team from the idea through the team question to the product owner's first questions, the pipeline's first two stops.
 # Recorded by record.mjs, which fills in the {{...}} fields.
 Output "{{OUTPUT}}"
 # Every frame as text, so a reviewer can search them all for account details.
@@ -28,9 +28,15 @@ Show
 
 Type "/speckit-team Let greet take a --shout flag that prints the greeting in capitals"
 Sleep 1s
+# "Enter 1" is Enter once: a bare "Enter" line below is the answer to the team question.
+Enter 1
+# The team question comes first: wait for its dialog and take the first option, Full team
+# (Recommended). Claude Code 2.1.296 draws a dialog as tabs ending in Submit, with no "Esc to cancel" line.
+Sleep 10s
+Wait+Screen@10m /Full team/
+Sleep 3s
 Enter
-# Let the slash-command menu close before waiting for the question dialog. Claude Code 2.1.296
-# draws it as tabs ending in Submit, with no "Esc to cancel" line on screen.
+# The team dialog also ends in Submit: let it close before waiting for product-owner's dialog.
 Sleep 10s
 Wait+Screen@10m /Submit|Esc to cancel/
 Sleep 8s

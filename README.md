@@ -47,8 +47,8 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
   ([The retry limit](#the-retry-limit))
-- **You decide at three stops, and you merge.** The pipeline asks you to answer the spec's
-  questions, approve the spec, and approve the plan, then stops at the pull request.
+- **You decide at four stops, and you merge.** The pipeline asks which team to use, then asks you to
+  answer the spec's questions, approve the spec, and approve the plan, then stops at the pull request.
   ([Quick start](#quick-start))
 - **A fast track for small changes.** `/speckit-patch <change>` launches one agent, `patcher`, with a
   budget of 30 production lines and 2 files, protected paths it cannot write, and no commit of its
@@ -156,6 +156,8 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
 | `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
 
+`--team` is not an installer flag: it is the first word of a `/speckit-team` request ([Choosing the team](#choosing-the-team)), and `node install.mjs --help` prints a line on it.
+
 There is no flag for the fast track: `patcher` and its two skills are always installed.
 
 #### How the installer treats your files
@@ -200,20 +202,25 @@ Then, in Claude Code:
 /speckit-team Let users export their reading list as CSV
 ```
 
+To run only some of the roles, name them: `/speckit-team --team test-writer,implementer add a hello.txt
+that says hello` skips the team question ([Choosing the team](#choosing-the-team)).
+
 Start it in a fresh session (`/clear` first): every response of the run re-reads the conversation,
 earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
 ([Feature 004](#feature-004-interactive)).
 
-`/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
+`/speckit-team` runs the whole pipeline from the main session. It stops for you at four points:
 
-1. to answer the product owner's questions;
-2. to approve the spec;
-3. to approve the plan and tasks. If `tasks.md` has two or more `[P]` slices that touch disjoint
+1. to choose the team, unless `--team` names it: the full team, build only, implement only, or
+   spec and build with no audit; 
+2. to answer the product owner's questions;
+3. to approve the spec;
+4. to approve the plan and tasks. If `tasks.md` has two or more `[P]` slices that touch disjoint
    files, this stop also asks whether to build them side by side or one at a time.
 
 In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
 template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
-and asks you to approve it, a fourth stop, then writes it with `speckit-constitution` and commits
+and asks you to approve it, a further stop, then writes it with `speckit-constitution` and commits
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself
 beforehand.
 
@@ -288,10 +295,12 @@ and the denial tells the agent whose lane production code is in.
 
 ### The pipeline
 
-`/speckit-team` launches product-owner, which writes the spec and returns its questions, and the
-main session puts them to you: the first of the pipeline's three stops.
+`/speckit-team` first asks which team to use, the team question, the first of the pipeline's four
+stops (the demo answers it with the full team). It then launches product-owner, which writes the
+spec and returns its questions, and the main session puts product-owner's questions to you: the
+second.
 
-![/speckit-team handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
+![/speckit-team asking which team to use, then handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 
 ## The team
 
@@ -355,6 +364,42 @@ hooks decide what is allowed.
 
 `/speckit-team` runs in the main session, because only the main session can talk to you. It
 launches each agent with the inputs it needs and relays the product owner's questions to you.
+
+#### Choosing the team
+
+`/speckit-team [--team <role>[,<role>...]] <request>`. `--team` counts only as the first word; names are
+case-insensitive and order does not matter. Without it the skill asks one question before any
+launch, a stop like the others: Full team (recommended), Build only (test-writer, implementer),
+Implement only (implementer), or Spec and build with no audit or verification (product-owner,
+architect, test-writer, implementer). Its free-text answer is a role list. All six roles is the full
+team. `patcher` is not a team role.
+
+The skill refuses before launching anything, naming the six valid roles: a name that is not a role;
+neither test-writer nor implementer; architect without product-owner; spec-auditor without architect.
+
+What an absent role skips, and the guardrails that go with it:
+
+| Absent role | Steps skipped | Guardrails skipped |
+|---|---|---|
+| `product-owner` | the spec, its questions, the spec review stop | none |
+| `architect` | plan and tasks, the plan stop, rounds by phase (one round instead) | spec-gatekeeper's open-task check; at the retry limit you decide, there is no architect to rethink |
+| `spec-auditor` | the audit and its FAIL routing | the audit gate on test-writer and implementer |
+| `test-writer` | the red step; the test tasks stay unticked | spec-gatekeeper's test trace and its open-task check on the test tasks |
+| `implementer` | the stub and green steps; the other tasks stay unticked | the stub pass (a test failing on a missing symbol counts as red), spec-gatekeeper's passing tests and its open-task check on those tasks |
+| `spec-gatekeeper` | verification and REJECTED routing | the recorded last word |
+
+Every run keeps the hand-over (PR and CI), each chosen agent's `scope`, `lane`, `ends` and `result`
+hooks, the retry limit while implementer is chosen, tests before implementation when both
+test-writer and implementer are chosen, and the `/speckit-implement` gate. A run that is not the full
+team starts with a one-line notice naming the skipped steps and ends with a report that lists them,
+the unticked tasks and the skipped audit gate.
+
+Without product-owner and architect the build roles work from the request text in one round, and
+with product-owner only from the approved `spec.md`; with neither, the skill creates a
+`team/<request>` branch when the tree is on `main`. Every launch prompt of such a run carries a
+`Team: test-writer, implementer` line, which the hook and spec-gatekeeper read; spec-gatekeeper's
+prompt also carries `Unbuilt: T001, T003` when test-writer or implementer is absent and `tasks.md`
+exists, naming the tasks nobody builds.
 
 #### Settling decisions
 
@@ -633,7 +678,7 @@ nothing elsewhere.
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` | `/speckit-implement`, typed by you or called by Claude, before the audit passed; on an `Agent` launch from the main session it only records the launch's `Team:` line and never decides |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
@@ -661,6 +706,12 @@ agent's last message, read by the Stop hook. The fingerprint is a SHA-256 of the
 The gate recomputes the fingerprint on every check. Any edit to those four files after a PASS
 voids it, so the auditor has to look again. Task checkboxes are normalised before hashing, so
 ticking `- [X]` while implementing does not.
+
+When the run's team lacks spec-auditor, the main session's launch writes a team record for its session
+(`speckit-team: team for this session: ...; audit gate off, spec-auditor is not in the team`), and test-writer
+and implementer of that session skip the audit check. A record that cannot be read, a record of another
+session, and a launch with no valid `Team:` line (which removes the record) all leave the full gate on. A
+typed `/speckit-implement` never reads the record.
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
 `feature_directory` may be relative to the repo or absolute; either way it must name a folder
@@ -715,7 +766,7 @@ Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#cu
 
 Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature,
-`agents/`). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+`agents/`, `team/`: one small record per session that ran a subset team). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
@@ -1273,16 +1324,16 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 201 tests:
+`npm test` runs 242 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 47 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 126 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 70 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 124 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 24 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 27 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1313,15 +1364,15 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 17
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 20
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
-  `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill` gate in
+  `SubagentHandback` tool Claude Code gives a subagent in auto mode), and the `Skill|Agent` gate in
   `settings.json`. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 17
-  fail, as do the two blocking cases above (2026-10-10, Claude Code 2.1.296). Setting
+  fire lets the action through. With the installed hook replaced by one that only exits, all 20
+  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 22 failures, none of the 20 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  19 of the 24 tests fail (the 17 scripted ones and the two blocking no-model cases); the other five
+  22 of the 27 tests fail (the 20 scripted ones and the two blocking no-model cases); the other five
   do not depend on a hook.
 - **Claude Code's own behaviour.** Three tests pin what the skill's foreground rule relies on: an
   Agent call with `run_in_background: false` runs in the foreground and returns the report; with
@@ -1375,7 +1426,7 @@ eight checks (L1 to L8) and what each expects.
 
 ### Live results
 
-Seen live from 2026-10-06 to 2026-10-10: the typed `/speckit-implement` gate, a scope denial, the
+Seen live from 2026-10-06 to 2026-10-11: the typed `/speckit-implement` gate, a scope denial, the
 audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
 full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day is below.
 
@@ -1384,6 +1435,28 @@ full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for eac
 > did run); for the fast track, the mid-run budget deny, the deny of `patcher`'s own `git commit`
 > and `git push`, a run on a repo with a remote (push and pull request), a larger change, and an
 > interactive session. Those are covered by the unit and end-to-end tests only.
+
+<details>
+<summary><b>2026-10-11</b>: Claude Code 2.1.296, Windows 11, choosing the team (006, L1 to L4), Haiku main session and agents</summary>
+
+Setup: a fresh Spec Kit repo outside this checkout, the branch's team installed into its own
+`.claude/` (`node install.mjs --claude-dir <repo>/.claude`, agents switched to `model: haiku`), the demo
+feature as the active feature with no audit recorded, runs under `claude -p --setting-sources
+project,local`, the session's `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` variables cleared.
+
+| ID | Result |
+|---|---|
+| L1 | Seen live. `/speckit-team --team test-writer,implementer add a hello.txt that says hello`: `task_started` for test-writer and implementer only; the message `speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team` on both launches; no `Implementation gate` denial; `.git/speckit-team/team/<session>.json` held the two roles; branch `team/add-hello-txt` with one commit; the final report named the skipped roles. |
+| L2 | Seen live. `--team bogus,implementer`: 1 turn, no agent launched, the reply named `bogus` and listed the six roles. |
+| L3 | Seen live. `--team spec-auditor,implementer`: 1 turn, no agent launched, the reply said spec-auditor needs architect. |
+| L4 | Partly seen. Interactive `/speckit-team <request>` (three recordings for the pipeline demo, driven by vhs) put the question with Full team first and marked Recommended, and answering it launched product-owner with no `Team:` line. Answering Build only and Esc out were **not run**: nobody drove them. |
+
+Not seen live: the pipeline demo re-recording. Three attempts of `node docs/media/record.mjs pipeline`
+got the team question and its answer, but the product owner (Haiku) returned no open questions each
+time (and, with fork subagents on, the main session was not woken by a backgrounded agent's report), so
+the tape's wait for the question dialog timed out; `docs/media/pipeline.gif` was not published.
+
+</details>
 
 <details>
 <summary><b>2026-10-10</b>: Claude Code 2.1.296, Windows 11, the fast track (L1 to L8), Haiku main session</summary>
@@ -1662,6 +1735,14 @@ up and replace it.
   `speckit-team: ... internal error` message. One case fails closed instead: a verdict file that
   cannot be read proves no PASS, so the gate stays shut and says why. Until 2026-10-06 the hook
   crashed on all of these, which allowed the action without a word.
+- **A subset team's retry count is the active feature's.** A run without a spec still counts
+  implementer's `RESULT: RED` reports against the feature `.specify/feature.json` names: 3 in a row
+  block implementer there until a GREEN, a new audit, or you delete the record, and
+  spec-gatekeeper's word replaces that feature's.
+- **Without an active feature the retry limit is the skill's.** With implementer chosen and no
+  `.specify/feature.json` naming a feature directory, no hook counts; the skill stops relaunching
+  implementer after 3 `RESULT: RED` in a row and hands you the failing output. Nothing enforces it:
+  a main session that ignores the skill can relaunch past 3. The start notice and the final report say so.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
 - **Read-only isn't airtight.** spec-auditor and spec-gatekeeper have no Write or Edit tools,

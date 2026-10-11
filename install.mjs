@@ -14,6 +14,10 @@
 //
 // After installing, /speckit-patch <change> is the fast track for small changes, and
 // /speckit-triage <request> suggests which track fits.
+//
+//   /speckit-team --team <roles> <request>   run only the roles you name (comma-separated, from
+//                                            product-owner, architect, spec-auditor, test-writer,
+//                                            implementer, spec-gatekeeper); without --team it asks
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,8 +30,9 @@ const HOOK_FILE = 'speckit-team.mjs';
 const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'patcher'];
 // settings.json gates for the main session. Agent-scoped hooks live in each agent's frontmatter.
 const SETTINGS_GATES = [
-  // Claude calling the speckit-implement skill itself.
-  { event: 'PreToolUse', matcher: 'Skill' },
+  // Claude calling the speckit-implement skill itself, and the main session launching an agent (the
+  // gate records the launch's Team line there and never decides).
+  { event: 'PreToolUse', matcher: 'Skill|Agent' },
   // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement' },
 ];

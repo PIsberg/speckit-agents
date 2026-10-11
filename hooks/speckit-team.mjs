@@ -10,7 +10,9 @@
 //   scope protected         PreToolUse Write/Edit: deny CI, Spec Kit, specs/ and .claude/ paths, the installed
 //                           team, and in the speckit-agents repo its own sources; allow the rest
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
-//                           spec-auditor has passed the current spec, plan, tasks, constitution
+//                           spec-auditor has passed the current spec, plan, tasks, constitution; skipped in a
+//                           subagent whose session's team (recorded at the main session's Agent launch from
+//                           its `Team:` line, never a decision) lacks spec-auditor
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
@@ -249,6 +251,30 @@ const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.j
 const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array.isArray(r.red) ? r.red.length : 0);
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
 
+// The team of a /speckit-team run, recorded at the main session's Agent launch (contracts/team-choice.md, 7).
+const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const SESSION_ID = /^[\w-]{1,128}$/;
+const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
+// null: not a string or no Team line; { bad }: the first word that is no role ('' for none).
+function parseTeam(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const m = /^Team:(.*)$/m.exec(prompt);
+  if (!m) return null;
+  const words = m[1].split(',').map((w) => w.trim().toLowerCase()).filter(Boolean);
+  if (!words.length) return { bad: '' };
+  const bad = words.find((w) => !TEAM_ROLES.includes(w));
+  if (bad !== undefined) return { bad };
+  return { roles: TEAM_ROLES.filter((r) => words.includes(r)) };
+}
+// The session's recorded roles, or null when missing or unreadable (the full gates then apply).
+function teamOf() {
+  const id = str(input.session_id);
+  if (!id || !SESSION_ID.test(id)) return null;
+  const r = readState(teamFile(id));
+  return r && Array.isArray(r.roles) && r.roles.every((x) => TEAM_ROLES.includes(x)) ? r.roles : null;
+}
+const auditSkipped = () => Boolean(agentId) && Boolean(teamOf()) && !teamOf().includes('spec-auditor');
+
 function auditProblem() {
   const feat = feature();
   if (!feat) return 'no active feature: .specify/feature.json has no feature_directory inside the repo';
@@ -353,18 +379,31 @@ if (mode === 'gate') {
   if (typed && !/(^|:)speckit[-.]implement$/.test(input.command_name || '')) process.exit(0);
   // Reporting back is not work. Gating SubagentHandback leaves a blocked agent unable to say so.
   if (event === 'PreToolUse' && input.tool_name === 'SubagentHandback') process.exit(0);
+  if (event === 'PreToolUse' && input.tool_name === 'Agent') {
+    // Never a decision: only the team record changes. A subagent's launch records nothing.
+    const id = str(input.session_id);
+    if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
+    const team = parseTeam(input.tool_input.prompt);
+    if (!team) { fs.rmSync(teamFile(id), { force: true }); process.exit(0); }
+    if ('bad' in team) {
+      fs.rmSync(teamFile(id), { force: true });
+      emit({ systemMessage: `speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply` });
+    }
+    writeJson(teamFile(id), { session_id: id, roles: team.roles, at: new Date().toISOString() });
+    emit({ systemMessage: `speckit-team: team for this session: ${team.roles.join(', ')}; audit gate ${team.roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}` });
+  }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
     const ti = input.tool_input || {};
     if (!/(^|:)speckit[-.]implement$/.test(ti.skill_name || ti.skill || ti.name || '')) process.exit(0);
   }
-  const problem = auditProblem();
+  const problem = auditSkipped() ? null : auditProblem();
   if (problem) {
     const reason = `Implementation gate: ${problem}. Run @agent-spec-auditor and get VERDICT: PASS first.`;
     if (typed) block(reason);
     deny(reason);
   }
-  if (args[0] === 'retries') {
-    const feat = feature();
+  const feat = feature();
+  if (args[0] === 'retries' && feat) {
     const r = readState(retryFile(feat));
     if (r === null) {
       deny(`Retry limit: the retry record for ${feat} is unreadable, so no further attempt can be allowed. `
@@ -453,7 +492,7 @@ if (mode === 'result') {
   const result = found ? found[1].toUpperCase() : 'RED';
   if (done) writeJson(done, { result });
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
-  const closed = auditProblem();
+  const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
   const f = retryFile(feat);
   const prev = readState(f);
