@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...] <feature idea>"
+argument-hint: "[--team <role>,<role>...|noagents] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -98,6 +98,13 @@ pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`,
 `spec-gatekeeper`; `patcher` is not a team role (it is the fast track's). All six named is the full
 team, the same run as without `--team`.
 
+`--team noagents` (the list is the one word `noagents`, in any case) runs no agent at all: you run
+Spec Kit's own skills in this session by `## No agents`, which replaces steps 0b to 6. It is chosen
+only by typing it, because the hook reads the typed command to let this session's
+`speckit-implement` past the audit gate. So it is not one of the question's options, and a
+free-text answer of `noagents` is not that choice: say in one line that it is typed as
+`/speckit-team --team noagents <request>`, and stop.
+
 With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
 1. Full team (Recommended): all six roles.
 2. Build only: test-writer, implementer.
@@ -110,6 +117,7 @@ Before anything is launched, refuse in one message that says why and lists the s
 - a name that is not a team role (also `--team` followed straight by the request: its first word
   is the unknown name): that name is not a team role;
 - an empty team: no roles named;
+- `noagents` with a role: no agents means no roles;
 - neither `test-writer` nor `implementer`: one of them is required;
 - `architect` without `product-owner`: architect plans from product-owner's spec;
 - `spec-auditor` without `architect`: spec-auditor audits architect's plan and tasks.
@@ -126,6 +134,28 @@ Skipped rows, per absent role:
 - test-writer: the red step and the test tasks, which stay unticked.
 - implementer: the stub and green steps; its tasks stay unticked.
 - spec-gatekeeper: verification and REJECTED routing, the recorded last word.
+
+## No agents
+Only when the arguments start `--team noagents`. You run Spec Kit's own skills in this session: no
+Agent call at all, and no `Team:` line. Tell the user in one line that no agent runs, so the audit,
+the verification and every agent hook are skipped, and step 0b with them. Step 0 holds, except its
+Agent tool check. Wait only at the two stops below.
+1. **Spec.** Invoke the `speckit-specify` skill with the request text. Ask each open question (a
+   `[NEEDS CLARIFICATION]` marker; at most 5, the most impactful first) with AskUserQuestion,
+   recommended answer first, and write each answer into the requirement it settles and under
+   `## Clarifications` as `- Q: <question> → A: <answer>`. The work goes on a feature branch, as in
+   step 1. **Stop:** the user reviews `spec.md`; on approval, commit it.
+2. **Plan and tasks.** Invoke `speckit-plan`, then `speckit-tasks`. **Stop:** ask about every choice
+   the plan leaves open, recommended option first, then the user approves `plan.md` and `tasks.md`;
+   on approval, commit them.
+3. **Build.** Invoke `speckit-implement`. The hook lets it past the audit gate because the user typed
+   `--team noagents`. If it is denied anyway, the hook did not see the typed command (an older
+   Claude Code, or a request not typed that way): stop, and tell the user to run
+   `@agent-spec-auditor` or to start again by typing the command. Run the tests that cover each
+   task, and the full suite once at the end. After 3 failed runs of the same tests in a row, stop
+   fixing and hand the failing output to the user.
+4. **Hand over** by step 7; the report names the skipped audit, verification and agent hooks
+   instead of roles.
 
 ## 0b. Constitution (only while it is the template)
 Run this step only when the team has architect, spec-auditor or spec-gatekeeper, the roles that
