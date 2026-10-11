@@ -107,7 +107,7 @@ L1 shows it live (T018).
 
 ### Slice 4: the team choice at the start of a run
 
-- [ ] T008 [US1] Test in `test/install.test.mjs` (helpers `claudeDir`, `install`, `flat`, `AGENTS`)
+- [X] T008 [US1] Test in `test/install.test.mjs` (helpers `claudeDir`, `install`, `flat`, `AGENTS`)
   that the installed `skills/speckit-team/SKILL.md` carries contract sections 1 to 3 and 6: covers
   FR-001, FR-002, FR-005, FR-006, US1-3, US1-5, US2-1 and the Edge Cases on unknown names, empty
   teams, names given twice and case and order. Not settled there: the skill's six role names equal
@@ -122,7 +122,7 @@ L1 shows it live (T018).
 
 ### Slice 5: every step follows the team
 
-- [ ] T010 [US1] Test in `test/install.test.mjs` that the installed skill guards each of its steps
+- [X] T010 [US1] Test in `test/install.test.mjs` that the installed skill guards each of its steps
   by role and runs the brief round: covers FR-003, FR-004, FR-007, FR-008, FR-012, US1-1, US1-2,
   US1-4, US3-3, SC-001, SC-003, SC-005 and the Edge Case on a role whose input no chosen role
   writes. Not settled elsewhere: steps 1, 2, 3 and 6 each name their role as the condition; findings
@@ -156,7 +156,7 @@ L1 shows it live (T018).
 
 ### Slice 6: the build roles take a brief and the Team line
 
-- [ ] T012 [US1] Test in `test/install.test.mjs` that the installed `agents/test-writer.md`,
+- [X] T012 [US1] Test in `test/install.test.mjs` that the installed `agents/test-writer.md`,
   `agents/implementer.md` and `agents/spec-gatekeeper.md` follow contract sections 4 to 6: covers
   FR-007 (spec-gatekeeper's checks), FR-012, SC-003, SC-005. Not settled there: test-writer and
   implementer read a brief in their prompt in place of task IDs and tick nothing then; test-writer,

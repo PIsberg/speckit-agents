@@ -707,3 +707,175 @@ test('the gate entry matches Skill and Agent, replaces the older Skill-only one,
   assert.deepEqual(gates(settingsOf(dir)), []);
   assert.deepEqual(settingsOf(dir).hooks, { PreToolUse: [UNRELATED] });
 });
+
+// 006 slices 4 to 6 (T008, T010, T012): the prompts carry contract sections 1 to 6 of
+// specs/006-choose-team-size/contracts/team-choice.md. The prompts are read as installed.
+const TEAM_ORDER = AGENTS.filter((a) => a !== 'patcher');
+const teamSkill = () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  return fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n');
+};
+const installedAgent = (a) => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  return flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
+};
+// The text of one `## ` section, heading line included, up to the next `## ` heading.
+function skillSection(skill, heading) {
+  const at = skill.indexOf(`\n${heading}`);
+  assert.ok(at >= 0, `skill has a section ${heading}`);
+  const rest = skill.slice(at + 1);
+  const next = rest.indexOf('\n## ', 3);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+// The first 400 characters after a section's heading line: where a role condition must stand.
+const sectionHead = (skill, heading) => flat(skillSection(skill, heading).split('\n').slice(1).join('\n')).slice(0, 400);
+
+test('006 T008 FR-001 FR-005 FR-006: skill takes --team, names the six roles as the hook does, refuses before any launch', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /--team/);
+  assert.ok(skill.indexOf('\n## 0. Preconditions') < skill.indexOf('\n## Team'), '## Team comes after ## 0. Preconditions');
+  assert.ok(skill.indexOf('\n## Team') < skill.indexOf('\n## 0b.'), '## Team comes before ## 0b.');
+  const team = flat(skillSection(skill, '## Team'));
+  const hookSrc = fs.readFileSync(path.join(path.dirname(INSTALL), 'hooks', 'speckit-team.mjs'), 'utf8');
+  const inHook = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
+  assert.deepEqual(inHook, TEAM_ORDER, 'TEAM_ROLES in the hook equals agents/*.md without patcher');
+  const listed = new RegExp(TEAM_ORDER.map((r) => '`?' + r + '`?').join('[,\\s]+(?:and\\s+)?'));
+  assert.match(team, listed, 'the six role names, in pipeline order');
+  assert.match(team, /patcher/, 'patcher is named as not a team role');
+  assert.match(team, /first word/i, '--team counts only as the first word');
+  assert.match(team, /case-insensitive|case insensitive|regardless of case/i);
+  assert.match(team, /twice|once/i, 'a name given twice counts once');
+  assert.match(team, /order/i, 'order does not matter');
+  assert.match(team, /ends? (in|with) a comma|does not end in a comma/i, 'the role list ends at the first word without a trailing comma');
+  assert.match(team, /all six|every role|full team/i);
+  assert.match(team, /before (anything|any agent|the first|launching)|nothing is launched|before any launch/i, 'the refusal comes before any launch');
+  assert.match(team, /not a team role/i, 'unknown name refusal reason');
+  assert.match(team, /empty/i, 'empty team refused');
+  assert.match(team, /neither `?test-writer`? nor `?implementer`?/i, 'neither build role refused');
+  assert.match(team, /`?architect`? without `?product-owner`?/i);
+  assert.match(team, /`?spec-auditor`? without `?architect`?/i);
+  assert.match(team, /one-line|one line/i, 'the start notice is one line');
+  assert.match(team, /skipped/i, 'the start notice names the skipped steps');
+});
+
+test('006 T008 FR-002 US2-1: the Team line is quoted exactly, in pipeline order, and a full-team run has none', () => {
+  const skill = teamSkill();
+  assert.ok(flat(skill).includes('Team: test-writer, implementer'), 'the line is quoted in the contract form');
+  const handoffs = flat(skillSection(skill, '## Handoffs'));
+  assert.match(handoffs, /`?Team:`? line/);
+  assert.match(handoffs, /full[- ]team run[^.]*\b(no|without|not)\b[^.]*Team|Team[^.]*\b(no|not|never)\b[^.]*full[- ]team/i, 'a full-team run carries no Team line');
+  assert.match(handoffs, /lower case|lowercase/i);
+  assert.match(handoffs, /pipeline order/i);
+});
+
+test('006 T010 FR-003 FR-004 FR-007 US1-1: every step names its role as its condition', () => {
+  const skill = teamSkill();
+  const cond = (heading, role) => assert.match(sectionHead(skill, heading), new RegExp(`\\b(only|skip|unless|without|when|if)\\b[^]*?${role}`, 'i'), `${heading} opens with the condition on ${role}`);
+  cond('## 1.', 'product-owner');
+  cond('## 2.', 'architect');
+  cond('## 3.', 'spec-auditor');
+  cond('## 6.', 'spec-gatekeeper');
+  const zero = sectionHead(skill, '## 0b.');
+  for (const r of ['architect', 'spec-auditor', 'spec-gatekeeper']) assert.ok(zero.includes(r), `## 0b. condition names ${r}`);
+  assert.match(zero, /only|skip/i);
+});
+
+test('006 T010 FR-004 FR-008: findings and REJECTED reasons go to a chosen role, otherwise to the user', () => {
+  const skill = teamSkill();
+  const audit = flat(skillSection(skill, '## 3.'));
+  assert.match(audit, /not (in the team|chosen)|absent|unchosen/i);
+  assert.match(audit, /user/);
+  const verify = flat(skillSection(skill, '## 6.'));
+  assert.match(verify, /REJECTED[^.]*(not chosen|absent|unchosen|chosen)/i);
+  assert.match(verify, /user/);
+});
+
+test('006 T010 FR-012 US1-2 US1-4: without product-owner the skill makes the team/ branch before the first launch, then runs one brief round', () => {
+  const raw = teamSkill();
+  const skill = flat(raw);
+  assert.ok(skill.includes('git switch -c team/'), 'the branch command of contract section 4');
+  assert.match(skill, /kebab case/);
+  assert.match(skill, /at most 40 characters/);
+  assert.match(skill, /(main|master)[^.]*before the first launch|before the first launch[^.]*(main|master)/i);
+  const build = flat(skillSection(raw, '## 4-5.'));
+  assert.match(build, /brief/i);
+  assert.match(build, /one round/i);
+  assert.match(build, /request text|approved `?spec\.md`?/i, 'the brief is the request text or the spec');
+  assert.match(build, /`last round`/);
+  assert.match(build, /stub pass[^.]*only when[^.]*missing production symbol|missing production symbol[^.]*stub/i);
+  assert.match(build, /tick nothing|ticks nothing|no `?tasks\.md`?/i);
+});
+
+test('006 T010 FR-007 SC-003 contract 5: unbuilt tasks, the Unbuilt: line and the start of spec-gatekeeper', () => {
+  const skill = teamSkill();
+  assert.ok(flat(skill).includes('Unbuilt: T001, T003, T005'), 'the line is quoted in the contract form');
+  const verify = flat(skillSection(skill, '## 6.'));
+  assert.match(verify, /`?Unbuilt:`? line/);
+  assert.match(verify, /implementer[^.]*absent|absent[^.]*implementer|without implementer/i, 'no implementer launched for an absent role');
+  assert.match(verify, /test-writer[^.]*`?RED`?/, 'spec-gatekeeper starts after the last test-writer RED when implementer is absent');
+  assert.match(verify, /chosen roles'? tasks|tasks of the chosen roles|task of a chosen role/i, 'the unticked-task rule is limited to the chosen roles');
+  const handoffs = flat(skillSection(skill, '## Handoffs'));
+  assert.match(handoffs, /spec-gatekeeper:[^]*`?Unbuilt:`?/, 'Handoffs names the Unbuilt: line for spec-gatekeeper');
+  assert.match(handoffs, /next launch[^.]*(whichever|any) role|(whichever|any) role[^.]*next launch/i, 'approved files are committed with the next launch, whichever role');
+});
+
+test('006 T010 FR-007 D7: with no active feature the skill counts implementer REDs and hands the output to the user', () => {
+  const build = flat(skillSection(teamSkill(), '## 4-5.'));
+  assert.match(build, /no active feature/i);
+  assert.match(build, /3 (implementer )?(`?RESULT: RED`?|REDs?) in a row/);
+  assert.match(build, /(hand|give)s? the (failing )?output to the user/i);
+  assert.match(build, /After 3 REDs in a row the hook blocks implementer/, 'the existing sentence still stands');
+});
+
+test('006 T010 FR-008 SC-005: the final report lists roles that ran, skipped rows, unticked tasks and the D7 count', () => {
+  const report = flat(skillSection(teamSkill(), '## 7.'));
+  assert.match(report, /roles? that ran|ran\b/i);
+  assert.match(report, /skipped/i);
+  assert.match(report, /unticked/i);
+  assert.match(report, /retry limit[^.]*skill'?s count|skill'?s count[^.]*retry limit/i);
+});
+
+test('006 T010 FR-004 FR-005: step 0b runs only for architect, spec-auditor or spec-gatekeeper; without product-owner the draft goes with the first launch', () => {
+  const zero = flat(skillSection(teamSkill(), '## 0b.'));
+  assert.match(zero, /without `?product-owner`?[^.]*(first launch|commit)|(first launch|commit)[^.]*without `?product-owner`?/i);
+  assert.match(zero, /first launch/);
+  assert.match(zero, /template stays|skipped/i);
+});
+
+test('006 T010 FR-007 contract 5 (implementer row): without implementer a missing production symbol is red, a syntax error is still sent back, no stub step', () => {
+  const build = flat(skillSection(teamSkill(), '## 4-5.'));
+  assert.match(build, /(implementer is absent|without `?implementer`?|`?implementer`? (is )?absent)/i);
+  assert.match(build, /missing production symbol or module[^.]*(red|lists)/i);
+  assert.match(build, /syntax error[^.]*(sent|send)[^.]*back|still sends? back a syntax error/i);
+  assert.match(build, /no stub (step|pass)|runs no stub|stub step[^.]*(skipped|not run)/i);
+  assert.match(build, /A syntax error, a missing import or module, an undefined name or a compile error is a broken test/, 'the existing rule still stands for the full team');
+});
+
+test('006 T012 FR-012 contract 4: test-writer and implementer read a brief in place of task IDs and tick nothing', () => {
+  for (const a of ['test-writer', 'implementer']) {
+    const body = installedAgent(a);
+    assert.match(body, /brief/i, `${a} reads a brief`);
+    assert.match(body, /in place of (the )?task IDs|instead of (the )?task IDs/i, `${a}: brief in place of task IDs`);
+    assert.match(body, /tick nothing|ticks nothing|do not tick|no `?tasks\.md`?/i, `${a} ticks nothing for a brief`);
+  }
+});
+
+test('006 T012 FR-007 contract 5: test-writer without implementer in the Team line lists a missing production symbol and ends RED', () => {
+  const body = installedAgent('test-writer');
+  assert.match(body, /`?Team:`? line/);
+  assert.match(body, /lacking `?implementer`?|without `?implementer`?|no `?implementer`?|`?implementer`? is (absent|not in)/i);
+  assert.match(body, /instead of `?BLOCKED`?/i);
+});
+
+test('006 T012 FR-007 SC-003 SC-005 contract 5: spec-gatekeeper reads Team: and Unbuilt:, skips only Unbuilt IDs, reports absent-role checks as skipped', () => {
+  const body = installedAgent('spec-gatekeeper');
+  assert.match(body, /`?Team:`?/);
+  assert.match(body, /`?Unbuilt:`?/);
+  assert.match(body, /skips? (exactly )?(the )?`?Unbuilt:?`? (IDs|tasks)|`?Unbuilt:?`? IDs[^.]*skip/i, 'skips exactly the Unbuilt IDs');
+  assert.match(body, /any other (open )?task[^.]*(rejects?|REJECTED)|other (open )?tasks? still/i, 'any other open task still rejects');
+  assert.match(body, /no `?tasks\.md`?[^.]*skip|skips?[^.]*no `?tasks\.md`?/i, 'no tasks.md skips the open-task check');
+  assert.match(body, /skipped[^.]*not (as )?a (REJECTED )?(reason|rejection)|not (as )?a REJECTED reason[^.]*skipped/i, 'a check whose role is absent is skipped, not a reason');
+  assert.match(body, /no `?spec\.md`?[^.]*brief|brief[^.]*no `?spec\.md`?/i, 'traces the brief when there is no spec.md');
+});
