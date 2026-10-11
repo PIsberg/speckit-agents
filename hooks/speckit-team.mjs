@@ -19,7 +19,9 @@
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
 //                           --record keeps the accepted word for the feature (spec-gatekeeper's)
-//   lane tests|no-tests     SubagentStop: check the agent's whole diff, including Bash writes
+//   start                   SubagentStart of product-owner and architect: record where the agent started, for
+//                           the lane check at its Stop; never a decision
+//   lane tests|no-tests|only <prefix>...  SubagentStop: check the agent's whole diff, including Bash writes
 //   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
 //                           or it runs a history/remote command or a wholesale restore; SubagentHandback, SubagentStop and
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
@@ -110,6 +112,7 @@ const WIRED = {
   result: ['PreToolUse', 'SubagentStop', 'Stop'],
   ends: ['PreToolUse', 'SubagentStop', 'Stop'],
   lane: ['SubagentStop', 'Stop'],
+  start: ['SubagentStart'],
   patch: ['PreToolUse', 'SubagentStop', 'Stop'],
 };
 const who = input.agent_type || 'the main session';
@@ -221,6 +224,9 @@ function testsAt(rev) {
   return testsAtMemo.get(rev);
 }
 const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
+// A prefix ending in / is a directory; anything else must match the whole path.
+const inPrefixes = (prefixes, rel) => prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)));
+const AGENT_ID = /^[\w-]{1,128}$/;
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
 // joined under the root as-is it named four missing files, and that fingerprint never went stale.
@@ -367,8 +373,7 @@ if (mode === 'scope') {
     deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
       + 'Report this to the user, who fixes the file; do not edit it yourself.');
   }
-  // A prefix ending in / is a directory; anything else must match the whole path.
-  if (rule === 'only' && !prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)))) {
+  if (rule === 'only' && !inPrefixes(prefixes, rel)) {
     deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
       + 'Tests belong to test-writer and production code to implementer: report what should change instead.');
   }
@@ -577,8 +582,19 @@ if (mode === 'ends') {
   process.exit(0);
 }
 
+// product-owner and architect have no gate to record their start on a first tool call, so the settings.json
+// entry records it here, at SubagentStart, for the lane check at their Stop (#88). Never a decision.
+if (mode === 'start') {
+  if (!agentId || !AGENT_ID.test(agentId) || fs.existsSync(baseFile(agentId))) process.exit(0);
+  const sha = git(root, 'rev-parse', 'HEAD');
+  if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
+  process.exit(0);
+}
+
 if (mode === 'lane') {
-  const rule = args[0];
+  // `only <prefix>...` holds product-owner and architect to the prefixes of their scope rule.
+  const [rule, ...prefixes] = args;
+  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : inLane(rule, rel));
   const f = agentId && baseFile(agentId);
   const base = f && readState(f);
   if (!base) {
@@ -589,12 +605,12 @@ if (mode === 'lane') {
   if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) {
     emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
   }
-  if (testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
+  if (rule !== 'only' && testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
   // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
   if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) {
     emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start commit ${base.sha.slice(0, 12)} is not in this repo.` });
   }
-  const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !inLane(rule, rel));
+  const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel));
   if (outside.length && !input.stop_hook_active) {
     block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
       + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
@@ -628,6 +644,16 @@ function teamState() {
 const teamChanged = (before) => {
   const now = teamState();
   return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter((k) => (before[k] ?? null) !== (now[k] ?? null)).sort();
+};
+// The remote-tracking refs, name to commit. A push or a fetch moves one, whatever the command that did
+// it looked like, so this is checked by outcome, not by reading commands (#72).
+function remoteRefs() {
+  return Object.fromEntries(lines(git(root, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/remotes')).map((l) => l.split(' ')));
+}
+const remotesChanged = (before) => {
+  const now = remoteRefs();
+  return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter((k) => before[k] !== now[k]).sort()
+    .map((k) => (before[k] === undefined ? `${k} (new)` : now[k] === undefined ? `${k} (deleted)` : k));
 };
 function measure(start) {
   const sha = start.sha;
@@ -1050,6 +1076,13 @@ function endCheck(start, viaHandback, key, acceptedFile) {
       + 'The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
       + 'Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.' });
   }
+  // A push cannot be taken back by the agent, so this fails the run rather than blocking the stop.
+  const moved = remotesChanged(start.remotes);
+  if (moved.length) {
+    emit({ systemMessage: `fast track FAILED: remote-tracking refs changed during the run: ${moved.join(', ')}. `
+      + 'A push or a fetch happened, which the fast track never does, so the end check did not accept the run: /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
+      + 'Check the remote for a pushed branch or a pull request before you run the change again.' });
+  }
   if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
     emit({ systemMessage: `fast track stopped: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
       + (m.binary.length ? `; binary production files: ${m.binary.join(', ')}` : '')
@@ -1075,12 +1108,13 @@ if (mode === 'patch') {
     if (!sha) deny('Fast track: this repo has no commit to measure the change from. Commit first, or use /speckit-team.');
     const dirty = Object.fromEntries(changedSince('HEAD').map((rel) => [rel, stateOf(rel)]));
     fs.mkdirSync(path.dirname(f), { recursive: true });
-    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, team: teamState(), at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
+    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, team: teamState(), remotes: remoteRefs(), at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
   }
   const start = readState(f);
   const plain = (o) => o && typeof o === 'object' && !Array.isArray(o);
   if (!plain(start) || typeof start.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(start.sha) || !plain(start.dirty)
     || !plain(start.team) || !Object.values(start.team).every((v) => v === null || (typeof v === 'string' && HEX64.test(v)))
+    || !plain(start.remotes) || !Object.values(start.remotes).every((v) => typeof v === 'string' && /^[0-9a-f]{40,64}$/.test(v))
     || !Object.values(start.dirty).every((v) => v === null || (typeof v === 'string' && HEX64.test(v)))
     || git(root, 'cat-file', '-e', `${start.sha}^{commit}`) === null) {
     if (isEnd) emit({ systemMessage: `speckit-team: fast-track check could not run for ${who}: ${f} is unreadable or names a commit this repo does not have.` });
@@ -1094,6 +1128,11 @@ if (mode === 'patch') {
       + 'Report this to the user, who fixes and commits the file, then starts a new run.');
   }
   if (isEnd) endCheck(start, viaHandback, key, acceptedFile);
+  const moved = remotesChanged(start.remotes);
+  if (moved.length) {
+    deny(`Fast track: remote-tracking refs changed during the run: ${moved.join(', ')}. A push or a fetch happened, which the fast track never does. `
+      + 'Stop and report ESCALATE; the developer checks the remote.');
+  }
   const ti = input.tool_input || {};
   const given = ti.file_path ?? ti.notebook_path;
   if (['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name) && str(given)) {
