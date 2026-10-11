@@ -54,9 +54,14 @@ jobs:
 
   # The board's interactive checks, feature 004's L3 to L6: tools/live-board.mjs lets vhs drive a real
   # Claude Code session against a fake API (no login, no model, $0) and fails on a failed check. On
-  # Linux, where ttyd and ffmpeg come from apt and vhs from its release, its checksum pinned (#116).
+  # Linux and macOS; vhs comes from its release with the checksum pinned, ttyd and ffmpeg from apt or
+  # Homebrew (#116). Windows is not in the matrix; the tool's runs there are in docs/live-results.md.
   live-board:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
@@ -69,7 +74,8 @@ jobs:
           node-version: 22
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code@2.1.293
-      - name: Install vhs 0.11.0, ttyd and ffmpeg
+      - name: Install vhs 0.11.0, ttyd and ffmpeg (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ttyd ffmpeg
@@ -77,6 +83,15 @@ jobs:
           echo "99cb634587eaae0473c1ea377db80c3a048c27f99fe0a7febb1a1e8cb7ee5009  $RUNNER_TEMP/vhs.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/vhs.tar.gz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/vhs_0.11.0_Linux_x86_64" >> "$GITHUB_PATH"
+      # macos-latest is Apple silicon.
+      - name: Install vhs 0.11.0, ttyd and ffmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install ttyd ffmpeg
+          curl -fsSL -o "$RUNNER_TEMP/vhs.tar.gz" https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Darwin_arm64.tar.gz
+          echo "eec91ee450ba50b6d4fce2800593b2ac5fdd88a73056367d2c3b870ee44de3f7  $RUNNER_TEMP/vhs.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/vhs.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/vhs_0.11.0_Darwin_arm64" >> "$GITHUB_PATH"
       - run: vhs --version && ttyd --version && claude --version
       - name: L3 to L6, pressing the band's [ clear ]
         run: node tools/live-board.mjs band "$RUNNER_TEMP/live-band"
@@ -87,7 +102,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: live-board-screens
+          name: live-board-screens-${{ matrix.os }}
           path: |
             ${{ runner.temp }}/live-*/frames.txt
             ${{ runner.temp }}/live-*/probe-*.txt
