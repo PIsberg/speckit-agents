@@ -636,3 +636,52 @@ test('a marketplace the user added is not removed with the board', { skip: noCla
   assert.equal(boardIn(dir), undefined);
   assert.ok(marketsIn(dir).includes('speckit-agents'));
 });
+
+// 005 US2, D2-A, D6-A: a board the user installed (here from the checkout's marketplace, standing in for
+// the GitHub one) is not the installer's to remove; a board --board installed still is.
+const userBoard = (dir) => {
+  assert.equal(claudeIn(dir, 'plugin', 'marketplace', 'add', path.dirname(INSTALL)).status, 0);
+  const p = claudeIn(dir, 'plugin', 'install', 'speckit-board@speckit-agents', '--scope', 'user');
+  assert.equal(p.status, 0, p.stdout + p.stderr);
+  assert.ok(boardIn(dir));
+};
+const manifestPath = (dir) => path.join(dir, 'hooks', 'speckit-agents.install.json');
+
+test('005 D6-A: a board the user installed survives --board then --uninstall, with its marketplace', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  userBoard(dir);
+  const i = install(dir, '--board');
+  assert.equal(i.status, 0, i.stdout + i.stderr);
+  assert.doesNotMatch(i.stdout, /git pull/, 'the board is not read from this checkout, so no git pull advice');
+  const before = fs.readFileSync(manifestPath(dir));
+  const again = install(dir, '--board');
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  assert.deepEqual(fs.readFileSync(manifestPath(dir)), before, 'a rerun leaves the manifest byte for byte');
+  const u = install(dir, '--uninstall');
+  assert.equal(u.status, 0, u.stdout + u.stderr);
+  assert.ok(boardIn(dir), 'the user\'s board is still installed');
+  assert.ok(marketsIn(dir).includes('speckit-agents'), 'and so is its marketplace');
+});
+
+test('005 D6-A: a board the user installed survives --board then --no-board, with its marketplace', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  userBoard(dir);
+  assert.equal(install(dir, '--board').status, 0);
+  const off = install(dir, '--no-board');
+  assert.equal(off.status, 0, off.stdout + off.stderr);
+  assert.ok(boardIn(dir), 'the user\'s board is still installed');
+  assert.ok(marketsIn(dir).includes('speckit-agents'), 'and so is its marketplace');
+});
+
+test('005 D6-A: a board --board installed is still removed, also from a manifest without addedPlugin', { skip: noClaude }, () => {
+  const dir = claudeDir();
+  assert.equal(install(dir, '--board').status, 0);
+  assert.ok(boardIn(dir));
+  const m = JSON.parse(fs.readFileSync(manifestPath(dir), 'utf8'));
+  delete m.addedPlugin;
+  fs.writeFileSync(manifestPath(dir), `${JSON.stringify(m, null, 2)}\n`);
+  const u = install(dir, '--uninstall');
+  assert.equal(u.status, 0, u.stdout + u.stderr);
+  assert.equal(boardIn(dir), undefined);
+  assert.ok(!marketsIn(dir).includes('speckit-agents'));
+});
