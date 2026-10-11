@@ -135,3 +135,23 @@ test('the README\'s board commands are the arguments the mod registers', () => {
   const documented = [...section.matchAll(/^\| `\/speckit-board ([^`\s]+)`/gm)].map((m) => m[1]).sort();
   assert.deepEqual(documented, registered);
 });
+
+// 005 FR-009, FR-016, SC-004, D2-A: the README documents exactly two board-only commands, and the
+// install names the plugin and marketplace the repo defines.
+test('the README\'s board-only install is two commands naming the plugin and marketplace', () => {
+  const plugin = JSON.parse(fs.readFileSync(path.join(MOD, '.claude-plugin', 'plugin.json'), 'utf8')).name;
+  const market = JSON.parse(fs.readFileSync(path.join(ROOT, '.claude-plugin', 'marketplace.json'), 'utf8')).name;
+  const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8').replace(/\r\n/g, '\n');
+  const board = readme.slice(readme.indexOf('## Board mod (experimental)'));
+  const from = board.indexOf('### Installing the board');
+  assert.ok(from >= 0, 'README has no Installing the board section');
+  const rest = board.slice(from + 1);
+  const next = rest.search(/\n##+ /);
+  const section = next < 0 ? rest : rest.slice(0, next);
+  const blocks = [...section.matchAll(/```(?:sh|bash)?\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const lines = blocks.flatMap((b) => b.split('\n').map((l) => l.replace(/\s+#.*$/, '').trim()))
+    .filter((l) => /^claude plugin /.test(l));
+  assert.equal(lines.length, 2, `board-only commands: ${JSON.stringify(lines)}`);
+  assert.match(lines[0], /^claude plugin marketplace add \S+/);
+  assert.equal(lines[1].replace(/\s+--scope\s+\S+/, ''), `claude plugin install ${plugin}@${market}`);
+});

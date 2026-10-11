@@ -5,7 +5,7 @@ import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState } from
 import {
   COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, wordColor, bandLayout, bar, boardText, current,
   derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
-  clearFailedText, clearText, roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
+  ancestors, clearFailedText, clearText, noticeText, roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
 } from './model'
 
 const PANE = 'speckit-board'
@@ -14,25 +14,32 @@ const POLL_MS = 4000
 const TEAM_ROWS = 6
 
 const board = atom({ plugin: 'speckit-board', key: 'board' } as const, null)
+const notice = atom({ plugin: 'speckit-board', key: 'notice' } as const, '')
 const agents = atom({ plugin: 'speckit-board', key: 'agents' } as const, [])
 const isBandHidden = atom({ plugin: 'speckit-board', key: 'isBandHidden' } as const, false)
 const isCleared = atom({ plugin: 'speckit-board', key: 'isCleared' } as const, false)
+// Features a team agent started on in this session (D1-A); clear does not touch it.
+const teamFeatures = atom({ plugin: 'speckit-board', key: 'teamFeatures' } as const, [])
 const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
 
-type Repo = { root: string; stateDir: string }
+// `stateDir` is the team hook's record folder, which only a git repository has.
+type Repo = { root: string; stateDir?: string }
 
 // Found again on every load: a reload starts module variables over.
 let repo: Repo | null = null
 let ticker: { cancel: () => void } | null = null
 const handbacks = new Map<string, string>()
 
-function readText($: EngineInterface, path: string): Promise<string | undefined> {
-  return $.fs.read(path).catch(() => undefined)
+// `undefined` missing, `null` exists but the read failed.
+async function readText($: EngineInterface, path: string): Promise<string | null | undefined> {
+  try { return await $.fs.read(path) } catch {
+    return (await $.fs.exists(path).catch(() => false)) ? null : undefined
+  }
 }
 
 async function readJson($: EngineInterface, path: string): Promise<unknown> {
   const text = await readText($, path)
-  if (text === undefined) return undefined
+  if (text === undefined || text === null) return text
   try { return JSON.parse(text) } catch { return null }
 }
 
@@ -41,20 +48,32 @@ async function findRepo($: EngineInterface, cwd: string): Promise<Repo | null> {
     .then(r => (r.exitCode === 0 ? r.stdout.trim() : ''))
     .catch(() => '')
   const root = await git('rev-parse', '--show-toplevel')
-  if (!root || !(await $.fs.exists(`${root}/.specify`).catch(() => false))) return null
+  if (!root) {
+    // Not a git repository (or no git): the nearest folder above with a .specify/.
+    for (const dir of ancestors(cwd)) {
+      if (await $.fs.exists(`${dir}/.specify`).catch(() => false)) return { root: dir }
+    }
+    return null
+  }
+  if (!(await $.fs.exists(`${root}/.specify`).catch(() => false))) return null
   const common = await git('rev-parse', '--path-format=absolute', '--git-common-dir')
-  return common ? { root, stateDir: `${common}/speckit-team` } : null
+  return common ? { root, stateDir: `${common}/speckit-team` } : { root }
 }
 
-async function activeFeature($: EngineInterface, root: string): Promise<string> {
+// The active feature's folder (repo-relative), or why there is none.
+async function featureOf($: EngineInterface, root: string): Promise<{ feature: string; notice?: 'no-feature' | 'feature-unreadable' }> {
   const meta = await readJson($, `${root}/.specify/feature.json`)
-  return featureDir(meta && typeof meta === 'object' ? (meta as { feature_directory?: unknown }).feature_directory : undefined, root)
+  if (meta === null) return { feature: '', notice: 'feature-unreadable' }
+  const feature = featureDir(meta && typeof meta === 'object' ? (meta as { feature_directory?: unknown }).feature_directory : undefined, root)
+  return feature ? { feature } : { feature: '', notice: 'no-feature' }
 }
+
+const activeFeature = async ($: EngineInterface, root: string): Promise<string> => (await featureOf($, root)).feature
 
 // The plugin store is the user's, shared by every repo. Kept under the feature's path alone, a word
 // given in one repo showed in every other with a feature of that name, and with no time a later audit
 // could not void it. So it is kept as the hook keeps its own: per repo, with when it was given.
-const gateKey = (at: Repo, feature: string) => `gate:${JSON.stringify([at.stateDir, feature])}`
+const gateKey = (at: Repo, feature: string) => `gate:${JSON.stringify([at.stateDir ?? at.root, feature])}`
 
 // The gatekeeper's word from the hook's `ends` record or the store, with its time when it has one.
 function gateWord(record: unknown): { word: string; at: string | undefined } | undefined {
@@ -63,39 +82,55 @@ function gateWord(record: unknown): { word: string; at: string | undefined } | u
   return word === 'APPROVED' || word === 'REJECTED' ? { word, at: typeof at === 'string' ? at : undefined } : undefined
 }
 
-async function snapshot($: EngineInterface, at: Repo): Promise<SpeckitBoard | null> {
-  const feature = await activeFeature($, at.root)
-  if (!feature) return null
+async function snapshot($: EngineInterface, at: Repo): Promise<{ board: SpeckitBoard | null; notice: string }> {
+  const found = await featureOf($, at.root)
+  const feature = found.feature
+  if (!feature) return { board: null, notice: noticeText(found.notice ?? 'no-feature') }
   const name = feature.split('/').pop() ?? feature
 
-  const files = await Promise.all(fingerprintFiles(feature).map(async path =>
-    ({ path, text: (await readText($, `${at.root}/${path}`)) ?? MISSING })))
-  const fp = await fingerprint(files)
-  const text = (i: number) => (files[i]?.text === MISSING ? undefined : files[i]?.text)
-  const tasksMd = text(3)
-  const tasks = tasksMd === undefined ? undefined : parseTasks(tasksMd)
+  const paths = fingerprintFiles(feature)
+  const texts = await Promise.all(paths.map(path => readText($, `${at.root}/${path}`)))
+  const fp = await fingerprint(paths.map((path, n) => ({ path, text: texts[n] ?? MISSING })))
+  const [, spec, plan, tasksMd] = texts
+  // Only a folder with no spec.md is asked about: the other files are in it if they exist.
+  if (spec === undefined && !(await $.fs.exists(`${at.root}/${feature}`).catch(() => false))) {
+    return { board: null, notice: noticeText('no-folder', feature) }
+  }
+  const tasks = tasksMd === undefined || tasksMd === null ? tasksMd : parseTasks(tasksMd)
 
-  const verdict = await readJson($, `${at.stateDir}/verdicts/${name}.json`) as Parameters<typeof derivePhases>[0]['verdict']
-  const retries = await readJson($, `${at.stateDir}/retries/${name}.json`) as Parameters<typeof redCount>[0]
+  const state = at.stateDir
+  const record = (dir: string) => (state ? readJson($, `${state}/${dir}/${name}.json`) : Promise.resolve(undefined))
+  const verdict = await record('verdicts') as Parameters<typeof derivePhases>[0]['verdict']
+  const retries = await record('retries') as Parameters<typeof redCount>[0]
   const red = redCount(retries, fp)
   const isRetryUnreadable = retries === null
   // The word the hook's `ends` check recorded, so verify updates whether or not this mod saw the
   // gatekeeper stop; the store holds what it saw, for a hook from before that record existed.
-  const gate = gateWord(await readJson($, `${at.stateDir}/ends/${name}.json`))
-    ?? gateWord(await $.store.get(gateKey(at, feature)).catch(() => undefined))
+  const gate = state
+    ? gateWord(await record('ends')) ?? gateWord(await $.store.get(gateKey(at, feature)).catch(() => undefined))
+    : undefined
   const running = (await read($, agents)).filter(a => a.isRunning).map(a => a.type)
+  // The team view if the team recorded anything for the feature (a file that exists counts, readable
+  // or not), the store has its word, or a team agent started on it in this session.
+  const hasRecord = state !== undefined && (await Promise.all(['verdicts', 'retries', 'ends'].map(dir =>
+    $.fs.exists(`${state}/${dir}/${name}.json`).catch(() => false)))).some(Boolean)
+  const isStandalone = !(hasRecord || gate || (await read($, teamFeatures)).includes(feature))
 
   return {
-    feature: name,
-    phases: derivePhases({
-      spec: text(1), plan: text(2), tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
-      gate: gate?.word, gateAt: gate?.at, running,
-    }),
-    tasks: tasks ?? [],
-    red,
-    maxRed: MAX_RED,
-    isRetryUnreadable,
-    fingerprint: fp,
+    notice: '',
+    board: {
+      feature: name,
+      phases: derivePhases({
+        spec, plan, tasks, verdict, fingerprint: fp, red, isRetryUnreadable,
+        gate: gate?.word, gateAt: gate?.at, running, isStandalone,
+      }),
+      tasks: tasks ?? [],
+      red,
+      maxRed: MAX_RED,
+      isRetryUnreadable,
+      fingerprint: fp,
+      ...(isStandalone ? { isStandalone } : {}),
+    },
   }
 }
 
@@ -131,8 +166,9 @@ let shown: SpeckitBoard | null | undefined
 
 async function refresh($: EngineInterface) {
   if (!repo) return
-  const next = await snapshot($, repo)
+  const { board: next, notice: why } = await snapshot($, repo)
   const before = shown === undefined ? await read($, board) : shown
+  if (why !== (await read($, notice))) await update($, notice, () => why)
   if (JSON.stringify(before) === JSON.stringify(next)) return
   shown = next
   await update($, board, () => next)
@@ -183,9 +219,10 @@ async function poll($: EngineInterface) {
 // sections, a blank row between each two.
 function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean): number {
   if (!b) return 2
+  const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
+  if (b.isStandalone) return 2 + b.phases.length + 1 + taskCount + 3
   const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
-  const taskRows = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
-  return 2 + b.phases.length + teamRows + 1 + taskRows + 4
+  return 2 + b.phases.length + teamRows + 1 + taskCount + 4
 }
 
 // Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
@@ -240,24 +277,21 @@ export const register: Register = on => {
       immediate: true,
     })
     repo = await findRepo($, e.cwd)
-    // Say so either way: a board that draws nothing is indistinguishable from one that never loaded.
-    if (!repo) {
-      $.ui.toast(`no .specify/ in the git repo at ${e.cwd}; nothing to show`, { timeoutMs: 8000 })
-      return next(e)
-    }
+    // Without a Spec Kit folder it stays quiet; every command says why (N-1).
+    if (!repo) return next(e)
     await refresh($)
     // Nothing awaits the poll: one still running when the mod reloads or unloads has its calls
     // refused, and the next poll, if there is one, reads everything again.
     $.clock.every(POLL_MS, () => { poll($).catch(() => undefined) })
     await keepTicking($)
     const b = await read($, board)
-    $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : 'no active feature in .specify/feature.json', { timeoutMs: 8000 })
+    $.ui.toast(b ? `${b.feature}. /speckit-board opens the board` : await read($, notice), { timeoutMs: 8000 })
     return next(e)
   })
 
   // Claude Code shows a command's answer after the plugin's name, so the texts do not repeat it.
   on('command.run', { command: 'speckit-board' }, async ($, e) => {
-    if (!repo) return { text: 'no .specify/ in this repository.' }
+    if (!repo) return { text: noticeText('not-set-up') }
     const arg = e.args.trim()
     if (arg === 'band') {
       const hidden = await toggleBand($)
@@ -273,7 +307,7 @@ export const register: Register = on => {
     if (arg === 'status') {
       const b = await read($, board)
       const running = (await read($, agents)).filter(a => a.isRunning)
-      return { text: b ? boardText(b, running, await $.clock.now()) : 'no active feature in .specify/feature.json.' }
+      return { text: b ? boardText(b, running, await $.clock.now()) : await read($, notice) }
     }
     const opened = await openPane($)
     return { text: opened.isPlaced ? 'pane opened.' : 'widen the terminal to see the pane.' }
@@ -285,6 +319,15 @@ export const register: Register = on => {
       if (await read($, isCleared)) {
         try { await update($, isCleared, () => false) } catch (err) {
           $.ui.toast(`board could not end the clear: ${err instanceof Error ? err.message : String(err)}`)
+        }
+      }
+      if (repo) {
+        const at = repo
+        try {
+          const feature = await activeFeature($, at.root)
+          if (feature) await update($, teamFeatures, list => (list.includes(feature) ? list : [...list, feature]))
+        } catch (err) {
+          $.ui.toast(`board could not note the team's feature: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
       const now = await $.clock.now()
@@ -381,8 +424,7 @@ export const register: Register = on => {
     if (!b) {
       return (
         <Box flexDirection="column">
-          <Text dimColor>No active Spec Kit feature in .specify/feature.json.</Text>
-          <Text dimColor>/speckit-team {'<idea>'} starts one.</Text>
+          <Text dimColor>{(await read($, notice)) || noticeText('no-feature')}</Text>
         </Box>
       )
     }
@@ -417,7 +459,7 @@ export const register: Register = on => {
           <Text bold color="claude" wrap="truncate-end">SPEC KIT · {b.feature}</Text>
           <Text wrap="truncate-end">
             <Text dimColor>next </Text>
-            {step.task ? [<Text bold>{step.task.id}</Text>, ' ', taskText(step.task.text)] : step.text}
+            {step.task ? [step.command ? `${step.command} ` : '', <Text bold>{step.task.id}</Text>, ' ', taskText(step.task.text)] : step.text}
           </Text>
         </Box>
 
@@ -447,7 +489,7 @@ export const register: Register = on => {
         </Box>
 
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
-        <Box flexDirection="column">
+        {!b.isStandalone && <Box flexDirection="column">
           <Text bold>Team</Text>
           {team.length === 0 && <Text dimColor>{isClearedNow ? 'cleared; no team agent has run since' : 'no team agent has run this session'}</Text>}
           {rows.slice(0, TEAM_ROWS).map(a => {
@@ -473,7 +515,7 @@ export const register: Register = on => {
             )
           })}
           {rows.length > TEAM_ROWS && <Text dimColor>+{rows.length - TEAM_ROWS} earlier</Text>}
-        </Box>
+        </Box>}
 
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />

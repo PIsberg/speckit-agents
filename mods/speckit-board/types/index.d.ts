@@ -21,6 +21,8 @@ export type SpeckitBoard = {
   // The retry record cannot be read, so the gate blocks implementer whatever `red` says.
   isRetryUnreadable: boolean
   fingerprint: string
+  // Spec Kit alone: four phases (spec, plan, tasks, build), no gate, no agents drawn.
+  isStandalone?: boolean
 }
 
 export type SpeckitAgent = {
@@ -46,12 +48,16 @@ declare module 'claude-code' {
   interface PluginState {
     'speckit-board': {
       board: SpeckitBoard | null
+      // Why there is no board: one of noticeText's lines; '' while there is one.
+      notice: string
       agents: SpeckitAgent[]
       isBandHidden: boolean
       // The band is held off until the next team agent starts; session state, not stored.
       isCleared: boolean
       // The pane lists every task, not only the sections under way.
       isAllTasksShown: boolean
+      // Features a team agent started on in this session; they get the team view (D1-A).
+      teamFeatures: string[]
     }
   }
 }

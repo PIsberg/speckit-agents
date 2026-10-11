@@ -21,7 +21,7 @@ this file is how to work on it.
   "Developing"). `architecture-visualized.svg` is drawn by hand, not recorded: edit it when an
   agent's model or lane, a pipeline stage or the retry limit changes.
 - `mods/speckit-board/`: an experimental Claude Code mod (function hooks, TypeScript run as source)
-  that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
+  that draws the pipeline's state; it also runs with Spec Kit alone, without the team, and then draws the feature's files. `install.mjs --board` installs it through `claude plugin`, with
   this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
   `claude --plugin-dir` loads it for one session. Its own tests are
   `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`. It is a prototype for
@@ -43,7 +43,7 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost, 209 s on Windows (197 tests, 2026-10-10; the
+- `npm test`: all suites, no network beyond localhost, 393 s on Windows (201 tests, 2026-10-11; the
   four installer tests that run the real `claude plugin` and the 24 e2e tests take most of it, and
   a run on a busy machine took twice as long).
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
@@ -85,5 +85,5 @@ this file is how to work on it.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/004-board-clear/plan.md`
+`specs/005-standalone-board/plan.md`
 <!-- SPECKIT END -->
