@@ -637,6 +637,20 @@ test('after a full-team launch, a Team line without spec-auditor leaves the audi
   assert.ok(state(s, 'team', `${sessionId(r)}.json`).roles.includes('spec-auditor'), story(r));
 });
 
+// #88: the settings.json SubagentStart entry records where product-owner and architect start, and their
+// Stop runs `lane only` with their scope prefixes. With SPECKIT_E2E_NO_HOOK=1 neither block comes.
+test("product-owner's and architect's Stop: the lane check catches a file written through Bash (#88)", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('architect', 'e2e architect'), agent('product-owner', 'e2e product-owner')],
+    'e2e architect': [call('Bash', { command: 'echo 1 > arch.js', description: 'Write a file' }), say('Plan written.')],
+    'e2e product-owner': [call('Bash', { command: 'echo 1 > owner.js', description: 'Write a file' }), say('Spec written.\nREADY FOR PLAN')],
+  });
+  assert.ok(fs.existsSync(path.join(s.repo, 'arch.js')), `the Bash call never ran:\n${story(r)}`);
+  assert.match(shown(r.requests['e2e architect'][2]), /Lane check: architect changed files outside its lane: arch\.js\./, story(r));
+  assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
+});
+
 // --team noagents: Claude Code hands the typed /speckit-team to the UserPromptExpansion gate, which
 // records that no agent runs, so the main session's own speckit-implement call needs no audit. Without
 // the flag the same call is denied, which shows the gate ran in both sessions.

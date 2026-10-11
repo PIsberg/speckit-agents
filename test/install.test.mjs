@@ -35,7 +35,7 @@ const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
-const GATES = ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
+const GATES = ['PreToolUse:Skill|Agent', 'SubagentStart:product-owner|architect', 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -229,6 +229,47 @@ test('installed product-owner and architect write files with the tools their hoo
   }
   const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
   assert.match(skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace')), /`SubagentHandback`/);
+});
+
+// #88: a file product-owner or architect writes through Bash was never checked. The settings.json
+// SubagentStart entry records where each starts, and the Stop's `lane only` holds the agent to exactly
+// the prefixes its scope rule allows: the two lists are one fact, kept in two places.
+test('#88 product-owner and architect: SubagentStart records their start, and their Stop checks the scope prefixes', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  const start = settingsOf(dir).hooks.SubagentStart;
+  assert.equal(start.length, 1);
+  assert.equal(start[0].matcher, 'product-owner|architect');
+  assert.equal(start[0].hooks[0].command, `node "${hookPath}" start`);
+  for (const [a, prefixes] of [['product-owner', 'specs/ .specify/feature.json'], ['architect', 'specs/ CLAUDE.md']]) {
+    const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8');
+    const scope = new RegExp(`node "${hookPath}" scope only ([^']+)'`).exec(text)?.[1];
+    const lane = new RegExp(`node "${hookPath}" lane only ([^']+)'`).exec(text)?.[1];
+    assert.equal(scope, prefixes, `${a}: scope only`);
+    assert.equal(lane, scope, `${a}: the Stop's lane only names the scope rule's prefixes`);
+    const fm = text.slice(0, text.indexOf('\n---', 4));
+    assert.ok(fm.indexOf('  Stop:') > 0 && fm.indexOf('lane only') > fm.indexOf('  Stop:'), `${a}: lane only runs at Stop`);
+  }
+  assert.equal(install(dir, '--uninstall').status, 0);
+  const after = fs.existsSync(path.join(dir, 'settings.json')) ? settingsOf(dir) : {};
+  assert.equal(after.hooks?.SubagentStart, undefined, 'uninstall removes the entry');
+});
+
+// #89: at the 004 plan stop the one decision the owner changed was work no requirement asked for. Work
+// that nothing requires is an open decision whose recommended option leaves it out; what CLAUDE.md or a
+// constitution MUST rule asks for is required, so the architect never recommends against them.
+test('#89 installed architect makes work nothing requires an open decision that recommends leaving it out', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const body = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  const step5 = body.slice(body.indexOf('5. Write each decision'), body.indexOf('On a revision with'));
+  assert.match(step5, /no FR, SC or scenario/);
+  assert.match(step5, /constitution MUST rule/);
+  assert.match(step5, /`CLAUDE\.md`/);
+  assert.match(step5, /recommended option leaves (it|the work) out/);
+  const readme = flat(mdSection(repoText('README.md'), '#### Settling decisions'));
+  assert.match(readme, /recommended option leaves (it|the work) out/, 'README, Settling decisions');
 });
 
 // The 004 architect's first pass wrote 47k characters in about 230 of its 654 s; the constitution
