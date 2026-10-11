@@ -302,6 +302,59 @@ test('a Bash call and an Agent call in one message run in order: the agent start
   assert.match(lastResult(r.requests['e2e architect'][1]), /e2e plan approved/, story(r));
 });
 
+// #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
+// --plugin-dir: Claude Code starts it, it sets the status line and raises its startup toast, and its
+// commands answer with no model call (004 quickstart L1, L2). Needs no hook of the team.
+async function boardCommand({ repo, cfg }, arg) {
+  let modelRequests = 0;
+  let child;
+  const server = http.createServer((req, res) => {
+    req.resume();
+    if (req.method === 'POST' && req.url.startsWith('/v1/messages')) { modelRequests++; child?.kill(); }
+    res.writeHead(400, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'fake API for speckit-agents e2e tests' } }));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    return await new Promise((resolve, reject) => {
+      let out = '';
+      let err = '';
+      child = spawn('claude', ['--plugin-dir', path.join(ROOT, 'mods', 'speckit-board'), '-p', `/speckit-board ${arg}`, '--output-format', 'stream-json', '--verbose'],
+        { cwd: repo, env: fakeEnv(cfg, server.address().port), stdio: ['ignore', 'pipe', 'pipe'] });
+      child.stdout.on('data', (d) => { out += d; });
+      child.stderr.on('data', (d) => { err += d; });
+      child.on('error', reject);
+      const timer = setTimeout(() => child.kill(), 60_000);
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        const events = out.split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
+        resolve({ code, events, modelRequests, out, err, result: events.find((e) => e.type === 'result') });
+      });
+    });
+  } finally {
+    server.close();
+  }
+}
+
+test('the board mod in a headless session sets its status line and toast, and its commands answer at 0 turns (#19)', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const ui = (r, subtype) => r.events.filter((e) => e.type === 'system' && e.subtype === subtype && e.plugin === 'speckit-board').map((e) => e.text);
+  const seen = (r) => `exit ${r.code}, ${r.modelRequests} model requests\nstdout: ${r.out.slice(-1500)}\nstderr: ${r.err.slice(0, 800)}`;
+  for (const [arg, answer] of [
+    ['status', /^speckit-board: 001-x · .+\n.*spec .*plan .*tasks .*build/],
+    ['clear', /^speckit-board: cleared the band\.$/],
+    ['foo', /^speckit-board: unknown argument "foo": use status, refresh, band or clear\.$/],
+  ]) {
+    const r = await boardCommand(s, arg);
+    assert.equal(r.modelRequests, 0, seen(r));
+    assert.equal(r.result?.num_turns, 0, seen(r));
+    assert.equal(r.result?.total_cost_usd, 0, seen(r));
+    assert.match(r.result?.result ?? '', answer, seen(r));
+    assert.ok(ui(r, 'ui_status').some((t) => /^001-x · /.test(t)), seen(r));
+    assert.ok(ui(r, 'ui_toast').includes('001-x. /speckit-board opens the board'), seen(r));
+  }
+});
+
 test("architect's and product-owner's scope hooks deny a Write outside their lanes", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   const write = (rel) => call('Write', { file_path: path.join(s.repo, ...rel.split('/')), content: 'export const greet = () => 1;\n' });
