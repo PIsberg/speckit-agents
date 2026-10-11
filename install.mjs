@@ -7,7 +7,7 @@
 //   node install.mjs --force         overwrite same-named agents it did not install (backs them up)
 //   node install.mjs --claude-dir D  target D instead of $CLAUDE_CONFIG_DIR or ~/.claude
 //   node install.mjs --board         also install the speckit-board mod; later reruns keep it
-//   node install.mjs --no-board      remove the speckit-board mod, keep the team
+//   node install.mjs --no-board      remove the speckit-board mod (only if this installer installed it), keep the team
 //   node install.mjs --no-fork       turn Claude Code's fork subagents off for every project, so
 //                                    the team's agents run in the foreground; later reruns keep it
 //   node install.mjs --fork          remove what --no-fork wrote
@@ -242,10 +242,11 @@ function claudeList(...args) {
 }
 const NO_CLAUDE = '`claude plugin` did not run. Is Claude Code on PATH?';
 
-// Returns whether this installer added the marketplace, and an error if a step failed.
-function installBoard(addedBefore) {
+// Returns whether this installer added the marketplace and installed the plugin, and an error if a step
+// failed. A plugin found already installed keeps pluginBefore: it is the user's unless we installed it.
+function installBoard(addedBefore, pluginBefore) {
   const markets = claudeList('marketplace');
-  if (!markets) return { added: addedBefore, error: NO_CLAUDE };
+  if (!markets) return { added: addedBefore, plugin: pluginBefore, error: NO_CLAUDE };
   let added = addedBefore;
   let market = markets.find((m) => m.name === MARKETPLACE);
   // Ours but read from another checkout (this one moved, or a second clone or worktree ran
@@ -255,15 +256,15 @@ function installBoard(addedBefore) {
   const samePath = (a, b) => process.platform === 'win32' ? realOf(a).toLowerCase() === realOf(b).toLowerCase() : realOf(a) === realOf(b);
   const repoint = Boolean(market && addedBefore && market.source === 'directory' && !samePath(market.path, SRC));
   if (repoint) {
-    const r = removeBoard(true);
-    if (r.error) return { added, error: r.error };
+    const r = removeBoard(true, true);
+    if (r.error) return { added, plugin: pluginBefore, error: r.error };
     market = undefined;
   }
   if (!market) {
     log('install', `marketplace ${MARKETPLACE} (${SRC})`);
     if (!dryRun) {
       const r = claude('plugin', 'marketplace', 'add', SRC);
-      if (!r.ok) return { added, error: r.said };
+      if (!r.ok) return { added, plugin: pluginBefore, error: r.said };
     }
     added = true;
   }
@@ -271,44 +272,45 @@ function installBoard(addedBefore) {
   const installed = !(dryRun && repoint) && (claudeList() ?? []).find((p) => p.id === BOARD && p.scope === 'user');
   if (installed) {
     log('unchanged', `${BOARD} (read from ${installed.readFromFolder ?? installed.installPath})`);
-    return { added };
+    return { added, plugin: pluginBefore };
   }
   log('install', BOARD);
   if (!dryRun) {
     const r = claude('plugin', 'install', BOARD, '--scope', 'user');
-    if (!r.ok) return { added, error: r.said };
+    if (!r.ok) return { added, plugin: pluginBefore, error: r.said };
   }
-  return { added };
+  return { added, plugin: true };
 }
 
-// Removes the mod, and the marketplace when this installer added it.
-function removeBoard(addedBefore) {
+// Removes the mod when this installer installed it (pluginBefore), and the marketplace when it added it.
+function removeBoard(addedBefore, pluginBefore) {
   const plugins = claudeList();
-  if (!plugins) return { added: addedBefore, error: NO_CLAUDE };
-  if (plugins.some((p) => p.id === BOARD && p.scope === 'user')) {
+  if (!plugins) return { added: addedBefore, plugin: pluginBefore, error: NO_CLAUDE };
+  if (pluginBefore && plugins.some((p) => p.id === BOARD && p.scope === 'user')) {
     log('remove', BOARD);
     if (!dryRun) {
       const r = claude('plugin', 'uninstall', BOARD, '--scope', 'user');
-      if (!r.ok) return { added: addedBefore, error: r.said };
+      if (!r.ok) return { added: addedBefore, plugin: pluginBefore, error: r.said };
     }
   }
   if (addedBefore && (claudeList('marketplace') ?? []).some((m) => m.name === MARKETPLACE)) {
     log('remove', `marketplace ${MARKETPLACE}`);
     if (!dryRun) {
       const r = claude('plugin', 'marketplace', 'remove', MARKETPLACE);
-      if (!r.ok) return { added: addedBefore, error: r.said };
+      if (!r.ok) return { added: addedBefore, plugin: pluginBefore, error: r.said };
     }
   }
-  return { added: false };
+  return { added: false, plugin: false };
 }
 const boardByHand = `remove it by hand: claude plugin uninstall ${BOARD}, then claude plugin marketplace remove ${MARKETPLACE}`;
 
 if (uninstall) {
   const m = manifest ?? {};
+  const pluginBefore = m.addedPlugin ?? Boolean(m.board);
   const hadBoard = Boolean(m.board || m.addedMarketplace);
   if (hadBoard) {
     // A warning, not a stop: removing the team must not depend on Claude Code being on PATH.
-    const { error } = removeBoard(Boolean(m.addedMarketplace));
+    const { error } = removeBoard(Boolean(m.addedMarketplace), pluginBefore);
     if (error) console.log(`WARNING: the board mod was not removed (${error}); ${boardByHand}.`);
     readSettings();
   }
@@ -406,9 +408,10 @@ if (same(nextSettings, settings) && settingsText !== null) {
 // After the settings are written: the plugin commands add their own keys to the same file.
 const wantBoard = !noBoard && (boardFlag || Boolean(manifest?.board));
 const addedBefore = Boolean(manifest?.addedMarketplace);
-const boardResult = wantBoard ? installBoard(addedBefore)
-  : noBoard ? removeBoard(addedBefore)
-  : { added: addedBefore };
+const pluginBefore = manifest?.addedPlugin ?? Boolean(manifest?.board);
+const boardResult = wantBoard ? installBoard(addedBefore, pluginBefore)
+  : noBoard ? removeBoard(addedBefore, pluginBefore)
+  : { added: addedBefore, plugin: pluginBefore };
 write(manifestFile, `${JSON.stringify({
   managedBy: MARKER,
   createdDirs,
@@ -418,6 +421,7 @@ write(manifestFile, `${JSON.stringify({
   // The intent, kept when a step failed, so the next rerun tries again.
   board: wantBoard,
   addedMarketplace: boardResult.added,
+  addedPlugin: boardResult.plugin,
   forkOff: wantFork,
   addedForkEnv: fork.added,
 }, null, 2)}\n`);
@@ -451,4 +455,6 @@ Done. Next:
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...
   4. A small change: /speckit-patch <change>
   Not sure which track: /speckit-triage <request>`);
-if (wantBoard) console.log('  The board: /speckit-board in a session. After a git pull here, /reload-plugins picks up its changes.');
+if (wantBoard) console.log(`  The board: /speckit-board in a session. ${boardResult.added
+  ? 'After a git pull here, /reload-plugins picks up its changes.'
+  : `Update it with: claude plugin marketplace update ${MARKETPLACE}`}`);

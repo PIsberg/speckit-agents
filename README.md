@@ -152,7 +152,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--claude-dir DIR` | install into `DIR` instead of `~/.claude` |
 | `--uninstall` | remove everything the installer wrote, and nothing else ([Uninstall](#uninstall)) |
 | `--board` | also install the experimental [board mod](#board-mod-experimental); later reruns keep it |
-| `--no-board` | remove the board mod and keep the team |
+| `--no-board` | remove the board mod, only if the installer installed it, and keep the team |
 | `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
 | `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
 
@@ -1008,7 +1008,17 @@ the team works: a band above the prompt, a pane, and a status line.
 
 ### Installing the board
 
-The installer adds it on request:
+The board needs Spec Kit and Claude Code, not the team. Without the team it draws what the Spec Kit
+files show. Two commands install it from GitHub:
+
+```sh
+claude plugin marketplace add PIsberg/speckit-agents
+claude plugin install speckit-board@speckit-agents --scope user
+```
+
+Update it with `claude plugin marketplace update speckit-agents`, not `git pull`.
+
+With the team, the installer does the same on request:
 
 ```sh
 node install.mjs --board        # install it, for every repo and session
@@ -1017,15 +1027,17 @@ node install.mjs --no-board     # remove it, keep the team
 ```
 
 `--board` hands the work to Claude Code's own [plugin](https://code.claude.com/docs/en/plugins)
-commands, in the same config directory: `claude plugin marketplace add <this checkout>` (the repo
+commands, in the same config directory, with this checkout as the marketplace (the repo
 root holds [`.claude-plugin/marketplace.json`](.claude-plugin/marketplace.json), a marketplace
-named `speckit-agents`) and `claude plugin install speckit-board@speckit-agents --scope user`.
+named `speckit-agents`).
 Because the marketplace is a folder, Claude Code reads the mod from `mods/speckit-board/` in place
 rather than from a copy, so an update is a `git pull` with no reinstall; `claude plugin list` shows
 the folder as `Read from:`.
 
 The installer remembers the board, so a plain rerun keeps it, and `--uninstall` removes it with the
-team. It removes the `speckit-agents` marketplace only if it added it. The board is read from the
+team. `--uninstall` and `--no-board` remove the board only when the installer installed it, and its
+marketplace only if the installer added it: a board you installed yourself, from the GitHub
+marketplace, stays. The board is read from the
 checkout the installer last ran from, as the team's files are copied from it: after moving the
 checkout, or to run the board from another clone or worktree, rerun the installer there and it
 points the board at that folder.
@@ -1237,13 +1249,13 @@ Claude Code stopped at first-run login), and any session on macOS
 
 ### Test suite
 
-`npm test` runs 197 tests:
+`npm test` runs 201 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 44 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 9 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
+| [`test/install.test.mjs`](test/install.test.mjs) | 47 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 24 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
