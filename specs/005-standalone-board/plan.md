@@ -12,7 +12,8 @@ gate, retry meter or agent rows, and next steps that name Spec Kit's own command
 (`contracts/board-text.md`). A feature with a team record is drawn exactly as today. The mod also
 finds a Spec Kit repo that is not a git repo, answers each degraded case with one line, and shows a
 file that exists but cannot be read instead of treating it as missing (D3). The board-only install
-is two `claude plugin` commands the README documents (D2); `install.mjs` does not change.
+is two `claude plugin` commands the README documents (D2). `install.mjs` records whether it
+installed the board, so `--uninstall` and `--no-board` leave a board-only install alone (D6).
 
 ## Technical Context
 
@@ -42,29 +43,30 @@ path: at most one `$.fs.exists` per failed read in a refresh (D3), one per featu
 `spec.md` is missing, one `.specify/feature.json` read per team `SubagentStart` (D1), and in a
 non-git folder one `$.fs.exists` per ancestor of the cwd at session start.
 
-**Scale/Scope**: 2 source files and 1 type file in the mod, their 2 test files, 1 test in `test/`,
-README.md and CLAUDE.md.
+**Scale/Scope**: 2 source files and 1 type file in the mod, their 2 test files, `install.mjs`,
+2 tests in `test/` (`board-mod.test.mjs`, `install.test.mjs`), README.md and CLAUDE.md.
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.* Result: PASS (D1-D5
+*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.* Result: PASS (D1-D6
 decided, see Decisions).
 
 | Rule | Tasks | How |
 |---|---|---|
-| I. Every behaviour change has a test under `npm test`, seen failing first, asserting what a caller observes | T001, T003, T005, T007, T009, T010, T012, T014, T015, T017 | each slice's tests precede its implementation; they assert pane, band, status line and command answers |
+| I. Every behaviour change has a test under `npm test`, seen failing first, asserting what a caller observes | T001, T003, T005, T007, T009, T010, T012, T014, T015, T017, T019 | each slice's tests precede its implementation; they assert pane, band, status line, command answers and the installed plugins |
 | II. Every code path that can throw has a test | T010, T012, T015 | new paths: repo discovery without git, notices, a read that fails on an existing file |
 | III. Observers never deny, delay or alter; a failure is visible | T015, T016, T012, T013 | no handler denies or rewrites (FR-011); unreadable files and `feature.json` are shown (D3); budget in Technical Context |
 | IV. Plugin code uses only the plugin API, shipped as source | T002-T016 | only `$.fs`, `$.store`, atoms; no package added |
-| V. Public contracts (slash command answers) documented | T018 | the new texts are in `contracts/board-text.md`; no event, no installer flag (D2-A) |
+| V. Public contracts (slash command answers) documented | T020 | the new texts are in `contracts/board-text.md`; no event, no installer flag (D2-A) |
 | VI. Output local and metadata only, repo-relative paths | T010, T011, T012 | the not-set-up line drops the absolute cwd the start toast printed (FR-012) |
 | VII. Same behaviour on all three platforms, forward slashes | T009, T011 | `ancestors()` tested with Windows and POSIX spellings; CI runs the board tests on all three |
-| VIII. README, CLAUDE.md and installer help describe the change | T017, T018 | README and CLAUDE.md in T018; `install.mjs --help` unchanged because no flag changes (D2-A) |
+| VIII. README, CLAUDE.md and installer help describe the change; every count matches | T019, T020 | README and CLAUDE.md in T020, with the test counts at README.md:1153, :1240, :1245, :1246 and CLAUDE.md:46; `install.mjs --help` unchanged because no flag changes (D2-A) |
 | Installation: no output in repos without `.specify/` | T010, T011 | the start toast outside Spec Kit goes (D5-A); `/speckit-board` still answers |
+| Installation: idempotent; `--uninstall` removes what it added and nothing else | T017, T018 | the manifest records whether this installer installed the plugin; a board-only install survives `--board` then `--uninstall` or `--no-board` (D6-A) |
 
 Not applicable: II hook wiring and quoted hook paths (no hook command, event or matcher changes; the
-mod subscribes to the same events); installer idempotence, overwrite, validate-first and uninstall
-rules (`install.mjs` unchanged, D2-A); V event schema versions (the board emits no events);
+mod subscribes to the same events); installer overwrite and validate-first rules (`install.mjs`
+writes no new file, only one more manifest field, D6-A); V event schema versions (the board emits no events);
 Workflow gates 1-3 (spec-gatekeeper's job, and gate 3 has no hook or event change to check).
 
 ## Design
@@ -89,8 +91,9 @@ Each rule below is implemented once; tasks point here.
 - **Unchanged** (FR-008, FR-015): the six-phase derivation, band, pane and texts for a team view;
   clear, hide, toggle and refresh code paths. The existing board tests run unmodified in the team
   view (SC-003), except the ones D5 and the notices replace.
-- **Install** (FR-009, D2-A): no code; README documents the two commands, `test/board-mod.test.mjs`
-  holds them to `.claude-plugin/marketplace.json`.
+- **Install** (FR-009, D2-A): README documents the two commands, `test/board-mod.test.mjs`
+  holds them to `.claude-plugin/marketplace.json`. `install.mjs` keeps a board it did not install
+  (D6-A, constitution Installation Constraints).
 - **Media**: the recorded board (`docs/media/board.png`) shows the team view, which does not change;
   no re-recording.
 
@@ -121,6 +124,8 @@ mods/speckit-board/
     ├── model.test.ts
     └── board.test.tsx
 test/board-mod.test.mjs   # README board-only commands match the marketplace
+install.mjs               # installBoard, removeBoard, manifest field addedPlugin, closing message
+test/install.test.mjs     # a board-only install survives --board then --uninstall
 README.md, CLAUDE.md
 ```
 
@@ -157,14 +162,15 @@ record.
 
 - **A (owner, 2026-10-11): two `claude plugin` commands against the GitHub marketplace**, documented in the
   README: `claude plugin marketplace add PIsberg/speckit-agents`, then
-  `claude plugin install speckit-board@speckit-agents --scope user`. No clone, no installer change,
+  `claude plugin install speckit-board@speckit-agents --scope user`. No clone, no installer flag,
   2 commands (SC-004). The marketplace lists only `speckit-board`, so no agent, skill or hook of the
   team loads. Updates come through `claude plugin marketplace update`, not `git pull`. A later
   `node install.mjs` without `--board` leaves this board alone; with `--board` it finds the
-  `speckit-agents` marketplace (not added by it) and keeps the installed plugin; `--uninstall` after
-  `--board` removes the plugin, so keeping the board then means rerunning the second command.
+  `speckit-agents` marketplace (not added by it) and keeps the installed plugin, and `--uninstall`
+  or `--no-board` then leaves both (D6-A; the constitution's uninstall rule). A board that `--board`
+  installed is removed by `--uninstall`, so keeping it then means rerunning the second command.
   Unverified: that a GitHub-sourced marketplace resolves `./mods/speckit-board` and runs the mod;
-  `quickstart.md` check 1 settles it. Tasks T017, T018.
+  `quickstart.md` check 1 settles it. Tasks T017-T020.
   Spec: US2 scenario 3: **Given** the board and the team are both installed, **When** the user removes
   the team and keeps the board (a board installed with `--board` is installed again with the README's
   board-only command), **Then** the board keeps working in standalone mode.
@@ -206,4 +212,24 @@ FR-012 rules out the absolute path.
   (`contracts/board-text.md`). Meets both rules and US4 scenario 3 ("when the user opens the board").
   A loaded board with nothing to show is then silent until asked, which the toast was added to avoid
   (README, "When it refreshes"). Replaces the test "outside a Spec Kit repo it says it loaded and
-  found nothing". Tasks T010, T011, T018. No spec change.
+  found nothing". Tasks T010, T011, T020. No spec change.
+
+### D6. How does the installer keep a board it did not install? (constitution: `--uninstall` removes what it added "and nothing else")
+
+D2-A makes this sequence a documented route: board-only install, then `node install.mjs --board`,
+then `--uninstall` or `--no-board`. Today `installBoard` finds the plugin, logs it "unchanged" and
+the manifest still records `board: true` (`install.mjs:271-275`, `:419`); `removeBoard` then
+uninstalls a plugin the installer never added (`:288-293`, `:308-311`). The closing line "After a
+git pull here, /reload-plugins picks up its changes" (`:454`) is also wrong for a board read from
+the GitHub marketplace.
+
+- **A (owner, 2026-10-11): the manifest records whether this installer installed the plugin.** New field
+  `addedPlugin`, set when a run installs it and kept when a run finds it; `removeBoard` uninstalls
+  only when it is true. A manifest written before this change has no field and falls back to
+  `board`, so existing `--board` installs are still removed on `--uninstall`. The existing tests at
+  `test/install.test.mjs:579`, `:601`, `:615`, `:631` and `:551` pass unchanged (in `:631` the user
+  added only the marketplace, the installer installed the plugin, and uninstall still removes it).
+  The closing line names `claude plugin marketplace update speckit-agents` when the marketplace is
+  not the installer's. One manifest field, about 10 changed lines, 1 new test (T017, T018), README
+  `:1027-1028` (T020). No FR changes: spec.md:17 and US2 scenario 3 stay true, since they speak of a
+  board `--board` installed.
