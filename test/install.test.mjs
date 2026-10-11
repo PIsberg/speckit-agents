@@ -34,6 +34,8 @@ function roundTrip(dir) {
 const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
+// The settings.json entries the installer owns, as `event:matcher`, sorted.
+const GATES = ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -71,7 +73,7 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   const s = settingsOf(dir);
   assert.equal(s.model, 'opus');
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
-  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement']);
+  assert.deepEqual(gates(s).sort(), GATES);
   assert.ok(!JSON.stringify(s).includes('C:/old/place'), 'stale gate replaced, not duplicated');
   assert.equal(backups(dir).length, 1, 'settings.json backed up before the change');
   assert.match(r.stdout, /verified\s+installed hook runs/);
@@ -693,7 +695,7 @@ test('the gate entry matches Skill and Agent, replaces the older Skill-only one,
   const r = install(dir);
   assert.equal(r.status, 0, r.stderr + r.stdout);
   const s = settingsOf(dir);
-  assert.deepEqual(gates(s).sort(), ['PreToolUse:Skill|Agent', 'UserPromptExpansion:speckit-implement|speckit\\.implement']);
+  assert.deepEqual(gates(s).sort(), GATES);
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
   const entry = s.hooks.PreToolUse.find((g) => g.matcher === 'Skill|Agent');
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
@@ -706,6 +708,25 @@ test('the gate entry matches Skill and Agent, replaces the older Skill-only one,
   assert.equal(install(dir, '--uninstall').status, 0);
   assert.deepEqual(gates(settingsOf(dir)), []);
   assert.deepEqual(settingsOf(dir).hooks, { PreToolUse: [UNRELATED] });
+});
+
+// #101, --team noagents: the typed /speckit-team starts a request and can record that no agent runs,
+// so the UserPromptExpansion gate also matches it. A reinstall rewrites the older entry in place.
+test('the UserPromptExpansion gate also matches a typed /speckit-team; a reinstall widens the older entry (#101, noagents)', () => {
+  const old = 'speckit-implement|speckit\\.implement';
+  const dir = claudeDir({ hooks: { UserPromptExpansion: [UNRELATED, {
+    matcher: old, hooks: [{ type: 'command', command: 'node "C:/old/place/speckit-team.mjs" gate', timeout: 15 }] }] } });
+  assert.equal(install(dir).status, 0);
+  const s = settingsOf(dir);
+  assert.deepEqual(gates(s).sort(), GATES);
+  assert.deepEqual(s.hooks.UserPromptExpansion[0], UNRELATED, "the user's own entry stays first");
+  assert.equal(s.hooks.UserPromptExpansion.length, 2, 'rewritten in place, not added beside the old one');
+  const matcher = new RegExp(`^(${s.hooks.UserPromptExpansion[1].matcher})$`);
+  for (const name of ['speckit-implement', 'speckit.implement', 'speckit-team']) assert.match(name, matcher, name);
+  for (const name of ['speckit-patch', 'speckit-triage', 'speckit-specify']) assert.doesNotMatch(name, matcher, name);
+  const first = bytes(dir);
+  assert.equal(install(dir).status, 0);
+  assert.ok(bytes(dir).equals(first), 'a second install changes no byte');
 });
 
 // 006 slices 4 to 6 (T008, T010, T012): the prompts carry contract sections 1 to 6 of
@@ -935,9 +956,54 @@ test('006 T016 FR-011: README guardrail table names Skill|Agent for the settings
   assert.ok(row.includes('Skill|Agent'), row);
 });
 
-test('006 T016 FR-011: node install.mjs --help prints a --team line', () => {
-  const h = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
-  assert.ok(h.stdout.split('\n').some((l) => l.includes('--team')), '--help has a --team line');
+// #107: `--team` is an argument of the slash command, so the help lists it under the slash commands,
+// apart from the installer's own flags, and never as `node install.mjs --team`.
+test('006 T016 FR-011, #107: node install.mjs --help names /speckit-team --team under the slash commands, not among the flags', () => {
+  const lines = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' }).stdout.split('\n');
+  const heading = lines.findIndex((l) => /slash commands/i.test(l) && /not installer flags/i.test(l));
+  assert.ok(heading >= 0, 'a heading that says these are slash commands, not installer flags');
+  const flags = lines.findIndex((l) => /node install\.mjs --uninstall/.test(l));
+  assert.ok(flags >= 0 && flags < heading, 'the installer flags come first, the slash commands after them');
+  const team = lines.filter((l) => l.includes('--team'));
+  assert.ok(team.length >= 1, '--help names --team');
+  for (const l of team) assert.match(l, /\/speckit-team/, `every --team line names /speckit-team: ${l}`);
+  assert.ok(lines.findIndex((l) => l.includes('--team')) > heading, 'under the heading');
+  assert.ok(!lines.some((l) => /node install\.mjs\s+--team/.test(l)), 'never as an installer flag');
+  assert.ok(lines.slice(heading).some((l) => /--team noagents/.test(l)), 'the no-agents run is named');
+  for (const cmd of ['/speckit-patch', '/speckit-triage']) assert.ok(lines.slice(heading).some((l) => l.includes(cmd)), cmd);
+});
+
+// --team noagents: the main session runs Spec Kit's own commands, with no agent and no Team line.
+test('noagents: the skill runs Spec Kit itself for a typed --team noagents, launches no agent and keeps the spec and plan stops', () => {
+  const skill = teamSkill();
+  const team = flat(skillSection(skill, '## Team'));
+  assert.match(team, /`--team noagents`/, '## Team names --team noagents');
+  assert.match(team, /typ(ed|ing|e it)/i, 'it is chosen by typing it');
+  assert.match(team, /`?noagents`? (together )?with (a|any) role|`?noagents`? and (a|any) role/i, 'noagents with a role is refused');
+  const na = skillSection(skill, '## No agents');
+  const flatNa = flat(na);
+  assert.match(flatNa, /no Agent call|launch(es)? no agent|never (call|launch)/i, 'no agent at all');
+  assert.match(flatNa, /no `Team:` line/i);
+  const order = ['speckit-specify', 'speckit-plan', 'speckit-tasks', 'speckit-implement'].map((s) => na.indexOf(`\`${s}\``));
+  assert.ok(order.every((i) => i >= 0), `the four Spec Kit skills are named: ${order}`);
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'in pipeline order');
+  assert.ok((na.match(/\*\*Stop:\*\*/g) || []).length >= 2, 'the spec stop and the plan stop');
+  assert.match(flatNa, /AskUserQuestion/, 'open questions go to the user');
+  assert.match(flatNa, /3 (failed )?(test )?runs?[^.]*in a row|3 times in a row/i, 'the fix loop is capped');
+  assert.match(flatNa, /(audit|spec-auditor)[^.]*skipped|skipped[^.]*(audit|spec-auditor)/i, 'the report names the skipped audit');
+  assert.match(flatNa, /## 7|step 7/i, 'hand-over as step 7');
+  assert.match(flatNa, /denie[sd]|denial/i, 'what to do when the gate still denies speckit-implement');
+  assert.ok(skill.indexOf('\n## No agents') > skill.indexOf('\n## Team') && skill.indexOf('\n## No agents') < skill.indexOf('\n## 0b.'),
+    '## No agents sits between ## Team and ## 0b.');
+});
+
+test('noagents: README "Choosing the team" and the guardrail table describe --team noagents and the typed /speckit-team gate', () => {
+  const sec = flat(mdSection(repoText('README.md'), '#### Choosing the team'));
+  assert.match(sec, /--team noagents/);
+  assert.match(sec, /speckit-specify[^.]*speckit-plan[^.]*speckit-tasks[^.]*speckit-implement/, 'the four Spec Kit commands, in order');
+  const row = repoText('README.md').split('\n').find((l) => /^\| `gate` \| `settings\.json`/.test(l));
+  assert.match(row, /speckit-team/, 'the settings.json gate row names the typed /speckit-team');
+  assert.match(row, /noagents/);
 });
 
 test('006 T016 FR-011: CLAUDE.md Rules name the Team: and Unbuilt: lines as held by test/install.test.mjs', () => {

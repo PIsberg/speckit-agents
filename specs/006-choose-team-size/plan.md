@@ -41,7 +41,12 @@ today's (FR-002).
 **Performance Goals**: one hook process per main-session `Agent` launch: 172 ms mean inside a Spec
 Kit repo and 148 ms outside one (10 runs each of today's `gate` path, Windows, 2026-10-11); budget
 500 ms (constitution III). The 148 ms outside a Spec Kit repo is allowed by constitution 1.1.0,
-Installation Constraints
+Installation Constraints. Re-measured on the Agent path itself after the merge (#104, 2026-10-11,
+Windows 11, Node 26.8.2, 20 runs each, one `node hooks/speckit-team.mjs gate` process per run with
+an Agent launch carrying a `Team:` line): 130 ms mean (p90 150 ms) inside a Spec Kit repo, where it
+parses the prompt and writes the record, and 100 ms (p90 108 ms) outside one. A launch with no
+`Team:` line: 151 ms (p90 252 ms) inside, 97 ms outside. A typed `/speckit-team --team noagents`:
+118 ms inside, 98 ms outside. All within the 500 ms budget.
 
 **Constraints**: the audit gate fails closed: a missing, unreadable or other-session team record
 means the full team's gates
@@ -124,6 +129,10 @@ the team question (D4).
   one (contract section 5).
 - The architect writes test and implementation tasks whatever the team; the skill skips those of an
   absent role and lists them (contract section 5).
+- The first `Team:` line of a request is trusted (#101): the hook cannot check it against the answer
+  to the team question. Since 2026-10-11 a later line cannot drop spec-auditor from a request's team,
+  and a request starts at the typed `/speckit-team`; only `--team noagents`, read from the typed
+  command, opens the main session's gate (contract sections 7 and 9).
 
 ## Complexity Tracking
 

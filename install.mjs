@@ -12,12 +12,13 @@
 //                                    the team's agents run in the foreground; later reruns keep it
 //   node install.mjs --fork          remove what --no-fork wrote
 //
-// After installing, /speckit-patch <change> is the fast track for small changes, and
-// /speckit-triage <request> suggests which track fits.
-//
-//   /speckit-team --team <roles> <request>   run only the roles you name (comma-separated, from
-//                                            product-owner, architect, spec-auditor, test-writer,
-//                                            implementer, spec-gatekeeper); without --team it asks
+// Then, in Claude Code (slash commands you type in a session, not installer flags):
+//   /speckit-team <request>                   the pipeline; it asks which roles take part
+//   /speckit-team --team <roles> <request>    only the roles you name, comma-separated, from product-owner,
+//                                             architect, spec-auditor, test-writer, implementer, spec-gatekeeper
+//   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
+//   /speckit-patch <change>                   the fast track for a small change
+//   /speckit-triage <request>                 suggests which of them fits
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -33,8 +34,9 @@ const SETTINGS_GATES = [
   // Claude calling the speckit-implement skill itself, and the main session launching an agent (the
   // gate records the launch's Team line there and never decides).
   { event: 'PreToolUse', matcher: 'Skill|Agent' },
-  // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse.
-  { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement' },
+  // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse. The user typing
+  // /speckit-team starts a request; typed with --team noagents, it records that no agent runs.
+  { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement|speckit-team' },
 ];
 
 const argv = process.argv.slice(2);
@@ -458,6 +460,7 @@ Done. Next:
   1. Restart Claude Code (agents load at session start).
   2. In a repo: specify init --here --integration claude (/speckit-team drafts the constitution with you).
   3. Run a feature: /speckit-team <feature idea>    or one phase: @agent-architect ...
+     With no agents, Spec Kit's own commands in one session: /speckit-team --team noagents <feature idea>
   4. A small change: /speckit-patch <change>
   Not sure which track: /speckit-triage <request>`);
 if (wantBoard) console.log(`  The board: /speckit-board in a session. ${boardResult.added

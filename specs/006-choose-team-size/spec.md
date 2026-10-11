@@ -16,6 +16,11 @@
 - Q: Which roles are mandatory? → A: None individually, but a team must contain at least one of test-writer or implementer.
 - Q: Is the team chosen interactively, from the request text, or both? → A: Both. The request text can name roles. When it names none, the user is asked once, with the full team as the recommended answer.
 
+### Amendment 2026-10-11 (after merge)
+
+- Q: How does a user run with no agents at all? → A: `/speckit-team --team noagents <request>` (owner request, 2026-10-11): the main session runs Spec Kit's own commands itself (FR-013).
+- Q: What brief does a team with product-owner but no architect build from? → A: The approved `spec.md`, as contracts/team-choice.md section 4 already said (#105, FR-012).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Run a request with a chosen subset of the team (Priority: P1)
@@ -122,8 +127,9 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - The user names an empty team or a team with neither test-writer nor implementer (see FR-006):
   the run stops before launching anything and says what is missing.
 - The user names a subset in which a role needs an input no remaining role produces (for example
-  implementer without any task list): the request text is the brief and the role works from it
-  (FR-012); the run does not stop to ask for a spec, plan or task list.
+  implementer without any task list): the brief is the approved `spec.md` when product-owner is
+  chosen, otherwise the request text, and the role works from it (FR-012); the run does not stop to
+  ask for a plan or task list.
 - The user names architect without product-owner, or spec-auditor without architect: the run
   stops before launching anything and says which role each one needs.
 - The user names a role twice: it counts once.
@@ -147,9 +153,9 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - **FR-005**: At the start of a run the user MUST be told in one line which roles take part and
   which steps are skipped.
 - **FR-006**: The run MUST refuse, before launching anything, a choice that names an unknown
-  role, an empty team, a team containing neither test-writer nor implementer, architect without
-  product-owner, or spec-auditor without architect, and MUST say why and list valid names. No
-  single role is mandatory beyond these rules.
+  role, an empty team, `noagents` together with a role, a team containing neither test-writer nor
+  implementer, architect without product-owner, or spec-auditor without architect, and MUST say why
+  and list valid names. No single role is mandatory beyond these rules.
 - **FR-007**: A guardrail that waits for an unchosen upstream role MUST NOT block the run for
   want of that role, and a guardrail whose upstream role is chosen MUST block exactly as today.
 - **FR-008**: The run's final report MUST list the roles that ran, the steps skipped and every
@@ -160,9 +166,15 @@ accepting the recommendation yields the full team. Start one that names roles: n
   of role names, before the request text. When it names none, the user MUST be asked once which
   roles take part, with the full team as the recommended answer; accepting it yields the full
   team. A request that names roles MUST NOT be asked again.
-- **FR-012**: When the chosen team has no role that writes the spec or the task list
-  (product-owner, architect), the request text MUST serve as the brief: the chosen roles work
-  from it in one round, and the run neither requires nor creates a spec, a plan or a task list.
+- **FR-012** (amended 2026-10-11, #105): When the chosen team has no architect, the build roles
+  MUST work in one round from a brief, and the run neither requires nor creates a plan or a task
+  list. With product-owner the brief is the approved `spec.md`; without it the brief is the request
+  text, and the run neither requires nor creates a spec either.
+- **FR-013** (added 2026-10-11): A request MAY name `--team noagents`, typed by the user. Then no
+  agent is launched: the main session runs Spec Kit's own specify, plan, tasks and implement
+  commands itself, asks the user the spec's open questions, and stops for the spec review and the
+  plan approval. The audit gate MUST NOT block that request's `/speckit-implement`, and only the
+  user's typed command, never a launch prompt, can make that choice.
 - **FR-011**: The documentation a user consults (README, role and guardrail tables) MUST state
   how to choose the team, what each omission skips and which guardrails follow.
 
@@ -190,6 +202,9 @@ accepting the recommendation yields the full team. Start one that names roles: n
   (0 regressions in the gate's existing cases).
 - **SC-005**: The final report of a subset run names every skipped step and guardrail, with 0
   omissions against the list derived from the chosen team.
+- **SC-006** (added 2026-10-11): A request typed with `--team noagents` launches 0 agents, and its
+  `/speckit-implement` passes the audit gate with no audit recorded; the same call in a request
+  typed without it is denied.
 
 ## Assumptions
 

@@ -1807,25 +1807,162 @@ test('team: case and order are normalised, a name given twice counts once (Edge 
   assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer']);
 });
 
-test('team: a launch with no Team line removes the record, silently (FR-009)', () => {
-  const { dir } = repo();
-  agentLaunch(dir, 'Team: implementer');
-  assert.ok(fs.existsSync(teamFile(dir)));
-  const out = agentLaunch(dir, 'plain prompt');
-  assert.equal(out, null);
-  assert.ok(!fs.existsSync(teamFile(dir)));
+const ALL_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+// A typed /speckit-team, as Claude Code hands it to the UserPromptExpansion gate (seen on 2.1.296).
+const typedTeam = (dir, args, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'UserPromptExpansion', expansion_type: 'slash_command', command_name: 'speckit-team',
+  command_args: args, prompt: `/speckit-team ${args}`, session_id: 's1', ...extra,
+});
+const mainSkill = (dir, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'PreToolUse', tool_name: 'Skill', session_id: 's1', tool_input: { skill: 'speckit-implement' }, ...extra,
+});
+const typedImplement = (dir, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'UserPromptExpansion', expansion_type: 'slash_command', command_name: 'speckit-implement',
+  command_args: '', prompt: '/speckit-implement', session_id: 's1', ...extra,
 });
 
-test('team: a Team line naming a non-role removes the record and names the word (FR-006)', () => {
+test('team: a team-role launch with no Team line records the full team, silently (FR-002, FR-009, #101)', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: implementer');
+  assert.deepEqual(teamRecord(dir).roles, ['implementer']);
+  const out = agentLaunch(dir, 'plain prompt');
+  assert.equal(out, null);
+  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES);
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/, 'the full gate is back');
+});
+
+test('team: a Team line naming a non-role records the full team and names the word (FR-006)', () => {
   const { dir } = repo();
   for (const [line, word] of [['Team: test-writer, patcher', 'patcher'], ['Team:', '']]) {
+    typedTeam(dir, 'next request');
     agentLaunch(dir, 'Team: implementer');
     const out = agentLaunch(dir, `go\n${line}`);
     assert.ok(!denied(out), line);
     assert.match(out?.systemMessage ?? '', /speckit-team: the Team line names .*, not a team role; the full team's gates apply/, line);
     if (word) assert.match(out.systemMessage, new RegExp(`names ${word},`), line);
-    assert.ok(!fs.existsSync(teamFile(dir)), line);
+    assert.deepEqual(teamRecord(dir).roles, ALL_ROLES, line);
   }
+});
+
+test('team (#103): a launch of an agent that is no team role leaves the record alone', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  for (const subagent_type of ['Explore', 'general-purpose', 'patcher', undefined, 7]) {
+    assert.equal(agentLaunch(dir, 'look around', { tool_input: { subagent_type, prompt: 'look around' } }), null, String(subagent_type));
+    assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer'], String(subagent_type));
+  }
+  assert.equal(subTool(dir), null, 'a background test-writer of the subset run still skips the audit check');
+  agentLaunch(dir, 'Team: test-writer, implementer', { tool_input: { subagent_type: 'Implementer', prompt: 'go' } });
+  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES, 'a role name in any case is a team role; no Team line is the full team');
+});
+
+test('team (#102): an Agent call made by a subagent never decides and leaves the record alone, audit or not', () => {
+  const { dir } = repo();
+  assert.equal(agentLaunch(dir, 'go', { agent_id: 'sub7' }), null, 'no audit, no record: no decision');
+  assert.ok(noTeamFiles(dir));
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  for (const prompt of ['go', 'go\nTeam: implementer', 'go\nTeam: nobody']) {
+    assert.equal(agentLaunch(dir, prompt, { agent_id: 'sub7' }), null, prompt);
+    assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer'], prompt);
+  }
+});
+
+test("team (#101): once the request's team has spec-auditor, a Team line cannot drop it; a typed /speckit-team starts a new request", () => {
+  const { dir } = repo();
+  assert.equal(typedTeam(dir, 'add a flag'), null, 'a typed /speckit-team without --team noagents only starts a request');
+  agentLaunch(dir, 'go');
+  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES);
+  const out = agentLaunch(dir, 'go\nTeam: test-writer, implementer');
+  assert.ok(!denied(out), 'the launch itself is never denied');
+  assert.match(msg(out), /speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on\. A new \/speckit-team request chooses a new team\./);
+  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES, 'the record is unchanged');
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+  // A Team line that keeps spec-auditor may still narrow the rest.
+  agentLaunch(dir, 'go\nTeam: product-owner, architect, spec-auditor, implementer');
+  assert.deepEqual(teamRecord(dir).roles, ['product-owner', 'architect', 'spec-auditor', 'implementer']);
+  // The next request chooses afresh (FR-009).
+  assert.equal(typedTeam(dir, '--team test-writer, implementer fix it'), null);
+  assert.ok(!fs.existsSync(teamFile(dir)), 'the typed command removes the record');
+  agentLaunch(dir, 'go\nTeam: test-writer, implementer');
+  assert.equal(subTool(dir), null);
+  // Another session's typed command changes nothing here.
+  typedTeam(dir, 'other work', { session_id: 's2' });
+  assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer']);
+});
+
+test('team noagents: a typed /speckit-team --team noagents opens the main session\'s /speckit-implement, and nothing else', () => {
+  const { dir } = repo();
+  assert.ok(denied(mainSkill(dir)), 'no audit: the Skill call is denied today');
+  const out = typedTeam(dir, '--team noagents add a file');
+  assert.ok(!denied(out) && out?.decision === undefined, 'never a decision');
+  assert.match(msg(out), /speckit-team: no agents for this request: \/speckit-implement in this session skips the audit gate until the next \/speckit-team or team agent launch/);
+  const rec = teamRecord(dir);
+  assert.deepEqual(rec.roles, []);
+  assert.equal(rec.noagents, true);
+  assert.ok(!JSON.stringify(rec).includes('add a file'), 'no request text in the record');
+  assert.equal(mainSkill(dir), null, 'the Skill call goes through');
+  assert.equal(typedImplement(dir), null, 'a typed /speckit-implement goes through');
+  assert.ok(denied(mainSkill(dir, { session_id: 's2' })), "another session's Skill call is still denied");
+  // A team agent launched anyway turns the run into a team run: the full team's gates apply.
+  agentLaunch(dir, 'go');
+  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES);
+  assert.ok(denied(mainSkill(dir)));
+});
+
+test('team noagents: only a typed list of exactly noagents counts, in any case; a later /speckit-team ends it', () => {
+  const cases = [
+    ['--team NoAgents add a file', true], ['--team noagents', true], ['  --team   noagents\nadd', true],
+    ['--team noagents, implementer add', false], ['--team noagents,implementer add', false], ['noagents add', false],
+    ['--team implementer add', false], ['add --team noagents', false], ['--teamnoagents add', false], ['', false],
+  ];
+  for (const [args, opens] of cases) {
+    const { dir } = repo();
+    typedTeam(dir, args);
+    assert.equal(denied(mainSkill(dir)), !opens, JSON.stringify(args));
+  }
+  const { dir } = repo();
+  // Without command_args (an older Claude Code), the typed prompt is read instead.
+  run(dir, ['gate'], { hook_event_name: 'UserPromptExpansion', command_name: 'speckit-team', prompt: '/speckit-team --team noagents x', session_id: 's1' });
+  assert.equal(mainSkill(dir), null);
+  assert.equal(typedTeam(dir, 'the next request'), null);
+  assert.ok(!fs.existsSync(teamFile(dir)));
+  assert.ok(denied(mainSkill(dir)), 'the next request has the full gate again');
+  // A Team line written by a model is never a no-agents record for the main session.
+  agentLaunch(dir, 'go\nTeam: noagents');
+  assert.ok(denied(mainSkill(dir)));
+});
+
+test('team noagents: unusable input records nothing and never decides; outside a Spec Kit repo it is silent (constitution II, III)', () => {
+  const { dir } = repo();
+  for (const extra of [{ session_id: '../x' }, { session_id: 7 }, { session_id: undefined }, { command_args: 7, prompt: 7 }]) {
+    const out = typedTeam(dir, '--team noagents x', extra);
+    assert.ok(!denied(out) && out?.decision === undefined, JSON.stringify(extra));
+  }
+  assert.ok(noTeamFiles(dir));
+  assert.ok(!fs.existsSync(path.join(stateDir(dir), 'x.json')));
+  const { dir: plain } = repo({ speckit: false });
+  assert.equal(typedTeam(plain, '--team noagents x'), null);
+  assert.ok(!fs.existsSync(path.join(stateDir(plain), 'team')));
+  // A plugin-namespaced command of the same name is the same command.
+  const { dir: d3 } = repo();
+  typedTeam(d3, '--team noagents x', { command_name: 'speckit-agents:speckit-team' });
+  assert.equal(teamRecord(d3).noagents, true);
+});
+
+test('team gate retries (#106): without architect in the team, the retry-limit text says the user decides', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer');
+  for (const id of ['n1', 'n2', 'n3']) report(dir, 'RESULT: RED', id, { session_id: 's1' });
+  const subset = subTool(dir, ['gate', 'retries']).hookSpecificOutput.permissionDecisionReason;
+  assert.match(subset, /3 times in a row/);
+  assert.match(subset, /There is no architect in this run's team, so the user decides/);
+  assert.doesNotMatch(subset, /The architect rethinks/);
+  typedTeam(dir, 'next');
+  agentLaunch(dir, 'go');
+  const full = subTool(dir, ['gate', 'retries'], { agent_id: 'full1' });
+  assert.match(full.hookSpecificOutput.permissionDecisionReason, /has not passed/, 'the full team meets the audit gate first');
+  pass(dir);
+  assert.match(subTool(dir, ['gate', 'retries'], { agent_id: 'full2' }).hookSpecificOutput.permissionDecisionReason, /The architect rethinks plan\.md or tasks\.md/);
 });
 
 test('team: a subagent launch records nothing; a non-string prompt or an unusable session_id does nothing (constitution III)', () => {
@@ -1890,7 +2027,7 @@ test("team gate: an unreadable record keeps the gate shut with today's text (fai
   }
 });
 
-test('team gate: the record is never read without agent_id; the implement skill and typed command stay blocked (SC-004, US2-2)', () => {
+test('team gate: a subset record opens nothing without agent_id; the implement skill and typed command stay blocked (SC-004, US2-2)', () => {
   const { dir } = repo();
   agentLaunch(dir, 'Team: test-writer, implementer');
   assert.ok(fs.existsSync(teamFile(dir)), 'the record exists, so the blocks below are the rule, not a missing record');

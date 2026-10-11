@@ -11,8 +11,9 @@
 //                           team, and in the speckit-agents repo its own sources; allow the rest
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution; skipped in a
-//                           subagent whose session's team (recorded at the main session's Agent launch from
-//                           its `Team:` line, never a decision) lacks spec-auditor
+//                           subagent whose session's team (recorded at the main session's launch of a team
+//                           role from its `Team:` line, never a decision) lacks spec-auditor, and for the main
+//                           session after the user typed /speckit-team --team noagents
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
@@ -266,14 +267,27 @@ function parseTeam(prompt) {
   if (bad !== undefined) return { bad };
   return { roles: TEAM_ROLES.filter((r) => words.includes(r)) };
 }
-// The session's recorded roles, or null when missing or unreadable (the full gates then apply).
+// The roles a typed `/speckit-team` names (contract section 1): the words after a leading `--team` up
+// to and including the first that does not end in a comma, lower case. null without `--team`.
+function typedRoles(args) {
+  const words = args.trim().split(/\s+/);
+  if (words[0] !== '--team') return null;
+  const list = [];
+  for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
+  return list.join('').split(',').map((w) => w.toLowerCase()).filter(Boolean);
+}
+// The session's team record, { roles, noagents }, or null when missing or unreadable (the full gates
+// then apply). `noagents` comes only from a typed `/speckit-team --team noagents`.
 function teamOf() {
   const id = str(input.session_id);
   if (!id || !SESSION_ID.test(id)) return null;
   const r = readState(teamFile(id));
-  return r && Array.isArray(r.roles) && r.roles.every((x) => TEAM_ROLES.includes(x)) ? r.roles : null;
+  if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
+  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0 };
 }
-const auditSkipped = () => Boolean(agentId) && Boolean(teamOf()) && !teamOf().includes('spec-auditor');
+// A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
+// in a request the user typed as `/speckit-team --team noagents`.
+const auditSkipped = () => { const t = teamOf(); return Boolean(t) && (agentId ? !t.roles.includes('spec-auditor') : t.noagents); };
 
 function auditProblem() {
   const feat = feature();
@@ -376,21 +390,41 @@ if (mode === 'scope') {
 if (mode === 'gate') {
   // A typed /speckit-implement fires UserPromptExpansion, not UserPromptSubmit or PreToolUse(Skill).
   const typed = event === 'UserPromptExpansion';
+  // A typed /speckit-team starts a request, whose team is chosen afresh (FR-009). Typed with
+  // `--team noagents`, it records that no agent runs. Only the user's own typing does that: a model
+  // cannot type a slash command. Never a decision (contract section 7).
+  if (typed && /(^|:)speckit[-.]team$/.test(input.command_name || '')) {
+    const id = str(input.session_id);
+    if (!id || !SESSION_ID.test(id)) process.exit(0);
+    fs.rmSync(teamFile(id), { force: true });
+    const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
+    if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
+    writeJson(teamFile(id), { session_id: id, roles: [], noagents: true, at: new Date().toISOString() });
+    emit({ systemMessage: 'speckit-team: no agents for this request: /speckit-implement in this session skips the audit gate until the next /speckit-team or team agent launch' });
+  }
   if (typed && !/(^|:)speckit[-.]implement$/.test(input.command_name || '')) process.exit(0);
   // Reporting back is not work. Gating SubagentHandback leaves a blocked agent unable to say so.
   if (event === 'PreToolUse' && input.tool_name === 'SubagentHandback') process.exit(0);
   if (event === 'PreToolUse' && input.tool_name === 'Agent') {
-    // Never a decision: only the team record changes. A subagent's launch records nothing.
+    // Never a decision: only the team record changes, and only at the main session's launch of a team
+    // role. A subagent's Agent call (#102) and a launch of any other agent (#103) change nothing.
     const id = str(input.session_id);
-    if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
+    const role = str(input.tool_input?.subagent_type)?.toLowerCase();
+    if (agentId || !id || !SESSION_ID.test(id) || !TEAM_ROLES.includes(role) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     const team = parseTeam(input.tool_input.prompt);
-    if (!team) { fs.rmSync(teamFile(id), { force: true }); process.exit(0); }
-    if ('bad' in team) {
-      fs.rmSync(teamFile(id), { force: true });
-      emit({ systemMessage: `speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply` });
+    // No Team line, or one naming a non-role: the full team (FR-002).
+    const roles = team && !('bad' in team) ? team.roles : TEAM_ROLES;
+    const was = teamOf();
+    // Within a request the team never loses spec-auditor once it has it (#101); a typed /speckit-team
+    // starts the next request.
+    if (was?.roles.includes('spec-auditor') && !roles.includes('spec-auditor')) {
+      emit({ systemMessage: "speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team." });
     }
-    writeJson(teamFile(id), { session_id: id, roles: team.roles, at: new Date().toISOString() });
-    emit({ systemMessage: `speckit-team: team for this session: ${team.roles.join(', ')}; audit gate ${team.roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}` });
+    writeJson(teamFile(id), { session_id: id, roles, at: new Date().toISOString() });
+    if (team && 'bad' in team) emit({ systemMessage: `speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply` });
+    if (team) emit({ systemMessage: `speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}` });
+    if (was?.noagents) emit({ systemMessage: "speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here" });
+    process.exit(0);
   }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
     const ti = input.tool_input || {};
@@ -410,9 +444,13 @@ if (mode === 'gate') {
         + `Delete ${retryFile(feat)} to reset it.`);
     }
     if (redCount(r, feat) >= MAX_RED) {
+      // A team without architect has nobody to rethink the plan (#106, contract section 5).
+      const team = teamOf();
+      const next = team && !team.roles.includes('architect')
+        ? "There is no architect in this run's team, so the user decides"
+        : 'The architect rethinks plan.md or tasks.md (the new audit resets the count), or the user decides';
       deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
-        + 'Stop and report back; do not try to reset the count. The architect rethinks plan.md or tasks.md '
-        + `(the new audit resets the count), or the user decides, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
+        + `Stop and report back; do not try to reset the count. ${next}, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
     }
   }
   if (agentId && !fs.existsSync(baseFile(agentId))) {
