@@ -52,8 +52,9 @@ same with `spec-auditor` in the line: denied with today's text.
   `session_id` as the subagent call; another session's record is ignored; a record holding `{` or
   `{"roles": 3}` keeps the gate shut with today's `has not passed` text; the lane start record
   (`.git/speckit-team/agents/<agent_id>.json`) is still written when the audit is skipped; `gate
-  retries` with the audit skipped and `.specify/feature.json` removed exits 0 with no decision, and
-  with a feature still denies after 3 REDs (`MAX_RED`); `result` with the audit skipped counts a RED
+  retries` with the audit skipped and `.specify/feature.json` removed exits 0 with no decision and
+  still writes that lane start record for its `agent_id` (D7), and with a feature still denies after
+  3 REDs (`MAX_RED`); `result` with the audit skipped counts a RED
   instead of `not counted`; a `Skill` call to `speckit-implement` and a typed
   `UserPromptExpansion` without `agent_id` stay blocked whatever the record says. Every existing
   gate, result and retry test stays unchanged (SC-002).
@@ -61,8 +62,10 @@ same with `spec-auditor` in the line: denied with today's text.
   roles in `teamFile(str(input.session_id))` when the id matches `^[\w-]{1,128}$` and `roles` is an
   array of `TEAM_ROLES` names, else null; uses `readState`) and `function auditSkipped(): boolean`
   (`Boolean(agentId)` and `teamOf()` lacks `spec-auditor`). In `if (mode === 'gate')` skip the
-  `auditProblem()` deny when `auditSkipped()`; in the `args[0] === 'retries'` branch return before
-  `retryFile(feat)` when `feature()` is null; in `if (mode === 'result')` use
+  `auditProblem()` deny when `auditSkipped()`; enter the `args[0] === 'retries'` branch only when
+  `feature()` is not null (hoist `const feat = feature()` into its condition), with no `return` or
+  `process.exit` there: it is module top level, and the lane start record after it
+  (`baseFile(agentId)`, `writeJson`) must still be written (D7); in `if (mode === 'result')` use
   `auditSkipped() ? null : auditProblem()` for `closed`. Update the header comment's `gate` lines
   (lines 12 to 14) for the `Agent` launch and the team.
 
@@ -118,32 +121,46 @@ L1 shows it live (T018).
 ### Slice 5: every step follows the team
 
 - [ ] T010 [US1] Test in `test/install.test.mjs` that the installed skill guards each of its steps
-  by role and runs the brief round: covers FR-003, FR-004, FR-008, FR-012, US1-1, US1-2, US1-4,
-  US3-3, SC-001, SC-005 and the Edge Case on a role whose input no chosen role writes. Not settled
-  elsewhere: steps 1, 2, 3 and 6 each name their role as the condition; findings and REJECTED
-  reasons go only to a chosen role and otherwise to the user; without product-owner the skill
-  creates the `team/` branch of contract section 4 before the first launch; the brief round is one
-  test-writer then one implementer with `last round`; step 7's report lists the roles that ran,
-  section 5's rows for the absent ones and the unticked tasks; the existing assertions on `## 4-5.`
-  (`installed speckit-team skill builds a tasks.md phase per round`) still hold.
+  by role and runs the brief round: covers FR-003, FR-004, FR-007, FR-008, FR-012, US1-1, US1-2,
+  US1-4, US3-3, SC-001, SC-003, SC-005 and the Edge Case on a role whose input no chosen role
+  writes. Not settled elsewhere: steps 1, 2, 3 and 6 each name their role as the condition; findings
+  and REJECTED reasons go only to a chosen role and otherwise to the user; without product-owner the
+  skill creates the `team/` branch of contract section 4 before the first launch; the brief round is
+  one test-writer then one implementer with `last round`; step 6 launches no implementer for a task
+  of an absent role, starts spec-gatekeeper after the last test-writer `RED` when implementer is
+  absent, and puts the `Unbuilt:` line of contract section 5 in its prompt (quoted exactly), and
+  `## Handoffs` names that line for spec-gatekeeper; step 4-5 says that with no active feature the
+  main session stops relaunching implementer after 3 REDs in a row and hands the output to the user
+  (D7); step 7's report lists the roles that ran, section 5's rows for the absent ones, the unticked
+  tasks and the D7 count; the existing assertions on `## 4-5.` (`installed speckit-team skill
+  builds a tasks.md phase per round`) and on step 6 still hold.
 - [ ] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: a role condition at the head of
   `## 1. Spec: product-owner`, `## 2. Plan and tasks: architect`, `## 3. Audit: spec-auditor`,
-  `## 6. Verify: spec-gatekeeper`; in `## 4-5.`, the one-round brief run of contract section 4
-  and the skip of an absent role's step and tasks; commits of approved files with the next launch
-  whichever role it is; in `## 7. Hand over`, the report of contract section 5 (FR-008).
+  `## 6. Verify: spec-gatekeeper`; in `## 4-5.`, the one-round brief run of contract section 4,
+  the skip of an absent role's step and tasks, and in its step 3 (Green) the no-feature count of
+  contract section 5 (D7) beside `After 3 REDs in a row the hook blocks implementer`; in `## 6.`,
+  the start condition and `Unbuilt:` line of contract section 5, with `A task still unticked then`
+  limited to the chosen roles' tasks; in `## Handoffs`, the `Unbuilt:` line in the spec-gatekeeper
+  entry; commits of approved files with the next launch whichever role it is; in `## 7. Hand
+  over`, the report of contract section 5 (FR-008).
 
 ### Slice 6: the build roles take a brief and the Team line
 
 - [ ] T012 [US1] Test in `test/install.test.mjs` that the installed `agents/test-writer.md`,
   `agents/implementer.md` and `agents/spec-gatekeeper.md` follow contract sections 4 to 6: covers
-  FR-007 (spec-gatekeeper's checks), FR-012. Not settled there: test-writer and implementer read a
-  brief in their prompt in place of task IDs and tick nothing then; spec-gatekeeper reads the
-  `Team:` line, reports a check whose role is absent as skipped and not as a REJECTED reason, and
-  traces the brief's requirements when there is no `spec.md`; the existing test `README states the
-  agent bodies' length as agents/*.md has it` still holds.
-- [ ] T013 [US1] Implement in `agents/test-writer.md` (`## Inputs`, Process 3 and 4),
-  `agents/implementer.md` (`## Inputs`, Process 4) and `agents/spec-gatekeeper.md` (`## Inputs`,
-  Process 1 and 2, `## Verdict`) the rules of T012, and update README.md's sentence `Those bodies
+  FR-007 (spec-gatekeeper's checks), FR-012, SC-003, SC-005. Not settled there: test-writer and
+  implementer read a brief in their prompt in place of task IDs and tick nothing then; test-writer,
+  with a `Team:` line lacking implementer, lists a missing production symbol and still ends `RED`
+  instead of `BLOCKED` (contract section 5, implementer row); spec-gatekeeper reads the `Team:` and
+  `Unbuilt:` lines, skips exactly the `Unbuilt:` IDs in its open-task check and still rejects any
+  other open task, skips that check when there is no `tasks.md`, reports a check whose role is
+  absent as skipped and not as a REJECTED reason, and traces the brief's requirements when there is
+  no `spec.md`; the existing test `README states the agent bodies' length as agents/*.md has it`
+  still holds.
+- [ ] T013 [US1] Implement in `agents/test-writer.md` (`## Inputs`, Process 2's missing-stub
+  bullet, Process 3 and 4), `agents/implementer.md` (`## Inputs`, Process 4) and
+  `agents/spec-gatekeeper.md` (`## Inputs`, Process 1 and 2, `## Verdict`'s `any task is open`)
+  the rules of T012, and update README.md's sentence `Those bodies
   are 22 to 94 lines long` (section "The team") if the new body lengths move either bound.
 
 **Checkpoint**: `node --test test/install.test.mjs` green.
@@ -173,13 +190,14 @@ L1 shows it live (T018).
   section on choosing the team whose table names every `TEAM_ROLES` role with the steps and
   guardrails its absence skips; README's guardrail table row for the `settings.json` `gate` names
   `Skill|Agent`; `node install.mjs --help` prints a `--team` line; CLAUDE.md's Rules name the
-  `Team:` line as a rule held by `test/install.test.mjs`.
+  `Team:` and `Unbuilt:` lines as rules held by `test/install.test.mjs`.
 - [ ] T017 Implement the docs: README.md: a `#### Choosing the team` subsection under "The pipeline
   skill" with contract sections 1, 3, 5 and 8, a `--team` example in Quick start "2. Run the
   pipeline", the `gate` rows of "Guardrails", a paragraph in "The audit gate" on the team record,
-  `team/` in "State", D6's line in "Known limits", the test count in "Test suite"; CLAUDE.md: the
-  `Team:` line in Rules (skill, `TEAM_ROLES`, spec-gatekeeper, held by `test/install.test.mjs`) and
-  the test count in Verify; `install.mjs`'s header comment (its `--help` text): a line on
+  `team/` in "State", D6's and D7's lines in "Known limits", the test count in "Test suite";
+  CLAUDE.md: the `Team:` line in Rules (skill, `TEAM_ROLES`, spec-gatekeeper, held by
+  `test/install.test.mjs`) and beside it the `Unbuilt:` line (skill, spec-gatekeeper), and the test
+  count in Verify; `install.mjs`'s header comment (its `--help` text): a line on
   `/speckit-team --team <roles> <request>`.
 - [ ] T018 Run `specs/006-choose-team-size/quickstart.md` L1 to L4 and record each result, with the
   date and the Claude Code version, in README.md "Live results"; say which were seen live and

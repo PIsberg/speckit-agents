@@ -113,7 +113,11 @@ Unchanged: product-owner, architect, spec-auditor and patcher agents; the fast t
 ## Known limits
 
 - In a run without product-owner and architect, the implementer's retry count and spec-gatekeeper's
-  word go to the feature `.specify/feature.json` names, if any (D6).
+  word go to the feature `.specify/feature.json` names, if any (D6). With none, the retry limit is
+  the skill's count, which no hook enforces (D7).
+- In a run with `tasks.md` and without test-writer or implementer, spec-gatekeeper's open-task check
+  skips the tasks the skill names on the `Unbuilt:` line; it cannot tell a wrong list from a right
+  one (contract section 5).
 - The architect writes test and implementation tasks whatever the team; the skill skips those of an
   absent role and lists them (contract section 5).
 
@@ -168,4 +172,17 @@ None.
   - The implementer's REDs in such a run count against the feature `.specify/feature.json` names; a
     GREEN resets that count; 3 REDs in a row block implementer on it until a GREEN, a new audit or
     the user deletes the record. spec-gatekeeper's word replaces that feature's. With no active
-    feature nothing is counted (T003, T004).
+    feature the hook counts nothing (T003, T004); D7 caps the relaunches then.
+
+### D7. The retry limit in a run with implementer and no active feature
+
+- **A, chosen by the user 2026-10-11: the skill counts (contract sections 5 and 7).** After 3
+  `RESULT: RED` in a row the main session relaunches no implementer and hands the failing output to
+  the user; the start notice and the final report say the limit was the skill's, not the hook's
+  (FR-005, FR-008).
+  - No new state and no change to `result`, which already exits without a feature
+    (`hooks/speckit-team.mjs`, `mode === 'result'`). `gate retries` makes no decision there and
+    still writes the lane start record (M1). Tasks: T003, T004, T010, T011, T017.
+  - Not enforced: a main session that ignores the skill can relaunch past 3, and no hook stops it.
+    The same main session is the one that would otherwise loop, so the cap holds exactly as far as
+    the skill is followed.

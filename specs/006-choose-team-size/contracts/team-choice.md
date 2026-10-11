@@ -55,18 +55,36 @@ branch, so the main session does it before the first launch when the tree is on 
 | Absent role | Steps skipped | Guardrails skipped |
 |---|---|---|
 | product-owner | the spec, its questions, the spec review stop | none |
-| architect | plan and tasks, the plan stop and its open decisions, rounds by phase (one round instead) | none; at the retry limit the user decides, there is no architect to rethink |
+| architect | plan and tasks, the plan stop and its open decisions, rounds by phase (one round instead) | spec-gatekeeper's open-task check (Process 2): there is no `tasks.md`; at the retry limit the user decides, there is no architect to rethink |
 | spec-auditor | the audit and its FAIL routing | the audit gate on test-writer and implementer (`gate`) |
-| test-writer | the red step; the test tasks of `tasks.md` stay unticked and are listed | spec-gatekeeper's test trace (Process 1) |
-| implementer | the stub and green steps; the implementation tasks stay unticked and are listed | spec-gatekeeper's passing tests: the red tests are the run's result |
+| test-writer | the red step; the test tasks of `tasks.md` are never launched, step 6's extra round included, and stay unticked | spec-gatekeeper's test trace (Process 1) and its open-task check on the test tasks (Process 2) |
+| implementer | the stub and green steps and step 6's extra round; every task of `tasks.md` that is not a test task stays unticked; spec-gatekeeper starts after the last round's test-writer `RED` | the stub pass: a test failing on a missing production symbol counts as red, listed in test-writer's report; spec-gatekeeper's passing tests (the red tests are the run's result) and its open-task check on those tasks (Process 2) |
 | spec-gatekeeper | verification and REJECTED routing | the recorded last word (`ends --record`) |
+
+Unbuilt tasks: in a run with `tasks.md` and without test-writer or implementer, the skill splits the
+tasks as it does for rounds (a test task is test-writer's, every other task implementer's), never
+launches anyone for the absent role's tasks, and starts spec-gatekeeper only once every other task
+is ticked. spec-gatekeeper's prompt then carries one line after the `Team:` line
+
+```text
+Unbuilt: T001, T003, T005
+```
+
+with exactly the absent role's task IDs in task order. spec-gatekeeper's Process 2 skips those IDs
+and reports them as skipped, not as a REJECTED reason; any other open task still rejects. No
+`Unbuilt:` line, no skip.
 
 Every run keeps: hand-over (PR and CI, spec Assumptions), every chosen agent's `scope`, `lane`,
 `ends` and `result` hooks, the retry limit while implementer is chosen, tests before implementation
-when both test-writer and implementer are chosen, and the `/speckit-implement` gate.
+when both test-writer and implementer are chosen, and the `/speckit-implement` gate. The retry limit
+is the hook's on the active feature (D6). With no active feature (no `.specify/feature.json`, or one
+naming no directory in the repo) the hook counts nothing (section 7), so the skill counts instead:
+after 3 implementer `RESULT: RED` in a row it relaunches no implementer and hands the failing output
+to the user (D7).
 
 The one-line notice at the start (FR-005) and the final report (FR-008) name the rows of the absent
-roles, the report also the unticked tasks.
+roles; the report also lists the unticked tasks and, in a run with implementer and no active
+feature, that the retry limit was the skill's count, not the hook's (D7).
 
 ## 6. The `Team:` line
 
@@ -98,8 +116,10 @@ decision:
 
 In a subagent (`agent_id` set), `gate` and `gate retries` skip the audit check when the session's team
 record is readable and lacks `spec-auditor`; otherwise they deny with today's text. With the audit
-check skipped and no active feature, `gate retries` applies no retry limit. `result` counts a report
-as an attempt under the same rule instead of `not counted` while the audit is unpassed. Without
+check skipped and no active feature, `gate retries` makes no decision and still writes the lane
+start record (`agents/<agent_id>.json`, which `lane` needs); the skill's count of section 5 caps the
+relaunches instead (D7). `result` counts a report as an attempt under the same rule instead of `not
+counted` while the audit is unpassed; with no active feature it counts nothing, as today. Without
 `agent_id` (`/speckit-implement`, typed or as a Skill call) the record is never read.
 
 ## 8. The team question (FR-010, D5)

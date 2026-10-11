@@ -200,5 +200,7 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - Every role choice must keep today's rule that tests are written before implementation when
   both test-writer and implementer are chosen.
 - In a run without product-owner and architect, the implementer's retry count and
-  spec-gatekeeper's recorded word belong to the feature `.specify/feature.json` names, if any.
+  spec-gatekeeper's recorded word belong to the feature `.specify/feature.json` names; with no
+  such feature the main session stops relaunching implementer after 3 REDs in a row and the
+  final report says the hook's retry limit did not apply.
 - Out of scope: reordering roles, adding new roles, running roles in parallel differently.
