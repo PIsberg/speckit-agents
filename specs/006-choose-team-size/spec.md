@@ -60,8 +60,9 @@ and stops with the pre-change behaviour: identical.
 
 **Acceptance Scenarios**:
 
-1. **Given** a request that names no roles, **When** the run proceeds, **Then** every
-   step of the full pipeline runs in their current order with their current stops.
+1. **Given** a request that names no roles and the full team accepted at the team question,
+   **When** the run proceeds, **Then** every step of the full pipeline runs in its current order
+   with its current stops.
 2. **Given** the full team, **When** an agent is launched, **Then** every guardrail that applies
    today still applies to it, with the same decisions.
 
@@ -120,6 +121,8 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - The user names a subset in which a role needs an input no remaining role produces (for example
   implementer without any task list): the request text is the brief and the role works from it
   (FR-012); the run does not stop to ask for a spec, plan or task list.
+- The user names architect without product-owner, or spec-auditor without architect: the run
+  stops before launching anything and says which role each one needs.
 - The user names a role twice: it counts once.
 - The same role names are given in a different case or order: the run behaves the same.
 - A subset run is resumed or a second request starts in the same feature: the new request's own
@@ -131,8 +134,9 @@ accepting the recommendation yields the full team. Start one that names roles: n
 
 - **FR-001**: A user MUST be able to name, per `/speckit-team` request, which of the team's
   roles take part.
-- **FR-002**: With no roles named, the run MUST be the full team and behave exactly as before
-  this feature (same launches, order, stops and guardrail decisions).
+- **FR-002**: With the full team (all six named, or the full team accepted at the FR-010
+  question), the run MUST behave exactly as before this feature from then on (same launches,
+  order, stops and guardrail decisions).
 - **FR-003**: Only the chosen roles MUST be launched; no unchosen role is launched at any step,
   including fix rounds.
 - **FR-004**: Every step, stop and hand-off belonging to an unchosen role MUST be skipped without
@@ -140,17 +144,19 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - **FR-005**: At the start of a run the user MUST be told in one line which roles take part and
   which steps are skipped.
 - **FR-006**: The run MUST refuse, before launching anything, a choice that names an unknown
-  role, an empty team, or a team containing neither test-writer nor implementer, and MUST say why
-  and list valid names. No single role is mandatory beyond that rule.
+  role, an empty team, a team containing neither test-writer nor implementer, architect without
+  product-owner, or spec-auditor without architect, and MUST say why and list valid names. No
+  single role is mandatory beyond these rules.
 - **FR-007**: A guardrail that waits for an unchosen upstream role MUST NOT block the run for
   want of that role, and a guardrail whose upstream role is chosen MUST block exactly as today.
 - **FR-008**: The run's final report MUST list the roles that ran, the steps skipped and every
   guardrail skipped because its upstream role was absent.
 - **FR-009**: The team choice MUST apply to one request only and MUST NOT persist into later
   requests.
-- **FR-010**: The request text MAY name the roles. When it names none, the user MUST be asked
-  once which roles take part, with the full team as the recommended answer; accepting it yields
-  the full team. A request that names roles MUST NOT be asked again.
+- **FR-010**: The request MAY name the roles with a leading `--team` and a comma-separated list
+  of role names, before the request text. When it names none, the user MUST be asked once which
+  roles take part, with the full team as the recommended answer; accepting it yields the full
+  team. A request that names roles MUST NOT be asked again.
 - **FR-012**: When the chosen team has no role that writes the spec or the task list
   (product-owner, architect), the request text MUST serve as the brief: the chosen roles work
   from it in one round, and the run neither requires nor creates a spec, a plan or a task list.
@@ -172,8 +178,9 @@ accepting the recommendation yields the full team. Start one that names roles: n
 
 - **SC-001**: A request naming implementer and test-writer launches exactly 2 distinct roles and
   raises 0 user stops for spec, plan or audit approval.
-- **SC-002**: A request naming no roles produces the same launch sequence, stops and guardrail
-  decisions as the pre-change version in 100% of the existing full-pipeline test cases.
+- **SC-002**: A request with the full team produces, after the team question, the same launch
+  sequence, stops and guardrail decisions as the pre-change version in 100% of the existing
+  full-pipeline test cases.
 - **SC-003**: In every subset request, 0 unchosen roles are launched and 0 guardrails block for
   want of an absent role.
 - **SC-004**: In a full-team request whose audit has not passed, implementer is still blocked
@@ -189,4 +196,6 @@ accepting the recommendation yields the full team. Start one that names roles: n
 - Hand-over (PR and CI follow-up) belongs to the main session, not to a role, and stays.
 - Every role choice must keep today's rule that tests are written before implementation when
   both test-writer and implementer are chosen.
+- In a run without product-owner and architect, the implementer's retry count and
+  spec-gatekeeper's recorded word belong to the feature `.specify/feature.json` names, if any.
 - Out of scope: reordering roles, adding new roles, running roles in parallel differently.

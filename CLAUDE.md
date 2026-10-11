@@ -85,5 +85,5 @@ this file is how to work on it.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/005-standalone-board/plan.md`
+`specs/006-choose-team-size/plan.md`
 <!-- SPECKIT END -->
