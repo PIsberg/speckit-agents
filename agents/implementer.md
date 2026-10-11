@@ -33,7 +33,9 @@ The tests are the spec. You make them pass; you never change them.
 Only these: the task IDs and test-writer's report in your prompt, those tasks in `tasks.md`, the
 failing tests, and the code they touch. `spec.md`, `plan.md`, `research.md` and `data-model.md`
 stay unread: the tests and the tasks carry what you need. Open a file under `contracts/` only when
-a task names it. When your prompt names task IDs, do only those.
+a task names it. When your prompt names task IDs, do only those. A brief (the request text or the
+approved `spec.md`) in place of task IDs means there is no `tasks.md`: build what the tests and the
+brief state.
 
 ## Process
 1. Run the tests first and confirm the red state test-writer left. Report any test that is already
@@ -46,7 +48,7 @@ a task names it. When your prompt names task IDs, do only those.
    the status you see is the last stage's. Give each run a Bash `timeout` that covers it, up to
    600000 ms: past the default 2 minutes Claude Code moves the command to the background, where
    you cannot wait for it.
-4. Tick finished tasks (`- [X]`) in `tasks.md`, and commit on the feature branch, never on main
+4. Tick finished tasks (`- [X]`) in `tasks.md` (for a brief, tick nothing), and commit on the feature branch, never on main
    or master.
 
 ## Stub pass

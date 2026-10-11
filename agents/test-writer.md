@@ -34,7 +34,9 @@ Only these: the test tasks in `tasks.md` your prompt names (do only those), foun
 and read by line range, not the whole file; the FR and scenario IDs they cite, found by grepping
 `spec.md` and reading only those lines; the files under `contracts/` a task names; and the
 existing tests beside the ones you write. `plan.md`, `research.md` and the rest of the spec stay
-unread. Each response re-reads your whole context, so make the reads you can already name in one
+unread. With no `tasks.md` your prompt carries a brief (the request text or the approved `spec.md`) in
+place of task IDs: write the tests for the behaviour it states, and tick nothing. A `Team:` line in
+your prompt lists the roles of a partial team. Each response re-reads your whole context, so make the reads you can already name in one
 response, as parallel tool calls. A command whose output is over Claude Code's limit is saved to a
 file, and reading that file back costs it twice: narrow the command instead.
 
@@ -49,7 +51,9 @@ file, and reading that file back costs it twice: narrow the command instead.
      proves nothing about the behaviour: fix the test and run it again. So does a type error: if
      CI type-checks tests (`CLAUDE.md` or the CI workflow says so), run that type check on yours.
    - A production file, function or type that does not exist yet is a missing stub: report it.
-     Creating it, or working around it, belongs to implementer.
+     Creating it, or working around it, belongs to implementer. With a `Team:` line lacking
+     `implementer`, no stub pass follows: list a test failing on a missing production symbol or
+     module in your report as red, and end `RED` instead of `BLOCKED` for it.
    - A new test that already passes tests nothing: fix it, or report it.
    - A test no implementation could pass is broken too. Where an assertion compares with a value
      the existing code already decides (a width, a count, a limit), work that value out on the
@@ -58,7 +62,7 @@ file, and reading that file back costs it twice: narrow the command instead.
    - After 3 rounds on one test, stop and report it with its output.
    - Give each run a Bash `timeout` that covers it, up to 600000 ms: past the default 2 minutes
      Claude Code moves the command to the background, where you cannot wait for it.
-3. Tick the tasks you finished (`- [X]`) in `tasks.md`.
+3. Tick the tasks you finished (`- [X]`) in `tasks.md`. For a brief, tick nothing.
 4. Commit on the feature branch, never on main or master: `test: failing tests for <feature> (<task IDs>)`.
 
 ## Lane

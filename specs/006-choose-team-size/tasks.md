@@ -114,7 +114,7 @@ L1 shows it live (T018).
   `AGENTS` without `patcher` and the list in `hooks/speckit-team.mjs`'s `const TEAM_ROLES = [...]`
   (read from the source); the frontmatter `argument-hint` names `--team`; the `Team:` line's form is
   quoted exactly and the skill says a full-team run has none; the refusal comes before any launch.
-- [ ] T009 [US1] Implement in `skills/speckit-team/SKILL.md`: `argument-hint: "[--team <role>,<role>...] <feature idea>"`;
+- [X] T009 [US1] Implement in `skills/speckit-team/SKILL.md`: `argument-hint: "[--team <role>,<role>...] <feature idea>"`;
   a `## Team` section after `## 0. Preconditions` with contract sections 1 to 3 (syntax, the six
   names, the refusals with their reasons) and the one-line start notice built from section 5's
   rows; in `## Handoffs`, the `Team:` line of section 6 in every launch prompt of a subset run and
@@ -140,7 +140,7 @@ L1 shows it live (T018).
   production symbol or module that test-writer lists as red, still sends back a syntax error, and
   runs no stub step (contract section 5, implementer row); the existing assertions on `## 4-5.`
   (`installed speckit-team skill builds a tasks.md phase per round`) and on step 6 still hold.
-- [ ] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: a role condition at the head of
+- [X] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: a role condition at the head of
   `## 0b. Constitution` (architect, spec-auditor or spec-gatekeeper) and, in its item 3, where the
   draft is committed without product-owner (contract section 5, Constitution); at the head of
   `## 1. Spec: product-owner`, `## 2. Plan and tasks: architect`, `## 3. Audit: spec-auditor`,
@@ -167,7 +167,7 @@ L1 shows it live (T018).
   absent as skipped and not as a REJECTED reason, and traces the brief's requirements when there is
   no `spec.md`; the existing test `README states the agent bodies' length as agents/*.md has it`
   still holds.
-- [ ] T013 [US1] Implement in `agents/test-writer.md` (`## Inputs`, Process 2's missing-stub
+- [X] T013 [US1] Implement in `agents/test-writer.md` (`## Inputs`, Process 2's missing-stub
   bullet, Process 3 and 4), `agents/implementer.md` (`## Inputs`, Process 4) and
   `agents/spec-gatekeeper.md` (`## Inputs`, Process 1 and 2, `## Verdict`'s `any task is open`)
   the rules of T012, and update README.md's sentence `Those bodies

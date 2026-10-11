@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "<feature idea>"
+argument-hint: "[--team <role>,<role>...] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -53,11 +53,19 @@ and answers, or another agent's full report.
 - spec-auditor: the feature directory.
 - test-writer: the round's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
-  implementer launch only to tick them.
+  implementer launch only to tick them. In a one-round run (step 4-5) the brief instead.
 - implementer: the round's task IDs plus test-writer's report for them (test files and failing
   output, trimmed); on a relaunch, the failing output of the last attempt instead; `last round`
   when no round follows (step 4-5). For a stub pass, `stub` and the task IDs.
-- spec-gatekeeper: the feature directory.
+- spec-gatekeeper: the feature directory and, when tasks are unbuilt (step 6), the `Unbuilt:` line.
+
+In a run whose team is not the full team, every launch prompt carries one `Team:` line with the
+chosen roles in pipeline order, lower case, separated by a comma and a space, for example:
+
+    Team: test-writer, implementer
+
+A full-team run carries no `Team:` line, so its prompts are as above. Commit the approved files
+(spec, plan, tasks, the constitution) in the message of the next launch, whichever role it is.
 
 ## Pace
 Wait for the user only where a step says **Stop:**, or where it says to hand something to the
@@ -81,7 +89,40 @@ in as many calls as it takes, all before the next launch.
   checkout writes it for every project), then a restart, brings foreground launches back.
   Then go on.
 
+## Team
+`--team` counts only as the first word of the arguments: `--team <role>[,<role>...] <request>`. The
+role list is the words after it up to and including the first word that does not end in a comma
+(`test-writer, implementer` and `test-writer,implementer` both name two roles). Names are
+case-insensitive, a name given twice counts once, and order does not matter. The six team roles, in
+pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer` and
+`spec-gatekeeper`; `patcher` is not a team role (it is the fast track's). All six named is the full
+team, the same run as without `--team`.
+
+Before anything is launched, refuse in one message that says why and lists the six valid names:
+- a name that is not a team role (also `--team` followed straight by the request: its first word
+  is the unknown name): that name is not a team role;
+- an empty team: no roles named;
+- neither `test-writer` nor `implementer`: one of them is required;
+- `architect` without `product-owner`: architect plans from product-owner's spec;
+- `spec-auditor` without `architect`: spec-auditor audits architect's plan and tasks.
+
+Then tell the user in one line the team and what is skipped: every step of an absent role is
+skipped, as is step 0b unless architect, spec-auditor or spec-gatekeeper is chosen. Without
+product-owner nothing creates a feature branch: if the tree is on main or master, run
+`git switch -c team/<the request in kebab case, at most 40 characters>` before the first launch.
+Skipped rows, per absent role:
+- product-owner: the spec, its questions and the spec review stop.
+- architect: plan and tasks, the plan stop and its open decisions, rounds by phase (one round
+  instead), spec-gatekeeper's open-task check; at the retry limit the user decides.
+- spec-auditor: the audit and its FAIL routing, the audit gate on test-writer and implementer.
+- test-writer: the red step and the test tasks, which stay unticked.
+- implementer: the stub and green steps; its tasks stay unticked.
+- spec-gatekeeper: verification and REJECTED routing, the recorded last word.
+
 ## 0b. Constitution (only while it is the template)
+Run this step only when the team has architect, spec-auditor or spec-gatekeeper, the roles that
+read the constitution; otherwise skip it, the template stays and the start notice names it as
+skipped.
 The constitution is the user's rules: draft them, never decide them.
 1. Read only what the repo already states as rules: `CLAUDE.md` or `AGENTS.md`, the README's
    contributing or development section, the build file, the CI workflow. Draft 3 to 6 principles,
@@ -90,10 +131,12 @@ The constitution is the user's rules: draft them, never decide them.
 2. Show the draft and ask with AskUserQuestion: use it as drafted (recommended), or change it
    (the user's answer is the change).
 3. Invoke the `speckit-constitution` skill with the approved principles as its arguments. Do not
-   commit it here: step 1 creates the feature branch, and it is committed there.
+   commit it here: step 1 creates the feature branch, and it is committed there. Without
+   product-owner, commit it on the `team/` branch in the message of the first launch.
 **Stop:** the approval in 2. Then go on to step 1 without asking again.
 
 ## 1. Spec: product-owner
+Only when product-owner is in the team; without it, skip this step.
 Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then
 relaunch it with the answers. Repeat until `READY FOR PLAN`.
 Then make sure the work is on a feature branch. Spec Kit's git extension creates one during
@@ -106,6 +149,7 @@ one message in order, so the commit lands before the architect starts and needs 
 own, which would re-read your whole context.
 
 ## 2. Plan and tasks: architect
+Only when architect is in the team; without it, skip this step.
 **Stop:** the user settles every open decision and approves `plan.md`, `tasks.md` and the spec
 lines the decisions reword.
 The architect's report lists each open decision by ID; its options, and what follows from each,
@@ -128,14 +172,22 @@ costs more, since each `[P]` slice then gets its own agents instead of sharing i
 runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
+Only when spec-auditor is in the team; without it, skip this step.
 Commit the approved spec, plan and tasks in the message that launches it (see step 1). On FAIL,
 send each CRITICAL and HIGH finding to its owner (product-owner or architect), then re-audit.
+An owner not in the team (absent, unchosen) cannot take a finding: hand it to the user.
 MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
 or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
 while building never call for a re-audit.
 
 ## 4-5. Red and green, one round at a time
+Skip a step whose role is absent from the team, and never launch anyone for the tasks of an absent
+role. Without architect there is no `tasks.md`: run one round on a brief, the request text or, with
+product-owner, the approved `spec.md`. One test-writer then one implementer get the brief in their
+prompt in place of task IDs and tick nothing; implementer gets `last round`. A stub pass runs only
+when test-writer reports a missing production symbol.
+
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
 that cover it, as the architect wrote them. A round is the slices of one phase of `tasks.md` (Setup,
 Foundational, one user story), at most 4 slices: split a longer phase into rounds in task order.
@@ -153,7 +205,10 @@ For each round:
    entries it lists. A test-writer sent only to correct an existing test ends `FIXED`. Every
    test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
    missing import or module, an undefined name or a compile error is a broken test, not a red
-   one: send it back. If test-writer reports a missing production symbol, run step 1 for it. If
+   one: send it back. If test-writer reports a missing production symbol, run step 1 for it. When
+   implementer is absent there is no stub step: a failure on a missing production symbol or module
+   that test-writer lists is red, and the skill still sends back a syntax error or a missing
+   test-side name. If
    it reports a task number that cannot hold, send a test-writer the number the code allows when
    the task's intent is plain, and list the task at hand-over; otherwise the architect rewrites it.
 3. **Green** (implementer, the round's implementation task IDs, and `last round` when no round
@@ -162,6 +217,9 @@ For each round:
    14.5 of the 48 agent-minutes. Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
    relaunch it with the failing output. After 3 REDs in a row the hook blocks implementer: do not
    retry, and never delete the retry record yourself.
+   With no active feature (no `.specify/feature.json`, or one naming no directory) the hook counts
+   nothing, so count yourself: after 3 implementer `RESULT: RED` in a row, relaunch none and hand
+   the failing output to the user.
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
@@ -171,12 +229,24 @@ together in one message, each implementer with `isolation: "worktree"`,
 then merge their branches into the feature branch in task order.
 
 ## 6. Verify: spec-gatekeeper
-Start it as soon as the last round reports `RESULT: GREEN` and every task in `tasks.md` is ticked.
-A task still unticked then (a final test run, a docs task no round took) is one more round: launch
+Only when spec-gatekeeper is in the team; without it, skip this step. Start it as soon as the last
+round reports `RESULT: GREEN` and every task in `tasks.md` is ticked; when implementer is absent,
+as soon as the last round's test-writer reports `RED`. When test-writer or implementer is absent,
+launch no one for its tasks and put one line after the `Team:` line, the `Unbuilt:` line, with exactly those task IDs in
+task order, for example:
+
+    Unbuilt: T001, T003, T005
+
+and start once every other task is ticked.
+A task still unticked then (a final test run, a docs task no round took), limited to the chosen
+roles' tasks, is one more round: launch
 implementer for it with `last round`, and verify after its GREEN. Hand to the user only a task no
-agent can do. On REJECTED, route each reason to test-writer or implementer (an implementer then
+agent can do. On REJECTED, route each reason to test-writer or implementer, whichever is chosen (a reason for a
+role not chosen goes to the user) (an implementer then
 with `last round`), then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
-Report each agent's verdict and anything still skipped or open.
+Report the roles that ran with each one's verdict, a row for each absent role as skipped, the
+unticked tasks and anything still open. In a run with implementer and no active feature, say the
+retry limit was the skill's count, not the hook's.
