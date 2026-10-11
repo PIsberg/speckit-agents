@@ -235,7 +235,7 @@ L1 shows it live (T018).
   pipeline's four stops and product-owner's questions as the second, in the paragraph (today
   `the first of the pipeline's three stops`) and in the `pipeline.gif` alt text.
   Pattern: `README states the agent bodies' length as agents/*.md has it` (`flat`, the repo root).
-- [ ] T020 Implement in `docs/media/pipeline.tape` (header comment, the steps after `Type
+- [x] T020 Implement in `docs/media/pipeline.tape` (header comment, the steps after `Type
   "/speckit-team ...`) the team question's answer, Enter on `Full team (Recommended)`, and a wait
   for product-owner's dialog that starts once the team dialog has closed; in README.md "The
   pipeline" the paragraph and alt text of T019; then re-record with `node docs/media/record.mjs
