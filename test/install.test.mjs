@@ -307,6 +307,25 @@ test('installed implementer runs the full suite only in the round the skill call
   assert.ok(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 7.')).includes('`last round`'), 'the skill names the last round');
 });
 
+// #40, checked against a fake API with Claude Code 2.1.296 and git 2.55: a worktree starts from the
+// last commit, so it lacks test-writer's uncommitted tests; ticks on adjacent lines of tasks.md in two
+// branches conflict when merged; and `git add -A` commits a worktree left in place as an embedded
+// repository. test/e2e.test.mjs pins the worktree's start and the branch its result names.
+test('installed skill and implementer agree on building [P] slices side by side in worktrees (#40)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const implementer = flat(fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8'));
+  assert.match(implementer, /When your prompt says `worktree`, tick nothing/);
+  assert.match(implementer, /never with `worktree`/, 'the stub pass ticks nothing in a worktree either');
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const side = skill.slice(skill.indexOf('Only if the user chose side by side'), skill.indexOf('## 6.'));
+  for (const term of ['`isolation: "worktree"`', '`worktree` in its prompt', 'in the message that launches the implementers', 'After each implementer step, in one Bash call', '`worktreeBranch`', 'in task order', '`git worktree remove`', '`git branch -d`']) {
+    assert.ok(side.includes(term), term);
+  }
+  const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
+  assert.match(ask, /one at a time \(recommended: it costs less, and no run with real models has built slices side by side yet\)/);
+});
+
 // The main session is the run's largest cost: in 004 its 58 run responses took 8.92M, 2.73M of it
 // earlier conversation re-read by every response. While an agent works the user sees its Agent
 // description and its tool calls, never its text (checked against Claude Code 2.1.296's interface).
@@ -316,7 +335,7 @@ test('installed skill keeps the main session short and tells the user what each 
   assert.equal(install(dir).status, 0);
   const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
   assert.match(skill.slice(skill.indexOf('## 0.'), skill.indexOf('## 0b.')), /`\/clear`/);
-  assert.equal(skill.split('in the message that launches').length - 1, 2, 'the spec and the plan are committed with the next launch');
+  assert.equal(skill.split('in the message that launches').length - 1, 3, 'the spec, the plan and, side by side, the round\'s tests are committed with the next launch');
   for (const term of ['Before each launch', '`duration_ms`', 'Agent call\'s `description`']) assert.ok(skill.includes(term), term);
 });
 
