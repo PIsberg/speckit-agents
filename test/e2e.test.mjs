@@ -7,7 +7,7 @@
 // instead: it asks for the tool calls an agent would make, and the tests read the hook's decision
 // in the next request and the state files under .git/speckit-team/. A full pipeline run with real
 // models is #46.
-import { test } from 'node:test';
+import { describe, test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,6 +17,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Each test has its own repo, config dir and fake API on a port of its own, and spends nearly all its
+// time waiting on a claude process, so they run a few at a time: `test` queues them, and the suite at
+// the end of the file runs the queue. One at a time, this file took 148 s of the suite's 231 on
+// Windows (2026-10-11). SPECKIT_E2E_CONCURRENCY=1 runs them one by one again.
+const queued = [];
+const test = (...args) => { queued.push(args); };
+const CONCURRENCY = Number(process.env.SPECKIT_E2E_CONCURRENCY) || Math.max(1, Math.min(4, os.availableParallelism() - 1));
 // Spawned without a shell, as in install.test.mjs: a missing claude, or an npm-installed claude.cmd,
 // reports these skipped, not passed, except in CI, where SPECKIT_REQUIRE_CLAUDE=1 makes them fail.
 const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
@@ -664,3 +671,6 @@ test('a typed /speckit-team --team noagents lets the main session call speckit-i
   assert.doesNotMatch(lastResult(none.requests[MAIN][1]), /Implementation gate/, story(none));
   assert.equal(state(s, 'team', `${sessionId(none)}.json`).noagents, true, story(none));
 });
+
+// Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
+describe('end to end', { concurrency: CONCURRENCY }, () => { for (const args of queued) nodeTest(...args); });
