@@ -89,7 +89,7 @@ same with `spec-auditor` in the line: denied with today's text.
   `SPECKIT_E2E_NO_HOOK=1` the second and third cases fail (CLAUDE.md, Verify). The cases go after
   the file's last test, inside the run of hook-firing tests that README.md "End-to-end tests" counts
   (T016).
-- [ ] T007 [US3] Implement in `install.mjs: SETTINGS_GATES` the PreToolUse matcher `'Skill|Agent'`
+- [X] T007 [US3] Implement in `install.mjs: SETTINGS_GATES` the PreToolUse matcher `'Skill|Agent'`
   and its comment (Claude calling the speckit-implement skill, and the main session launching an
   agent). `install.mjs: withGates` needs no change: it rewrites `matcher` from `wanted.matcher`.
 
