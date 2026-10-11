@@ -21,7 +21,7 @@ this file is how to work on it.
   "Developing"). `architecture-visualized.svg` is drawn by hand, not recorded: edit it when an
   agent's model or lane, a pipeline stage or the retry limit changes.
 - `mods/speckit-board/`: an experimental Claude Code mod (function hooks, TypeScript run as source)
-  that draws the pipeline's state. `install.mjs --board` installs it through `claude plugin`, with
+  that draws the pipeline's state; it also runs with Spec Kit alone, without the team, and then draws the feature's files. `install.mjs --board` installs it through `claude plugin`, with
   this checkout as the marketplace (`.claude-plugin/marketplace.json`), so it is read in place;
   `claude --plugin-dir` loads it for one session. Its own tests are
   `mods/speckit-board/tests/*.test.ts(x)` under `claude plugin test`. It is a prototype for

@@ -1063,6 +1063,15 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
   drops, in this order, the other phases' names, the bar, the buttons and the other phases' glyphs.
   The current phase keeps its name. The buttons are `board`, `clear` and `hide`; on a short row
   they drop in the order `hide`, `clear`, `board`.
+- **With Spec Kit alone** (no team agent has run in the repo), the view has four phases, `spec`,
+  `plan`, `tasks` and `build`, read from the feature's files: `spec.md` (draft or approved), `plan.md`,
+  `tasks.md` and how many of its tasks are ticked. There is no audit or verify phase, no `RED n/3`,
+  no agent item in the band, no Team section in the pane and no `running:` line in the `status`
+  answer. The next step names the command to run (`start with /speckit-specify <idea>`,
+  `review spec.md, then /speckit-plan`, `run /speckit-plan`, `run /speckit-tasks`,
+  `/speckit-implement: T001 ...`, then the first unticked task, then `ready for the PR`). Once a
+  team agent has run, the team view above replaces it. The exact texts are in
+  `specs/005-standalone-board/contracts/board-text.md`.
 - **A pane**, opened with `/speckit-board` or the band's `board` button:
   - the next step: while building, the next open task of `tasks.md`; otherwise what the pipeline
     needs (`spec-auditor: audit spec, plan and tasks`, `re-audit: spec, plan or tasks changed`,
@@ -1108,6 +1117,17 @@ and a command that waited for the turn opened the board only once the run was ov
 
 It reads what the guardrails already keep, so it cannot disagree with the gate:
 
+- **Which view.** The team view once a team agent has run in the repository (a verdict, retry or
+  gatekeeper record under `.git/speckit-team/`, or an agent seen this session); otherwise the
+  standalone view. The rule is `isStandalone` in `mods/speckit-board/hooks/model.ts`.
+- **Notices.** When there is nothing to draw, the board says why in one line instead of staying
+  blank: no `.specify/` (`Spec Kit is not set up here`), no active feature, an unreadable or
+  non-JSON `.specify/feature.json`, or a feature folder that does not exist. It also works in a
+  Spec Kit folder that is not a git repository, finding `.specify/` in the current directory or an
+  ancestor.
+- **Unreadable files.** A `spec.md`, `plan.md` or `tasks.md` that exists but cannot be read shows
+  `✗` with the note `unreadable` on its phase and `cannot read <file>` as the next step, in both
+  views.
 - **Files.** `.specify/feature.json`, the feature's `spec.md`, `plan.md` and `tasks.md`, and the
   verdict, retry and gatekeeper files under `.git/speckit-team/` ([State](#state)).
 - **A current audit.** An audit counts as current only while the files' fingerprint matches the
@@ -1135,8 +1155,10 @@ It reads what the guardrails already keep, so it cannot disagree with the gate:
   the audit is current and was recorded after the PASS; otherwise verify shows `↻` (stale),
   because the gatekeeper judged files that have since changed.
 - **When it refreshes.** Every 4 seconds, after each turn, and when a team agent starts or stops.
-  On startup it toasts either the feature it found or that there is no `.specify/` in the repo it
-  started in, so a loaded mod with nothing to show is not mistaken for one that did not load.
+  On startup it toasts either the feature it found (`<feature>. /speckit-board opens the board`) or
+  the notice that says why there is none (no `.specify/`, no active feature, an unreadable
+  `feature.json`, a missing feature folder), so a loaded mod with nothing to show is not mistaken
+  for one that did not load.
 
 ### Status and retirement
 
@@ -1162,12 +1184,14 @@ installs can still remove it.
 
 ### Verified
 
-**Automated.** `claude plugin validate` and `claude plugin test` (76 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (124 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
 `test/install.test.mjs`, which checks that the mod is read from this checkout and that uninstall
-restores `settings.json` byte for byte. The `[ clear ]` button and the `clear` argument are verified
+restores `settings.json` byte for byte. The standalone view, the notices and the unreadable-file cases are covered by the mod's unit tests
+and by `test/install.test.mjs` for the board-only install; the checks in
+`specs/005-standalone-board/quickstart.md` have not yet been run live. The `[ clear ]` button and the `clear` argument are verified
 by the mod's tests only, not seen live, and `docs/media/board.png` predates the button.
 
 **Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09: the
@@ -1255,7 +1279,7 @@ Claude Code stopped at first-run login), and any session on macOS
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 111 | the hook, fed hook JSON on stdin, against throwaway git repos |
 | [`test/install.test.mjs`](test/install.test.mjs) | 47 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 76 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 10 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, then `claude plugin validate` and its own 124 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 24 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
