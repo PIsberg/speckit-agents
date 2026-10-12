@@ -37,6 +37,9 @@ const SETTINGS_GATES = [
   // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse. The user typing
   // /speckit-team starts a request; typed with --team noagents, it records that no agent runs.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement|speckit-team' },
+  // product-owner and architect have no gate to record where they started, so this does it once, as
+  // each starts, for the lane check at their Stop (#88).
+  { event: 'SubagentStart', matcher: 'product-owner|architect', mode: 'start' },
 ];
 
 const argv = process.argv.slice(2);
@@ -189,14 +192,14 @@ function withGates(current, addGates) {
       if (!isGate(g)) return [g];
       if (!wanted || placed) return [];
       placed = true;
-      return [{ ...g, matcher: wanted.matcher, hooks: [{ ...g.hooks.find((h) => String(h.command ?? '').includes(HOOK_FILE)), type: 'command', command: hookCommand('gate'), timeout: 15 }] }];
+      return [{ ...g, matcher: wanted.matcher, hooks: [{ ...g.hooks.find((h) => String(h.command ?? '').includes(HOOK_FILE)), type: 'command', command: hookCommand(wanted.mode ?? 'gate'), timeout: 15 }] }];
     });
     if (!hooks[event].length) delete hooks[event];
   }
   if (addGates) {
-    for (const { event, matcher } of SETTINGS_GATES) {
+    for (const { event, matcher, mode = 'gate' } of SETTINGS_GATES) {
       if (!(hooks[event] ?? []).some(isGate)) {
-        (hooks[event] ??= []).push({ matcher, hooks: [{ type: 'command', command: hookCommand('gate'), timeout: 15 }] });
+        (hooks[event] ??= []).push({ matcher, hooks: [{ type: 'command', command: hookCommand(mode), timeout: 15 }] });
       }
     }
   }

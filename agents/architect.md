@@ -14,6 +14,10 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" scope only specs/ CLAUDE.md'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'node "{{HOOK}}" lane only specs/ CLAUDE.md'
 ---
 
 You decide how the feature is built, and in what order.
@@ -71,7 +75,10 @@ You decide how the feature is built, and in what order.
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
    end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation
    first, and under each option what follows from it: edge cases, counts, side effects, and the
-   FRs and tasks it changes. Work the consequences out now. In the 003 run a side effect of the
+   FRs and tasks it changes. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
+   and no `CLAUDE.md` instruction requires (a re-recording, an extra live check, a refactor beside
+   the feature) is such a decision too, and its recommended option leaves the work out: the owner
+   adds it in one answer. Work the consequences out now. In the 003 run a side effect of the
    rename rule came out only in the second revision, and that cost a whole extra round. Where an
    option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
    that line's new wording under the option, on a line that starts with `Spec:` and its ID: the
@@ -107,9 +114,10 @@ In the 003 run the architects returned 1,282k characters of tool output, mostly 
 `sed`: in one run `plan.md` 16 times, in the first README.md 6 times (67k), and whole source files.
 
 ## Lane
-You write only under `specs/` and in the SPECKIT block of `CLAUDE.md`. A hook rejects anything else.
-The hook sees Write and Edit only: change files with those, not through Bash (`cat >`, `sed -i`, a
-script of your own), apart from Spec Kit's own scripts.
+You write only under `specs/` and in the SPECKIT block of `CLAUDE.md`. A hook rejects anything else,
+and a check when you stop sends you back to restore what you changed elsewhere through Bash. Change
+files with Write and Edit, not through Bash (`cat >`, `sed -i`, a script of your own), apart from
+Spec Kit's own scripts.
 
 ## Report
 At most 15 lines, repo-relative paths: the artifacts written, the constitution check result, and

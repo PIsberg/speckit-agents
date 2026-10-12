@@ -144,7 +144,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `hooks/speckit-team.mjs` | every guardrail |
-| `settings.json` | two hook entries merged in; your other settings and hooks are kept |
+| `settings.json` | three hook entries merged in; your other settings and hooks are kept |
 
 #### Installer options
 
@@ -321,7 +321,7 @@ second.
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 94 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 98 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -435,6 +435,12 @@ moving each entry to a `## Decisions` section with the answer and the date, and 
 launched in the same message, rewords the spec lines the chosen options carry. The spec and the
 plan then agree before the first audit; in the 004 run a decision that contradicted FR-012 failed
 it ([Feature 004](#feature-004-interactive)).
+
+Work that nothing in `spec.md`, the constitution's MUST rules or `CLAUDE.md` requires, such as a
+re-recording or an extra live check, is an open decision too, and its recommended option leaves the
+work out, so taking every recommendation keeps the run to what was asked
+([#89](https://github.com/PIsberg/speckit-agents/issues/89)). Work `CLAUDE.md` asks for counts as
+required, so the architect never recommends against the repository's own instructions.
 
 When your answers, or an audit's findings, fully determine the edits (a value, a list entry, a
 wording), the skill sends a *dictated* revision: each exact edit and where it goes, which the
@@ -619,6 +625,11 @@ and any other change is caught at the end.
   denied ([#72](https://github.com/PIsberg/speckit-agents/issues/72) and three security reviews of
   it). It is still not a shell: text read at run time (`eval "$(cat cmd.txt)"`, `read`) is not
   seen, and the end check catches any commit that gets through.
+- **Pushes and fetches, by what they leave behind**: the start record keeps the remote-tracking refs
+  (`refs/remotes/*`), and once one moves, which a push to a named remote or a fetch does however its
+  command was written (a script, a string built at run time), every later tool call is denied and the
+  end check fails the run ([#72](https://github.com/PIsberg/speckit-agents/issues/72)). The deny list
+  above is no longer the only line for a push.
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -632,13 +643,15 @@ When `patcher` finishes, the hook measures the run and the first rule that appli
 | a protected repo file changed | blocks `patcher` from finishing until each is restored, on every attempt |
 | a commit made since the start | blocks until `git reset --soft <start>` |
 | an installed team file changed | the run ends `FAILED`: `patcher` may finish, nothing is committed |
+| a remote-tracking ref moved (a push or a fetch) | the run ends `FAILED` the same way, naming the refs; check the remote for a pushed branch |
 | over budget | `patcher` may finish; the run is not accepted, nothing is committed |
 | within budget | accepted: the hook writes the accepted record |
 
 The protected check blocks every time, repo files only, because `patcher` can restore a repo file by
 naming it. It cannot restore a file outside the repo, and blocking would leave no way out but
 stopping the run by hand, so a changed team file ends the run `FAILED` instead, with a message naming
-the files. In both cases there is no accepted record, so the skill commits nothing.
+the files. A push cannot be taken back by `patcher` either, so a moved remote-tracking ref also ends it
+`FAILED`. In each case there is no accepted record, so the skill commits nothing.
 
 The accepted record, `patch-accepted.json`, lists the files `patcher` changed (production, test and
 doc, never a protected file or one that was uncommitted at the start) and which of them are
@@ -700,11 +713,15 @@ nothing elsewhere.
 | `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; on the main session's launch of a team role it only records the launch's `Team:` line, and on a typed `/speckit-team` it only starts a new team record (`noagents`, or none); it never decides on either |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
+| `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
+| `start` | `settings.json`: `SubagentStart` of `product-owner|architect` | nothing: it records where the agent starts, for its Stop's `lane only`, and never decides |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
 
-Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The two
-`settings.json` entries are the ones the installer merges in.
+Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The three
+`settings.json` entries are the ones the installer merges in. `start` is one of them because Claude
+Code runs no `SubagentStart` hook from an agent's own frontmatter (checked on 2.1.296 against a fake
+API: the frontmatter entry never ran, the settings entry did, with the agent's id).
 
 #### How a scope rule resolves paths
 
@@ -777,10 +794,12 @@ blocks the stop if any changed file is outside the lane. The agent is told which
 Files that were dirty before the agent started are ignored. If the agent stops a second time with
 the problem still there, the hook lets it finish with a WARNING rather than loop.
 
-The check runs for test-writer and implementer, whose first tool call the gate records.
-product-owner and architect work before the audit and have no gate, so a file either of them
-writes through Bash is not checked; their prompts tell them to change files with `Write` and
-`Edit` only ([#88](https://github.com/PIsberg/speckit-agents/issues/88)).
+For test-writer and implementer the gate records the start on their first tool call. product-owner
+and architect work before the audit and have no gate, so the `start` entry in `settings.json` records
+theirs as each starts, and `lane only` at their Stop holds them to the prefixes of their `scope only`
+rule (`specs/` and `.specify/feature.json`; `specs/` and `CLAUDE.md`), whatever wrote the file
+([#88](https://github.com/PIsberg/speckit-agents/issues/88)). It costs one hook process per launch
+of either, not one per tool call.
 
 ### Test files
 
@@ -1379,16 +1398,16 @@ command, and the `[ clear ]` button.
 
 ### Test suite
 
-`npm test` runs 256 tests:
+`npm test` runs 264 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 133 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 73 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 138 | the hook, fed hook JSON on stdin, against throwaway git repos |
+| [`test/install.test.mjs`](test/install.test.mjs) | 75 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 30 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 31 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1419,17 +1438,18 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 22
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 23
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
-  both lane checks, `verdict`, `result` and `ends` on both report paths (`Stop`, and the
+  every lane check (product-owner's and architect's `lane only` from the `start` entry's record
+  among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), the `Skill|Agent` gate in
   `settings.json`, and its `UserPromptExpansion` gate on a typed `/speckit-team --team noagents`,
   whose session then calls `speckit-implement` with no audit while the same call without the flag
   is denied. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 22
-  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 24 failures, none of the 22 passed). Setting
+  fire lets the action through. With the installed hook replaced by one that only exits, all 23
+  fail, as do the two blocking cases above (measured again 2026-10-11, Claude Code 2.1.296: 25 failures, none of the 23 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  24 of the 30 tests fail (the 22 scripted ones and the two blocking no-model cases); the other six
+  25 of the 31 tests fail (the 23 scripted ones and the two blocking no-model cases); the other six
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1761,6 +1781,14 @@ not let it finish until each one is restored. The message names the command for 
 <sha> -- <file>` for a changed file, delete a new one. It covers repository files only. `patcher`
 restores them by naming each one; the hook changes nothing itself.
 
+### "remote-tracking refs changed during the run"
+
+`patcher` pushed to, or fetched from, a named remote, by a route the command check did not read
+(a script, a string built at run time); the message names each ref that moved, `(new)` for one the
+push created. A push cannot be taken back by the agent, so every later tool call is denied and the
+run ends `FAILED` with nothing committed. Look at the remote for a pushed branch or a pull request
+and delete it, then run the change again.
+
 ### "fast track FAILED: installed agent team files changed during the run"
 
 A file of the installed team under the Claude config directory (an agent, hook, skill,
@@ -1832,10 +1860,10 @@ up and replace it.
   but Bash could still write a file. Likewise the git-directory guard stops `Write` and `Edit`
   (in any spelling Windows folds together, through symlinks, and from a linked worktree), not `rm`
   through Bash.
-- **product-owner's and architect's lanes stop `Write` and `Edit` only.** A file either of them
-  writes through Bash is not caught: the [lane check](#the-lane-check) runs for test-writer and
-  implementer. Their prompts tell them to use `Write` and `Edit`, which is a request, not a hook
-  ([#88](https://github.com/PIsberg/speckit-agents/issues/88)).
+- **product-owner's and architect's Bash writes are caught when they stop, not before.** Their
+  `scope only` rule denies a `Write` or `Edit` outside their prefixes before it runs; a file written
+  through Bash is caught by the [lane check](#the-lane-check) at their Stop, which sends them back to
+  restore it.
 - **Subagents can't ask you questions.** product-owner returns its questions, and the main
   session asks them.
 - **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will
@@ -1847,15 +1875,19 @@ up and replace it.
   - **git aliases:** a commit, push or PR made by a program whose command does not name it (a git
     alias from a config file, `npm version`, a script, `make release`, `curl` to the GitHub API, an
     command whose text is only read at run time such as `eval "$(cat cmd.txt)"`) is not denied before
-    it runs. A commit is still caught at the end, and the skill never force-pushes, so a stray
-    push makes the skill's own push fail; you delete the stray branch or PR.
+    it runs. A commit is still caught at the end, and a push to a named remote moves a
+    remote-tracking ref, which stops the run at the next tool call and fails it at the end
+    ([#72](https://github.com/PIsberg/speckit-agents/issues/72)); you delete the stray branch or PR.
   - **scripts:** the same holds for any script `patcher` writes and runs.
   - **package scripts:** a `package.json` script, a Makefile target or a test runner's hook that
     commits, pushes or changes files is not seen before it runs.
   - **writes outside the repository:** a Bash write anywhere other than the repository and the
     Claude config directory is not caught.
   - **network access:** nothing limits what `patcher` fetches or sends over the network from Bash.
-    Only the history and remote commands named above are denied.
+    The history and remote commands named above are denied, and a push or fetch through a named
+    remote is caught by the ref it moves; a push straight to a URL, which moves no remote-tracking
+    ref, and a call to a forge's API (`curl`) are not caught. Closing that needs a sandbox for one
+    agent's Bash, which Claude Code does not offer.
   - **other forge CLIs:** `patcher`'s command deny matches `gh`, `hub`, `glab` and `tea`. Any other
     forge CLI that opens a merge request is not stopped before it runs. A commit made that way is
     still caught by the end check, and the skill makes the real commit and PR only after that
@@ -1890,7 +1922,7 @@ up and replace it.
 node install.mjs --uninstall
 ```
 
-This removes the seven agents, the three skills, the hook and both `settings.json` entries, and leaves
+This removes the seven agents, the three skills, the hook and the three `settings.json` entries, and leaves
 nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
@@ -1919,7 +1951,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | Path | What it holds |
 |---|---|
 | [`agents/`](agents/) | the seven subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
-| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the modes `scope`, `gate`, `verdict`, `result`, `ends`, `lane` and `patch` |
+| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane` and `patch` |
 | [`skills/`](skills/) | the `/speckit-team` pipeline skill, the `/speckit-patch` fast-track skill and the advisory `/speckit-triage` skill, each in `<name>/SKILL.md` |
 | [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |

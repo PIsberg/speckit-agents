@@ -350,7 +350,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
 const decided = (out) => Boolean(out?.hookSpecificOutput?.permissionDecision || out?.decision);
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
@@ -378,7 +378,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['patch']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -521,6 +521,65 @@ test('lane check ignores files that were already dirty when the agent started', 
   w('src/test/java/WipTest.java', 'class WipTest {}\n');
   run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: 'b1' });
   assert.equal(run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'b1' }), null);
+});
+
+// #88: product-owner and architect run before the audit and have no gate, so the settings.json
+// `start` entry records where each started, at SubagentStart, and `lane only <prefixes>` at their Stop
+// catches a file written through Bash outside the prefixes their scope hook allows.
+const subagentStart = (dir, agent_id, agent_type = 'architect', extra = {}) => run(dir, ['start'], {
+  hook_event_name: 'SubagentStart', agent_id, agent_type, ...extra,
+});
+const laneOnly = (dir, agent_id, prefixes, agent_type = 'architect', extra = {}) => run(dir, ['lane', 'only', ...prefixes], {
+  hook_event_name: 'SubagentStop', agent_id, agent_type, ...extra,
+});
+const startRecord = (dir, id) => JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'agents', `${id}.json`), 'utf8'));
+
+test('start (#88): SubagentStart records where the agent started, never decides, and keeps the first record', () => {
+  const { dir, write: w } = repo();
+  w('specs/001-demo/wip.md', 'uncommitted\n');
+  assert.equal(subagentStart(dir, 'p1', 'product-owner'), null);
+  assert.match(startRecord(dir, 'p1').sha, /^[0-9a-f]{40}$/);
+  assert.deepEqual(startRecord(dir, 'p1').dirty, ['specs/001-demo/wip.md']);
+  w('src/late.js', 'x\n');
+  assert.equal(subagentStart(dir, 'p1', 'product-owner'), null);
+  assert.deepEqual(startRecord(dir, 'p1').dirty, ['specs/001-demo/wip.md'], 'a record already there is kept');
+  for (const agent_id of [undefined, 7, '../x', 'a b']) assert.equal(subagentStart(dir, agent_id), null, String(agent_id));
+  assert.ok(!fs.existsSync(path.join(stateDir(dir), 'x.json')), 'an agent_id is never a path');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')), ['p1.json']);
+  const { dir: plain } = repo({ speckit: false });
+  assert.equal(subagentStart(plain, 'p2'), null);
+  assert.ok(!fs.existsSync(stateDir(plain)), 'outside a Spec Kit repo it writes nothing');
+  const wrong = run(dir, ['start'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', agent_id: 'p3' });
+  assert.match(wrong?.systemMessage ?? '', /start got unusable input.*not one start is wired for/);
+});
+
+test('lane only (#88): a Bash write outside the prefixes blocks the stop; the lane, dirty files and a second stop pass', () => {
+  const { dir, write: w, g } = repo();
+  const architect = ['specs/', 'CLAUDE.md'];
+  w('README.md', 'wip\n');
+  subagentStart(dir, 'a1');
+  w(`${FEAT}/plan.md`, '# Plan\nmore\n');
+  w('CLAUDE.md', 'context\n');
+  w('README.md', 'wip, changed again\n');
+  assert.equal(laneOnly(dir, 'a1', architect), null, 'in the lane, or dirty when the agent started');
+  subagentStart(dir, 'a2');
+  w('src/greet.js', 'export const greet = 1;\n');
+  g('add', '-A'); g('commit', '-qm', 'committed by the agent');
+  w(`${FEAT}/spec.md`, '# Spec\nchanged\n');
+  const out = laneOnly(dir, 'a2', architect);
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /^Lane check: architect changed files outside its lane: src\/greet\.js\. Restore them/);
+  assert.match(laneOnly(dir, 'a2', architect, 'architect', { stop_hook_active: true })?.systemMessage ?? '', /WARNING: architect left changes outside its lane: src\/greet\.js/);
+  // A prefix with no trailing slash is one file: .specify/feature.json, not the rest of .specify/.
+  subagentStart(dir, 'p1', 'product-owner');
+  w('.specify/memory/constitution.md', 'changed\n');
+  w('.specify/feature.json', JSON.stringify({ feature_directory: FEAT, at: 2 }));
+  const po = laneOnly(dir, 'p1', ['specs/', '.specify/feature.json'], 'product-owner');
+  assert.match(po?.reason ?? '', /product-owner changed files outside its lane: \.specify\/memory\/constitution\.md\. /);
+  // A test-paths line that is no regex leaves the test lanes undecidable, not this one.
+  subagentStart(dir, 'a3');
+  w('.specify/test-paths', '[unclosed\n');
+  assert.equal(laneOnly(dir, 'a3', ['specs/', 'CLAUDE.md', '.specify/']), null);
 });
 
 // Retry limit: an implementer that keeps failing would otherwise loop on minor tweaks, burning
@@ -899,6 +958,18 @@ test('patch: a .txt production file counts, documentation .txt does not (FR-005,
   begin(b.dir);
   put(b.dir, 'CMakeLists.txt', nl(31, 'c'));
   overBash(b.dir, /31 changed production lines in 1 files/);
+});
+
+// #81, settled by the owner's decision (specs/003-fast-track-patch/spec.md, Assumptions; plan.md
+// decision 17 point 1): only the top-level docs/ makes a .txt documentation, so a docs folder deeper
+// in the tree, where a build may read text as input, counts as production.
+test('patch: a .txt in a docs folder below the top level counts as production (#81)', () => {
+  for (const rel of ['src/docs/notes.txt', 'pkg/docs/help.txt']) {
+    const { dir } = fresh();
+    begin(dir);
+    put(dir, rel, nl(31, 'd'));
+    overBash(dir, /31 changed production lines in 1 files/);
+  }
 });
 
 test('patch: a third production file is over budget (FR-005, FR-006)', () => {
@@ -1347,6 +1418,45 @@ test('patch end: protected file changed with fs blocks stop and denies handback,
   assert.equal(record(dir), null);
   git(dir, 'checkout', startSha(dir), '--', CONST);
   noStop(stop(dir), 'after restore');
+});
+
+// #72: the command deny reads a command's text, so a push it cannot read (a script the agent wrote, a
+// string built at run time) went unseen until the skill's own push failed. The start record keeps the
+// remote-tracking refs, and a change to them, which a push or a fetch makes however it was typed,
+// stops the run at the next tool call and fails the end check.
+test('patch: a remote-tracking ref that moves during the run stops it and fails the end check (#72)', () => {
+  const { dir } = fresh();
+  const remote = fs.mkdtempSync(path.join(os.tmpdir(), 'skremote-'));
+  git(remote, 'init', '-q', '--bare');
+  git(dir, 'remote', 'add', 'origin', remote);
+  git(dir, 'push', '-q', 'origin', 'HEAD:refs/heads/main');
+  begin(dir);
+  put(dir, 'src/fix.js', nl(2, 'f'));
+  okBash(dir, 'nothing pushed, and a ref from before the run is no change');
+  noStop(stop(dir), 'before the push');
+  assert.ok(record(dir), 'accepted before the push');
+  git(dir, 'push', '-q', 'origin', 'HEAD:refs/heads/patch/x');
+  const out = bash(dir, 'npm test');
+  isDenied(out, /remote-tracking refs changed during the run: refs\/remotes\/origin\/patch\/x \(new\)/, /A push or a fetch happened/, /ESCALATE/);
+  const end = stop(dir);
+  noStop(end, 'a push cannot be undone by the agent, so the end check does not block');
+  assert.match(msg(end), /^fast track FAILED: remote-tracking refs changed during the run: refs\/remotes\/origin\/patch\/x \(new\)/);
+  assert.equal(record(dir), null, 'no accepted record, so /speckit-patch commits nothing');
+  assert.match(msg(hand(dir)), /^fast track FAILED: remote-tracking refs changed/);
+  assert.equal(record(dir), null);
+});
+
+test('patch: a start record without the remote-tracking refs cannot be measured (#72, fail closed)', () => {
+  const { dir } = fresh();
+  begin(dir);
+  const rec = JSON.parse(fs.readFileSync(startFile(dir), 'utf8'));
+  assert.deepEqual(rec.remotes, {}, 'a repo with no remote starts with no refs');
+  for (const remotes of [undefined, [], { 'refs/remotes/origin/main': 'not-a-sha' }]) {
+    fs.writeFileSync(startFile(dir), JSON.stringify({ ...rec, remotes }));
+    isDenied(bash(dir), /the budget cannot be measured/);
+    assert.match(msg(stop(dir)), /fast-track check could not run/);
+    assert.equal(record(dir), null);
+  }
 });
 
 test('patch end: a new workflow says delete, a deleted workflow gives its checkout (FR-007, US2-2)', () => {
