@@ -615,6 +615,45 @@ test('--fork and --no-fork together, or an env that is not an object, are refuse
   assert.deepEqual(fs.readdirSync(bad), ['settings.json']);
 });
 
+// #122: the patch hook's export line (git's network transports off for patcher, #72) is allowed exactly,
+// so the rewritten command asks for nothing the command itself would not. Never a prefix rule: an
+// allowed export of any git config could set core.fsmonitor or core.sshCommand, which run programs.
+const exportRules = (dir) => (settingsOf(dir).permissions?.allow ?? []).filter((a) => a.startsWith('Bash(export GIT_CONFIG_COUNT='));
+test("install allows the patch hook's export line exactly and once, keeps the user's permissions, and uninstall removes only it (#122)", () => {
+  const dir = claudeDir({ model: 'opus', permissions: { allow: ['Bash(npm test:*)'], deny: ['Read(./.env)'] } });
+  const before = bytes(dir);
+  assert.equal(install(dir).status, 0);
+  const [rule, ...more] = exportRules(dir);
+  assert.equal(more.length, 0);
+  assert.match(rule, /^Bash\(export GIT_CONFIG_COUNT=7 GIT_CONFIG_KEY_0=protocol\.allow GIT_CONFIG_VALUE_0=never [^*]*\)$/, 'exact: no wildcard');
+  assert.deepEqual(settingsOf(dir).permissions, { allow: ['Bash(npm test:*)', rule], deny: ['Read(./.env)'] });
+  assert.equal(install(dir).status, 0);
+  assert.deepEqual(exportRules(dir), [rule], 'a rerun adds no second copy');
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(bytes(dir), before, 'uninstall restores settings.json byte for byte');
+});
+
+test("a user's own copy of the export rule stays after uninstall (#122)", () => {
+  const ours = claudeDir();
+  assert.equal(install(ours).status, 0);
+  const [rule] = exportRules(ours);
+  const dir = claudeDir({ permissions: { allow: [rule] } });
+  assert.equal(install(dir).status, 0);
+  assert.deepEqual(exportRules(dir), [rule]);
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.deepEqual(settingsOf(dir).permissions, { allow: [rule] }, 'not the installer\'s to remove');
+});
+
+test('permissions or permissions.allow of the wrong shape are refused before anything is written (#122)', () => {
+  for (const [permissions, why] of [[['x'], /"permissions" is an array/], [{ allow: 'Bash(x)' }, /"permissions\.allow" is string, not a list/]]) {
+    const dir = claudeDir({ permissions });
+    const r = install(dir);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stderr, why);
+    assert.deepEqual(fs.readdirSync(dir), ['settings.json']);
+  }
+});
+
 test('--board and --no-board together are refused before anything is written', () => {
   const dir = claudeDir();
   const r = install(dir, '--board', '--no-board');

@@ -23,8 +23,9 @@
 //                           the lane check at its Stop; never a decision
 //   lane tests|no-tests|only <prefix>...  SubagentStop: check the agent's whole diff, including Bash writes
 //   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
-//                           or it runs a history/remote command or a wholesale restore; in bypassPermissions, run a
-//                           Bash command it lets through with git's network transports off; SubagentHandback, SubagentStop and
+//                           or it runs a history/remote command or a wholesale restore; run a Bash command it lets
+//                           through with git's network transports off (in bypassPermissions, or where the installed
+//                           settings.json allows the export line); SubagentHandback, SubagentStop and
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -1111,23 +1112,30 @@ function endCheck(start, viaHandback, key, acceptedFile) {
   emit({ systemMessage: `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.` });
 }
 
-// #72, the structural option. With bypassPermissions no prompt shows patcher's commands, so the deny reader
-// is the only line before a push. There a Bash command the hook lets through runs with git's network
-// transports switched off, in the environment's config scope above every config file, so a push or fetch
-// from a script, a package script, an alias or a string built at run time fails too. Paths on disk keep
-// git's default. Other modes keep the command as typed: Claude Code checks each part of the rewritten
-// command against the user's rules, and the export line matches none, so every command the user allowed
-// would ask again (2.1.296: "The following part requires approval: export ..."; deny rules still matched).
+// #72, the structural option. A Bash command the hook lets through runs with git's network transports
+// switched off, in the environment's config scope above every config file, so a push or fetch from a
+// script, a package script, an alias or a string built at run time fails too. Paths on disk keep git's
+// default. Claude Code checks each part of the rewritten command against the user's rules: the export
+// line needs a rule of its own, or every command the user allowed would ask again (2.1.296: "The
+// following part requires approval: export ..."; deny rules still matched). So it is rewritten in
+// bypassPermissions, where no rule is consulted, and in any other mode only while the installed
+// settings.json allows this exact line, which install.mjs writes (#122). Twin: NO_NETWORK in install.mjs.
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
+const allowedExactly = (line) => {
+  let s; try { s = JSON.parse(readOr(path.join(TEAM_DIR, 'settings.json'), 'null')); } catch { return false; }
+  return Array.isArray(s?.permissions?.allow) && s.permissions.allow.includes(`Bash(${line})`);
+};
 function letThrough() {
   const ti = input.tool_input || {};
-  if (input.tool_name !== 'Bash' || input.permission_mode !== 'bypassPermissions' || typeof ti.command !== 'string') process.exit(0);
+  if (input.tool_name !== 'Bash' || typeof ti.command !== 'string') process.exit(0);
   // Pairs the environment already passes keep their numbers; these follow them.
   const n = Number(process.env.GIT_CONFIG_COUNT);
   const from = Number.isInteger(n) && n > 0 ? n : 0;
   const pairs = NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${from + i}=${k} GIT_CONFIG_VALUE_${from + i}=${v}`).join(' ');
-  emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: `export GIT_CONFIG_COUNT=${from + NO_NETWORK.length} ${pairs}\n${ti.command}` } } });
+  const line = `export GIT_CONFIG_COUNT=${from + NO_NETWORK.length} ${pairs}`;
+  if (input.permission_mode !== 'bypassPermissions' && !allowedExactly(line)) process.exit(0);
+  emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: `${line}\n${ti.command}` } } });
 }
 
 if (mode === 'patch') {

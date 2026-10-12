@@ -145,7 +145,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `hooks/speckit-team.mjs` | every guardrail |
-| `settings.json` | three hook entries merged in; your other settings and hooks are kept |
+| `settings.json` | three hook entries merged in, and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
 
 #### Installer options
 
@@ -173,8 +173,8 @@ There is no flag for the fast track: `patcher` and its two skills are always ins
 - **One backup.** The first time it changes your settings it keeps one copy of the original as
   `settings.json.bak-speckit-agents`.
 - **Validates first.** It refuses to touch a `settings.json` that is not valid JSON or not a
-  settings object (an array, or a `hooks` entry that is not a list of objects), and stops before
-  writing anything.
+  settings object (an array, a `hooks` entry that is not a list of objects, a `permissions` that is
+  not an object or a `permissions.allow` that is not a list), and stops before writing anything.
 - **Keeps a record.** It records what it created in `hooks/speckit-agents.install.json`.
 - **Checks PATH without running anything.** It warns when `git`, `claude` or `specify` is not on
   PATH, by looking for the file. Running each with `--version` took 548 of an install's 750 ms on
@@ -644,17 +644,24 @@ and any other change is caught at the end.
   command was written (a script, a string built at run time), every later tool call is denied and the
   end check fails the run ([#72](https://github.com/PIsberg/speckit-agents/issues/72)). The deny list
   above is no longer the only line for a push.
-- **Git's network transports, in `bypassPermissions`**: there no permission prompt shows `patcher`'s
-  commands, so the hook runs each Bash command it lets through after one line, `export
-  GIT_CONFIG_COUNT=7 GIT_CONFIG_KEY_0=protocol.allow GIT_CONFIG_VALUE_0=never ...`, which you see at
-  the top of the command. It sets git's transport policy to `never` for `git`, `ssh`, `http`, `https`,
-  `ext` and any other, and keeps git's default, `user`, for paths on disk, in the environment's config
-  scope, which overrides every config file. So git refuses a push, fetch or clone over the network
-  before it connects, whatever started it: a script, a package script, an alias, a string built at run
-  time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)). Other permission modes keep the
-  command as typed, because Claude Code checks each part of the rewritten command against your rules
-  and the export line matches none of them: with 2.1.296 an allowed `echo` asked again with "The
-  following part requires approval: export GIT_CONFIG_COUNT=..." (deny rules still matched).
+- **Git's network transports**: the hook runs each Bash command it lets through after one line,
+  `export GIT_CONFIG_COUNT=7 GIT_CONFIG_KEY_0=protocol.allow GIT_CONFIG_VALUE_0=never ...`, which you
+  see at the top of the command. It sets git's transport policy to `never` for `git`, `ssh`, `http`,
+  `https`, `ext` and any other, and keeps git's default, `user`, for paths on disk, in the
+  environment's config scope, which overrides every config file. So git refuses a push, fetch or
+  clone over the network before it connects, whatever started it: a script, a package script, an
+  alias, a string built at run time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
+  Claude Code checks each part of a rewritten command against your permission rules, and the export
+  line needs a rule of its own: without one, every command you allowed would ask again (with 2.1.296
+  an allowed `echo` asked "The following part requires approval: export GIT_CONFIG_COUNT=..."). So
+  the installer adds an allow rule for that exact line to `settings.json`, never a prefix rule, which
+  would let any export of git config through, such as `core.fsmonitor`, which runs a program. With
+  it, the rewritten command asks for nothing the command itself would not, in every permission mode;
+  checked against a fake API in `default`, `acceptEdits`, `dontAsk` and `auto`, where it kept the
+  safety classifier out of it ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). Where
+  the rule is missing (you removed it, or your environment already passes git config pairs, which
+  changes the line), the command runs as typed, except in `bypassPermissions`, which consults no
+  allow rule. Deny rules still match the command's own part.
 - **Wholesale restores**: `git reset --hard`, `git clean`, and a `git checkout` or `git restore` of
   `.`, a folder, a pattern or a file uncommitted at the start are denied on every Bash call, because
   they would destroy your uncommitted work.
@@ -717,9 +724,10 @@ run.
   `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs), and again with fork
   subagents on, where `patcher` runs in the background as it does in an interactive session
   ([#73](https://github.com/PIsberg/speckit-agents/issues/73)); and git's network transports
-  switched off in `bypassPermissions`, where git refused a push from a script `patcher` ran with
-  `transport 'https' not allowed` (without the hook it tried to connect,
-  [#72](https://github.com/PIsberg/speckit-agents/issues/72)).
+  switched off, where git refused a push from a script `patcher` ran with
+  `transport 'https' not allowed`, in `bypassPermissions` and, with the installer's allow rule, in
+  `default` with no prompt (without the hook it tried to connect,
+  [#72](https://github.com/PIsberg/speckit-agents/issues/72), [#122](https://github.com/PIsberg/speckit-agents/issues/122)).
 - **Seen in an interactive session, against a fake API:** on 2026-10-12 a background `patcher`'s
   protected Write was denied, its production Write went through once accepted at the permission
   prompt, and its `DONE` report passed the end check, which wrote the accepted record
@@ -745,7 +753,7 @@ alternating old and new, 2026-10-11).
 | `scope tests` | test-writer: same | writing production code |
 | `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
-| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; in `bypassPermissions`, git's network transports for every Bash command it lets through; at the end, a protected change or a commit, and no accepted record unless the run is within budget |
+| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, and no accepted record unless the run is within budget |
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
 | every `scope` rule | all five writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
@@ -1175,17 +1183,17 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 278 tests:
+`npm test` runs 283 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 80 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 60 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 78 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 61 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 81 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 36 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 37 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1233,7 +1241,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 27
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 28
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1247,14 +1255,16 @@ need no login and cost nothing.
   session, and its scope hook and end check still fire. A third runs a Build only team the same way,
   from a typed `/speckit-team`: the background test-writer and implementer pass the audit gate, because
   their gate finds the team the main session's launch recorded under its session id
-  ([#100](https://github.com/PIsberg/speckit-agents/issues/100)). And in one, `patcher` runs a script
-  it wrote that pushes over https, which the command check cannot read: git refuses the push before it
-  connects, because the hook switched git's network transports off
-  ([#72](https://github.com/PIsberg/speckit-agents/issues/72)). They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 27
-  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 29 failures, none of the 27 passed). Setting
+  ([#100](https://github.com/PIsberg/speckit-agents/issues/100)). And in two, `patcher` runs a
+  script that pushes over https, which the command check cannot read: git refuses the push before it
+  connects, because the hook switched git's network transports off, once in `bypassPermissions`
+  ([#72](https://github.com/PIsberg/speckit-agents/issues/72)) and once in `default` with the
+  installer's allow rule and one for the script, where it ran with no prompt
+  ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 28
+  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 30 failures, none of the 28 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  29 of the 36 tests fail (the 27 scripted ones and the two blocking no-model cases); the other seven
+  30 of the 37 tests fail (the 28 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1429,11 +1439,12 @@ the refs too: turn that off for the run.
 
 ### "fatal: transport 'https' not allowed" in `patcher`'s output
 
-In `bypassPermissions` the hook runs `patcher`'s Bash commands with git's network transports off
-(`export GIT_CONFIG_COUNT=...` at the top of each). A push or fetch was refused, as intended. If it
-came from your test suite or build, such as a dependency fetched from a git URL or a submodule, run
-that step before `/speckit-patch`, or run the fast track in another permission mode, where the
-commands run as typed.
+The hook runs `patcher`'s Bash commands with git's network transports off (`export
+GIT_CONFIG_COUNT=...` at the top of each). A push or fetch was refused, as intended. If it came from
+your test suite or build, such as a dependency fetched from a git URL or a submodule, run that step
+before `/speckit-patch`. To run `patcher`'s commands as typed outside `bypassPermissions`, remove the
+installer's `Bash(export GIT_CONFIG_COUNT=...)` rule from `permissions.allow` in `settings.json`; a
+rerun of the installer adds it back.
 
 ### "fast track FAILED: installed agent team files changed during the run"
 
@@ -1524,22 +1535,25 @@ up and replace it.
     it runs. A commit is still caught at the end, and a push to a named remote moves a
     remote-tracking ref, which stops the run at the next tool call and fails it at the end
     ([#72](https://github.com/PIsberg/speckit-agents/issues/72)); you delete the stray branch or PR.
-    In `bypassPermissions` git refuses such a push over the network outright (network access, below).
+    With the installer's allow rule in place, git refuses such a push over the network outright
+    (network access, below).
   - **scripts:** the same holds for any script `patcher` writes and runs.
   - **package scripts:** a `package.json` script, a Makefile target or a test runner's hook that
     commits, pushes or changes files is not seen before it runs.
   - **writes outside the repository:** a Bash write anywhere other than the repository and the
     Claude config directory is not caught.
-  - **network access:** in `bypassPermissions` git's network transports are off for `patcher`'s
-    commands ([What the hooks stop](#what-the-hooks-stop)), so git refuses any push or fetch over
-    the network, a push straight to a URL included. Anything other than git is not limited: a
-    forge's API (`curl`, or a forge CLI a script calls with its stored login), `npm publish` from a
-    script. In the other permission modes the commands run as typed: the history and remote commands
-    named above are denied, a push or fetch through a named remote is caught by the ref it moves,
-    and a push straight to a URL, which moves no remote-tracking ref, is not caught. Limiting the
-    rest needs a sandbox or an environment for one agent's Bash, which Claude Code does not offer
-    (no subagent setting for either in 2.1.296); a command that sets `GIT_CONFIG_COUNT` itself or
-    passes `git -c protocol...` undoes the switch-off, which is evasion on purpose.
+  - **network access:** git's network transports are off for `patcher`'s commands
+    ([What the hooks stop](#what-the-hooks-stop)), so git refuses any push or fetch over the
+    network, a push straight to a URL included. Anything other than git is not limited: a forge's
+    API (`curl`, or a forge CLI a script calls with its stored login,
+    [#123](https://github.com/PIsberg/speckit-agents/issues/123)), `npm publish` from a script.
+    Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
+    the history and remote commands named above are denied, a push or fetch through a named remote
+    is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,
+    is not caught. Limiting the rest needs a sandbox or an environment for one agent's Bash, which
+    Claude Code does not offer (no subagent setting for either in 2.1.296); a command that sets
+    `GIT_CONFIG_COUNT` itself or passes `git -c protocol...` undoes the switch-off, which is evasion
+    on purpose.
   - **other forge CLIs:** `patcher`'s command deny matches `gh`, `hub`, `glab` and `tea`. Any other
     forge CLI that opens a merge request is not stopped before it runs. A commit made that way is
     still caught by the end check, and the skill makes the real commit and PR only after that
@@ -1577,14 +1591,14 @@ up and replace it.
 node install.mjs --uninstall
 ```
 
-This removes the seven agents, the three skills, the hook and the three `settings.json` entries, and leaves
-nothing of the installer's behind:
+This removes the seven agents, the three skills, the hook, the three `settings.json` entries and the
+allow rule it added, and leaves nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
   are written back, CRLF and inline arrays included. If something did (another tool, you), that
-  change is kept and only the gates (and the `--no-fork` line, if the installer wrote it and it is
-  still `"0"`) are removed, in the file's own format. Your own empty
-  `"hooks": {}` or event lists are kept. No backup is made at uninstall, and the install-time copy
+  change is kept and only the gates, the allow rule if the installer added it, and the `--no-fork`
+  line if the installer wrote it and it is still `"0"`, are removed, in the file's own format. Your
+  own empty `"hooks": {}`, event lists, `"permissions": {}` or `"allow": []` are kept. No backup is made at uninstall, and the install-time copy
   is deleted.
 - **Files:** only files that carry the installer's marker are removed; a same-named file you wrote
   is left alone. An agent that `--force` replaced is put back.

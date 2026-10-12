@@ -680,6 +680,24 @@ test('in bypassPermissions, a push from a script patcher runs is refused by git 
   assert.match(lastResult(r.requests['e2e patcher'][2]), /transport 'https' not allowed/, story(r));
 });
 
+// #122: install.mjs allows the export line exactly, so default mode gets the switch-off too, and the
+// rewritten command asks for nothing the command itself would not: `sh push.sh`, allowed here, runs
+// with no prompt and git refuses its push. With SPECKIT_E2E_NO_HOOK=1 git tries to connect instead.
+test('in default mode with the installed allow rule, a push from a script patcher runs is refused by git, with no prompt (#122)', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const file = path.join(s.cfg, 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  ((settings.permissions ??= {}).allow ??= []).push('Bash(sh push.sh)');
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+  s.write('push.sh', 'git push https://127.0.0.1:9/none.git HEAD:refs/heads/x\n');
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [call('Bash', { command: 'sh push.sh', description: 'Run the script' }), say('Ran it.\nDONE')],
+  }, { permissionMode: 'default' });
+  assert.ok(r.requests['e2e patcher'].length >= 2, story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][1]), /transport 'https' not allowed/, story(r));
+});
+
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
 // The three cases below need the installed hook to fire on PreToolUse Agent; with SPECKIT_E2E_NO_HOOK=1
 // the second and third fail.
