@@ -33,7 +33,9 @@ const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'u
 // A Spec Kit repo as far as the gate can tell: an active feature, its four fingerprinted files, and
 // a speckit-implement skill for the typed command to expand. The team goes into its own config dir.
 function setup() {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-'));
+  // The long path: on the Windows runner the temp dir is an 8.3 name (RUNNER~1), and Claude Code
+  // refuses an isolation worktree whose path git spells differently (2.1.293, #40).
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-')));
   const repo = path.join(tmp, 'repo');
   const cfg = path.join(tmp, 'config');
   const write = (rel, text) => {
@@ -200,6 +202,8 @@ function reply(res, stream, step, id) {
 async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
+  // When each sender's requests arrived, in ms: shows whether two agents ran at the same time.
+  const times = Object.fromEntries(senders.map((k) => [k, []]));
   let ids = 0;
   const server = http.createServer((req, res) => {
     let body = '';
@@ -217,7 +221,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
       else {
         const first = textOf((b.messages ?? []).find((m) => m.role === 'user')?.content);
         const who = senders.find((k) => first.includes(k));
-        if (who) next = script[who][requests[who].push(b) - 1] ?? next;
+        if (who) { times[who].push(Date.now()); next = script[who][requests[who].push(b) - 1] ?? next; }
       }
       reply(res, b.stream, next, `toolu_e2e_${++ids}`);
     });
@@ -236,7 +240,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
       child.on('close', (code) => {
         clearTimeout(timer);
         const events = out.split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-        resolve({ code, events, requests, out, err });
+        resolve({ code, events, requests, times, out, err });
       });
     });
   } finally {
@@ -307,6 +311,31 @@ test('a Bash call and an Agent call in one message run in order: the agent start
     'e2e architect': [call('Bash', { command: 'git log -1 --format=%s', description: 'Show the last commit' })],
   });
   assert.match(lastResult(r.requests['e2e architect'][1]), /e2e plan approved/, story(r));
+});
+
+// #40: the skill builds [P] slices side by side by putting each step's agents in one message as several
+// foreground Agent calls, implementers with isolation: "worktree". That holds only if Claude Code runs
+// such calls at the same time. Each agent here waits 5 s in a Bash call: both are inside it together, and
+// the main session's next request comes only once both have reported. Needs no hook of the team.
+test('two foreground Agent calls in one message run side by side, with and without worktree isolation (#40)', { skip: noClaude, timeout: 240_000 }, async () => {
+  for (const isolation of [undefined, 'worktree']) {
+    const s = setup();
+    const wait = call('Bash', { command: 'node -e "setTimeout(() => {}, 5000)"', description: 'Wait five seconds' });
+    const launch = (marker) => call('Agent', { description: marker, subagent_type: 'general-purpose', prompt: `${marker}: go`, run_in_background: false, ...(isolation ? { isolation } : {}) });
+    const r = await session(s, {
+      [MAIN]: [[launch('e2e left'), launch('e2e right')]],
+      'e2e left': [wait, say('Left done.')],
+      'e2e right': [wait, say('Right done.')],
+    });
+    const [left, right] = [r.times['e2e left'], r.times['e2e right']];
+    const ms = (times) => times.map((t) => t - r.times[MAIN][0]).join(', ');
+    const label = `isolation ${isolation ?? 'none'}, request times in ms after the main session's first: main ${ms(r.times[MAIN])}; left ${ms(left)}; right ${ms(right)}\n${story(r)}`;
+    assert.ok(left.length >= 2 && right.length >= 2, label);
+    assert.ok(Math.max(left[0], right[0]) < Math.min(left[1], right[1]), `both agents start before either finishes its wait: ${label}`);
+    assert.ok(r.times[MAIN][1] > Math.max(left[1], right[1]), `the main session waits for both: ${label}`);
+    const started = r.events.filter((e) => e.type === 'system' && e.subtype === 'task_started' && /^e2e (left|right)$/.test(e.description ?? ''));
+    assert.deepEqual(started.map((e) => e.is_backgrounded), [false, false], label);
+  }
 });
 
 // #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
@@ -498,6 +527,33 @@ test("implementer's RED is counted at its Stop, and the third in a row stops the
   });
   // Only two REDs were recorded by hand: the limit is reached only if Claude Code ran the Stop hook.
   assert.match(lastResult(r.requests['e2e implementer two'][1]), /Retry limit: implementer reported RESULT: RED 3 times in a row on specs\/001-x/, story(r));
+});
+
+// #40: side by side, each implementer runs with isolation: "worktree". Claude Code cuts the worktree
+// from the last commit, so the skill commits test-writer's tests in the message that launches the
+// implementers, and the Agent result names the worktree's branch, which the main session merges. The
+// hook there reads the audit the main tree recorded (one state dir per repository, not per worktree).
+test("an implementer in a worktree is gated by the main tree's audit, starts from the last commit, and its result names its branch (#40)", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  s.write('tests/red.test.js', 'written by test-writer, not committed yet\n');
+  const script = {
+    [MAIN]: [call('Agent', { description: 'implementer', subagent_type: 'implementer', prompt: 'e2e worktree implementer: go', run_in_background: false, isolation: 'worktree' })],
+    'e2e worktree implementer': [
+      call('Bash', { command: 'git rev-parse --abbrev-ref HEAD; ls tests 2>/dev/null || echo "no tests folder"', description: 'Look at the worktree' }),
+      call('Bash', { command: 'echo "export const left = 1;" > left.js && git add left.js && git -c user.name=t -c user.email=t@example.invalid commit -qm "e2e slice built"', description: 'Commit the slice' }),
+      say('T001 passes.\nRESULT: GREEN'),
+    ],
+  };
+  const before = await session(s, script);
+  assert.match(lastResult(before.requests['e2e worktree implementer'][1]), /Implementation gate: spec-auditor has not passed specs\/001-x/, story(before));
+  recordPass(s);
+  const after = await session(s, script);
+  const seen = lastResult(after.requests['e2e worktree implementer'][1]);
+  assert.match(seen, /^worktree-agent-\S+$/m, `not on a worktree branch: ${seen}\n${story(after)}`);
+  assert.match(seen, /no tests folder/, `the worktree has the uncommitted test: ${seen}\n${story(after)}`);
+  const branch = /worktreeBranch: (\S+)/.exec(lastResult(after.requests[MAIN][1]))?.[1];
+  assert.ok(branch, `the Agent result names no branch:\n${story(after)}`);
+  assert.equal(execFileSync('git', ['log', '-1', '--format=%s', branch], { cwd: s.repo, encoding: 'utf8' }).trim(), 'e2e slice built', story(after));
 });
 
 test("spec-gatekeeper's report must end in APPROVED or REJECTED, and the word is recorded", { skip: noClaude, timeout: 120_000 }, async () => {
