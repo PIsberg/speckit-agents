@@ -1157,7 +1157,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 273 tests:
+`npm test` runs 274 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1167,7 +1167,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 34 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 35 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1215,7 +1215,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 25
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 26
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1226,11 +1226,14 @@ need no login and cost nothing.
   shuts it out until the main tree records a PASS, and then lets it in; the worktree holds the last
   commit and not the main tree's uncommitted test, and the Agent result names the worktree's
   branch. Another runs `patcher` with fork subagents on, so in the background as in an interactive
-  session, and its scope hook and end check still fire. They run with `--permission-mode bypassPermissions`, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 25
-  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 27 failures, none of the 25 passed). Setting
+  session, and its scope hook and end check still fire. A third runs a Build only team the same way,
+  from a typed `/speckit-team`: the background test-writer and implementer pass the audit gate, because
+  their gate finds the team the main session's launch recorded under its session id
+  ([#100](https://github.com/PIsberg/speckit-agents/issues/100)). They run with `--permission-mode bypassPermissions`, so a hook that does not
+  fire lets the action through. With the installed hook replaced by one that only exits, all 26
+  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 28 failures, none of the 26 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  27 of the 34 tests fail (the 25 scripted ones and the two blocking no-model cases); the other seven
+  28 of the 35 tests fail (the 26 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1293,7 +1296,9 @@ eight checks (L1 to L8) and what each expects.
 
 Seen live from 2026-10-06 to 2026-10-11: the typed `/speckit-implement` gate, a scope denial, the
 audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
-full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day: [Live results](docs/live-results.md).
+full `/speckit-team` runs and, on 2026-10-10, the fast track. On 2026-10-12, in an interactive session
+against a fake API (no model ran): the fast track's hooks, and the team question answered Build only.
+The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
 > Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check

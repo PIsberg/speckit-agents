@@ -6,6 +6,32 @@ said where it was run. The README's [Live results](../README.md#live-results) is
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-12</b>: Claude Code 2.1.296, Windows 11, the team question answered Build only in an interactive session (006 L4, #100), against a fake API</summary>
+
+Setup: a throwaway Spec Kit repo on branch `001-greet` with a spec, plan and tasks and no audit
+recorded, the team installed into a throwaway config dir, an interactive session started by vhs with
+`--permission-mode default` and fork subagents on (Claude Code's default), talking to a fake API on
+localhost, so no model ran and nothing was spent. The fake main session followed the installed
+skill's text: it asked the team question with the options it read under "The options:", and on the
+answer launched the roles that option names, each prompt with the skill's `Team:` line. Typed:
+`/speckit-team add a file`; vhs then pressed Down and Enter.
+
+| What | Result |
+|---|---|
+| The question | One question with the skill's four options in its order, `1. Full team (Recommended)` first, then Build only, Implement only and Spec and build, and Claude Code's own `5. Type something.` |
+| The answer | `→ Build only` reached the main session, which launched test-writer, then implementer, each prompt with `Team: test-writer, implementer`; both ran in the background. |
+| The team message | Under each launch: `PreToolUse:Agent says: speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team`. |
+| The audit gate | Off for both: each agent's first tool call, a Read of `spec.md` with no audit recorded, went through, and no screen showed `Implementation gate`. |
+| The team record | `.git/speckit-team/team/<session>.json` held `test-writer` and `implementer`. |
+
+Not seen: a real model mapping the answer to the `Team:` line. The 2026-10-11 run below saw a real
+main session ask the question (Full team first and recommended) and, in L1, write
+`Team: test-writer, implementer` from `--team`. `test/e2e.test.mjs` pins the hook's half with fork
+subagents on under `claude -p`.
+
+</details>
+
+<details>
 <summary><b>2026-10-12</b>: Claude Code 2.1.296, Windows 11, the fast track's hooks in an interactive session (#73), against a fake API</summary>
 
 Setup: a throwaway git repo with `.specify/memory/constitution.md` and one source file, the team
@@ -38,7 +64,7 @@ project,local`, the session's `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` varia
 | L1 | Seen live. `/speckit-team --team test-writer,implementer add a hello.txt that says hello`: `task_started` for test-writer and implementer only; the message `speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team` on both launches; no `Implementation gate` denial; `.git/speckit-team/team/<session>.json` held the two roles; branch `team/add-hello-txt` with one commit; the final report named the skipped roles. |
 | L2 | Seen live. `--team bogus,implementer`: 1 turn, no agent launched, the reply named `bogus` and listed the six roles. |
 | L3 | Seen live. `--team spec-auditor,implementer`: 1 turn, no agent launched, the reply said spec-auditor needs architect. |
-| L4 | Partly seen. Interactive `/speckit-team <request>` (three recordings for the pipeline demo, driven by vhs) put the question with Full team first and marked Recommended, and answering it launched product-owner with no `Team:` line. Answering Build only and Esc out were **not run**: nobody drove them. |
+| L4 | Partly seen. Interactive `/speckit-team <request>` (three recordings for the pipeline demo, driven by vhs) put the question with Full team first and marked Recommended, and answering it launched product-owner with no `Team:` line. Answering Build only and Esc out were **not run**: nobody drove them (run on 2026-10-12 against a fake API, above). |
 
 Not seen live: the pipeline demo re-recording. Three attempts of `node docs/media/record.mjs pipeline`
 got the team question and its answer, but the product owner (Haiku) returned no open questions each
