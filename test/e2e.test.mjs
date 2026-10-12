@@ -646,6 +646,22 @@ test("patcher's report must end in DONE, FAILED or ESCALATE (FR-002, US3-2)", { 
   assert.match(lastResult(r.requests['e2e patcher'][1]), /exactly one of: DONE, FAILED, ESCALATE/, story(r));
 });
 
+// #73, the 003 plan's open risk "whether Claude Code delivers the fast track's hooks in an interactive
+// session": an interactive session has fork subagents on, so patcher runs in the background there,
+// whatever run_in_background says. Its hooks must fire all the same: the scope hook on its Write, and
+// the end check when it stops, which writes the accepted record.
+test('with fork subagents on, as in an interactive session, patcher runs in the background and its hooks still fire (#73)', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say('Fixed.\nDONE')],
+  }, { env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
+  assert.equal(launch(r)?.is_backgrounded, true, story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][1]), /patcher may not write \.specify\/memory\/constitution\.md: it is a protected path/, story(r));
+  assert.equal(fs.readFileSync(path.join(s.repo, '.specify', 'memory', 'constitution.md'), 'utf8'), '# Constitution\n');
+  assert.deepEqual(record(s).files, ['src/fix.js'], story(r));
+});
+
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
 // The three cases below need the installed hook to fire on PreToolUse Agent; with SPECKIT_E2E_NO_HOOK=1
 // the second and third fail.
