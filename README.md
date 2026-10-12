@@ -1133,14 +1133,18 @@ and by `test/install.test.mjs` for the board-only install. One end-to-end test l
 `--plugin-dir` in a headless session against the fake API ([End-to-end tests](#end-to-end-tests)),
 so CI sees on Linux, macOS and Windows that Claude Code starts it, that it sets its status line and
 raises its startup toast, and that `/speckit-board status`, `clear` and an unknown argument answer
-at 0 turns ([#19](https://github.com/PIsberg/speckit-agents/issues/19)). The `[ clear ]` button is
-verified by the mod's tests only, not seen live, and `docs/media/board.png` predates it.
+at 0 turns ([#19](https://github.com/PIsberg/speckit-agents/issues/19)). `docs/media/board.png`
+predates the `[ clear ]` button ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).
 
 **Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09, and
-headless on Windows on 2026-10-11 for the board-only install and the `clear` argument: the record is
-below. **Not seen live:** an interactive session on Linux or macOS (band, pane, agent rows; on Linux
-Claude Code stopped at first-run login), the status line updating within the 4-second poll without a
-command, and the `[ clear ]` button.
+headless on Windows on 2026-10-11 for the board-only install and the `clear` argument. On
+2026-10-12, in an interactive session on Windows that vhs drove against a fake API at no cost,
+`[ clear ]` in the band and in the pane cleared the agent rows and the band without changing a state
+file, and a new team agent brought both back within 4 s (feature 004's checks L3 to L6).
+[`tools/live-board.mjs`](tools/live-board.mjs) repeats those checks. The record is below. **Not seen
+live:** an interactive session on Linux or macOS (band, pane, agent rows; on Linux Claude Code
+stopped at first-run login), the status line updating within the 4-second poll without a command,
+and a click on a button rather than its keys.
 
 The record: [Live results, The board](docs/live-results.md#the-board).
 
@@ -1148,7 +1152,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 269 tests:
+`npm test` runs 272 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1160,6 +1164,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 33 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
+| [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1548,6 +1553,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
+| [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
@@ -1558,7 +1564,10 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 See [`CLAUDE.md`](CLAUDE.md). In short: edit `agents/`, `hooks/`, `skills/` or `install.mjs`, run
 `npm test`, rerun the installer, and do the [live check](#live-check) if you touched how a hook is
-wired.
+wired. After changing what the board draws or what its buttons do, run `node tools/live-board.mjs`
+(vhs, git and `claude` on your PATH; about 70 s, no model calls): it types the keys of feature 004's
+checks L3 to L6 into an interactive session, writes every screen as text, and prints each check's
+result. `node tools/live-board.mjs pane` presses the pane's `[ clear ]` instead of the band's.
 
 ### Recording the demo media
 
