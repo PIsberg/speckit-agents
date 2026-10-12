@@ -662,6 +662,24 @@ test('with fork subagents on, as in an interactive session, patcher runs in the 
   assert.deepEqual(record(s).files, ['src/fix.js'], story(r));
 });
 
+// #72, the structural option: the deny reader cannot see a push inside a script, so in bypassPermissions
+// (the main session's mode here, which patcher runs in) the hook runs patcher's command with git's
+// network transports off, and git refuses the push before it connects. With SPECKIT_E2E_NO_HOOK=1 git
+// tries to connect instead.
+test('in bypassPermissions, a push from a script patcher runs is refused by git before it connects (#72)', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [
+      wfile(s, 'push.sh', 'git push https://127.0.0.1:9/none.git HEAD:refs/heads/x\n'),
+      call('Bash', { command: 'sh push.sh', description: 'Run the script' }),
+      say('Ran it.\nDONE'),
+    ],
+  });
+  assert.ok(r.requests['e2e patcher'].length >= 3, story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][2]), /transport 'https' not allowed/, story(r));
+});
+
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
 // The three cases below need the installed hook to fire on PreToolUse Agent; with SPECKIT_E2E_NO_HOOK=1
 // the second and third fail.

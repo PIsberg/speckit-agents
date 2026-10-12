@@ -16,14 +16,18 @@ decision 14):
 1. Preconditions: `.specify/` exists, or stop (the fast track's hooks are inactive without it).
    If the working tree is dirty, list the files, say they will not be counted or committed, and ask
    before going on. The same foreground-launch check as `/speckit-team` step 0.
-2. Before launching: note `git rev-parse HEAD` (the start) and `git hash-object -- "{{HOOK}}"` (the
-   installed hook's hash); create the branch with `git switch -c patch/<slug>` from the current
+2. Before launching: note `git rev-parse HEAD` (the start), `git hash-object -- "{{HOOK}}"` (the
+   installed hook's hash) and, since #72 (2026-10-12),
+   `git for-each-ref --format='%(refname) %(objectname)' refs/remotes` (the remote-tracking refs), in
+   one Bash call: notes out of `patcher`'s reach, unlike the hook's start record; create the branch with `git switch -c patch/<slug>` from the current
    commit, and say what that commit is if it is not on `main` or `master`.
 3. Launch `patcher` once, in the foreground, with the change as given, and nothing else.
 4. On `DONE` with the report stating the existing tests passed, commit only when every check holds:
    `git hash-object -- "{{HOOK}}"` equals the noted hash; `git rev-parse HEAD` equals the start;
    `git branch --show-current` is `patch/<slug>`; `$(git rev-parse --git-dir)/speckit-team/patch-accepted.json`
-   exists and its `sha` equals the start. If the record's `files` is empty, commit nothing, push
+   exists and its `sha` equals the start; since #72, the remote-tracking refs equal the noted refs (a
+   change means a push or a fetch: also tell the user to check the remote), and no file listed as
+   dirty in step 1 is in the record's `files` or `untracked`. If the record's `files` is empty, commit nothing, push
    nothing and open no pull request, and report that `patcher` changed no file (owner decision of
    2026-10-10, plan.md decision 16 point 1: `git commit -m "<message>" --` with no path commits
    everything already staged, the developer's work included). Otherwise
