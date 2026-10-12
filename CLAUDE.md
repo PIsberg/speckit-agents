@@ -30,7 +30,9 @@ this file is how to work on it.
 - `tools/usage.mjs`: input tokens of a recorded session and its agents, from the transcript, counted
   once per API response. Measure a change to the skill or an agent with it before and after
   (README.md, "Developing").
-- `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin;
+- `test/`: `node:test` suites. `hook.test.mjs` drives the hook with hook JSON on stdin, and
+  `hook-patch.test.mjs` its fast-track `patch` mode, a file of its own so the two run side by side
+  (shared helpers in `hook-helpers.mjs`, not a test file);
   `install.test.mjs` installs into throwaway config dirs (its board tests run the real
   `claude plugin` and are skipped without it); `board-mod.test.mjs` checks the mod's
   fingerprint, retry limit, role colors and report words against the hook's and `agents/*.md`, and runs
@@ -43,9 +45,9 @@ this file is how to work on it.
   without `claude` like the board tests).
 
 ## Verify
-- `npm test`: all suites, no network beyond localhost: 264 tests, 231 s on an idle Windows machine
-  (2026-10-11); the four installer tests that run the real `claude plugin` and the 31 e2e tests take
-  most of it, and a run on a busy machine took twice as long.
+- `npm test`: all suites, no network beyond localhost, 265 tests. Files run side by side; the e2e
+  file runs up to four tests at once (`SPECKIT_E2E_CONCURRENCY=1` for one by one). The two hook
+  files take longest; a run on a busy machine takes about twice as long as on an idle one.
 - CI (`.github/workflows/test.yml`) runs `npm test` on Linux, macOS and Windows for every PR and
   push to main, with Claude Code 2.1.293 from npm and `SPECKIT_REQUIRE_CLAUDE=1`, which makes the
   tests that need `claude` fail instead of skip when it is missing. On Linux it then type-checks

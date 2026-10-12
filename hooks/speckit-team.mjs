@@ -134,8 +134,25 @@ const deny = (reason) => emit({ hookSpecificOutput: {
 const block = (reason) => emit({ decision: 'block', reason });
 
 const cwd = str(input.cwd) ?? process.cwd();
-const root = git(cwd, 'rev-parse', '--show-toplevel');
-if (!root || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
+// Most calls come from outside any Spec Kit repo: the settings.json gates run on every Skill and Agent
+// call in every repo. The repo's root is the working directory or an ancestor of it, so when none of them
+// holds .specify/ the answer needs no git process. A GIT_DIR or GIT_WORK_TREE can put the work tree
+// elsewhere, so git decides then, as it does when the directory cannot be resolved.
+function specifyAbove(dir) {
+  if (process.env.GIT_DIR || process.env.GIT_WORK_TREE) return true;
+  let d;
+  try { d = fs.realpathSync.native(path.resolve(dir)); } catch { return true; }
+  for (;;) {
+    if (fs.existsSync(path.join(d, '.specify'))) return true;
+    const up = path.dirname(d);
+    if (up === d) return false;
+    d = up;
+  }
+}
+if (!specifyAbove(cwd)) process.exit(0);
+// One git process for the work tree's root and the git directory every worktree shares.
+const [root, commonDir] = lines(git(cwd, 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'));
+if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
 inSpecKitRepo = true;
 // State files are ours but can still be corrupt. `undefined` = missing, `null` = unreadable.
 function readState(f) {
@@ -151,7 +168,7 @@ if (inputProblem) noDecision(inputProblem);
 if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
-const stateDir = path.join(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'), 'speckit-team');
+const stateDir = path.join(commonDir, 'speckit-team');
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").

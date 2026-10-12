@@ -175,6 +175,9 @@ There is no flag for the fast track: `patcher` and its two skills are always ins
   settings object (an array, or a `hooks` entry that is not a list of objects), and stops before
   writing anything.
 - **Keeps a record.** It records what it created in `hooks/speckit-agents.install.json`.
+- **Checks PATH without running anything.** It warns when `git`, `claude` or `specify` is not on
+  PATH, by looking for the file. Running each with `--version` took 548 of an install's 750 ms on
+  Windows, for `specify` alone; an install now takes about 150 ms.
 - **Smoke-tests the hook.** It finishes by running the installed hook once, so a broken Node setup
   fails the install instead of silently disabling the guardrails.
 
@@ -683,7 +686,7 @@ unless the end check accepted the run.
   not `ESCALATE` (L3); the deny of `patcher`'s own `git commit` and `git push` never fired because
   the model never tried one, so it rests on the unit and end-to-end tests (L8).
 - **Verified by unit and end-to-end test only:** every hook decision above in
-  [`test/hook.test.mjs`](test/hook.test.mjs); the installed agent and skills in
+  [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs); the installed agent and skills in
   [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
   `claude -p` against a fake API in [`test/e2e.test.mjs`](test/e2e.test.mjs).
 - **Not verified at all:** a real model following the prompt rules above, and whether Claude Code
@@ -696,7 +699,11 @@ shell. What that leaves open is in [Known limits](#known-limits).
 
 Every guardrail is a mode of [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs). In a repo without
 `.specify/` every mode exits immediately and allows the action, so installing at user level costs
-nothing elsewhere.
+nothing elsewhere. It knows that before starting git: no folder from the working directory up holds
+`.specify/`, so one process ends at 51 ms on Windows, of which 42 ms is Node starting at all. In a
+Spec Kit repo one `git rev-parse` gives both the work tree and the shared git directory; a gate call
+there takes 68 ms. Both were 14 to 15 ms slower with two git processes before (30 runs each,
+alternating old and new, 2026-10-11).
 
 | Mode | Wired to | What it stops |
 |---|---|---|
@@ -1398,12 +1405,13 @@ command, and the `[ clear ]` button.
 
 ### Test suite
 
-`npm test` runs 264 tests:
+`npm test` runs 265 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 138 | the hook, fed hook JSON on stdin, against throwaway git repos |
-| [`test/install.test.mjs`](test/install.test.mjs) | 75 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 80 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 58 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 76 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
@@ -1411,6 +1419,14 @@ command, and the `[ clear ]` button.
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
+
+`node --test` runs the files side by side, and each file's own tests one after another. The hook
+tests start a process per call and wait on it, so they share no time unless they are in different
+files: the `patch` mode's half is a file of its own, with the helpers both use in
+[`test/hook-helpers.mjs`](test/hook-helpers.mjs), which the `*.test.mjs` glob does not run. The
+end-to-end tests are independent and spend their time waiting on `claude`, so that file runs up to
+four of them at once (one fewer than the machine's cores; `SPECKIT_E2E_CONCURRENCY=1` runs them one
+by one): 149 s became 43 s on Windows (2026-10-11).
 
 ### CI
 
