@@ -35,7 +35,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 278 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 283 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
@@ -56,7 +56,9 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Twins, each held by `test/board-mod.test.mjs`: `fingerprint()` in the hook and in
   `mods/speckit-board/hooks/model.ts` (also pinned in the mod's `model.test.ts`); the mod's
   `ROLE_COLOR` and each `agents/*.md` `color:` line; its `MAX_RED` and the hook's; its `WORDS` and the
-  words test-writer and spec-gatekeeper pass to `ends`. Change both halves.
+  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `NO_NETWORK` in the
+  hook and in `install.mjs`, which writes the exact allow rule for the hook's export line (#122), held
+  by `test/hook-patch.test.mjs`.
 - `OWN_SOURCES` in the hook lists the team's own sources, which the fast track protects only in this
   repository, recognised by the `name` in the committed `package.json` (itself in the list). A new
   guardrail file of the team gets an entry and a case in `test/hook.test.mjs`.

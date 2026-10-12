@@ -95,15 +95,16 @@ In this order:
    `Fast-track budget exceeded: <lines> changed production lines in <files> files (limit 30 lines, 2 files)[; binary production files are not allowed: <paths>][; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: <paths>]. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.`
    When a restore is pending (step 6's condition), the reason adds
    ` First restore the protected files, naming each one (git checkout <sha12> -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft <sha12>).`
-8. An allow of steps 5 and 6 (added for #72 on 2026-10-12): when `tool_name` is `Bash`,
-   `tool_input.command` is a string and `permission_mode` is `bypassPermissions`, the allow rewrites the
-   command to one line, `export GIT_CONFIG_COUNT=<n+7>` and the pairs `GIT_CONFIG_KEY_<n+i>` and
+8. An allow of steps 5 and 6 (added for #72 and #122 on 2026-10-12): when `tool_name` is `Bash`,
+   `tool_input.command` is a string, and `permission_mode` is `bypassPermissions` or the installed
+   `settings.json` beside the hook has `Bash(<the line>)` in `permissions.allow` (install.mjs writes it
+   for `<n>` = 0), the allow rewrites the command to one line, `export GIT_CONFIG_COUNT=<n+7>` and the pairs `GIT_CONFIG_KEY_<n+i>` and
    `GIT_CONFIG_VALUE_<n+i>` for `protocol.allow=never`, `protocol.file.allow=user` and
    `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then a newline and the
    command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
-   integer. Every other `tool_input` field is kept. Otherwise: allow with no output. In the other
-   permission modes Claude Code checks each part of the rewritten command against the user's rules,
-   the export line matches none, and every allowed command would ask again (2.1.296).
+   integer. Every other `tool_input` field is kept. Otherwise: allow with no output. Claude Code
+   checks each part of the rewritten command against the user's rules, so without that allow rule
+   every allowed command would ask again outside `bypassPermissions` (2.1.296).
 
 ### End of run: PreToolUse `SubagentHandback`, `SubagentStop`, `Stop`
 

@@ -533,7 +533,7 @@ const BYPASS = { permission_mode: 'bypassPermissions' };
 const exported = (line) => Object.fromEntries(line.replace(/^export /, '').split(' ').map((kv) => [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)]));
 const pairs = (env, from = 0) => Array.from({ length: Number(env.GIT_CONFIG_COUNT) - from }, (_, k) => `${env[`GIT_CONFIG_KEY_${from + k}`]}=${env[`GIT_CONFIG_VALUE_${from + k}`]}`);
 
-test('patch: in bypassPermissions a command it lets through runs with git network transports off; other modes keep it as typed (#72)', () => {
+test('patch: in bypassPermissions a command it lets through runs with git network transports off; with no allow rule for the line, other modes keep it as typed (#72)', () => {
   const { dir } = cmdRepo();
   const ti = { command: 'npm test', description: 'Run the tests', timeout: 120000 };
   const out = patchTool(dir, 'Bash', ti, BYPASS);
@@ -558,6 +558,52 @@ test('patch: in bypassPermissions a command it lets through runs with git networ
   assert.match(why(patchTool(dir, 'Bash', { command: 'git push' }, BYPASS)), /may not run git push/);
   assert.equal(patchTool(dir, 'Read', { file_path: path.join(dir, 'src/a.js') }, BYPASS), null);
   assert.equal(patchTool(dir, 'Bash', { command: 42 }, BYPASS), null, 'a non-string command is left alone');
+});
+
+// #122: install.mjs allows the exact export line, so the rewritten command asks for nothing the command
+// itself would not, in every mode (checked against a fake API with 2.1.296, auto mode's classifier
+// included). Where the installed settings.json holds that rule, every mode gets the switch-off; where it
+// does not, or the environment's own pairs make the line differ from it, only bypassPermissions does.
+function installedHook() {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), 'skpatch-cfg-'));
+  const r = spawnSync(process.execPath, [path.join(path.dirname(HOOK), '..', 'install.mjs'), '--claude-dir', cfg], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  return { cfg, hook: path.join(cfg, 'hooks', 'speckit-team.mjs') };
+}
+const viaHook = (dir, hook, tool_input, extra = {}, env = process.env) => {
+  const r = spawnSync('node', [hook, 'patch'], {
+    input: JSON.stringify({ cwd: dir, hook_event_name: 'PreToolUse', agent_id: 'p1', agent_type: 'patcher', tool_name: 'Bash', tool_input, ...extra }),
+    encoding: 'utf8', env,
+  });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout ? JSON.parse(r.stdout) : null;
+};
+
+test('patch: with the installer\'s allow rule for the export line, every permission mode gets the switch-off (#122)', () => {
+  const { dir } = cmdRepo();
+  const { cfg, hook } = installedHook();
+  const rule = (JSON.parse(fs.readFileSync(path.join(cfg, 'settings.json'), 'utf8')).permissions?.allow ?? []).find((a) => a.startsWith('Bash(export '));
+  assert.ok(rule, 'install.mjs wrote the rule');
+  const ti = { command: 'npm test', description: 'Run the tests' };
+  for (const mode of ['default', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions', undefined]) {
+    const command = viaHook(dir, hook, ti, mode ? { permission_mode: mode } : {})?.hookSpecificOutput?.updatedInput?.command ?? '';
+    const [line, rest] = [command.slice(0, command.indexOf('\n')), command.slice(command.indexOf('\n') + 1)];
+    assert.equal(`Bash(${line})`, rule, `${mode}: the line is the one the rule allows`);
+    assert.equal(rest, 'npm test', mode);
+  }
+  // The environment's own pairs move the line off the rule: only bypassPermissions rewrites then.
+  const shifted = { ...process.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.quotepath', GIT_CONFIG_VALUE_0: 'false' };
+  assert.equal(viaHook(dir, hook, ti, { permission_mode: 'default' }, shifted), null, 'a line the rule does not allow would ask');
+  assert.ok(viaHook(dir, hook, ti, BYPASS, shifted)?.hookSpecificOutput?.updatedInput, 'bypassPermissions still rewrites');
+  // Without the rule, as for a settings.json the user edited, only bypassPermissions rewrites.
+  const s = JSON.parse(fs.readFileSync(path.join(cfg, 'settings.json'), 'utf8'));
+  s.permissions.allow = s.permissions.allow.filter((a) => a !== rule);
+  fs.writeFileSync(path.join(cfg, 'settings.json'), JSON.stringify(s));
+  assert.equal(viaHook(dir, hook, ti, { permission_mode: 'default' }), null, 'no rule: kept as typed');
+  assert.ok(viaHook(dir, hook, ti, BYPASS)?.hookSpecificOutput?.updatedInput, 'no rule: bypassPermissions still rewrites');
+  // An unreadable settings.json is no rule.
+  fs.writeFileSync(path.join(cfg, 'settings.json'), '{ not json');
+  assert.equal(viaHook(dir, hook, ti, { permission_mode: 'default' }), null, 'unreadable settings: kept as typed');
 });
 
 test('patch: the switch-off adds to the git config pairs the environment already passes (#72)', () => {

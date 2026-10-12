@@ -130,6 +130,8 @@ function settingsShapeProblem(s) {
   const isObject = (v) => kind(v) === 'object';
   if (!isObject(s)) return `the file holds ${kind(s)}`;
   if (s.env !== undefined && !isObject(s.env)) return `"env" is ${kind(s.env)}`;
+  if (s.permissions !== undefined && !isObject(s.permissions)) return `"permissions" is ${kind(s.permissions)}`;
+  if (s.permissions?.allow !== undefined && !Array.isArray(s.permissions.allow)) return `"permissions.allow" is ${kind(s.permissions.allow)}, not a list`;
   if (s.hooks === undefined) return null;
   if (!isObject(s.hooks)) return `"hooks" is ${kind(s.hooks)}`;
   for (const [event, groups] of Object.entries(s.hooks)) {
@@ -158,8 +160,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 // Removing the gates can leave `hooks` or an event list empty, and those are pruned. A user's own
 // empty `"hooks": {}` or `"PreToolUse": []` is not ours to remove: it is put back from the original.
 function keepEmptyContainers(stripped, original) {
-  if (!original?.hooks || typeof original.hooks !== 'object') return stripped;
-  const next = { ...stripped, hooks: { ...(stripped.hooks ?? {}) } };
+  let next = stripped;
+  // The same for an empty `permissions` or `permissions.allow` the export rule was added to.
+  if (original?.permissions && typeof original.permissions === 'object' && !next.permissions) next = { ...next, permissions: {} };
+  if (Array.isArray(original?.permissions?.allow) && !next.permissions?.allow) next = { ...next, permissions: { ...next.permissions, allow: [] } };
+  if (!original?.hooks || typeof original.hooks !== 'object') return next;
+  next = { ...next, hooks: { ...(next.hooks ?? {}) } };
   for (const [event, groups] of Object.entries(original.hooks)) {
     if (Array.isArray(groups) && !groups.length && !next.hooks[event]) next.hooks[event] = [];
   }
@@ -223,6 +229,31 @@ function withFork(current, want, added) {
   if (added && env?.[FORK_ENV] === '0') {
     delete env[FORK_ENV];
     if (!Object.keys(env).length) delete next.env;
+  }
+  return { next, added: false };
+}
+
+// #122: the line the patch hook puts before each Bash command patcher runs, which switches git's
+// network transports off (#72), is allowed exactly, so the rewritten command asks for nothing the
+// command itself would not, in every permission mode. Never a prefix rule: an allowed export of any
+// git config could set core.fsmonitor or core.sshCommand, which run programs. Its twin is NO_NETWORK in
+// the hook; test/hook-patch.test.mjs holds the two together. Written where it is missing, removed only
+// if this installer wrote it: JSON has no room for the marker, so the manifest records it.
+const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
+  ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
+const NO_NETWORK_RULE = `Bash(export GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')})`;
+function withNoNetworkRule(current, want, added) {
+  const next = JSON.parse(JSON.stringify(current));
+  const allow = next.permissions?.allow ?? [];
+  if (want) {
+    if (allow.includes(NO_NETWORK_RULE)) return { next, added };
+    next.permissions = { ...(next.permissions ?? {}), allow: [...allow, NO_NETWORK_RULE] };
+    return { next, added: true };
+  }
+  if (added && allow.includes(NO_NETWORK_RULE)) {
+    next.permissions.allow = allow.filter((a) => a !== NO_NETWORK_RULE);
+    if (!next.permissions.allow.length) delete next.permissions.allow;
+    if (!Object.keys(next.permissions).length) delete next.permissions;
   }
   return { next, added: false };
 }
@@ -352,7 +383,8 @@ if (uninstall) {
     const backup = m.settingsBackup && read(abs(m.settingsBackup));
     let original = null;
     try { original = backup === null || backup === undefined ? null : JSON.parse(backup); } catch { original = null; }
-    const stripped = keepEmptyContainers(withFork(withGates(settings, false), false, Boolean(m.addedForkEnv)).next, original);
+    const stripped = keepEmptyContainers(withNoNetworkRule(withFork(withGates(settings, false), false, Boolean(m.addedForkEnv)).next,
+      false, Boolean(m.addedNoNetworkRule)).next, original);
     if (original?.env && !stripped.env) stripped.env = {};
     // `claude plugin uninstall` and `marketplace remove` leave these keys behind as `{}`.
     for (const key of hadBoard ? ['enabledPlugins', 'extraKnownMarketplaces'] : []) {
@@ -413,7 +445,8 @@ for (const { src, dst } of files()) {
 // under a fixed name and removed again on uninstall.
 const wantFork = !forkFlag && (noFork || Boolean(manifest?.forkOff));
 const fork = withFork(withGates(settings, true), wantFork, Boolean(manifest?.addedForkEnv));
-const nextSettings = fork.next;
+const rule = withNoNetworkRule(fork.next, true, Boolean(manifest?.addedNoNetworkRule));
+const nextSettings = rule.next;
 let settingsBackup = manifest?.settingsBackup ?? null;
 if (same(nextSettings, settings) && settingsText !== null) {
   log('unchanged', settingsFile);
@@ -445,6 +478,7 @@ write(manifestFile, `${JSON.stringify({
   addedPlugin: boardResult.plugin,
   forkOff: wantFork,
   addedForkEnv: fork.added,
+  addedNoNetworkRule: rule.added,
 }, null, 2)}\n`);
 
 if (!dryRun) {
