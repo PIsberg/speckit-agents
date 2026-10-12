@@ -716,6 +716,30 @@ test('after a full-team launch, a Team line without spec-auditor leaves the audi
   assert.ok(state(s, 'team', `${sessionId(r)}.json`).roles.includes('spec-auditor'), story(r));
 });
 
+// #100, 006 live check L4: in an interactive session the request starts with a typed /speckit-team
+// and the team question's Build only answer becomes a Team line. Fork subagents are on there, so
+// test-writer and implementer run in the background; their gates must still find the team that the
+// main session's launch recorded under its session id. With SPECKIT_E2E_NO_HOOK=1 nothing is recorded.
+test('with fork subagents on, as in an interactive session, a Build only team opens the audit gate for test-writer and implementer (#100)', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const team = 'Team: test-writer, implementer';
+  const r = await session(s, {
+    [MAIN]: [
+      teamAgent('e2e test-writer', `e2e test-writer: go\n${team}`),
+      call('Agent', { description: 'e2e implementer', subagent_type: 'implementer', prompt: `e2e implementer: go\n${team}`, run_in_background: false }),
+    ],
+    'e2e test-writer': [call('Read', { file_path: spec(s) })],
+    'e2e implementer': [call('Read', { file_path: spec(s) })],
+  }, { prompt: `/speckit-team ${MAIN}`, env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
+  assert.equal(launch(r)?.is_backgrounded, true, story(r));
+  for (const who of ['e2e test-writer', 'e2e implementer']) {
+    assert.doesNotMatch(lastResult(r.requests[who][1]), /Implementation gate/, `${who}\n${story(r)}`);
+    assert.match(lastResult(r.requests[who][1]), /# Spec/, `${who}\n${story(r)}`);
+  }
+  assert.deepEqual(state(s, 'team', `${sessionId(r)}.json`).roles, ['test-writer', 'implementer'], story(r));
+  assert.match(r.out, /speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team/, story(r));
+});
+
 // #88: the settings.json SubagentStart entry records where product-owner and architect start, and their
 // Stop runs `lane only` with their scope prefixes. With SPECKIT_E2E_NO_HOOK=1 neither block comes.
 test("product-owner's and architect's Stop: the lane check catches a file written through Bash (#88)", { skip: noClaude, timeout: 180_000 }, async () => {
