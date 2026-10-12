@@ -79,6 +79,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
   - [Test files](#test-files)
   - [State](#state)
   - [Context budget](#context-budget)
+  - [Foreground launches](#foreground-launches)
 - [Customising](#customising)
 - [Board mod (experimental)](#board-mod-experimental)
 - [Verifying](#verifying)
@@ -86,7 +87,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
   - [CI](#ci)
   - [End-to-end tests](#end-to-end-tests)
   - [Live check](#live-check)
-  - [Live results](#live-results)
+  - [Live results](docs/live-results.md)
 - [Troubleshooting](#troubleshooting)
 - [Known limits](#known-limits)
 - [Uninstall](#uninstall)
@@ -215,7 +216,7 @@ itself, with the spec and plan stops and no audit.
 
 Start it in a fresh session (`/clear` first): every response of the run re-reads the conversation,
 earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
-([Feature 004](#feature-004-interactive)).
+([Feature 004](docs/measurements.md#feature-004-interactive)).
 
 `/speckit-team` runs the whole pipeline from the main session. It stops for you at four points:
 
@@ -437,7 +438,7 @@ you can also name exceptions (`D5: B`). One architect revision then applies all 
 moving each entry to a `## Decisions` section with the answer and the date, and product-owner,
 launched in the same message, rewords the spec lines the chosen options carry. The spec and the
 plan then agree before the first audit; in the 004 run a decision that contradicted FR-012 failed
-it ([Feature 004](#feature-004-interactive)).
+it ([Feature 004](docs/measurements.md#feature-004-interactive)).
 
 Work that nothing in `spec.md`, the constitution's MUST rules or `CLAUDE.md` requires, such as a
 re-recording or an extra live check, is an open decision too, and its recommended option leaves the
@@ -451,7 +452,7 @@ architect makes by grep without re-reading the artifacts. An answer that drops o
 one edit for every mention, which the architect finds by grep. Anything that needs design
 judgement, and any edit the architect finds changes more than it was told, gets a full revision.
 The orchestrating session never edits the plan itself: a response there re-reads a much larger
-context than an architect's ([Feature 003](#feature-003-interactive)).
+context than an architect's ([Feature 003](docs/measurements.md#feature-003-interactive)).
 
 #### Routing findings
 
@@ -672,7 +673,7 @@ existing tests passed, reporting tests as passed, failed, skipped or not run, a 
 first for a change in behaviour, and never merging. The hook's part is that no accepted record exists
 unless the end check accepted the run.
 
-- **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](#live-results)):** one fix
+- **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](docs/live-results.md)):** one fix
   through to a commit by the main session on a branch the skill created, with the end check's
   `fast track ... accepted` message (L1, L8); `FAILED` on a change that breaks a test, with no commit
   (L2); a write to a protected path denied and reported `ESCALATE` (L4); a new workflow file blocked
@@ -832,188 +833,25 @@ the repo, which lets parallel implementers in worktrees pass the same gate.
 
 ### Context budget
 
-> [!NOTE]
-> Runs differ in how many audit rounds they need, so read the figures below as one sample, not a
-> benchmark.
+Every agent starts from nothing, 11k to 14k tokens before it reads a file, and the main session
+re-reads its whole context with every response. So the skill launches a fresh agent for every
+phase, passes each only what its Inputs section lists, caps every report, launches in the
+foreground and asks for a fresh session; the architect reads each file once and writes each fact
+once. Four full headless runs of a small feature cost $1.83 to $3.98, and one fast-track run
+$0.064. The runs, what each cost, and which rule each finding led to are in
+[Measurements](docs/measurements.md).
 
-#### One fresh agent per phase
-
-Measured from the transcripts of the 001 run (2026-10-06 and 2026-10-07):
-
-| Agent run | Requests | Peak context | Cause |
-|---|---|---|---|
-| one architect, sent 6 follow-up tasks across 4 audit rounds | 729 | 726k tokens | kept alive with SendMessage; read `tasks.md` 76 times, `research.md` 49, `plan.md` 40 |
-| product-owner, the same way | 86 | 77k | 9 follow-up tasks |
-| each spec-auditor (4 runs) | 32 to 73 | 121k to 210k | read every artifact whole: 184k to 361k characters of tool results; reports of up to 13k characters |
-| a fresh agent before it reads anything | 1 | 11k to 14k | Claude Code's system prompt, tools and your own `CLAUDE.md` |
-
-So the skill launches a fresh agent for every phase and every fix round, and never sends a new
-task to an old one. The architect reads each file once, whether through Read, `cat` or `sed`,
-finds the part of a large file by grepping its headings before reading a line range, and edits by
-grep; on a revision it reads only what the findings point to. spec-auditor reads the constitution, spec, plan and tasks
-once each, greps the other artifacts, and keeps its report to 60 lines. test-writer greps the spec
-for the IDs its tasks cite instead of reading it whole. These are prompt rules, not hooks. On the
-small scratch feature in the 2026-10-07 live check, spec-auditor read the four files once each and
-peaked at 13k tokens; a feature the size of 001 has not been re-measured.
-
-#### Four full runs
-
-Four full headless `/speckit-team` runs of the same small feature (a `sum()` function; Opus
-architect and auditor, Sonnet for the rest and the main session) show where the rest goes. The
-input figures come from `tools/usage.mjs` ([Measuring token usage](#measuring-token-usage)), whose
-per-model totals match the `modelUsage` that `claude -p` reported for all four runs. Every agent
-started fresh and peaked at 12k to 49k tokens. The main session is the larger cost: each of its
-requests re-reads its whole context, which starts at 32k to 42k (Claude Code, your tools and
-`CLAUDE.md`) and keeps every report it receives.
-
-| Run | Agents launched | Main session: requests, peak, input | Main-session requests that only waited | Agents' input | Cost |
-|---|---|---|---|---|---|
-| 2026-10-07, before the report limits | 19, background | 43, 96k, 2.96M | 19, 1.31M (44%) | 2.10M | $3.98 |
-| 2026-10-07, after them | 15, background | 36, 86k, 2.29M | 15, 0.95M (41%) | 1.48M | $2.87 |
-| 2026-10-08, foreground launches | 11, foreground | 17, 49k, 0.69M | none | 1.04M | $1.90 |
-| 2026-10-08, architect checks the constitution | 12, foreground | 19, 54k, 0.83M | none | 0.99M | $1.83 |
-
-Between the first two runs, each report's length was capped and two bugs were fixed (see
-[Live results](#live-results), 2026-10-07). An earlier version of this table summed usage per
-transcript line, but Claude Code writes one response as several lines, so its token figures were
-1.6 to 1.7 times too high (4.63M and 3.97M for the main session).
-
-#### One fast-track run
-
-One `/speckit-patch` run (L1 of [Live results](#live-results), 2026-10-10: fix the spelling of
-"Hello" in a two-line function of a scratch repo), measured with `tools/usage.mjs` from its
-transcript. The main session ran on Haiku, because the run was capped with `--model haiku`;
-`patcher` ran on its own configured model, Sonnet. The cost is the `total_cost_usd` that
-`claude -p` reported. The run is not comparable with the four above: a one-line fix, no feature,
-and the repo has no remote, so the skill did not push or open a pull request.
-
-| Run | Agents launched | Main session: requests, peak, input | Main-session requests that only waited | Agent's input | Cost |
-|---|---|---|---|---|---|
-| 2026-10-10, `/speckit-patch`, one-line fix | 1, foreground | 8, 43k, 0.31M | none | 0.07M (5 requests, peak 15k) | $0.064 |
-
-The other `/speckit-patch` runs of that day (L2 to L5, L8) cost $0.03 to $0.06 each, with 4 to 10
-main-session requests peaking at 39k to 44k and a `patcher` input of 0.02M to 0.10M. Against
-`/speckit-team`'s $1.83 to $3.98 for a feature, that is what SC-005 asks about, for a change this
-small; a larger change would cost more.
-
-#### Feature 003, interactive
-
-The run that built feature 003 (2026-10-09 and 2026-10-10) was interactive, with fork subagents on
-and the main session and the architect on Opus, and much larger than the `sum()` feature: 10
-architect runs and 6 audits. Measured with `tools/usage.mjs` and the subagent transcripts; one
-sample, and the session also held some work outside 003.
-
-| Where | Input | Share |
-|---|---|---|
-| main session: 223 responses, first 60k, peak 444k | 59.18M | 59% of the run |
-| of which responses that only waited for a background agent (53 launches, all background) | 14.45M | 24% of the main session |
-| agents: 53 runs | 41.41M | 41% of the run |
-| of which architect, 10 runs, peaks 32k to 232k | 18.72M | 45% of the agents |
-| of which spec-auditor, 6 runs | 5.58M | 13% of the agents |
-
-Three causes, and what changed for each (#70):
-- **Waiting requests.** Fork subagents were on, so no launch was in the foreground. This repository
-  now commits the setting that turns them off ([Foreground launches](#foreground-launches)).
-- **Decision rounds.** Four architect runs only applied the owner's answers, 7.37M together. One
-  of them (1.03M) answered two points, how a rename is counted among them, that came out only in
-  the revision before; another (3.30M) followed the owner reversing a decision, which no prompt
-  prevents.
-  The architect now writes what follows from each option, and the skill asks every open decision at
-  one stop ([Settling decisions](#settling-decisions)).
-- **Reads through Bash.** The architects returned 1,282k characters of tool output, mostly through
-  `cat` and `sed`, which the rule to read each artifact once did not name. Within single runs they
-  read the same files again and again: `plan.md` 16 times in one, README.md 6 times (67k
-  characters) in the first plan run, and whole source files such as `hooks/speckit-team.mjs` (27k).
-  The two largest runs peaked at 232k and 227k and took 4.46M and 3.30M. The rule now covers every
-  way of reading a file, and shows the grep-then-range form for large ones.
-
-Small edits cost a full architect too: 0.70M for one whose changes were fully decided but whose
-prompt named only the files, against 0.11M in 4 requests for one whose prompt named the line,
-hence the dictated revision, which gives each edit with where it goes.
-Editing from the main session instead would save wall-clock time but not tokens: its responses
-averaged 265k of input (59.18M over 223), an architect's about 60k. A turn cap on the architect was
-considered and left out: a first plan writes five or more files, so a cap low enough to matter
-would cut artifacts short and cost an audit round. None of these changes is measured yet; the next
-full run is the measurement.
-
-#### Feature 004, interactive
-
-The run that built feature 004 (a `[ clear ]` button on the board, 2026-10-10, Claude Code 2.1.296)
-was interactive, with fork subagents off: all 18 launches were in the foreground, and no request
-only waited. Measured with `tools/usage.mjs` and the agents' transcripts; one sample, and the main
-session also carried the reinstall before the run and a transcript watcher, so its figure is higher
-than a plain run's. [`specs/004-board-clear/findings.md`](specs/004-board-clear/findings.md) has
-the run step by step.
-
-| Where | Input | Wall time |
-|---|---|---|
-| main session: 81 responses, first 59k, peak 207k | 10.74M | |
-| agents: 18 runs | 7.41M | 48 min |
-| of which the first architect run: 35 responses, peak 142k | 2.96M | 654 s |
-| of which the six launches and the stall the causes below added | 1.07M | 830 s |
-
-Five causes added launches or waiting, and what changed for each:
-- **A plan decision contradicted the spec.** The first audit failed on FR-012 against decision D3;
-  a product-owner and a second audit fixed it (229 s, 0.59M), and the second audit listed three
-  more such conflicts as MEDIUM. An option that changes a spec line now carries its new wording,
-  and product-owner applies the chosen ones in the same message as the architect's revision
-  ([Settling decisions](#settling-decisions)).
-- **A task asked for a number no implementation could meet.** T006 held the band to 30 columns
-  where its narrowest layout with a running agent is 44. The test failed earlier for another
-  reason, so implementer reported RED (1 of the 3 the retry limit allows), test-writer corrected
-  the bound, and one more implementer only confirmed it (278 s, 0.14M for the last two).
-  test-writer now works such a value out on the current code and reports the task before any
-  implementer runs.
-- **test-writer did not run the type check.** Two type errors in test code reached implementer
-  and would have failed CI's `tsc`; one more test-writer fixed them (55 s, 0.16M). test-writer now
-  runs the type check CI runs over tests.
-- **A test run moved to the background.** One implementer's `npm test` passed the Bash tool's
-  default 2 minutes, Claude Code moved it to the background, and the agent waited 234 s on a run
-  it then repeated. Every agent that runs tests now gives the run a timeout that covers it
-  ([Building in slices](#building-in-slices)).
-- **A dictated revision missed four lines.** The main session built the list of lines for a
-  dropped task from a grep cut at 200 columns; one more architect (33 s, 0.13M). An ID that goes
-  away is now one edit for every mention, which the architect greps for.
-
-The first architect run made 22 of its 35 responses for a single read, at 85k of input each on
-average; its prompt now asks for every read it can already name in one response.
-
-What was left after those causes, and what changed for it:
-- **The main session:** its 58 run responses took 8.92M, and 2.73M of that was earlier
-  conversation re-read by every response. The skill now asks for a fresh session once, and commits
-  the approved spec and plan in the message that launches the next agent instead of in a request
-  of their own.
-- **What the architect writes:** 47k characters over six files, about 230 of its 654 s. 39% of
-  plan.md was the constitution table (6.8k characters, 8 of its 23 rows not applicable), and 1.3k
-  of quickstart.md's 1.9k described live checks the owner deferred. The architect now writes each
-  fact once, the optional artifacts only when they hold something, one table row per rule that
-  applies, and test tasks that cite the spec and `contracts/` instead of spelling out each case.
-- **Exploring again:** the plugin API's types were read by the architect, then by implementer and
-  test-writer (19k, 17k and 9k characters), and 40k characters of other features' artifacts were
-  read as examples. Tasks now name the file and symbol of what they use, and other features'
-  artifacts are no agent's input.
-- **The full suite:** it ran 5 times, about 14.5 of the 48 agent-minutes, the last two a minute
-  apart on the same commit. It now runs in the last round and at spec-gatekeeper.
-
-None of these changes is measured yet: the next full run is the measurement
-([#79](https://github.com/PIsberg/speckit-agents/issues/79)).
-
-#### Foreground launches
+### Foreground launches
 
 A background launch returns only a receipt, and the main session then spent a request that did
 nothing but wait for the agent, re-reading its whole context to do so. So the skill launches every
 agent in the foreground, and the report comes back with the Agent call (as its result or, in an
 interactive Claude Code 2.1.296 session, as the agent's own message, which the result points to):
 1.5 main-session requests per agent instead of 2.4, and 63k of main-session input per agent
-instead of 153k. The third run is not a clean comparison, though. It ran on Claude Code 2.1.294
-instead of 2.1.292, with the team installed in the scratch repo and `--setting-sources
-project,local --strict-mcp-config`, so its first request was 32k rather than 42k; it launched 11
-agents rather than 15; and the skill had also gained [#37](https://github.com/PIsberg/speckit-agents/issues/37)
-and [#38](https://github.com/PIsberg/speckit-agents/issues/38). The waiting requests explain 0.95M
-of the main session's 1.60M drop; the smaller start and the fewer agents explain the rest.
+instead of 153k. The runs behind those figures, and what makes them a rough comparison: [Measurements](docs/measurements.md#foreground-launches-the-runs-and-the-checks).
 
 An interactive session needs one setting for this. Claude Code 2.1.296 turns on fork subagents by
-default in an interactive session (not under `claude -p`, where the runs above were made), and
+default in an interactive session (not under `claude -p`, where the measured runs were made), and
 with them on its Agent tool has no `run_in_background` parameter at all: every agent runs in the
 background, whatever the skill passes. `CLAUDE_CODE_FORK_SUBAGENT=0`, in the shell or under `env`
 in a `settings.json`, turns them off, and the foreground launch comes back; it also takes away
@@ -1033,20 +871,11 @@ and `--fork` or `--uninstall` removes it again only while it is still that `"0"`
 This repository commits exactly that, since the team builds its own features here. The skill
 checks its Agent tool at the start of a run and tells you once if the parameter is missing. This
 surfaced while recording the README's GIFs
-([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked on 2026-10-09 against a fake
-API, at no cost: in an interactive session an Agent call with `run_in_background: false` ran in
-the background with the variable unset, and in the foreground with it set to `0` or `false`, in
-the environment or in `settings.json`. Checked again on 2026-10-10 the same way, Claude Code
-2.1.296 in a terminal driven by vhs, with the variable only in the project's `.claude/settings.json`
-and nothing in the environment: the Agent tool had `run_in_background`, the spec-auditor's report
-came back as its result, and the main session made 2 requests. Without the file, the parameter was
-missing, the call returned "Async agent launched", and the main session made 3. (Start such a
-check with `--permission-mode default`: in auto mode a notice about the localhost API waits for
-Enter and the agent never starts.) Three tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
+([#64](https://github.com/PIsberg/speckit-agents/issues/64)). Checked against a fake API at no cost, in an interactive session and under `claude -p` ([the checks](docs/measurements.md#foreground-launches-the-runs-and-the-checks)). Three tests in [`test/e2e.test.mjs`](test/e2e.test.mjs) pin
 the same behaviour under `claude -p`, the third that a project's `.claude/settings.json` wins over
 `CLAUDE_CODE_FORK_SUBAGENT=1` in the environment. With fork subagents on, the waiting cost 14.45M
 of input, 24% of the main session, in the one interactive run measured
-([Feature 003](#feature-003-interactive)); the same run with them off is not measured
+([Feature 003](docs/measurements.md#feature-003-interactive)); the same run with them off is not measured
 ([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
@@ -1054,18 +883,6 @@ answers what you type only after the agent reports. Between the stops listed abo
 waits for you anyway. When you choose side by side, agents for `[P]` slices are launched together
 in one message so that they still run side by side, but no live run has had `[P]` slices yet
 ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
-
-#### The constitution check
-
-In each of the first three runs the first audit failed on the same CRITICAL finding: the plan's
-Constitution Check marked rule VIII (the docs say what was verified live, what only by unit test,
-what not at all) as PASS, and no task delivered it. The fix took a second architect and a second
-auditor, both on Opus. So the architect now checks every MUST rule against its tasks before it
-reports (step 4 of [`agents/architect.md`](agents/architect.md)). In the fourth run it added a docs
-slice for rule VIII itself, the first audit passed, and Opus cost $0.79 instead of $1.11. The total
-fell only from $1.90 to $1.83, because that architect planned 8 tasks instead of 5 and Sonnet's
-share grew by $0.24. One run each, on one constitution: how often the check saves a round
-elsewhere is not measured.
 
 ## Customising
 
@@ -1313,99 +1130,13 @@ below. **Not seen live:** an interactive session on Linux or macOS (band, pane, 
 Claude Code stopped at first-run login), the status line updating within the 4-second poll without a
 command, and the `[ clear ]` button.
 
-<details>
-<summary><b>Live record</b>: Windows and Linux, 2026-10-08 to 11</summary>
-
-- **The board-only install and the standalone view ([#92](https://github.com/PIsberg/speckit-agents/issues/92)).**
-  On 2026-10-11 (Windows 11, Claude Code 2.1.296, Spec Kit 1.1.2), headless and at $0, in a throwaway
-  config dir: `claude plugin marketplace add PIsberg/speckit-agents` cloned this repository from
-  GitHub and `claude plugin install speckit-board@speckit-agents --scope user` installed the board
-  from main (`claude plugin list`: enabled, version 0.1.0), with no `agents/` or `skills/` folder and
-  no `speckit-team` entry in `settings.json`. In a repo `specify init --here --integration claude`
-  made, with the files Spec Kit's commands write put in place by hand (no model), a headless
-  `claude -p "/speckit-board status"` against a fake API answered at 0 turns with the contract's
-  texts in order: the no-feature notice, then S-2 `001-greeting · ◐ spec (draft)`, S-3 `○ plan`,
-  S-4 `○ tasks`, S-5 `○ build (0/3)` with `next: /speckit-implement: T001 Create greet.js`, and S-6
-  `◐ build (1/3)`; each run also raised its `ui_status` and startup `ui_toast`, and no line named a
-  team agent or `/speckit-team`. A copy of the repo without `.git` answered S-6 and S-3 the same.
-- **The clear argument ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).** The same day,
-  board from this checkout by `--plugin-dir`: `claude -p "/speckit-board clear"` answered
-  `cleared the band.` at 0 turns, exit 0 (the band of a fresh headless session is drawn, so there is
-  a band to clear; the quickstart had expected `nothing to clear.`), and `/speckit-board foo`
-  answered `unknown argument "foo": use status, refresh, band or clear.`
-
-- **Installed from this checkout.** On Windows, 2026-10-08, with the board installed from this
-  checkout and no `--plugin-dir`: a headless `claude -p "/speckit-board refresh"` in a scratch Spec
-  Kit repo set the status line, raised the startup toast and answered the command, and an
-  interactive session (recorded with vhs) drew the band, the status line and, after
-  `/speckit-board`, the pane. An edit to `mods/speckit-board/` reached the installed board at the
-  next session start with no reinstall.
-- **Team agent tracking.** The same day, with real agents (main session on Haiku). Headless, while
-  `@agent-spec-auditor` ran the status line read `◐ audit`, and when it stopped the mod toasted
-  `spec-auditor finished: PASS`, then `Audit PASS` once the hook had recorded the verdict;
-  `@agent-spec-gatekeeper` went `◐ verify`, then `spec-gatekeeper finished: APPROVED` and
-  `✓ verified`, which a new session still showed. Interactive, with the pane open, spec-auditor
-  ran as a background agent and the pane showed `spec-auditor running 19s` with the spinner, then
-  `✓ spec-auditor PASS`. That run found two bugs, fixed: the agent rows were drawn below the task
-  list and cut off, and a background agent's word was missing because its report arrives through
-  `SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`.
-- **The gatekeeper's word and the retry meter.** On 2026-10-08 (Claude Code 2.1.294, user-level
-  install, board by `--plugin-dir`, recorded with vhs): after a real `@agent-spec-auditor` PASS and
-  `@agent-spec-gatekeeper` APPROVED in headless sessions, a new interactive session showed
-  `✓ verify` from the hook's `ends` record alone, and two `RESULT: RED` stops fed to the installed
-  `result` hook moved the band to `RED 1/3`, then `RED 2/3`, with the pane's meter at `●●○`. That
-  run found a bug, fixed: a spec approved in conversation keeps Spec Kit's `Draft` status, so the
-  board named `spec, draft` as the current step of a verified feature; a plan now counts as the
-  spec's approval.
-- **Headless on Linux.** On 2026-10-08 (Ubuntu 22.04 under WSL 2, Claude Code 2.1.294, Node
-  22.20.0, `node install.mjs --board` from a clone of this checkout): with a PASS and an APPROVED
-  fed to the installed `verdict` and `ends --record` hooks, a headless
-  `claude -p "/speckit-board refresh"` emitted `ui_status`
-  `speckit 001-greet · ◐ build (1/2) · 1/2 tasks` and the startup `ui_toast`, then, with the last
-  task ticked, `✓ verified · 2/2 tasks`, at $0.
-- **A blocked stop ([#31](https://github.com/PIsberg/speckit-agents/issues/31)).** The same day on
-  Windows (Claude Code 2.1.294, main session on Haiku, spec-auditor on its own Opus, board by
-  `--plugin-dir`, the debug log read for order): a spec-auditor told to leave out its `VERDICT`
-  line once was refused by the `verdict` hook, and the mod's `classic.SubagentStop` settled after
-  that block with no toast and the status still `◐ audit`; when it added the line,
-  `spec-auditor finished: PASS` came 7 ms after the hook recorded the verdict. That held for a
-  foreground agent, a background one in a headless session (which still reports through
-  SubagentStop), and an interactive `@agent-spec-auditor`, where the hook denied the first
-  `SubagentHandback` and the toast came 0.5 s after the second.
-- **A stopped agent ([#32](https://github.com/PIsberg/speckit-agents/issues/32)).** The same setup:
-  a background spec-auditor stopped with `TaskStop` 1.3 s in ended `exitPath=cancelled`, its task
-  `killed`, with no `SubagentStop` (the mod's handler never ran and the agent's session hooks were
-  cleared unrun); the poll's agent-list check ended its row 0.1 s later, which a poll can take up
-  to 4 s to do.
-- **A failed agent ([#35](https://github.com/PIsberg/speckit-agents/issues/35)).** A localhost
-  proxy set as `ANTHROPIC_BASE_URL` answered every spec-auditor request after its first with a 400,
-  which is not retried; the agent ended `exitPath=error`, its task `failed` ("Agent terminated
-  early due to an API error"), again with no `SubagentStop`, and the poll ended its row 1.8 s
-  later, while the main session was still inside a tool call.
-- **The look in the screenshot.** On 2026-10-08 and 09 (Claude Code 2.1.295, Windows 11, board by
-  `--plugin-dir` in a scratch Spec Kit repo with the demo feature staged mid-build, recorded with
-  vhs, the main session and two stand-in agents on Haiku): the band, the pane docked in fullscreen
-  and inline above the prompt, the status line, and the agent rows with each agent's task and its
-  role's color, as in the screenshot above. `/speckit-board` typed while a turn ran a 25-second
-  Bash command opened the pane during the turn; the version before `immediate` queued it until the
-  turn ended. A headless `claude -p "/speckit-board status"` printed the board as text at 0 turns
-  and $0. The session before this change found a bug, fixed: the plugin store kept the
-  gatekeeper's word under the feature's path alone, so the scratch repo showed `✓ verify` from an
-  `APPROVED` kept for another repository's `specs/001-greet`, though no gatekeeper had run there
-  and its audit was newer. It also showed what the change redraws: the pane's phase track broke
-  mid-row in a pane docked 60 columns wide, beside the dock the band drew bare glyphs, every
-  finished agent got a green `✓` whatever its word, and the status line read
-  `speckit-board: speckit 001-greet · ◐ build (3/6) · 3/6 tasks`. The session after it found two
-  more, fixed before the screenshot: a team row wrapped its word (`runnin`, `g`) in the docked
-  pane, and at about 70 columns the band kept `[ board ]` but dropped the other phases' glyphs.
-
-</details>
+The record: [Live results, The board](docs/live-results.md#the-board).
 
 ## Verifying
 
 ### Test suite
 
-`npm test` runs 265 tests:
+`npm test` runs 266 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1416,6 +1147,7 @@ command, and the `[ clear ]` button.
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 31 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1525,187 +1257,13 @@ eight checks (L1 to L8) and what each expects.
 
 Seen live from 2026-10-06 to 2026-10-11: the typed `/speckit-implement` gate, a scope denial, the
 audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
-full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day is below.
+full `/speckit-team` runs and, on 2026-10-10, the fast track. The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
 > Not yet exercised live: implementer's test-file denial and a lane violation (a clean lane check
 > did run); for the fast track, the mid-run budget deny, the deny of `patcher`'s own `git commit`
 > and `git push`, a run on a repo with a remote (push and pull request), a larger change, and an
 > interactive session. Those are covered by the unit and end-to-end tests only.
-
-<details>
-<summary><b>2026-10-11</b>: Claude Code 2.1.296, Windows 11, choosing the team (006, L1 to L4), Haiku main session and agents</summary>
-
-Setup: a fresh Spec Kit repo outside this checkout, the branch's team installed into its own
-`.claude/` (`node install.mjs --claude-dir <repo>/.claude`, agents switched to `model: haiku`), the demo
-feature as the active feature with no audit recorded, runs under `claude -p --setting-sources
-project,local`, the session's `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` variables cleared.
-
-| ID | Result |
-|---|---|
-| L1 | Seen live. `/speckit-team --team test-writer,implementer add a hello.txt that says hello`: `task_started` for test-writer and implementer only; the message `speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team` on both launches; no `Implementation gate` denial; `.git/speckit-team/team/<session>.json` held the two roles; branch `team/add-hello-txt` with one commit; the final report named the skipped roles. |
-| L2 | Seen live. `--team bogus,implementer`: 1 turn, no agent launched, the reply named `bogus` and listed the six roles. |
-| L3 | Seen live. `--team spec-auditor,implementer`: 1 turn, no agent launched, the reply said spec-auditor needs architect. |
-| L4 | Partly seen. Interactive `/speckit-team <request>` (three recordings for the pipeline demo, driven by vhs) put the question with Full team first and marked Recommended, and answering it launched product-owner with no `Team:` line. Answering Build only and Esc out were **not run**: nobody drove them. |
-
-Not seen live: the pipeline demo re-recording. Three attempts of `node docs/media/record.mjs pipeline`
-got the team question and its answer, but the product owner (Haiku) returned no open questions each
-time (and, with fork subagents on, the main session was not woken by a backgrounded agent's report), so
-the tape's wait for the question dialog timed out; `docs/media/pipeline.gif` was not published.
-
-</details>
-
-<details>
-<summary><b>2026-10-10</b>: Claude Code 2.1.296, Windows 11, the fast track (L1 to L8), Haiku main session</summary>
-
-Setup: the branch's team installed with `CLAUDE_CONFIG_DIR=<throwaway dir> node install.mjs` (the
-real config directory untouched), a fresh Spec Kit repo outside this checkout with one commit and
-no remote (`src/greet.js` with the typo "Helo", `src/math.js`, a passing test for each, a
-`package.json` whose test command is `node --test`), and folder trust pre-accepted in the
-throwaway directory's `.claude.json`. Every run was `claude -p ... --model haiku
---output-format json`; the repo was reset to its commit between runs. `patcher` ran on its
-configured model, Sonnet (each run's `modelUsage` lists both models); no agent's `model:` line was
-changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and cache write) from
-`modelUsage`. Eleven runs, $0.41 in all.
-
-| Check | Result | Turns | Cost | Input tokens (Haiku main / Sonnet patcher) |
-|---|---|---|---|---|
-| L1 fix the spelling | passed, with a note | 8 | $0.064 | 314k / 70k |
-| L2 change that breaks a test | passed | 5 | $0.047 | 189k / 61k |
-| L3 a 60-line change, first prompt | not the check: escalated before writing | 5 | $0.032 | 188k / 23k |
-| L3 same, told not to estimate | partly: end check only | 7 | $0.055 | 275k / 48k |
-| L4 constitution edit | passed | 5 | $0.043 | 155k / 51k |
-| L5 `echo >>` into a workflow | passed | 6 | $0.059 | 231k / 104k |
-| L6 triage, `--json` flag | passed | 1 | $0.004 | 35k / none |
-| L6 triage, README typo | failed | 1 | $0.004 | 35k / none |
-| L7 `/speckit-implement`, no audit | passed | 0 | $0 | none |
-| L8 fix, then commit and push | deny not exercised | 10 | $0.058 | 401k / 71k |
-| L8 told `patcher` to commit and push | deny not exercised | 8 | $0.046 | 313k / 49k |
-
-- **L1** passed: the skill created `patch/fix-hello-spelling` from `main`; one `patcher` launch;
-  the patcher wrote a failing test first, fixed the line, and `npm test` passed 4 of 4; the hook
-  said `fast track: 1 of 30 production lines, 1 of 2 production files (tests and docs not counted).
-  The end check accepted the run.`; the accepted record listed `src/greet.js` and
-  `test/greet.test.js`; the main session then made one commit of those two files; nothing under
-  `specs/`. The quickstart expected the commit to hold only the fixed file, but `patcher` added a
-  regression test, as its prompt says to, so the commit held two. No push or pull request: the repo
-  has no remote, and the skill said so. Measured with `tools/usage.mjs`: main session 8 requests,
-  peak 43k, input 0.31M; one agent, 5 requests, peak 15k, input 0.07M
-  ([Context budget](#context-budget)).
-- **L2** passed: asked to make `add()` return `a - b` without touching tests, `patcher` named the
-  failing test (`adds`, `-1 !== 5`) and ended `FAILED`; the edit stayed uncommitted on its branch;
-  no commit, no pull request. (The run's `permission_denials` lists one compound Bash call of the
-  main session refused by `--allowedTools`, not by a hook.)
-- **L3**, first prompt (about 60 production lines in 14 functions): `patcher` judged the size
-  before writing anything and ended `ESCALATE` with the tree clean. That outcome is right but it is
-  not the check: no write crossed the budget, so the hook's deny did not run. Second prompt, telling
-  the model to write first and let the hook measure: `patcher` appended 86 production lines in one
-  Bash command that also ran the tests, so no tool call followed the crossing write to be denied.
-  At the stop the hook allowed the end with `fast track stopped: 86 changed production lines in 1
-  files (limit 30 lines, 2 files). Nothing was committed; ...` and wrote no accepted record. The
-  files stayed modified and the skill committed nothing, but `patcher`'s own report ended `DONE`,
-  not `ESCALATE`, and the skill described the run as `FAILED`. The mid-run budget deny (the tool
-  call after the crossing write) was not seen live.
-- **L4** passed: `patcher`'s `Edit` of `.specify/memory/constitution.md` was denied with
-  `patcher may not write ...: it is a protected path`; the file was unchanged; the report ended
-  `ESCALATE`.
-- **L5** passed: asked to append to `.github/workflows/x.yml` with `echo >>` and to fix the
-  spelling, `patcher` did both in one Bash command and ended `DONE`; the stop was blocked with
-  `patcher changed protected files: .github/workflows/x.yml (new: delete it)` (the file was new, so
-  the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
-  `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
-  `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
-  word, as [Known limits](#known-limits) said, and the model went on without it. The listing forms
-  of `git branch` are allowed since [#72](https://github.com/PIsberg/speckit-agents/issues/72).
-- **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
-  a new machine-readable output format, which is a public contract") and launched no agent.
-  **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
-  "README.md is a protected path". It is not (the hook's table has no README, and the scratch repo
-  has none). The triage skill's text reads "it touches a protected path (README.md, "The fast
-  track" lists them)", which Haiku took as naming README.md; whether a stronger main session reads
-  it right was not tried. Not retried.
-- **L7** passed: `/speckit-implement` with no audit was blocked at 0 turns and $0 ("Implementation
-  gate: no active feature ... Run @agent-spec-auditor and get VERDICT: PASS first.").
-- **L8** not exercised: the main session committed after the accepted end and `git log` showed
-  exactly one new commit, but `patcher` never ran `git commit`, `git push` or `gh`, so the deny
-  message `may not run git commit` was not seen. A second run told the skill to have `patcher`
-  commit and push itself; the skill declined and committed itself, again without `patcher` trying.
-  Not retried. The deny rests on the unit and end-to-end tests.
-
-</details>
-
-<details>
-<summary><b>2026-10-06</b>: Claude Code 2.1.291, Windows 11, Haiku main session</summary>
-
-- typed `/speckit-implement` with no audit: blocked at 0 turns, $0
-- architect's `Write` to `src/`: denied, file not created
-- implementer's first `Bash` call before an audit: denied by the gate
-- spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
-
-</details>
-
-<details>
-<summary><b>2026-10-07</b>: Claude Code 2.1.292, Windows 11, Haiku main session, user-level install</summary>
-
-- implementer before an audit: its `Bash` call denied by `gate retries`, and its RED not counted
-- 3 implementer runs ending `RESULT: RED`: counted once each, 3 IDs in the retry record
-- a fourth implementer run: its `Bash` call denied with the retry-limit message, its report still
-  delivered
-- one slice (test-writer on T001, then implementer on T002): the tests failed on the stub's
-  "not implemented" error, implementer turned them green, each committed only in-lane files, and
-  its `RESULT: GREEN` reset the count through the SubagentStop hook
-- two full `/speckit-team` runs of a small feature, all six agents: spec, 1 audit FAIL and a
-  revision, PASS, 3 slices, gatekeeper. They found two bugs, both fixed: a stub-only task was never
-  ticked, so the gatekeeper rejected the feature; and a gatekeeper handed back the report
-  "placeholder" in the same turn as a tool call, so a second gatekeeper had to run. `ends` now
-  refuses such a report once.
-
-</details>
-
-<details>
-<summary><b>2026-10-08</b>: Claude Code 2.1.294, Windows 11, Haiku main session, user-level install, a repo initialised by Spec Kit 1.1.2 without <code>--extension git</code></summary>
-
-- one full `/speckit-team` run of a small feature: constitution drafted and approved, 3 product
-  questions answered, spec, plan, audit PASS recorded by the hook, 5 slices, spec-gatekeeper
-  APPROVED with its word in the `ends` record. With no git extension, the skill created the
-  feature branch itself; `main` kept only the initial commit. About $3.30.
-
-</details>
-
-<details>
-<summary><b>2026-10-08, later</b>: the team installed into the scratch repo by <code>record.mjs --setup-only</code></summary>
-
-The team was installed into the scratch repo's own `.claude/` by
-`docs/media/record.mjs --setup-only` (headless, `--setting-sources project,local`). The main
-session ran on Haiku and each agent on its frontmatter model (spec-auditor Opus, the others
-Sonnet), as the debug log's requests show: `CLAUDE_CODE_SUBAGENT_MODEL=haiku` did not override an
-agent's `model:` line ([#39](https://github.com/PIsberg/speckit-agents/issues/39)).
-
-- test-writer told to hand back the bare report "placeholder", the failure seen in the run above:
-  refused by `ends RED BLOCKED` with "Your report must end with a final line that is exactly one
-  of: RED, BLOCKED", then accepted when it reported `BLOCKED` with its reason. $0.03.
-- product-owner on the vague idea "reminders, so people stop forgetting things": a spec with 3
-  `[NEEDS CLARIFICATION]` markers, each question with a recommended answer, and no
-  `READY FOR PLAN`. Relaunched with the answers, it wrote them into a `## Clarifications` session,
-  replaced the 3 markers with requirements, asked nothing new and ended `READY FOR PLAN`. It also
-  ticked the checklist's markers item and reported all 16 items ticked, while saying it had not
-  re-read them ([#38](https://github.com/PIsberg/speckit-agents/issues/38); the other 15 were
-  ticked by speckit-specify's own validation in the first round). $0.19 per round. With step 5
-  added to its prompt, a rerun of the second round made the same one tick, backed by a grep that
-  found 0 markers, and its report gave the checklist line ("16 of 16 items are ticked. I checked
-  each against the spec in this run"). Its reads were of the spec and checklist before its edits;
-  no tool call re-checked the 15 unchanged items.
-- `/speckit-team` from step 4 on `docs/media/demo`'s 001-greet (audit already PASS): implementer
-  on the setup task, a stub pass ending `RESULT: STUB`, then 2 slices of test-writer and
-  implementer, then the docs task and spec-gatekeeper `APPROVED`. Both test-writers ended `RED`
-  with one failure line per test (4, then 2); every implementer ended `RESULT: GREEN` with the
-  suite's counts, and the `result` hook reset the retry count each time. The orchestrator told
-  test-writer not to tick its tasks, so an extra implementer ran only to tick them
-  ([#37](https://github.com/PIsberg/speckit-agents/issues/37)). $0.36, 3.5 minutes. With the skill
-  saying test-writer ticks its own tasks, a rerun told each test-writer to tick its task once red;
-  both did, and the run needed 8 agent launches instead of 9, still ending `APPROVED`. $0.33.
-
-</details>
 
 ## Troubleshooting
 
@@ -1974,6 +1532,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
+| [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
 | [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 006 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 

@@ -1,0 +1,265 @@
+# Live results
+
+Checks run in a real Claude Code session, by date, newest first; what a check did not see is
+said where it was run. The README's [Live results](../README.md#live-results) is the summary.
+
+## The team and the fast track
+
+<details>
+<summary><b>2026-10-11</b>: Claude Code 2.1.296, Windows 11, choosing the team (006, L1 to L4), Haiku main session and agents</summary>
+
+Setup: a fresh Spec Kit repo outside this checkout, the branch's team installed into its own
+`.claude/` (`node install.mjs --claude-dir <repo>/.claude`, agents switched to `model: haiku`), the demo
+feature as the active feature with no audit recorded, runs under `claude -p --setting-sources
+project,local`, the session's `CLAUDECODE`, `CLAUDE_CODE_*` and `AI_AGENT` variables cleared.
+
+| ID | Result |
+|---|---|
+| L1 | Seen live. `/speckit-team --team test-writer,implementer add a hello.txt that says hello`: `task_started` for test-writer and implementer only; the message `speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team` on both launches; no `Implementation gate` denial; `.git/speckit-team/team/<session>.json` held the two roles; branch `team/add-hello-txt` with one commit; the final report named the skipped roles. |
+| L2 | Seen live. `--team bogus,implementer`: 1 turn, no agent launched, the reply named `bogus` and listed the six roles. |
+| L3 | Seen live. `--team spec-auditor,implementer`: 1 turn, no agent launched, the reply said spec-auditor needs architect. |
+| L4 | Partly seen. Interactive `/speckit-team <request>` (three recordings for the pipeline demo, driven by vhs) put the question with Full team first and marked Recommended, and answering it launched product-owner with no `Team:` line. Answering Build only and Esc out were **not run**: nobody drove them. |
+
+Not seen live: the pipeline demo re-recording. Three attempts of `node docs/media/record.mjs pipeline`
+got the team question and its answer, but the product owner (Haiku) returned no open questions each
+time (and, with fork subagents on, the main session was not woken by a backgrounded agent's report), so
+the tape's wait for the question dialog timed out; `docs/media/pipeline.gif` was not published.
+
+</details>
+
+<details>
+<summary><b>2026-10-10</b>: Claude Code 2.1.296, Windows 11, the fast track (L1 to L8), Haiku main session</summary>
+
+Setup: the branch's team installed with `CLAUDE_CONFIG_DIR=<throwaway dir> node install.mjs` (the
+real config directory untouched), a fresh Spec Kit repo outside this checkout with one commit and
+no remote (`src/greet.js` with the typo "Helo", `src/math.js`, a passing test for each, a
+`package.json` whose test command is `node --test`), and folder trust pre-accepted in the
+throwaway directory's `.claude.json`. Every run was `claude -p ... --model haiku
+--output-format json`; the repo was reset to its commit between runs. `patcher` ran on its
+configured model, Sonnet (each run's `modelUsage` lists both models); no agent's `model:` line was
+changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and cache write) from
+`modelUsage`. Eleven runs, $0.41 in all.
+
+| Check | Result | Turns | Cost | Input tokens (Haiku main / Sonnet patcher) |
+|---|---|---|---|---|
+| L1 fix the spelling | passed, with a note | 8 | $0.064 | 314k / 70k |
+| L2 change that breaks a test | passed | 5 | $0.047 | 189k / 61k |
+| L3 a 60-line change, first prompt | not the check: escalated before writing | 5 | $0.032 | 188k / 23k |
+| L3 same, told not to estimate | partly: end check only | 7 | $0.055 | 275k / 48k |
+| L4 constitution edit | passed | 5 | $0.043 | 155k / 51k |
+| L5 `echo >>` into a workflow | passed | 6 | $0.059 | 231k / 104k |
+| L6 triage, `--json` flag | passed | 1 | $0.004 | 35k / none |
+| L6 triage, README typo | failed | 1 | $0.004 | 35k / none |
+| L7 `/speckit-implement`, no audit | passed | 0 | $0 | none |
+| L8 fix, then commit and push | deny not exercised | 10 | $0.058 | 401k / 71k |
+| L8 told `patcher` to commit and push | deny not exercised | 8 | $0.046 | 313k / 49k |
+
+- **L1** passed: the skill created `patch/fix-hello-spelling` from `main`; one `patcher` launch;
+  the patcher wrote a failing test first, fixed the line, and `npm test` passed 4 of 4; the hook
+  said `fast track: 1 of 30 production lines, 1 of 2 production files (tests and docs not counted).
+  The end check accepted the run.`; the accepted record listed `src/greet.js` and
+  `test/greet.test.js`; the main session then made one commit of those two files; nothing under
+  `specs/`. The quickstart expected the commit to hold only the fixed file, but `patcher` added a
+  regression test, as its prompt says to, so the commit held two. No push or pull request: the repo
+  has no remote, and the skill said so. Measured with `tools/usage.mjs`: main session 8 requests,
+  peak 43k, input 0.31M; one agent, 5 requests, peak 15k, input 0.07M
+  ([Context budget](../README.md#context-budget)).
+- **L2** passed: asked to make `add()` return `a - b` without touching tests, `patcher` named the
+  failing test (`adds`, `-1 !== 5`) and ended `FAILED`; the edit stayed uncommitted on its branch;
+  no commit, no pull request. (The run's `permission_denials` lists one compound Bash call of the
+  main session refused by `--allowedTools`, not by a hook.)
+- **L3**, first prompt (about 60 production lines in 14 functions): `patcher` judged the size
+  before writing anything and ended `ESCALATE` with the tree clean. That outcome is right but it is
+  not the check: no write crossed the budget, so the hook's deny did not run. Second prompt, telling
+  the model to write first and let the hook measure: `patcher` appended 86 production lines in one
+  Bash command that also ran the tests, so no tool call followed the crossing write to be denied.
+  At the stop the hook allowed the end with `fast track stopped: 86 changed production lines in 1
+  files (limit 30 lines, 2 files). Nothing was committed; ...` and wrote no accepted record. The
+  files stayed modified and the skill committed nothing, but `patcher`'s own report ended `DONE`,
+  not `ESCALATE`, and the skill described the run as `FAILED`. The mid-run budget deny (the tool
+  call after the crossing write) was not seen live.
+- **L4** passed: `patcher`'s `Edit` of `.specify/memory/constitution.md` was denied with
+  `patcher may not write ...: it is a protected path`; the file was unchanged; the report ended
+  `ESCALATE`.
+- **L5** passed: asked to append to `.github/workflows/x.yml` with `echo >>` and to fix the
+  spelling, `patcher` did both in one Bash command and ended `DONE`; the stop was blocked with
+  `patcher changed protected files: .github/workflows/x.yml (new: delete it)` (the file was new, so
+  the message gives no `git checkout`); `patcher` deleted it and finished; the commit held
+  `src/greet.js` and `test/greet.test.js` only. In the same run `patcher`'s read-only
+  `git branch --show-current` was denied as `may not run git branch`: the command deny matches the
+  word, as [Known limits](../README.md#known-limits) said, and the model went on without it. The listing forms
+  of `git branch` are allowed since [#72](https://github.com/PIsberg/speckit-agents/issues/72).
+- **L6**: `/speckit-triage add a --json flag to the CLI` suggested `/speckit-team` ("a new flag and
+  a new machine-readable output format, which is a public contract") and launched no agent.
+  **Failed:** `/speckit-triage fix a typo in README.md` also suggested `/speckit-team`, saying
+  "README.md is a protected path". It is not (the hook's table has no README, and the scratch repo
+  has none). The triage skill's text reads "it touches a protected path (README.md, "The fast
+  track" lists them)", which Haiku took as naming README.md; whether a stronger main session reads
+  it right was not tried. Not retried.
+- **L7** passed: `/speckit-implement` with no audit was blocked at 0 turns and $0 ("Implementation
+  gate: no active feature ... Run @agent-spec-auditor and get VERDICT: PASS first.").
+- **L8** not exercised: the main session committed after the accepted end and `git log` showed
+  exactly one new commit, but `patcher` never ran `git commit`, `git push` or `gh`, so the deny
+  message `may not run git commit` was not seen. A second run told the skill to have `patcher`
+  commit and push itself; the skill declined and committed itself, again without `patcher` trying.
+  Not retried. The deny rests on the unit and end-to-end tests.
+
+</details>
+
+<details>
+<summary><b>2026-10-06</b>: Claude Code 2.1.291, Windows 11, Haiku main session</summary>
+
+- typed `/speckit-implement` with no audit: blocked at 0 turns, $0
+- architect's `Write` to `src/`: denied, file not created
+- implementer's first `Bash` call before an audit: denied by the gate
+- spec-auditor's `VERDICT: PASS`: recorded by its Stop hook
+
+</details>
+
+<details>
+<summary><b>2026-10-07</b>: Claude Code 2.1.292, Windows 11, Haiku main session, user-level install</summary>
+
+- implementer before an audit: its `Bash` call denied by `gate retries`, and its RED not counted
+- 3 implementer runs ending `RESULT: RED`: counted once each, 3 IDs in the retry record
+- a fourth implementer run: its `Bash` call denied with the retry-limit message, its report still
+  delivered
+- one slice (test-writer on T001, then implementer on T002): the tests failed on the stub's
+  "not implemented" error, implementer turned them green, each committed only in-lane files, and
+  its `RESULT: GREEN` reset the count through the SubagentStop hook
+- two full `/speckit-team` runs of a small feature, all six agents: spec, 1 audit FAIL and a
+  revision, PASS, 3 slices, gatekeeper. They found two bugs, both fixed: a stub-only task was never
+  ticked, so the gatekeeper rejected the feature; and a gatekeeper handed back the report
+  "placeholder" in the same turn as a tool call, so a second gatekeeper had to run. `ends` now
+  refuses such a report once.
+
+</details>
+
+<details>
+<summary><b>2026-10-08</b>: Claude Code 2.1.294, Windows 11, Haiku main session, user-level install, a repo initialised by Spec Kit 1.1.2 without <code>--extension git</code></summary>
+
+- one full `/speckit-team` run of a small feature: constitution drafted and approved, 3 product
+  questions answered, spec, plan, audit PASS recorded by the hook, 5 slices, spec-gatekeeper
+  APPROVED with its word in the `ends` record. With no git extension, the skill created the
+  feature branch itself; `main` kept only the initial commit. About $3.30.
+
+</details>
+
+<details>
+<summary><b>2026-10-08, later</b>: the team installed into the scratch repo by <code>record.mjs --setup-only</code></summary>
+
+The team was installed into the scratch repo's own `.claude/` by
+`docs/media/record.mjs --setup-only` (headless, `--setting-sources project,local`). The main
+session ran on Haiku and each agent on its frontmatter model (spec-auditor Opus, the others
+Sonnet), as the debug log's requests show: `CLAUDE_CODE_SUBAGENT_MODEL=haiku` did not override an
+agent's `model:` line ([#39](https://github.com/PIsberg/speckit-agents/issues/39)).
+
+- test-writer told to hand back the bare report "placeholder", the failure seen in the run above:
+  refused by `ends RED BLOCKED` with "Your report must end with a final line that is exactly one
+  of: RED, BLOCKED", then accepted when it reported `BLOCKED` with its reason. $0.03.
+- product-owner on the vague idea "reminders, so people stop forgetting things": a spec with 3
+  `[NEEDS CLARIFICATION]` markers, each question with a recommended answer, and no
+  `READY FOR PLAN`. Relaunched with the answers, it wrote them into a `## Clarifications` session,
+  replaced the 3 markers with requirements, asked nothing new and ended `READY FOR PLAN`. It also
+  ticked the checklist's markers item and reported all 16 items ticked, while saying it had not
+  re-read them ([#38](https://github.com/PIsberg/speckit-agents/issues/38); the other 15 were
+  ticked by speckit-specify's own validation in the first round). $0.19 per round. With step 5
+  added to its prompt, a rerun of the second round made the same one tick, backed by a grep that
+  found 0 markers, and its report gave the checklist line ("16 of 16 items are ticked. I checked
+  each against the spec in this run"). Its reads were of the spec and checklist before its edits;
+  no tool call re-checked the 15 unchanged items.
+- `/speckit-team` from step 4 on `docs/media/demo`'s 001-greet (audit already PASS): implementer
+  on the setup task, a stub pass ending `RESULT: STUB`, then 2 slices of test-writer and
+  implementer, then the docs task and spec-gatekeeper `APPROVED`. Both test-writers ended `RED`
+  with one failure line per test (4, then 2); every implementer ended `RESULT: GREEN` with the
+  suite's counts, and the `result` hook reset the retry count each time. The orchestrator told
+  test-writer not to tick its tasks, so an extra implementer ran only to tick them
+  ([#37](https://github.com/PIsberg/speckit-agents/issues/37)). $0.36, 3.5 minutes. With the skill
+  saying test-writer ticks its own tasks, a rerun told each test-writer to tick its task once red;
+  both did, and the run needed 8 agent launches instead of 9, still ending `APPROVED`. $0.33.
+
+</details>
+
+## The board
+
+- **The board-only install and the standalone view ([#92](https://github.com/PIsberg/speckit-agents/issues/92)).**
+  On 2026-10-11 (Windows 11, Claude Code 2.1.296, Spec Kit 1.1.2), headless and at $0, in a throwaway
+  config dir: `claude plugin marketplace add PIsberg/speckit-agents` cloned this repository from
+  GitHub and `claude plugin install speckit-board@speckit-agents --scope user` installed the board
+  from main (`claude plugin list`: enabled, version 0.1.0), with no `agents/` or `skills/` folder and
+  no `speckit-team` entry in `settings.json`. In a repo `specify init --here --integration claude`
+  made, with the files Spec Kit's commands write put in place by hand (no model), a headless
+  `claude -p "/speckit-board status"` against a fake API answered at 0 turns with the contract's
+  texts in order: the no-feature notice, then S-2 `001-greeting · ◐ spec (draft)`, S-3 `○ plan`,
+  S-4 `○ tasks`, S-5 `○ build (0/3)` with `next: /speckit-implement: T001 Create greet.js`, and S-6
+  `◐ build (1/3)`; each run also raised its `ui_status` and startup `ui_toast`, and no line named a
+  team agent or `/speckit-team`. A copy of the repo without `.git` answered S-6 and S-3 the same.
+- **The clear argument ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).** The same day,
+  board from this checkout by `--plugin-dir`: `claude -p "/speckit-board clear"` answered
+  `cleared the band.` at 0 turns, exit 0 (the band of a fresh headless session is drawn, so there is
+  a band to clear; the quickstart had expected `nothing to clear.`), and `/speckit-board foo`
+  answered `unknown argument "foo": use status, refresh, band or clear.`
+
+- **Installed from this checkout.** On Windows, 2026-10-08, with the board installed from this
+  checkout and no `--plugin-dir`: a headless `claude -p "/speckit-board refresh"` in a scratch Spec
+  Kit repo set the status line, raised the startup toast and answered the command, and an
+  interactive session (recorded with vhs) drew the band, the status line and, after
+  `/speckit-board`, the pane. An edit to `mods/speckit-board/` reached the installed board at the
+  next session start with no reinstall.
+- **Team agent tracking.** The same day, with real agents (main session on Haiku). Headless, while
+  `@agent-spec-auditor` ran the status line read `◐ audit`, and when it stopped the mod toasted
+  `spec-auditor finished: PASS`, then `Audit PASS` once the hook had recorded the verdict;
+  `@agent-spec-gatekeeper` went `◐ verify`, then `spec-gatekeeper finished: APPROVED` and
+  `✓ verified`, which a new session still showed. Interactive, with the pane open, spec-auditor
+  ran as a background agent and the pane showed `spec-auditor running 19s` with the spinner, then
+  `✓ spec-auditor PASS`. That run found two bugs, fixed: the agent rows were drawn below the task
+  list and cut off, and a background agent's word was missing because its report arrives through
+  `SubagentHandback`. `@agent-implementer` on one task ended `implementer finished: GREEN`.
+- **The gatekeeper's word and the retry meter.** On 2026-10-08 (Claude Code 2.1.294, user-level
+  install, board by `--plugin-dir`, recorded with vhs): after a real `@agent-spec-auditor` PASS and
+  `@agent-spec-gatekeeper` APPROVED in headless sessions, a new interactive session showed
+  `✓ verify` from the hook's `ends` record alone, and two `RESULT: RED` stops fed to the installed
+  `result` hook moved the band to `RED 1/3`, then `RED 2/3`, with the pane's meter at `●●○`. That
+  run found a bug, fixed: a spec approved in conversation keeps Spec Kit's `Draft` status, so the
+  board named `spec, draft` as the current step of a verified feature; a plan now counts as the
+  spec's approval.
+- **Headless on Linux.** On 2026-10-08 (Ubuntu 22.04 under WSL 2, Claude Code 2.1.294, Node
+  22.20.0, `node install.mjs --board` from a clone of this checkout): with a PASS and an APPROVED
+  fed to the installed `verdict` and `ends --record` hooks, a headless
+  `claude -p "/speckit-board refresh"` emitted `ui_status`
+  `speckit 001-greet · ◐ build (1/2) · 1/2 tasks` and the startup `ui_toast`, then, with the last
+  task ticked, `✓ verified · 2/2 tasks`, at $0.
+- **A blocked stop ([#31](https://github.com/PIsberg/speckit-agents/issues/31)).** The same day on
+  Windows (Claude Code 2.1.294, main session on Haiku, spec-auditor on its own Opus, board by
+  `--plugin-dir`, the debug log read for order): a spec-auditor told to leave out its `VERDICT`
+  line once was refused by the `verdict` hook, and the mod's `classic.SubagentStop` settled after
+  that block with no toast and the status still `◐ audit`; when it added the line,
+  `spec-auditor finished: PASS` came 7 ms after the hook recorded the verdict. That held for a
+  foreground agent, a background one in a headless session (which still reports through
+  SubagentStop), and an interactive `@agent-spec-auditor`, where the hook denied the first
+  `SubagentHandback` and the toast came 0.5 s after the second.
+- **A stopped agent ([#32](https://github.com/PIsberg/speckit-agents/issues/32)).** The same setup:
+  a background spec-auditor stopped with `TaskStop` 1.3 s in ended `exitPath=cancelled`, its task
+  `killed`, with no `SubagentStop` (the mod's handler never ran and the agent's session hooks were
+  cleared unrun); the poll's agent-list check ended its row 0.1 s later, which a poll can take up
+  to 4 s to do.
+- **A failed agent ([#35](https://github.com/PIsberg/speckit-agents/issues/35)).** A localhost
+  proxy set as `ANTHROPIC_BASE_URL` answered every spec-auditor request after its first with a 400,
+  which is not retried; the agent ended `exitPath=error`, its task `failed` ("Agent terminated
+  early due to an API error"), again with no `SubagentStop`, and the poll ended its row 1.8 s
+  later, while the main session was still inside a tool call.
+- **The look in the screenshot.** On 2026-10-08 and 09 (Claude Code 2.1.295, Windows 11, board by
+  `--plugin-dir` in a scratch Spec Kit repo with the demo feature staged mid-build, recorded with
+  vhs, the main session and two stand-in agents on Haiku): the band, the pane docked in fullscreen
+  and inline above the prompt, the status line, and the agent rows with each agent's task and its
+  role's color, as in the screenshot above. `/speckit-board` typed while a turn ran a 25-second
+  Bash command opened the pane during the turn; the version before `immediate` queued it until the
+  turn ended. A headless `claude -p "/speckit-board status"` printed the board as text at 0 turns
+  and $0. The session before this change found a bug, fixed: the plugin store kept the
+  gatekeeper's word under the feature's path alone, so the scratch repo showed `✓ verify` from an
+  `APPROVED` kept for another repository's `specs/001-greet`, though no gatekeeper had run there
+  and its audit was newer. It also showed what the change redraws: the pane's phase track broke
+  mid-row in a pane docked 60 columns wide, beside the dock the band drew bare glyphs, every
+  finished agent got a green `✓` whatever its word, and the status line read
+  `speckit-board: speckit 001-greet · ◐ build (3/6) · 3/6 tasks`. The session after it found two
+  more, fixed before the screenshot: a team row wrapped its word (`runnin`, `g`) in the docked
+  pane, and at about 70 columns the band kept `[ board ]` but dropped the other phases' glyphs.
