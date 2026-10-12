@@ -121,6 +121,23 @@ test('installed speckit-patch skill stops first when .specify/ is missing', () =
   assert.ok(stop.index < text.indexOf('Launch `patcher`'), 'and before patcher is launched');
 });
 
+// #72, the start record out of patcher's reach: the hook's start record is a file patcher's shell can
+// rewrite, so the main session keeps its own copy of what a rewrite could hide. It notes the
+// remote-tracking refs before the launch and compares them before it commits, and keeps the files
+// dirty at the start out of the commit by its own list.
+test("installed speckit-patch skill checks the remote-tracking refs and the dirty files against its own notes before it commits (#72)", () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  const step = (n) => flat(text.slice(text.indexOf(`## ${n}.`), text.indexOf(`## ${n + 1}.`)));
+  const refs = "git for-each-ref --format='%(refname) %(objectname)' refs/remotes";
+  assert.ok(step(2).includes(refs), 'step 2 notes the remote-tracking refs');
+  const checks = step(4).slice(0, step(4).indexOf('Otherwise:'));
+  assert.ok(checks.includes(refs), 'step 4 lists them again before the commit');
+  assert.match(checks, /equal the noted refs/, 'and compares them with the notes');
+  assert.match(checks, /dirty in step 1[^.]*`files`[^.]*`untracked`/, 'a file dirty at the start is in neither list');
+});
+
 // #73, live check L3: patcher wrote 86 lines in one Bash call, made no further tool call, so the budget
 // deny never reached it, and it reported DONE. A last tool call before the report meets that deny.
 test('installed patcher checks the tree once more before reporting, so an over-budget run ends ESCALATE', () => {

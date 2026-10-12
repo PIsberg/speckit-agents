@@ -23,7 +23,8 @@
 //                           the lane check at its Stop; never a decision
 //   lane tests|no-tests|only <prefix>...  SubagentStop: check the agent's whole diff, including Bash writes
 //   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
-//                           or it runs a history/remote command or a wholesale restore; SubagentHandback, SubagentStop and
+//                           or it runs a history/remote command or a wholesale restore; in bypassPermissions, run a
+//                           Bash command it lets through with git's network transports off; SubagentHandback, SubagentStop and
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -1110,6 +1111,25 @@ function endCheck(start, viaHandback, key, acceptedFile) {
   emit({ systemMessage: `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.` });
 }
 
+// #72, the structural option. With bypassPermissions no prompt shows patcher's commands, so the deny reader
+// is the only line before a push. There a Bash command the hook lets through runs with git's network
+// transports switched off, in the environment's config scope above every config file, so a push or fetch
+// from a script, a package script, an alias or a string built at run time fails too. Paths on disk keep
+// git's default. Other modes keep the command as typed: Claude Code checks each part of the rewritten
+// command against the user's rules, and the export line matches none, so every command the user allowed
+// would ask again (2.1.296: "The following part requires approval: export ..."; deny rules still matched).
+const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
+  ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
+function letThrough() {
+  const ti = input.tool_input || {};
+  if (input.tool_name !== 'Bash' || input.permission_mode !== 'bypassPermissions' || typeof ti.command !== 'string') process.exit(0);
+  // Pairs the environment already passes keep their numbers; these follow them.
+  const n = Number(process.env.GIT_CONFIG_COUNT);
+  const from = Number.isInteger(n) && n > 0 ? n : 0;
+  const pairs = NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${from + i}=${k} GIT_CONFIG_VALUE_${from + i}=${v}`).join(' ');
+  emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: `export GIT_CONFIG_COUNT=${from + NO_NETWORK.length} ${pairs}\n${ti.command}` } } });
+}
+
 if (mode === 'patch') {
   // Every call removes the accepted record: it stands only while the last call was an accepting end check.
   const acceptedFile = path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json');
@@ -1180,12 +1200,12 @@ if (mode === 'patch') {
   }
   const pending = m.protectedChanged.length > 0 || m.committed;
   if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
-    if (input.tool_name === 'Bash' && restoreAllowed(ti.command, start, m)) process.exit(0);
+    if (input.tool_name === 'Bash' && restoreAllowed(ti.command, start, m)) letThrough();
     deny(`Fast-track budget exceeded: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
       + (m.binary.length ? `; binary production files are not allowed: ${m.binary.join(', ')}` : '')
       + (m.dirtyTouched.length ? `; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: ${m.dirtyTouched.join(', ')}` : '')
       + '. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.'
       + (pending ? ` First restore the protected files, naming each one (git checkout ${start.sha.slice(0, 12)} -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft ${start.sha.slice(0, 12)}).` : ''));
   }
-  process.exit(0);
+  letThrough();
 }

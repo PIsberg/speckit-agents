@@ -22,8 +22,9 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
   launches back. Then go on.
 
 ## 2. Before launching
-- Note `git rev-parse HEAD` (the start) and `git hash-object -- "{{HOOK}}"` (the installed hook's
-  hash).
+- Note `git rev-parse HEAD` (the start), `git hash-object -- "{{HOOK}}"` (the installed hook's
+  hash) and `git for-each-ref --format='%(refname) %(objectname)' refs/remotes` (the remote-tracking
+  refs), in one Bash call. Your notes are out of `patcher`'s reach; the hook's own start record is not.
 - Create the branch with `git switch -c patch/<slug>` from the current commit. If that commit is
   not on `main` or `master`, say what it is.
 
@@ -37,6 +38,10 @@ On `DONE` with the report stating the existing tests passed, commit only when ev
 - `git rev-parse HEAD` equals the start.
 - `git branch --show-current` is `patch/<slug>`.
 - `$(git rev-parse --git-dir)/speckit-team/patch-accepted.json` exists and its `sha` equals the start.
+- `git for-each-ref --format='%(refname) %(objectname)' refs/remotes` prints refs that equal the noted
+  refs. A change means a push or a fetch happened: also tell the user to check the remote for a pushed
+  branch or a pull request.
+- No file you listed as dirty in step 1 is in the record's `files` or `untracked`.
 
 If the record's `files` is empty, commit nothing, push nothing and open no pull request, and report
 that `patcher` changed no file: `git commit -m "<message>" --` with no path commits everything

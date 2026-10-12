@@ -521,6 +521,58 @@ test('patch: a non-string command gets no command deny and does not crash (const
   assert.match(why(bash(dir, 'git push')), /may not run git push/);
 });
 
+// #72, the structural option. With bypassPermissions no prompt shows patcher's commands, so the deny
+// reader above is the only line before a push. There every command the hook lets through runs with
+// git's network transports switched off, which also stops a push from a script, a package script or an
+// alias. Other modes keep the command as typed: Claude Code checks each part of the rewritten command
+// against the allow rules, and with 2.1.296 the export line needed approval under a `Bash(echo:*)` rule.
+const NO_NETWORK = ['protocol.allow=never', 'protocol.file.allow=user', 'protocol.git.allow=never', 'protocol.ssh.allow=never',
+  'protocol.http.allow=never', 'protocol.https.allow=never', 'protocol.ext.allow=never'];
+const BYPASS = { permission_mode: 'bypassPermissions' };
+// The variables an `export K=V ...` line sets, so git can run under them without a shell.
+const exported = (line) => Object.fromEntries(line.replace(/^export /, '').split(' ').map((kv) => [kv.slice(0, kv.indexOf('=')), kv.slice(kv.indexOf('=') + 1)]));
+const pairs = (env, from = 0) => Array.from({ length: Number(env.GIT_CONFIG_COUNT) - from }, (_, k) => `${env[`GIT_CONFIG_KEY_${from + k}`]}=${env[`GIT_CONFIG_VALUE_${from + k}`]}`);
+
+test('patch: in bypassPermissions a command it lets through runs with git network transports off; other modes keep it as typed (#72)', () => {
+  const { dir } = cmdRepo();
+  const ti = { command: 'npm test', description: 'Run the tests', timeout: 120000 };
+  const out = patchTool(dir, 'Bash', ti, BYPASS);
+  const hso = out?.hookSpecificOutput;
+  assert.equal(hso?.hookEventName, 'PreToolUse', JSON.stringify(out));
+  assert.equal(hso.permissionDecision, undefined, 'no decision: the permission flow runs on the new command as usual');
+  const [line, ...rest] = hso.updatedInput.command.split('\n');
+  assert.equal(rest.join('\n'), 'npm test', 'the command follows one export line, unchanged');
+  assert.deepEqual({ ...hso.updatedInput, command: null }, { ...ti, command: null }, 'every other field kept');
+  const env = exported(line);
+  // After any pairs the test's own environment passes (none, normally).
+  assert.deepEqual(pairs(env, Number(process.env.GIT_CONFIG_COUNT) || 0), NO_NETWORK);
+  // What git does under it: a network transport is refused before any connection, a local one is not.
+  const ls = (url) => spawnSync('git', ['ls-remote', url], { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } });
+  assert.match(ls('https://127.0.0.1:9/none.git').stderr, /transport 'https' not allowed/);
+  assert.match(ls('ssh://127.0.0.1:9/none.git').stderr, /transport 'ssh' not allowed/);
+  assert.equal(ls(dir).status, 0, 'a repository on disk is still reachable');
+  for (const mode of [undefined, 'default', 'acceptEdits', 'auto', 'dontAsk', 'plan']) {
+    assert.equal(patchTool(dir, 'Bash', ti, mode ? { permission_mode: mode } : {}), null, `${mode}: kept as typed`);
+  }
+  // A deny comes first, and only Bash is rewritten.
+  assert.match(why(patchTool(dir, 'Bash', { command: 'git push' }, BYPASS)), /may not run git push/);
+  assert.equal(patchTool(dir, 'Read', { file_path: path.join(dir, 'src/a.js') }, BYPASS), null);
+  assert.equal(patchTool(dir, 'Bash', { command: 42 }, BYPASS), null, 'a non-string command is left alone');
+});
+
+test('patch: the switch-off adds to the git config pairs the environment already passes (#72)', () => {
+  const { dir } = cmdRepo();
+  const r = spawnSync('node', [HOOK, 'patch'], {
+    input: JSON.stringify({ cwd: dir, hook_event_name: 'PreToolUse', agent_id: 'p1', agent_type: 'patcher', tool_name: 'Bash', tool_input: { command: 'npm test' }, ...BYPASS }),
+    encoding: 'utf8',
+    env: { ...process.env, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.quotepath', GIT_CONFIG_VALUE_0: 'false' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const env = exported(JSON.parse(r.stdout).hookSpecificOutput.updatedInput.command.split('\n')[0]);
+  assert.equal(env.GIT_CONFIG_KEY_0, undefined, 'the existing pair is left as it is');
+  assert.deepEqual(pairs(env, 1), NO_NETWORK);
+});
+
 test('patch: a Write mentioning git push is not a command; the deny holds with only a session_id (FR-006)', () => {
   const { dir } = cmdRepo();
   const out = patchTool(dir, 'Write', { file_path: path.join(dir, 'src/n.js'), content: 'git push\n' });
@@ -826,6 +878,10 @@ test('patch restore allowance: only naming a protected file still to be restored
     'rm .github/workflows/new.yml', 'rm -f -- .github/workflows/new.yml',
   ];
   for (const c of allowed) { const out = bash(dir, c); assert.ok(!denied(out), `${c} must be allowed: ${why(out)}`); }
+  // #72: in bypassPermissions a restore it lets through runs with git's network transports off too.
+  const restore = bash(dir, `git restore ${CONST}`, BYPASS)?.hookSpecificOutput?.updatedInput?.command ?? '';
+  assert.match(restore, /^export GIT_CONFIG_COUNT=\d+ GIT_CONFIG_KEY_(\d+)=protocol\.allow GIT_CONFIG_VALUE_\1=never /, restore);
+  assert.ok(restore.endsWith(`\ngit restore ${CONST}`), restore);
   const refused = [
     `git checkout ${sha} -- ${CONST} src/a.js`, 'git restore .specify', `git checkout ${sha} -- '.specify/*'`,
     `git checkout ${sha} -- src/wip.js`, 'rm src/wip.js', 'rm src/a.js', 'rm -rf .github', `rm ${CONST}`,

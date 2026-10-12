@@ -12,6 +12,9 @@ Output shapes are the existing ones:
 - block: `{"decision":"block","reason":"<reason>"}`
 - message only: `{"systemMessage":"<text>"}`
 - allow: no output, exit 0
+- allow with the command rewritten (`patch` only, step 8 below, added for #72 on 2026-10-12):
+  `{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{<tool_input, with command rewritten>}}}`,
+  no `permissionDecision`, so Claude Code's permission flow runs on the new command as usual
 
 No message carries file contents, command output or prompt text: only paths, counts, limits, a
 command name and a short commit id (FR-014). `<sha12>` is the first 12 characters of the start
@@ -75,12 +78,12 @@ In this order:
    `Fast track: <who> may not run <name>: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.`
    `<name>` is `git reset --hard`, `git clean`, `git checkout -- <path>` or `git restore <path>`,
    with `<path>` the first offending path word as written.
-5. Measure. Within budget: allow.
+5. Measure. Within budget: allow (step 8).
 6. Over budget, a protected repo file changed or `committed`, `tool_name` is `Bash` and
    `restoreAllowed(tool_input.command, start, m)` (research R7, narrowed by the owner on
    2026-10-10, plan.md decision 16 point 3): the whole command is one of the forms below,
    containing none of `; & | ` `` ` `` ` $ > <` or a newline, and every path it names is a
-   protected file still to be restored: allow.
+   protected file still to be restored: allow (step 8).
    - `git checkout [<rev>] -- <path>...` or `git restore [--source=<rev>|-s <rev>] [--staged] [--worktree] [--] <path>...`:
      each `<path>`, resolved to a repo-relative path as `scope` does, is a `protectedChanged` entry
      with `isNew: false`.
@@ -92,6 +95,15 @@ In this order:
    `Fast-track budget exceeded: <lines> changed production lines in <files> files (limit 30 lines, 2 files)[; binary production files are not allowed: <paths>][; changed or committed although they had uncommitted changes when the run started, so the change cannot be measured: <paths>]. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.`
    When a restore is pending (step 6's condition), the reason adds
    ` First restore the protected files, naming each one (git checkout <sha12> -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft <sha12>).`
+8. An allow of steps 5 and 6 (added for #72 on 2026-10-12): when `tool_name` is `Bash`,
+   `tool_input.command` is a string and `permission_mode` is `bypassPermissions`, the allow rewrites the
+   command to one line, `export GIT_CONFIG_COUNT=<n+7>` and the pairs `GIT_CONFIG_KEY_<n+i>` and
+   `GIT_CONFIG_VALUE_<n+i>` for `protocol.allow=never`, `protocol.file.allow=user` and
+   `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then a newline and the
+   command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
+   integer. Every other `tool_input` field is kept. Otherwise: allow with no output. In the other
+   permission modes Claude Code checks each part of the rewritten command against the user's rules,
+   the export line matches none, and every allowed command would ask again (2.1.296).
 
 ### End of run: PreToolUse `SubagentHandback`, `SubagentStop`, `Stop`
 
