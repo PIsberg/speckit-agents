@@ -30,5 +30,5 @@ L1, L2 and the screenshot are deferred to a follow-up issue (D5 B), not run by t
 were run on 2026-10-11 (README.md, "Board mod", "Verified"); `test/e2e.test.mjs` now runs both in CI. L3 to L6
 were run on 2026-10-12 in an interactive session that vhs drove against a fake API, the two
 spec-auditors scripted stand-ins: `node tools/live-board.mjs` repeats them and prints each result
-(docs/live-results.md, "The board"). It hashes L6's files with `git hash-object`, which every OS has,
+(docs/live-results.md, "The board"), and CI's `live-board` job runs it for every pull request. It hashes L6's files with `git hash-object`, which every OS has,
 in place of `sha256sum`. The screenshot is still deferred (#84).
