@@ -52,8 +52,8 @@ Refusal: exit 1, stdout one line `speckit-team: project: <reason>`, where reason
 | Case | Reason |
 |---|---|
 | no name, or a second argument | `give exactly one project name` |
-| name fails the pattern (`..`, `/`, `\`, a leading `.`, over 64 characters) | `<name> is not a project name: letters, digits, - and _ only. Projects: <list>` |
-| no such directory (exact case) | `no project <name> in .specify/projects/. Projects: <list>` |
+| name fails the pattern (`..`, `/`, `\`, a leading `.`, over 64 characters) | `<name> is not a project name: letters, digits, - and _ only. Projects: <list>.` |
+| no such directory (exact case) | `no project <name> in .specify/projects/. Projects: <list>.` |
 | the directory is a symlink | `.specify/projects/<name> is a symlink; a project must be a directory in the repository` |
 | no instructions and no knowledge files | `project <name> is empty: add instructions.md or a knowledge file` |
 | `instructions.md` is not a regular file | `.specify/projects/<name>/instructions.md is not a file` |

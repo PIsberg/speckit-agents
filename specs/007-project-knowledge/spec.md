@@ -111,19 +111,21 @@ project can loosen a guardrail.
 guide to match its own code, or an instruction that says "skip the tests", would turn grounding into
 a way around the team's rules.
 
-**Independent Test**: In a run with a project, have an agent attempt to write a knowledge file: it
-is blocked with a message naming the project. Put "skip the audit" in the instructions: the audit
-gate still blocks implementer until an audit passes.
+**Independent Test**: In a run with a project, have a writing agent attempt to write a knowledge
+file with Write or Edit: it is blocked with a message naming the path. Put "skip the audit" in the
+instructions: the audit gate still blocks implementer until an audit passes.
 
 **Acceptance Scenarios**:
 
-1. **Given** an active project, **When** any agent tries to create, change or delete a file in it,
-   **Then** the action is blocked and the message says the file belongs to the active project.
+1. **Given** an active project, **When** a writing agent (product-owner, architect, test-writer,
+   implementer, patcher) tries to create or change a file in it with Write or Edit, or leaves such
+   a change at a lane or end check, **Then** the action is blocked and the message names the path.
+   spec-auditor's and spec-gatekeeper's Bash writes are not caught (FR-008, D4).
 2. **Given** an active project whose instructions contradict a guardrail or the constitution,
    **When** the run proceeds, **Then** every guardrail decides as it would without the project.
 3. **Given** a request without the flag, **When** an agent writes a file inside a project, **Then**
-   the guardrails decide as they do today for any path under `.specify/`: the user edits projects
-   by hand, not through the team.
+   the guardrails decide as they do for any path under `.specify/`, test-writer's lane included
+   (FR-005's exception): the user edits projects by hand, not through the team.
 
 ---
 
@@ -205,8 +207,9 @@ gate still blocks implementer until an audit passes.
 
 ### Measurable Outcomes
 
-- **SC-001**: Without the flag, 100% of the existing tests pass, and launch prompts are
-  byte-identical to the pre-change version. The only existing expectations that change are the
+- **SC-001**: Without the flag, 100% of the existing tests pass, and the skills' rules add nothing
+  to a launch prompt (no `Project:` line, no project text), so the prompts are worded as before
+  this feature. The only existing expectations that change are the
   installed `SubagentStart` matcher (it names seven roles instead of two, whether or not the flag
   is used) and test-writer's tests lane on `.specify/` paths (FR-005's exception).
 - **SC-002**: With the flag, 100% of launches in a run (every role, every fix round, `patcher`)

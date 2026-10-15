@@ -78,8 +78,10 @@ model request on 2.1.293 (research R1); the e2e case fails if it does not, and f
 | Install: idempotent, uninstall removes all | the widened matcher is rewritten on reinstall by `withGates`; uninstall removes it (install.test) |
 | Install: nothing outside `.specify/` | passes under constitution 1.2.0 (amended 2026-10-15 for this feature, audit M1): one hook process per gated tool call or per start of a subagent the matcher names, exiting with no output. A team-agent launch outside a Spec Kit repo is two gated calls, each with its own settings entry: the `Agent` tool call (PreToolUse, one process, since 006) and the subagent's start (`SubagentStart`, one process, since #88 for product-owner and architect, now for all seven roles). Each exits at `specifyAbove` with no output and no blocking, and only these seven agent names match, so no other agent in any repo starts a process at its start |
 
-Not applicable: plugin rules (no plugin code); event schema (no event emitted); Governance (no
-amendment).
+Not applicable: plugin rules (no plugin code); event schema (no event emitted).
+
+Governance: amended for this feature, 1.1.0 to 1.2.0 (MINOR, 2026-10-15) through
+`/speckit-constitution`, with its Sync Impact Report; the Install row above rests on it.
 
 ## Project Structure
 
@@ -90,7 +92,7 @@ specs/007-project-knowledge/
 ├── plan.md
 ├── research.md
 ├── data-model.md
-├── quickstart.md          # try it; live checks L1 to L5
+├── quickstart.md          # try it; live checks L1 to L6
 ├── contracts/project.md
 └── tasks.md
 ```
@@ -105,7 +107,7 @@ skills/speckit-patch/SKILL.md   # --project parsing, Project: line in patcher's 
 skills/speckit-triage/SKILL.md  # keeps the flag in its suggestion
 README.md, CLAUDE.md, docs/measurements.md
 test/hook.test.mjs, test/install.test.mjs, test/hook-patch.test.mjs, test/e2e.test.mjs
-docs/live-results.md            # L1 to L4
+docs/live-results.md            # L1 to L4 and L6
 ```
 
 Unchanged: the seven agents' files; the board mod (retired, #11); `architecture-visualized.svg` (no
