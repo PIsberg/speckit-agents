@@ -19,7 +19,8 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const AGENTS_DIR = path.join(ROOT, 'agents');
 const AGENT_FILES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 
-test('all agent files declare deterministically sorted unified tools', () => {
+test('all agent files declare deterministically sorted unified tools by capability profile', () => {
+  const readOnly = ['spec-auditor', 'spec-gatekeeper', 'security-reviewer'];
   for (const name of AGENT_FILES) {
     const content = fs.readFileSync(path.join(AGENTS_DIR, `${name}.md`), 'utf8');
     const toolMatch = content.match(/^tools:\s*(.+)$/m);
@@ -27,7 +28,11 @@ test('all agent files declare deterministically sorted unified tools', () => {
     const tools = toolMatch[1].split(',').map((t) => t.trim());
     const sorted = [...tools].sort((a, b) => a.localeCompare(b));
     assert.deepEqual(tools, sorted, `${name}.md tools must be alphabetically sorted`);
-    assert.deepEqual(tools, ['Bash', 'Edit', 'Read', 'Write'], `${name}.md tools must be unified [Bash, Edit, Read, Write]`);
+    if (readOnly.includes(name)) {
+      assert.deepEqual(tools, ['Bash', 'Read'], `${name}.md (read-only) tools must be unified [Bash, Read]`);
+    } else {
+      assert.deepEqual(tools, ['Bash', 'Edit', 'Read', 'Write'], `${name}.md (writer) tools must be unified [Bash, Edit, Read, Write]`);
+    }
   }
 });
 
@@ -99,6 +104,13 @@ test('buildSystemPrompt falls back to 5m standard ephemeral cache when ttl is no
   assert.deepEqual(prompt[0].cache_control, { type: 'ephemeral' });
 });
 
+test('buildSystemPrompt avoids emitting empty cache block when constitution and project knowledge are empty', () => {
+  const prompt = buildSystemPrompt({ role: 'implementer' });
+  assert.equal(prompt.length, 1);
+  assert.match(prompt[0].text, /=== ACTIVE ROLE ASSIGNMENT ===/);
+  assert.equal(prompt[0].cache_control, undefined);
+});
+
 test('buildArtifactContent positions stable phase artifacts with cache_control', () => {
   const spec = '# Feature Spec: Auth\nScenario: Login';
   const plan = '# Architecture Plan\nDecision 1: JWT';
@@ -113,6 +125,11 @@ test('buildArtifactContent positions stable phase artifacts with cache_control',
   assert.match(phase2Artifact.text, /# Architecture Plan/);
   assert.match(phase2Artifact.text, /# Tasks/);
   assert.deepEqual(phase2Artifact.cache_control, { type: 'ephemeral', ttl: '1h' });
+});
+
+test('buildArtifactContent returns null when all artifacts are empty', () => {
+  assert.equal(buildArtifactContent({}), null);
+  assert.equal(buildArtifactContent({ spec: '   ', plan: '', tasks: '' }), null);
 });
 
 test('buildTurnMessages preserves prior turn history and sets Breakpoint 4 before new diff', () => {
@@ -172,4 +189,24 @@ test('detectDivergence identifies cache-busting divergences between payloads', (
   const personaDiv = detectDivergence(payload1, payloadPersonaDivergence);
   assert.ok(personaDiv);
   assert.equal(personaDiv.reason, 'system_block_1_divergence');
+
+  // Case 4: String system payload divergence
+  const payloadStringA = {
+    tools: [{ name: 'Bash' }, { name: 'Read' }],
+    system: 'SYSTEM PROMPT A',
+  };
+  const payloadStringB = {
+    tools: [{ name: 'Bash' }, { name: 'Read' }],
+    system: 'SYSTEM PROMPT B',
+  };
+  const strDiv = detectDivergence(payloadStringA, payloadStringB);
+  assert.ok(strDiv);
+  assert.equal(strDiv.reason, 'system_block_1_divergence');
+
+  // Case 5: Tools defined as array of strings
+  const payloadToolsStrings = {
+    tools: ['Bash', 'Read'],
+    system: 'SYSTEM PROMPT A',
+  };
+  assert.equal(detectDivergence(payloadStringA, payloadToolsStrings), null);
 });

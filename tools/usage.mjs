@@ -82,27 +82,41 @@ export function summarise(file) {
   };
   const dir = path.join(path.dirname(file), path.basename(file, '.jsonl'), 'subagents');
   const all = [...resp];
+  const agentDetails = [];
   const agents = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => f.endsWith('.jsonl')).sort().map((f) => {
     let type = '?';
     try { type = JSON.parse(fs.readFileSync(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), 'utf8')).agentType ?? '?'; } catch { /* no meta */ }
     const r = responses(readRows(path.join(dir, f)), { sidechain: true });
     all.push(...r);
+    agentDetails.push({ type, responses: r });
     return { type, responses: r.length, input: sum(r, 'input'), peak: Math.max(0, ...r.map((x) => x.input)), models: [...new Set(r.map((x) => x.model))] };
   });
+
+  const warnings = [];
+  const modelSeen = new Set(main.models);
+  for (const { type, responses: r } of agentDetails) {
+    if (r.length === 0) continue;
+    const first = r[0];
+    if (modelSeen.has(first.model) && first.cacheWrite > 0 && first.cacheRead === 0) {
+      warnings.push(`agent '${type}' had a cold cache write on '${first.model}' (possible cache divergence on handoff)`);
+    }
+    for (const m of r.map((x) => x.model)) modelSeen.add(m);
+  }
+
   // Named as in the `modelUsage` of `claude -p --output-format json`, to compare against it.
   const models = {};
   for (const x of all) {
     const t = (models[x.model] ??= { inputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
     t.inputTokens += x.uncached; t.cacheReadInputTokens += x.cacheRead; t.cacheCreationInputTokens += x.cacheWrite;
   }
-  return { main, agents, models };
+  return { main, agents, models, warnings };
 }
 
 const k = (n) => `${Math.round(n / 1e3)}k`;
 const M = (n) => `${(n / 1e6).toFixed(2)}M`;
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '0%');
 
-export function format({ main, agents, models }) {
+export function format({ main, agents, models, warnings = [] }) {
   const bg = main.launches.filter((l) => l.background).length;
   const out = [
     `main session: ${main.responses} responses, input ${M(main.input)} (cache read ${M(main.cacheRead)}, cache write ${M(main.cacheWrite)}), first ${k(main.first)}, peak ${k(main.peak)}, ${main.models.join(', ')}`,
@@ -118,6 +132,10 @@ export function format({ main, agents, models }) {
   for (const [model, t] of Object.entries(models)) {
     const total = t.inputTokens + t.cacheReadInputTokens + t.cacheCreationInputTokens;
     out.push(`  ${model}: uncached ${t.inputTokens}, cache read ${t.cacheReadInputTokens}, cache write ${t.cacheCreationInputTokens} (cache hit rate ${pct(t.cacheReadInputTokens, total)})`);
+  }
+  if (warnings.length) {
+    out.push('cache divergence warnings:');
+    for (const w of warnings) out.push(`  ${w}`);
   }
   return out.join('\n');
 }

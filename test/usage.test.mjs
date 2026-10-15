@@ -84,3 +84,29 @@ test('usage prints the summary from the command line, and usage help without a t
   assert.match(missing.stderr, /usage: node tools\/usage\.mjs/);
 });
 
+function transcriptWithDivergence() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skusage-div-'));
+  const file = path.join(dir, 'sess.jsonl');
+  const lines = [
+    hear('/speckit-team test'),
+    say('m1', usage(1000, 100), [{ type: 'text', text: 'Start' }]),
+  ];
+  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n'));
+  const sub = path.join(dir, 'sess', 'subagents');
+  fs.mkdirSync(sub, { recursive: true });
+  const side = { isSidechain: true, agentId: 'a2', model: 'claude-sonnet-5-5' };
+  fs.writeFileSync(path.join(sub, 'agent-a2.jsonl'), [
+    hear('Work', side),
+    say('s1', usage(0, 500), [{ type: 'text', text: 'Cold write' }], side),
+  ].map((l) => JSON.stringify(l)).join('\n'));
+  fs.writeFileSync(path.join(sub, 'agent-a2.meta.json'), JSON.stringify({ agentType: 'security-reviewer' }));
+  return file;
+}
+
+test('usage warns on cold cache write during same-model agent handoff', () => {
+  const file = transcriptWithDivergence();
+  const res = summarise(file);
+  assert.equal(res.warnings.length, 1);
+  assert.match(res.warnings[0], /security-reviewer.*cold cache write.*claude-sonnet-5-5/);
+});
+

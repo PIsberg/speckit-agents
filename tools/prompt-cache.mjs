@@ -25,31 +25,35 @@ export function buildSystemPrompt({
   ttl,
 } = {}) {
   const parts = [];
-  if (constitution) {
+  if (constitution && constitution.trim()) {
     parts.push(`=== CORE RULES & CONSTITUTION ===\n${constitution.trim()}`);
   }
-  if (projectKnowledge) {
+  if (projectKnowledge && projectKnowledge.trim()) {
     parts.push(`=== PROJECT KNOWLEDGE ===\n${projectKnowledge.trim()}`);
   }
 
-  const cacheControl = {
-    type: 'ephemeral',
-    ...(ttl ? { ttl } : {}),
-  };
+  const blocks = [];
+  const text1 = parts.join('\n\n');
+  if (text1) {
+    const cacheControl = {
+      type: 'ephemeral',
+      ...(ttl ? { ttl } : {}),
+    };
 
-  const block1 = {
-    type: 'text',
-    text: parts.join('\n\n'),
-    cache_control: cacheControl,
-  };
+    blocks.push({
+      type: 'text',
+      text: text1,
+      cache_control: cacheControl,
+    });
+  }
 
   const roleText = `=== ACTIVE ROLE ASSIGNMENT ===\nYou are ${role}.${personaInstructions ? ` ${personaInstructions}` : ''}`;
-  const block2 = {
+  blocks.push({
     type: 'text',
     text: roleText,
-  };
+  });
 
-  return [block1, block2];
+  return blocks;
 }
 
 /**
@@ -57,13 +61,16 @@ export function buildSystemPrompt({
  */
 export function buildArtifactContent({ spec = '', plan = '', tasks = '', ttl } = {}) {
   const sections = [];
-  if (spec) sections.push(spec.trim());
-  if (plan) sections.push(plan.trim());
-  if (tasks) sections.push(tasks.trim());
+  if (spec && spec.trim()) sections.push(spec.trim());
+  if (plan && plan.trim()) sections.push(plan.trim());
+  if (tasks && tasks.trim()) sections.push(tasks.trim());
+
+  const text = sections.join('\n\n');
+  if (!text) return null;
 
   return {
     type: 'text',
-    text: sections.join('\n\n'),
+    text,
     cache_control: {
       type: 'ephemeral',
       ...(ttl ? { ttl } : {}),
@@ -119,20 +126,27 @@ export function detectDivergence(payloadA, payloadB) {
     return { reason: 'tool_mismatch', detail: `Tool count mismatch: ${toolsA.length} vs ${toolsB.length}` };
   }
   for (let i = 0; i < toolsA.length; i++) {
-    if (toolsA[i]?.name !== toolsB[i]?.name) {
-      return { reason: 'tool_mismatch', detail: `Tool at index ${i} diverges: ${toolsA[i]?.name} vs ${toolsB[i]?.name}` };
+    const nameA = typeof toolsA[i] === 'string' ? toolsA[i] : toolsA[i]?.name;
+    const nameB = typeof toolsB[i] === 'string' ? toolsB[i] : toolsB[i]?.name;
+    if (nameA !== nameB) {
+      return { reason: 'tool_mismatch', detail: `Tool at index ${i} diverges: ${nameA} vs ${nameB}` };
     }
   }
 
   // 2. Check System Block 1 (Shared Constitution & Knowledge)
-  const sysA = payloadA.system ?? [];
-  const sysB = payloadB.system ?? [];
-  if (sysA.length && sysB.length) {
-    const textA = sysA[0]?.text ?? '';
-    const textB = sysB[0]?.text ?? '';
-    if (textA !== textB) {
-      return { reason: 'system_block_1_divergence', detail: 'System Block 1 text does not match byte-for-byte' };
+  const getSystemBlock1 = (sys) => {
+    if (typeof sys === 'string') return sys;
+    if (Array.isArray(sys) && sys.length > 0) {
+      const first = sys[0];
+      return typeof first === 'string' ? first : (first?.text ?? '');
     }
+    return '';
+  };
+
+  const textA = getSystemBlock1(payloadA.system);
+  const textB = getSystemBlock1(payloadB.system);
+  if ((payloadA.system || payloadB.system) && textA !== textB) {
+    return { reason: 'system_block_1_divergence', detail: 'System Block 1 text does not match byte-for-byte' };
   }
 
   return null;

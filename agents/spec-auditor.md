@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: spec-auditor
 description: Spec Kit gate before any code. Read-only speckit-analyze across constitution, spec.md, plan.md and tasks.md; ends with VERDICT PASS or FAIL, which a hook records and which unlocks test-writer, implementer and /speckit-implement. Use after architect, and again after any edit to those files.
-tools: Bash, Edit, Read, Write
+tools: Bash, Read
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
 model: opus
 color: yellow
