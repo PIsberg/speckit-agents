@@ -86,5 +86,5 @@ planned last. Read that plan only when you work on that feature.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/006-choose-team-size/plan.md`
+`specs/007-project-knowledge/plan.md`
 <!-- SPECKIT END -->

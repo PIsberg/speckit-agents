@@ -16,6 +16,10 @@
 - Q: Where do projects live? → A: In the repository, one directory per project under one fixed location, shared through git (FR-001).
 - Q: How do knowledge files reach the agents? → A: As a list of paths and sizes; each agent reads the files its task needs. No contents in launch prompts (FR-004).
 
+### Plan decisions 2026-10-15
+
+- Q: Where under the repository, how delivered, what limits, which writes blocked, which permission? → A: All recommended options of plan.md: `.specify/projects/<name>/` (D1); the hook injects the context at each agent's start from a `Project:` line (D2, FR-003, FR-009, SC-002); 8,192 bytes and 100 files (D3, FR-010); spec-auditor's and spec-gatekeeper's Bash writes are a known limit (D4, FR-008, SC-003); no installer allow rule (D5).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ground a pipeline run in a project (Priority: P1)
@@ -32,8 +36,8 @@ context, and agents that start from nothing never see it.
 
 **Independent Test**: Create a project whose instructions demand something an agent would not do
 unprompted (for example a fixed marker line in every new file). Run a request with the flag and
-read the transcript: every launch prompt carries the instructions and the knowledge list, and the
-files the agents wrote follow the instruction.
+read the transcripts: every agent's transcript starts with the instructions and the knowledge list,
+and the files the agents wrote follow the instruction.
 
 **Acceptance Scenarios**:
 
@@ -113,8 +117,8 @@ gate still blocks implementer until an audit passes.
 2. **Given** an active project whose instructions contradict a guardrail or the constitution,
    **When** the run proceeds, **Then** every guardrail decides as it would without the project.
 3. **Given** a request without the flag, **When** an agent writes a file inside a project, **Then**
-   the project's files get no protection from this feature (the user edits a project by running
-   without it).
+   the guardrails decide as they do today for any path under `.specify/`: the user edits projects
+   by hand, not through the team.
 
 ---
 
@@ -148,8 +152,9 @@ gate still blocks implementer until an audit passes.
 - **FR-002**: `/speckit-team` and `/speckit-patch` MUST accept `--project <name>` before the request
   text, in any order with `--team`. Without it, no project is active.
 - **FR-003**: With a project active, every agent launched in the run (every role, every fix round,
-  `patcher`) MUST receive the project's instructions and the list of its knowledge files, each with
-  its path and size.
+  `patcher`) MUST start with the project's instructions and the list of its knowledge files, each
+  with its path and size, in its context; the launch prompt names the project in one `Project:`
+  line (D2).
 - **FR-004**: Knowledge files MUST reach agents as a list only: no launch prompt carries a knowledge
   file's contents, and each agent reads the files its task needs. The list MUST tell the agent to
   check it before deciding something a listed file could cover.
@@ -160,13 +165,15 @@ gate still blocks implementer until an audit passes.
 - **FR-007**: The run MUST refuse, before launching anything, an unknown project, an empty project,
   a name with a path separator or `..`, a flag with no name and a flag given twice, and MUST say why
   and list the available projects.
-- **FR-008**: While a project is active, any attempt by an agent to create, change or delete a file
-  in that project MUST be blocked with a message that names the project.
-- **FR-009**: A project's instructions MUST NOT change any guardrail's decision. Every launch prompt
-  that carries them MUST state that the constitution, the guardrails and the request take precedence
-  over them.
-- **FR-010**: The instructions text MUST stay within a stated size limit, checked before anything is
-  launched; knowledge files have no size limit, since they are listed rather than copied.
+- **FR-008**: Any Write or Edit by an agent into a project, and any change into a project that a lane
+  or end check covers, MUST be blocked with a message that names the path. spec-auditor's and
+  spec-gatekeeper's Bash writes are a documented known limit (D4).
+- **FR-009**: A project's instructions MUST NOT change any guardrail's decision. The project context
+  every agent receives MUST state that the constitution, the guardrails and the request take
+  precedence over it.
+- **FR-010**: The instructions text MUST be at most 8,192 bytes and a project MUST hold at most 100
+  knowledge files, both checked before anything is launched; a knowledge file's own size is not
+  limited, since files are listed rather than copied (D3).
 - **FR-011**: At the start of a run with a project, the user MUST be told in one line which project
   is active and how many knowledge files it holds; the final report MUST name it.
 - **FR-012**: In `/speckit-team --team noagents` runs, the main session MUST apply the project's
@@ -192,8 +199,9 @@ gate still blocks implementer until an audit passes.
 - **SC-001**: Without the flag, 100% of the existing tests pass unchanged, and launch prompts are
   byte-identical to the pre-change version.
 - **SC-002**: With the flag, 100% of launches in a run (every role, every fix round, `patcher`)
-  carry the project's instructions and its knowledge list.
-- **SC-003**: With the flag, 0 agent writes into the active project succeed.
+  start with the project's instructions and its knowledge list in context.
+- **SC-003**: With the flag, 0 agent writes into the active project through Write or Edit succeed,
+  and 0 changes into it pass a lane or end check.
 - **SC-004**: With an instruction that contradicts a guardrail, 0 guardrail decisions differ from
   the same run without the project.
 - **SC-005**: The extra input a project adds to a run is measured with `tools/usage.mjs` on one run
