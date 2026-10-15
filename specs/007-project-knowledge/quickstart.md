@@ -26,5 +26,8 @@ project, and record what was seen in `docs/live-results.md`.
   protected path.
 - **L4, Spec Kit keeps it**: `specify init --here --force --integration claude` in the scratch
   repo; `.specify/projects/demo/` is still there. (research R5)
+- **L6, a pipeline role**: `/speckit-team --team implementer --project demo add a rounding helper`.
+  The implementer's transcript starts with the block; its launch prompt has `Team: implementer`
+  and `Project: demo` and no instruction text.
 - **L5, cost (SC-005)**: `node tools/usage.mjs` on the L1 and L2 sessions; the difference in input
   tokens goes to `docs/measurements.md`.

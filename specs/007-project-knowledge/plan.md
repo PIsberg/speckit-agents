@@ -67,7 +67,7 @@ model request on 2.1.293 (research R1); the e2e case fails if it does not, and f
 | I. Assert what a caller observes | CLI stdout and exit code, the hook's `additionalContext` JSON, deny decisions, the record file, the subagent's request at the fake API |
 | I. No test that passes because the code never ran | the e2e injection case fails with `SPECKIT_E2E_NO_HOOK=1` |
 | II. No throw on any input; a test per throwing path | a directory named `instructions.md`, an unreadable record, a project removed mid-run, a non-string prompt or `subagent_type`, a `SubagentStart` without a usable `session_id` or `agent_type`, a record with a bad `name`, stdin left open (T001, T003) |
-| II. Wiring change verified live | the `SubagentStart` matcher widens: quickstart L1 to L3, recorded in README "Live results" |
+| II. Wiring change verified live | the `SubagentStart` matcher widens: quickstart L1 to L4 and L6 (patcher and a pipeline role), recorded in `docs/live-results.md` (T018) |
 | II. Quoted absolute forward-slash command | only the matcher changes; the command is `hookCommand('start')` as today |
 | III. Observers never block; budget | `start` and the record path never decide; measured against 500 ms |
 | IV. Node standard library only | `fs`, `path` |
@@ -76,7 +76,7 @@ model request on 2.1.293 (research R1); the e2e case fails if it does not, and f
 | VII. Every platform | exact-case name match on case-insensitive file systems; forward-slash paths; e2e on all three in CI |
 | VIII. Docs in the same change | README (new section, guardrail table, troubleshooting, known limits, test count), CLAUDE.md (modes, the `Project:` line twin), hook header, installer help, measurements |
 | Install: idempotent, uninstall removes all | the widened matcher is rewritten on reinstall by `withGates`; uninstall removes it (install.test) |
-| Install: nothing outside `.specify/` | the allowance is one hook process per gated call, exiting with no output. A team-agent launch outside a Spec Kit repo is two gated calls, each with its own settings entry: the `Agent` tool call (PreToolUse, one process, since 006) and the subagent's start (`SubagentStart`, one process, since #88 for product-owner and architect, now for all seven roles). Each exits at `specifyAbove` with no output and no blocking, and only these seven agent names match, so no other agent in any repo starts a process at its start |
+| Install: nothing outside `.specify/` | passes under constitution 1.2.0 (amended 2026-10-15 for this feature, audit M1): one hook process per gated tool call or per start of a subagent the matcher names, exiting with no output. A team-agent launch outside a Spec Kit repo is two gated calls, each with its own settings entry: the `Agent` tool call (PreToolUse, one process, since 006) and the subagent's start (`SubagentStart`, one process, since #88 for product-owner and architect, now for all seven roles). Each exits at `specifyAbove` with no output and no blocking, and only these seven agent names match, so no other agent in any repo starts a process at its start |
 
 Not applicable: plugin rules (no plugin code); event schema (no event emitted); Governance (no
 amendment).

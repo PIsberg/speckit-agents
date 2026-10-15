@@ -36,9 +36,12 @@ project; compare stdout and exit codes with contracts/project.md section 3.
   not thrown; exactly 8,192 bytes and exactly 100 files pass, one more of either is refused; the
   mode completes with stdin held open (spawn with `stdio: ['pipe', ...]` and never end it, 10 s
   timeout); the state directory is unchanged after a run (FR-013); outside a Spec Kit repo
-  (`repo({ speckit: false })`) exit 1 with `no .specify/ in this repository`.
+  (`repo({ speckit: false })`) exit 1 with `no .specify/ in this repository`, and the same for a
+  directory holding `.specify/` that is no git repository, and for a git repository nested in one
+  that holds `.specify/` while its own top level does not (the hook's second silent exit, audit M2).
 - [ ] T002 Implement in `hooks/speckit-team.mjs`: skip the stdin read when `mode === 'project'`
-  (line 85); before the `specifyAbove` exit, print the not-a-Spec-Kit-repo refusal for this mode;
+  (line 85); at both silent exits (the `specifyAbove` exit and the no-git-root or no-`.specify/` exit
+after `rev-parse`), print the not-a-Spec-Kit-repo refusal and exit 1 for this mode;
   after `inSpecKitRepo = true` and before the `inputProblem` check, `if (mode === 'project')` print
   and exit. New: `const PROJECTS_DIR = '.specify/projects'`, `const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/`,
   `const MAX_INSTRUCTIONS = 8192`, `const MAX_KNOWLEDGE = 100`,
@@ -132,7 +135,8 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   (CLAUDE.md twin rule).
 - [ ] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: the `## Team` parsing paragraph becomes
   leading flags in either order (`--team`, `--project`, each once); a new `## Project` section: run
-  the mode once before any launch, stop on exit 1 with its line, otherwise one notice line from the
+  the mode once before any launch, stop on a non-zero exit or on output whose first line does not
+  start `Project ` (showing what it printed), otherwise one notice line from the
   header; the `Project:` line in Handoffs; `## No agents` step 1 reads the block first; step 7 names
   the project. Update `argument-hint`.
 
@@ -187,12 +191,14 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   plan.md, the `scope tests` row (no `.specify/`), and the test count; `CLAUDE.md` gets `project` in
   the modes list and a Rules entry for the `Project:` line twin (skills write, hook reads, held by
   `test/install.test.mjs`); `install.mjs`'s help header mentions the wider `SubagentStart` entry.
+  The new README section says what was verified live (T018), what only by unit and e2e tests, and
+  what not at all (constitution VIII, audit L2).
   Run `npm test` for `test/docs.test.mjs`.
 - [ ] T017 Measure the `start` path for a matched role (20 runs each, one process per run): inside
   a Spec Kit repo with and without a project record, and outside a Spec Kit repo. Write the numbers
   into research.md as R6 and into README's Guardrails paragraph; not into spec, plan or tasks,
   whose edit would void the audit (audit M4).
-- [ ] T018 Live checks L1 to L4 of quickstart.md after `node install.mjs` from this branch; record
+- [ ] T018 Live checks L1 to L4 and L6 of quickstart.md after `node install.mjs` from this branch; record
   what was seen, with date and Claude Code version, in `docs/live-results.md` (audit L1).
 - [ ] T019 L5: `node tools/usage.mjs` on the L1 and L2 sessions; the difference goes to
   `docs/measurements.md` (SC-005).

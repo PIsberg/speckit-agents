@@ -54,6 +54,9 @@ and the files the agents wrote follow the instruction.
    starts, **Then** both take effect.
 4. **Given** a run with a project, **When** it starts, **Then** the user is told in one line which
    project is active and how many knowledge files it holds.
+5. **Given** `/speckit-team --team noagents --project <name> <request>`, **When** the main session
+   runs Spec Kit's commands itself, **Then** it follows the project's instructions and reads its
+   knowledge files the same way an agent would.
 
 ---
 
@@ -96,9 +99,6 @@ instructions and the list, and the budget check counts the same lines it counts 
    `patcher` receives the project's instructions and knowledge list.
 2. **Given** that run, **When** the fast track checks its budget and protected paths, **Then** it
    decides exactly as it would without the flag.
-3. **Given** `/speckit-team --team noagents --project <name> <request>`, **When** the main session
-   runs Spec Kit's commands itself, **Then** it follows the project's instructions and reads its
-   knowledge files the same way an agent would.
 
 ---
 
@@ -205,8 +205,10 @@ gate still blocks implementer until an audit passes.
 
 ### Measurable Outcomes
 
-- **SC-001**: Without the flag, 100% of the existing tests pass unchanged, and launch prompts are
-  byte-identical to the pre-change version.
+- **SC-001**: Without the flag, 100% of the existing tests pass, and launch prompts are
+  byte-identical to the pre-change version. The only existing expectations that change are the
+  installed `SubagentStart` matcher (it names seven roles instead of two, whether or not the flag
+  is used) and test-writer's tests lane on `.specify/` paths (FR-005's exception).
 - **SC-002**: With the flag, 100% of launches in a run (every role, every fix round, `patcher`)
   start with the project's instructions and its knowledge list in context.
 - **SC-003**: With the flag, 0 agent writes into the active project through Write or Edit succeed,
