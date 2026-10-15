@@ -49,7 +49,7 @@ test('the board mod draws each role in the color of its agent file', () => {
     const text = fs.readFileSync(path.join(ROOT, 'agents', f), 'utf8');
     return [/^name:\s*(\S+)/m.exec(text)?.[1], /^color:\s*(\S+)/m.exec(text)?.[1]];
   }));
-  assert.equal(Object.keys(agents).length, 7);
+  assert.equal(Object.keys(agents).length, 8);
   assert.deepEqual(board, agents);
 });
 
@@ -87,8 +87,8 @@ test('the board mod counts REDs to the hook\'s retry limit', () => {
 // Spawned without a shell, so a checkout path with spaces stays one argument. An npm-installed
 // claude.cmd cannot be spawned that way: the tests then report skipped, not passed. CI sets
 // SPECKIT_REQUIRE_CLAUDE=1, so there a missing claude fails them instead.
-const claude = (...args) => spawnSync('claude', args, { encoding: 'utf8' });
-const noClaude = claude('--version').status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
+const claude = (...args) => spawnSync('claude', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const noClaude = spawnSync('claude', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] }).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 
 test('claude plugin validate accepts the board mod', { skip: noClaude }, () => {
   const r = claude('plugin', 'validate', MOD);

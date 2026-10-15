@@ -1,6 +1,6 @@
 # speckit-agents
 
-Source for a Claude Code subagent team around GitHub Spec Kit: seven agents, three skills, one hook
+Source for a Claude Code subagent team around GitHub Spec Kit: eight agents, three skills, one hook
 script and an installer. This file is how to work on it; the map below says where the rest is.
 
 ## Docs map
@@ -10,12 +10,13 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   troubleshooting, known limits, developing.
 - `docs/measurements.md`: what runs cost, and which prompt rule each finding led to.
 - `docs/live-results.md`: what was seen in a real session, by date.
+- `docs/architecture.md`: pipeline overview, security-reviewer dual-gate lifecycle, and diagram prompt.
 - `.specify/memory/constitution.md`: the rules every change is held to (tests first, guardrails never
   fail silently, docs in the same change).
 - `specs/<NNN-feature>/`: one feature's spec, plan, contracts and tasks, and the decisions behind it.
 
 ## Layout
-- `agents/*.md`: the seven subagents, `patcher` (the fast track's) among them. The installer replaces
+- `agents/*.md`: the eight subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
   `ends`, `start`, `lane`, `patch`, `project`.
@@ -29,13 +30,11 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   before and after. `tools/live-board.mjs`: the board's interactive checks, vhs driving a real session
   against a fake API at $0; run it after changing what the board draws or its buttons do.
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
-  `architecture-visualized.svg` is drawn by hand: edit it when a model, lane, stage or the retry limit
-  changes.
 - `.claude/settings.json`: `CLAUDE_CODE_FORK_SUBAGENT=0`, so the team's agents run in the foreground
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 308 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 312 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
@@ -63,7 +62,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   repository, recognised by the `name` in the committed `package.json` (itself in the list). A new
   guardrail file of the team gets an entry and a case in `test/hook.test.mjs`.
 - `Team:` line of every launch prompt in a run with a chosen team: the skill writes it, the hook reads
-  it with `TEAM_ROLES` (the six roles without `patcher`), spec-gatekeeper reports an absent role's check
+  it with `TEAM_ROLES` (the seven roles without `patcher`), spec-gatekeeper reports an absent role's check
   as skipped. `Unbuilt:` line after it: the task IDs of an absent test-writer or implementer, which
   spec-gatekeeper's open-task check skips. Both halves are held together by `test/install.test.mjs`.
 - `Project:` line of every launch prompt in a run with an active project: the skills (`speckit-team`

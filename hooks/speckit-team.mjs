@@ -386,7 +386,8 @@ const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
 
 // The team of a /speckit-team run, recorded at the main session's Agent launch (contracts/team-choice.md, 7).
-const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
 // The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
@@ -397,22 +398,37 @@ function parseTeam(prompt) {
   if (typeof prompt !== 'string') return null;
   const m = /^Team:(.*)$/m.exec(prompt);
   if (!m) return null;
-  const words = m[1].split(',').map((w) => w.trim().toLowerCase()).filter(Boolean);
+  const words = m[1].split(',').map((w) => {
+    const raw = w.trim().toLowerCase();
+    return raw === 'security' ? 'security-reviewer' : raw;
+  }).filter(Boolean);
   if (!words.length) return { bad: '' };
   const bad = words.find((w) => !TEAM_ROLES.includes(w));
   if (bad !== undefined) return { bad };
   return { roles: TEAM_ROLES.filter((r) => words.includes(r)) };
 }
 // The roles a typed `/speckit-team` names (contract section 1): the words after a leading `--team` up
-// to and including the first that does not end in a comma, lower case. null without `--team`. One
-// leading `--project <name>` pair is skipped first (007 contract section 2), so the flags go in either order.
+// to and including the first that does not end in a comma, lower case. null without `--team`. Leading
+// `--project <name>` or `--security` flags are skipped, so the flags go in any order.
 function typedRoles(args) {
   let words = args.trim().split(/\s+/);
-  if (words[0] === '--project') words = words.slice(2);
+  const seen = new Set();
+  while (words.length > 0) {
+    if (words[0] === '--project' && !seen.has('--project')) {
+      seen.add('--project');
+      words = words.slice(2);
+    } else if (words[0] === '--security' && !seen.has('--security')) {
+      seen.add('--security');
+      words = words.slice(1);
+    } else break;
+  }
   if (words[0] !== '--team') return null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
-  return list.join('').split(',').map((w) => w.toLowerCase()).filter(Boolean);
+  return list.join('').split(',').map((w) => {
+    const raw = w.toLowerCase();
+    return raw === 'security' ? 'security-reviewer' : raw;
+  }).filter(Boolean);
 }
 // The session's team record, { roles, noagents }, or null when missing or unreadable (the full gates
 // then apply). `noagents` comes only from a typed `/speckit-team --team noagents`.
@@ -567,7 +583,7 @@ if (mode === 'gate') {
     if (role === 'patcher') { if (projectNote) say(null); process.exit(0); }
     const team = parseTeam(input.tool_input.prompt);
     // No Team line, or one naming a non-role: the full team (FR-002).
-    const roles = team && !('bad' in team) ? team.roles : TEAM_ROLES;
+    const roles = team && !('bad' in team) ? team.roles : CORE_ROLES;
     const was = teamOf();
     // Within a request the team never loses spec-auditor once it has it (#101); a typed /speckit-team
     // starts the next request.

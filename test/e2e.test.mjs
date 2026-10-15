@@ -827,5 +827,69 @@ test("a Project line in test-writer's launch puts the project block in its first
   assert.equal(state(s, 'project', `${sessionId(r)}.json`).name, 'demo', story(r));
 });
 
+test('security-reviewer in real session: opted in via Team line, reviews spec and result', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const team = 'Team: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer';
+  const secAgent = (marker, phase) => call('Agent', {
+    description: marker,
+    subagent_type: 'security-reviewer',
+    prompt: `${marker}: go\nPhase: ${phase}\n${team}`,
+    run_in_background: false,
+  });
+  const r = await session(s, {
+    [MAIN]: [
+      secAgent('e2e security spec', 'spec'),
+      secAgent('e2e security result', 'result'),
+    ],
+    'e2e security spec': [
+      call('Read', { file_path: spec(s) }),
+      say('Threat modeling: no issues found.\nVERDICT: PASS'),
+    ],
+    'e2e security result': [
+      call('Bash', { command: 'git diff HEAD~1', description: 'Inspect diff' }),
+      say('Result diff inspection: no secrets or vulnerabilities.\nVERDICT: PASS'),
+    ],
+  });
+  assert.equal(r.requests['e2e security spec'].length, 2, story(r));
+  assert.equal(r.requests['e2e security result'].length, 2, story(r));
+  assert.match(lastResult(r.requests['e2e security spec'][1]), /# Spec/, story(r));
+  assert.match(lastResult(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
+  assert.match(lastResult(r.requests[MAIN][2]), /VERDICT: PASS/, story(r));
+  assert.deepEqual(state(s, 'team', `${sessionId(r)}.json`).roles, [
+    'product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer',
+  ], story(r));
+});
+
+test('security-reviewer in real session: reports VERDICT: FAIL on critical finding, and default run excludes security', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  // 1. Default launch without security: team in session does not have security-reviewer
+  const rDefault = await session(s, {
+    [MAIN]: [teamAgent('e2e test-writer', 'e2e test-writer: go')],
+    'e2e test-writer': [call('Read', { file_path: spec(s) })],
+  });
+  const defaultRoles = state(s, 'team', `${sessionId(rDefault)}.json`).roles;
+  assert.ok(!defaultRoles.includes('security-reviewer'), 'default team does not include security-reviewer');
+
+  // 2. Opted-in security-reviewer reports finding with VERDICT: FAIL
+  const team = 'Team: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer';
+  const secAgent = (marker, phase) => call('Agent', {
+    description: marker,
+    subagent_type: 'security-reviewer',
+    prompt: `${marker}: go\nPhase: ${phase}\n${team}`,
+    run_in_background: false,
+  });
+  const rFail = await session(s, {
+    [MAIN]: [secAgent('e2e security fail', 'spec')],
+    'e2e security fail': [
+      call('Read', { file_path: spec(s) }),
+      say('CRITICAL: specs/001-x/spec.md:20 Missing authentication on administrative endpoint.\nVERDICT: FAIL'),
+    ],
+  });
+  assert.match(lastResult(rFail.requests[MAIN][1]), /VERDICT: FAIL/, story(rFail));
+  assert.match(lastResult(rFail.requests[MAIN][1]), /CRITICAL/, story(rFail));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => { for (const args of queued) nodeTest(...args); });
+
+
