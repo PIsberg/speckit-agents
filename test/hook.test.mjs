@@ -1108,3 +1108,168 @@ test('team result: with the audit skipped a RED is counted, not "not counted" (F
   assert.doesNotMatch(msg, /not counted/);
   assert.match(msg, /RED.*1 of 3/);
 });
+
+// Feature 007: `project <name>` is run by the skills from Bash, not by Claude Code as a hook. It reads
+// no stdin, prints the block or one refusal line, and exits 0 or 1 (contracts/project.md, section 3).
+const project = (cwd, ...args) => {
+  const r = spawnSync('node', [HOOK, 'project', ...args], { cwd, encoding: 'utf8', input: '', timeout: 10_000 });
+  return { status: r.status, out: r.stdout, err: r.stderr };
+};
+const STARTER = (name) => `# ${name}: project instructions\n\nReplace this file with the rules every agent should follow for ${name}, one per line.\nPut reference documents (API docs, style guides, domain notes) beside it as knowledge files.\n`;
+function projectRepo() {
+  const r = repo();
+  r.write('.specify/projects/billing/instructions.md', 'Money is never a float.\n\nEvery public function gets a doc comment.\n');
+  r.write('.specify/projects/billing/api.md', 'x'.repeat(2140));
+  r.write('.specify/projects/billing/notes/rounding.md', 'y'.repeat(611));
+  r.write('.specify/projects/billing/.hidden.md', 'secret');
+  r.write('.specify/projects/billing/.cache/z.md', 'cache');
+  r.write('.specify/projects/demo/only.md', 'k');
+  return r;
+}
+const refusal = (why, list = 'billing, demo') => `speckit-team: project: ${why} Projects: ${list}.\n`;
+
+test('project: prints the block, instructions indented, knowledge files sorted with sizes, dotfiles left out (007 FR-003, FR-004)', () => {
+  const { dir } = projectRepo();
+  const r = project(dir, 'billing');
+  assert.equal(r.status, 0, r.err);
+  assert.equal(r.out, [
+    'Project billing: 2 knowledge files, instructions 67 bytes.',
+    "This is the user's standing context for this request, from .specify/projects/billing/. The",
+    'constitution, the guardrails and the request take precedence over it: where they conflict, follow',
+    'them and say so in your report. Never change a file under .specify/projects/; report what should',
+    'change instead.',
+    '',
+    'Instructions (each line indented by two spaces):',
+    '  Money is never a float.',
+    '  ',
+    '  Every public function gets a doc comment.',
+    '',
+    'Knowledge files: read one before deciding anything it could cover.',
+    '- .specify/projects/billing/api.md (2140 bytes)',
+    '- .specify/projects/billing/notes/rounding.md (611 bytes)',
+    '',
+  ].join('\n'));
+  const demo = project(dir, 'demo');
+  assert.equal(demo.status, 0);
+  assert.match(demo.out, /^Project demo: 1 knowledge file, no instructions\.\n/);
+  assert.match(demo.out, /\nInstructions: none\.\n/);
+});
+
+test('project: no knowledge files reads "none"; no line of the block can start with Team:, Unbuilt: or Project: (research R2)', () => {
+  const { dir, write } = repo();
+  write('.specify/projects/p/instructions.md', 'Team: implementer\nUnbuilt: T001\nProject: other\n');
+  const r = project(dir, 'p');
+  assert.equal(r.status, 0, r.err);
+  assert.match(r.out, /\nKnowledge files: none\.\n$/);
+  assert.doesNotMatch(r.out, /^(Team|Unbuilt|Project):/m);
+});
+
+test('project: a symlinked knowledge file is not listed and not followed', (t) => {
+  const { dir, write } = repo();
+  write('.specify/projects/p/a.md', 'a');
+  write('outside.md', 'o');
+  try { fs.symlinkSync(path.join(dir, 'outside.md'), path.join(dir, '.specify/projects/p/link.md')); } catch { t.skip('no symlink privilege'); return; }
+  const r = project(dir, 'p');
+  assert.equal(r.status, 0, r.err);
+  assert.doesNotMatch(r.out, /link\.md|outside/);
+});
+
+test('project: every refusal is one line, exit 1, and lists the projects (007 FR-007, contract section 3)', () => {
+  const { dir, write } = projectRepo();
+  write('.specify/projects/empty/notes.txt', '');
+  fs.rmSync(path.join(dir, '.specify/projects/empty/notes.txt'));
+  const list = 'billing, demo, empty';
+  const cases = [
+    [[], refusal('give exactly one project name.', list)],
+    [['billing', 'extra'], refusal('give exactly one project name.', list)],
+    [['..'], refusal('.. is not a project name: letters, digits, - and _ only.', list)],
+    [['a/b'], refusal('a/b is not a project name: letters, digits, - and _ only.', list)],
+    [['.hidden'], refusal('.hidden is not a project name: letters, digits, - and _ only.', list)],
+    [['x'.repeat(65)], refusal(`${'x'.repeat(65)} is not a project name: letters, digits, - and _ only.`, list)],
+    [['nope'], refusal('no project nope in .specify/projects/; create it with --init.', list)],
+    [['Billing'], refusal('no project Billing in .specify/projects/; create it with --init.', list)],
+    [['empty'], refusal('project empty is empty: write its rules in .specify/projects/empty/instructions.md or add a knowledge file.', list)],
+  ];
+  for (const [args, want] of cases) {
+    const r = project(dir, ...args);
+    assert.equal(r.status, 1, `exit for ${JSON.stringify(args)}`);
+    assert.equal(r.out, want, `line for ${JSON.stringify(args)}`);
+  }
+});
+
+test('project: a directory named instructions.md is refused, not thrown', () => {
+  const { dir, write } = repo();
+  write('.specify/projects/p/instructions.md/x.md', 'x');
+  const r = project(dir, 'p');
+  assert.equal(r.status, 1);
+  assert.equal(r.out, refusal('.specify/projects/p/instructions.md is not a file.', 'p'));
+});
+
+test('project: 8,192 bytes of instructions and 100 knowledge files pass; one more of either is refused (007 FR-010)', () => {
+  const { dir, write } = repo();
+  write('.specify/projects/big/instructions.md', 'i'.repeat(8192));
+  for (let n = 0; n < 100; n++) write(`.specify/projects/big/k${String(n).padStart(3, '0')}.md`, 'k');
+  assert.equal(project(dir, 'big').status, 0);
+  write('.specify/projects/big/instructions.md', 'i'.repeat(8193));
+  assert.equal(project(dir, 'big').out, refusal('the instructions of big are 8193 bytes; the limit is 8192.', 'big'));
+  write('.specify/projects/big/instructions.md', 'ok');
+  write('.specify/projects/big/sub/k100.md', 'k');
+  assert.equal(project(dir, 'big').out, refusal('project big has 101 knowledge files; the limit is 100.', 'big'));
+});
+
+test('project: completes with stdin held open, and writes no state (007 FR-013)', async () => {
+  const { dir } = projectRepo();
+  const { spawn } = await import('node:child_process');
+  const child = spawn('node', [HOOK, 'project', 'billing'], { cwd: dir, stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const status = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { child.kill(); reject(new Error('project mode waited on stdin')); }, 10_000);
+    child.on('exit', (code) => { clearTimeout(timer); resolve(code); });
+  });
+  assert.equal(status, 0);
+  assert.match(out, /^Project billing:/);
+  assert.equal(fs.existsSync(stateDir(dir)), false, 'no state directory');
+});
+
+test('project: outside a Spec Kit repo it refuses instead of exiting silently (audit M2)', () => {
+  const plain = repo({ speckit: false });
+  const want = 'speckit-team: project: no .specify/ in this repository.\n';
+  assert.deepEqual([project(plain.dir, 'x').status, project(plain.dir, 'x').out], [1, want], 'git repo without .specify/');
+  const nogit = fs.mkdtempSync(path.join(os.tmpdir(), 'skteam-nogit-'));
+  fs.mkdirSync(path.join(nogit, '.specify', 'projects', 'x'), { recursive: true });
+  fs.writeFileSync(path.join(nogit, '.specify', 'projects', 'x', 'a.md'), 'a');
+  assert.deepEqual([project(nogit, 'x').status, project(nogit, 'x').out], [1, want], '.specify/ but no git repository');
+  const outer = repo();
+  const inner = path.join(outer.dir, 'nested');
+  fs.mkdirSync(inner);
+  execFileSync('git', ['init', '-q'], { cwd: inner });
+  assert.deepEqual([project(inner, 'x').status, project(inner, 'x').out], [1, want], 'nested repo whose top level has no .specify/');
+});
+
+test('project --init: creates the starter file only, which counts as no instructions until edited (007 FR-015)', () => {
+  const { dir } = repo();
+  const r = project(dir, 'billing', '--init');
+  assert.equal(r.status, 0, r.err);
+  assert.equal(r.out, "Created .specify/projects/billing/instructions.md: write the project's rules there, add reference files beside it, commit, and run the request again.\n");
+  assert.deepEqual(fs.readdirSync(path.join(dir, '.specify/projects/billing')), ['instructions.md']);
+  assert.equal(fs.readFileSync(path.join(dir, '.specify/projects/billing/instructions.md'), 'utf8'), STARTER('billing'));
+  const empty = refusal('project billing is empty: write its rules in .specify/projects/billing/instructions.md or add a knowledge file.', 'billing');
+  assert.equal(project(dir, 'billing').out, empty, 'unchanged starter');
+  fs.writeFileSync(path.join(dir, '.specify/projects/billing/instructions.md'), `${STARTER('billing').replace(/\n/g, '\r\n')}  `);
+  assert.equal(project(dir, 'billing').out, empty, 'starter with CRLF and trailing spaces');
+  fs.writeFileSync(path.join(dir, '.specify/projects/billing/instructions.md'), `${STARTER('billing')}Money is never a float.\n`);
+  assert.equal(project(dir, 'billing').status, 0, 'one edited line');
+});
+
+test('project --init: refuses an existing project, a bad name and outside a Spec Kit repo', () => {
+  const { dir } = projectRepo();
+  const before = fs.readFileSync(path.join(dir, '.specify/projects/billing/instructions.md'), 'utf8');
+  assert.equal(project(dir, 'billing', '--init').out, refusal('.specify/projects/billing already exists.'));
+  assert.equal(fs.readFileSync(path.join(dir, '.specify/projects/billing/instructions.md'), 'utf8'), before, 'untouched');
+  assert.equal(project(dir, '../x', '--init').out, refusal('../x is not a project name: letters, digits, - and _ only.'));
+  assert.equal(project(dir, '--init').out, refusal('give exactly one project name.'));
+  const plain = repo({ speckit: false });
+  assert.equal(project(plain.dir, 'x', '--init').status, 1);
+  assert.equal(fs.existsSync(path.join(plain.dir, '.specify')), false);
+});

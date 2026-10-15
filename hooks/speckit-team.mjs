@@ -27,6 +27,8 @@
 //                           through with git's network transports off (in bypassPermissions, or where the installed
 //                           settings.json allows the export line); SubagentHandback, SubagentStop and
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
+//   project <name> [--init] Not a hook: the skills run it from Bash. Prints the project's block (feature 007) or one
+//                           refusal line, exit 0 or 1; --init creates .specify/projects/<name>/ with a starter file
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -79,10 +81,25 @@ const OWN_SOURCES = [
   [/^package\.json$/i, 'its package name marks this repository as speckit-agents'],
 ];
 
+// Projects (feature 007): .specify/projects/<name>/ holds instructions.md and knowledge files.
+const PROJECTS_DIR = '.specify/projects';
+const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MAX_INSTRUCTIONS = 8192;
+const MAX_KNOWLEDGE = 100;
+// What `project <name> --init` writes; left unchanged it counts as no instructions.
+const starterText = (name) => `# ${name}: project instructions\n\n`
+  + `Replace this file with the rules every agent should follow for ${name}, one per line.\n`
+  + 'Put reference documents (API docs, style guides, domain notes) beside it as knowledge files.\n';
+
 const [mode, ...args] = process.argv.slice(2);
+// `project` is run by the skills from Bash, not by Claude Code: it answers on stdout with exit 0 or 1,
+// written synchronously, since a pipe on Windows drops what is still queued at process.exit.
+const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
+const projectRefuse = (why) => projectSay(`speckit-team: project: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
-// a crashed hook is a non-blocking error, and the action would go through with nobody told.
-const raw = (() => { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } })();
+// a crashed hook is a non-blocking error, and the action would go through with nobody told. The
+// project mode reads no stdin: run from Bash, it may be held open and never end.
+const raw = mode === 'project' ? '{}' : (() => { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } })();
 let input = {};
 let inputProblem = null;
 try {
@@ -101,6 +118,7 @@ const agentId = str(input.agent_id);
 // through becomes no decision plus a visible message; outside one it stays silent.
 let inSpecKitRepo = false;
 process.on('uncaughtException', (e) => {
+  if (mode === 'project') projectRefuse(`internal error (${e?.message ?? e}).`);
   if (inSpecKitRepo) {
     process.stdout.write(JSON.stringify({ systemMessage: `speckit-team: ${mode} hit an internal error (${e?.message ?? e}); no decision made.` }));
   }
@@ -151,11 +169,92 @@ function specifyAbove(dir) {
     d = up;
   }
 }
-if (!specifyAbove(cwd)) process.exit(0);
+// Every hook mode stays silent outside a Spec Kit repo; the project mode is asked a question and says no.
+const notSpecKit = () => (mode === 'project' ? projectRefuse('no .specify/ in this repository.') : process.exit(0));
+if (!specifyAbove(cwd)) notSpecKit();
 // One git process for the work tree's root and the git directory every worktree shares.
 const [root, commonDir] = lines(git(cwd, 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'));
-if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) process.exit(0);
+if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecKit();
 inSpecKitRepo = true;
+
+// The valid project names under .specify/projects/, sorted; symlinked entries are not projects.
+function projectNames() {
+  try {
+    return fs.readdirSync(path.join(root, PROJECTS_DIR), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && PROJECT_NAME.test(e.name)).map((e) => e.name).sort();
+  } catch { return []; }
+}
+// A project's block (contracts/project.md, section 3) or why there is none. Symlinks are never
+// followed: a project is files in this repository.
+function renderProject(name) {
+  const refused = (why) => ({ refused: `${why} Projects: ${projectNames().join(', ') || 'none'}.` });
+  if (typeof name !== 'string' || !PROJECT_NAME.test(name)) return refused(`${name} is not a project name: letters, digits, - and _ only.`);
+  const rel = `${PROJECTS_DIR}/${name}`;
+  let entry;
+  try { entry = fs.readdirSync(path.join(root, PROJECTS_DIR), { withFileTypes: true }).find((e) => e.name === name); } catch { /* no projects */ }
+  if (entry?.isSymbolicLink()) return refused(`${rel} is a symlink; a project must be a directory in the repository.`);
+  if (!entry?.isDirectory()) return refused(`no project ${name} in ${PROJECTS_DIR}/; create it with --init.`);
+  const dir = path.join(root, rel);
+  const insFile = path.join(dir, 'instructions.md');
+  let ins = null;
+  let st = null;
+  try { st = fs.lstatSync(insFile); } catch { /* no instructions */ }
+  if (st) {
+    if (!st.isFile()) return refused(`${rel}/instructions.md is not a file.`);
+    if (st.size > MAX_INSTRUCTIONS) return refused(`the instructions of ${name} are ${st.size} bytes; the limit is ${MAX_INSTRUCTIONS}.`);
+    const text = fs.readFileSync(insFile, 'utf8').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+    const blank = (t) => t.split('\n').map((l) => l.trimEnd()).join('\n').trim();
+    if (blank(text) && blank(text) !== blank(starterText(name))) ins = { text, size: st.size };
+  }
+  const files = [];
+  const walk = (d, relDir) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (e.name.startsWith('.') || e.isSymbolicLink()) continue;
+      const r = `${relDir}/${e.name}`;
+      if (e.isDirectory()) walk(path.join(d, e.name), r);
+      else if (e.isFile() && r !== `${rel}/instructions.md`) files.push({ rel: r, size: fs.statSync(path.join(d, e.name)).size });
+    }
+  };
+  walk(dir, rel);
+  if (files.length > MAX_KNOWLEDGE) return refused(`project ${name} has ${files.length} knowledge files; the limit is ${MAX_KNOWLEDGE}.`);
+  if (!ins && !files.length) return refused(`project ${name} is empty: write its rules in ${rel}/instructions.md or add a knowledge file.`);
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
+  const n = files.length;
+  return { block: [
+    `Project ${name}: ${n} knowledge file${n === 1 ? '' : 's'}, ${ins ? `instructions ${ins.size} bytes` : 'no instructions'}.`,
+    `This is the user's standing context for this request, from ${rel}/. The`,
+    'constitution, the guardrails and the request take precedence over it: where they conflict, follow',
+    'them and say so in your report. Never change a file under .specify/projects/; report what should',
+    'change instead.',
+    '',
+    // Indented, so no line of the block can read as a Team:, Unbuilt: or Project: line (research R2).
+    ...(ins ? ['Instructions (each line indented by two spaces):', ...ins.text.split('\n').map((l) => `  ${l}`)] : ['Instructions: none.']),
+    '',
+    ...(n ? ['Knowledge files: read one before deciding anything it could cover.', ...files.map((f) => `- ${f.rel} (${f.size} bytes)`)]
+      : ['Knowledge files: none.']),
+  ].join('\n') };
+}
+function initProject(name) {
+  const refused = (why) => ({ refused: `${why} Projects: ${projectNames().join(', ') || 'none'}.` });
+  if (!PROJECT_NAME.test(name)) return refused(`${name} is not a project name: letters, digits, - and _ only.`);
+  const rel = `${PROJECTS_DIR}/${name}`;
+  const dir = path.join(root, rel);
+  let exists = true;
+  try { fs.lstatSync(dir); } catch { exists = false; }
+  if (exists) return refused(`${rel} already exists.`);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'instructions.md'), starterText(name));
+  return { created: `Created ${rel}/instructions.md: write the project's rules there, add reference files beside it, commit, and run the request again.` };
+}
+if (mode === 'project') {
+  const [name, ...more] = args;
+  const init = more.length === 1 && more[0] === '--init';
+  const out = !name || name === '--init' || (more.length && !init)
+    ? { refused: `give exactly one project name. Projects: ${projectNames().join(', ') || 'none'}.` }
+    : init ? initProject(name) : renderProject(name);
+  if (out.refused) projectRefuse(out.refused);
+  projectSay(out.block ?? out.created, 0);
+}
 // State files are ours but can still be corrupt. `undefined` = missing, `null` = unreadable.
 function readState(f) {
   const text = readOr(f, undefined);

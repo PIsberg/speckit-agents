@@ -25,7 +25,7 @@ project; compare stdout and exit codes with contracts/project.md section 3.
 
 ### Slice 1: the CLI mode
 
-- [ ] T001 Test in `test/hook.test.mjs` (helpers `repo`, `stateDir`; spawn `node HOOK project ...`
+- [X] T001 Test in `test/hook.test.mjs` (helpers `repo`, `stateDir`; spawn `node HOOK project ...`
   with `cwd` in the repo) contract section 3: success output for a project with `instructions.md`
   and two knowledge files, one in a subdirectory (header line, precedence sentence, every
   instruction line indented by two spaces including an empty one, files sorted with byte sizes);
@@ -42,7 +42,7 @@ project; compare stdout and exit codes with contracts/project.md section 3.
   Contract section 3a (FR-015): `--init` creates exactly the starter file and prints its line;
   refuses an existing project, a bad name and outside a Spec Kit repo; the starter left unchanged
   (also with CRLF line endings) makes the project empty, and one edited line makes it valid.
-- [ ] T002 Implement in `hooks/speckit-team.mjs`: skip the stdin read when `mode === 'project'`
+- [X] T002 Implement in `hooks/speckit-team.mjs`: skip the stdin read when `mode === 'project'`
   (line 85); at both silent exits (the `specifyAbove` exit and the no-git-root or no-`.specify/` exit
   after `rev-parse`), print the not-a-Spec-Kit-repo refusal and exit 1 for this mode; `--init`
   per contract section 3a;
