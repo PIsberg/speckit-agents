@@ -72,6 +72,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - [How it works](#how-it-works)
   - [The pipeline skill](#the-pipeline-skill)
   - [The fast track](#the-fast-track)
+  - [Project knowledge](#project-knowledge)
   - [Guardrails](#guardrails)
   - [The audit gate](#the-audit-gate)
   - [The retry limit](#the-retry-limit)
@@ -145,7 +146,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `hooks/speckit-team.mjs` | every guardrail |
-| `settings.json` | three hook entries merged in, and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
+| `settings.json` | three hook entries merged in (`PreToolUse`, `UserPromptExpansion`, and `SubagentStart` for the seven roles to record start and inject project context), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
 
 #### Installer options
 
@@ -209,6 +210,8 @@ Then, in Claude Code:
 /speckit-team Let users export their reading list as CSV
 ```
 
+To ground the run in standing project rules, pass `--project <name>`: `/speckit-team --project billing Let users export their reading list as CSV` activates `.specify/projects/billing/` ([Project knowledge](#project-knowledge)).
+
 To run only some of the roles, name them: `/speckit-team --team test-writer,implementer add a hello.txt
 that says hello` skips the team question ([Choosing the team](#choosing-the-team)). To run no agent
 at all, `/speckit-team --team noagents <request>` has the session run Spec Kit's own commands
@@ -242,6 +245,7 @@ For a typo, a config value or a small bug fix, skip the pipeline:
 
 ```
 /speckit-patch Fix the typo "recieve" in README.md
+/speckit-patch --project billing Fix rounding on tax calculation
 /speckit-triage Add a --json flag to the export command
 ```
 
@@ -737,6 +741,58 @@ run.
 The hooks guard against an agent's mistakes and drift, not against deliberate evasion through the
 shell. What that leaves open is in [Known limits](#known-limits).
 
+### Project knowledge
+
+Standing project context lives under `.specify/projects/<name>/`:
+
+```
+.specify/projects/<name>/
+├── instructions.md       # project rules and instructions (markdown, at most 8,192 bytes)
+└── knowledge/            # reference documents (docs, schemas, API contracts, at most 100 files)
+```
+
+Activate it for a run with `--project <name>`:
+
+```sh
+/speckit-team --project billing Add invoice payment webhook
+/speckit-patch --project billing Fix currency formatting in PDF export
+```
+
+`--project` and `--team` can be passed in either order before the request text (`--project billing --team test-writer,implementer` or `--team test-writer,implementer --project billing`), each at most once.
+
+#### What an agent gets
+
+Before anything is launched, the skill checks the project with `node hooks/speckit-team.mjs project <name>`. If valid, the hook's `SubagentStart` event injects the project block into the agent's prompt as `additionalContext` for all seven roles (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `spec-gatekeeper`, and `patcher`).
+
+The injected block contains:
+1. The project header with the name, instruction byte size, and sorted list of knowledge files with byte sizes.
+2. The full text of `instructions.md`, indented.
+
+Agents read knowledge files on demand from `.specify/projects/<name>/`. Launch prompts carry only a `Project: <name>` line (the hook twin pattern) and never paste the block directly. In a `--team noagents` run, the main session reads the project block from the `project` CLI mode and follows it itself.
+
+#### Limits and precedence
+
+- **Name pattern**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` (letters, digits, `-` and `_` only, at most 64 characters).
+- **Size limits**: `instructions.md` may not exceed 8,192 bytes; at most 100 knowledge files per project. One byte or file more is refused before any launch.
+- **Precedence**: Project instructions are reference knowledge. They cannot override or contradict repository rules (`CLAUDE.md`, the constitution, or guardrail hooks). They cannot grant write access outside an agent's assigned lane or bypass the audit gate.
+- **Protected path**: `.specify/projects/` is protected and read-only for all agents. Every writing agent (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `patcher`) is denied from creating, editing or deleting files under `.specify/projects/`.
+
+#### Initialising a project
+
+To create a new project skeleton:
+
+```sh
+node hooks/speckit-team.mjs project <name> --init
+```
+
+This creates `.specify/projects/<name>/instructions.md` with a template. If you run `/speckit-team --project <name>` for a project that does not exist, the skill asks whether to create it, runs `--init`, and stops so you can edit the instructions before launching agents.
+
+#### What was verified
+
+- **Verified live (2026-10-15, Claude Code 2.1.296, [Live results](docs/live-results.md#project-knowledge)):** `/speckit-team --project demo` initializing the project via `--init` when missing, injecting project context into the agent start, `/speckit-patch --project demo` respecting the budget, and refusal of invalid project names.
+- **Verified by unit and end-to-end tests:** CLI output, limits, sorting and formatting in [`test/hook.test.mjs`](test/hook.test.mjs); fast track budget independence in [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs); skill argument parsing, prompt generation and refusal checks in [`test/install.test.mjs`](test/install.test.mjs); live context injection in [`test/e2e.test.mjs`](test/e2e.test.mjs).
+- **Not verified at all:** multi-agent interactions under extreme project instructions that actively try to socially engineer subagents to bypass lane checks.
+
 ### Guardrails
 
 Every guardrail is a mode of [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs). In a repo without
@@ -745,12 +801,13 @@ nothing elsewhere. It knows that before starting git: no folder from the working
 `.specify/`, so one process ends at 51 ms on Windows, of which 42 ms is Node starting at all. In a
 Spec Kit repo one `git rev-parse` gives both the work tree and the shared git directory; a gate call
 there takes 68 ms. Both were 14 to 15 ms slower with two git processes before (30 runs each,
-alternating old and new, 2026-10-11).
+alternating old and new, 2026-10-11). A `start` call takes 48 ms outside a Spec Kit repo, 73 ms inside
+without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 76 ms and 77 ms, 2026-10-15).
 
 | Mode | Wired to | What it stops |
 |---|---|---|
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
-| `scope tests` | test-writer: same | writing production code |
+| `scope tests` | test-writer: same | writing production code, or Spec Kit and project paths under `.specify/` |
 | `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
 | `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, and no accepted record unless the run is within budget |
@@ -763,7 +820,8 @@ alternating old and new, 2026-10-11).
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
-| `start` | `settings.json`: `SubagentStart` of `product-owner|architect` | nothing: it records where the agent starts, for its Stop's `lane only`, and never decides |
+| `start` | `settings.json`: `SubagentStart` of the seven roles | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all seven roles when a project is active (007); never decides |
+| `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
 
@@ -1183,17 +1241,17 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 283 tests:
+`npm test` runs 308 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 80 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 61 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 81 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 100 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 62 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 84 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 37 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 38 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1241,7 +1299,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 28
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 29
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1261,10 +1319,10 @@ need no login and cost nothing.
   ([#72](https://github.com/PIsberg/speckit-agents/issues/72)) and once in `default` with the
   installer's allow rule and one for the script, where it ran with no prompt
   ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 28
-  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 30 failures, none of the 28 passed). Setting
+  fire lets the action through. With the installed hook replaced by one that only exits, all 29
+  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 31 failures, none of the 29 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  30 of the 37 tests fail (the 28 scripted ones and the two blocking no-model cases); the other seven
+  31 of the 38 tests fail (the 29 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1480,6 +1538,26 @@ message names, then let it finish.
 You already have an agent with one of these seven names. Rename yours, or pass `--force` to back it
 up and replace it.
 
+### "no project <name> in .specify/projects/; create it with --init."
+
+The project directory does not exist. Run `node hooks/speckit-team.mjs project <name> --init` to create it, or answer yes when `/speckit-team --project <name>` asks whether to create it.
+
+### "<name> is not a valid project name: letters, digits, - and _ only"
+
+The name given to `--project` contains invalid characters or exceeds 64 characters. Project names must match `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`.
+
+### "instructions.md in .specify/projects/<name>/ exceeds 8,192 bytes"
+
+The project's `instructions.md` file exceeds the 8,192-byte limit. Shorten the instructions or split reference information into knowledge files under `.specify/projects/<name>/`.
+
+### ".specify/projects/<name>/ holds more than 100 knowledge files"
+
+A project may hold at most 100 knowledge files. Consolidate documents or remove unused ones.
+
+### Permission prompt on `node "{{HOOK}}" project '<name>'`
+
+In an interactive session, Claude Code may prompt to confirm running the hook to check project context. Choose Allow to let the skill inspect the project.
+
 ## Known limits
 
 - **Hooks fail open.** If Node is missing or the script cannot start, the action is allowed. The
@@ -1584,6 +1662,9 @@ up and replace it.
 - **Some fast-track rules are prompt text, not hook.** See
   [What is prompt text](#what-is-prompt-text-and-what-was-verified).
 - **A generated file git does not ignore counts as production.**
+- **Project knowledge files are indexed, not inlined.** Only `instructions.md` has its text injected into agent starting context. Knowledge files under `.specify/projects/<name>/` are listed in the block with path and size so agents can read them on demand with their read tools; they are not dumped into prompts up front.
+- **Project size limits are hard caps.** To prevent context bloat, `instructions.md` is strictly limited to 8,192 bytes and projects to 100 knowledge files.
+- **One active project per command.** Passing multiple `--project` flags or invalid names is refused before any launch.
 
 ## Uninstall
 

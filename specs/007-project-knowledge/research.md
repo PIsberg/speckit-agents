@@ -56,3 +56,11 @@ pinned by a test), or decided (an Open Decision in plan.md).
   `extensions` and its JSON files. Nothing in this repo's `.specify/` suggests it removes unknown
   directories. Not run against an upgrade. Recorded as an assumption in quickstart.md (L4 checks it
   once by hand).
+
+## R6. What does the `start` hook path cost?
+
+- **Evidence (run)**: 20 sample runs per scenario on Windows (Node v26 / Windows 11, 2026-10-15):
+  - Outside a Spec Kit repo: mean 47.7 ms, p90 51.5 ms.
+  - Inside a Spec Kit repo (no project record): mean 73.0 ms, p90 76.2 ms.
+  - Inside a Spec Kit repo (with project record active): mean 74.3 ms, p90 77.4 ms.
+- **Budget**: well within the 500 ms constitution III gate.

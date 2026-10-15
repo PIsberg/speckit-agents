@@ -12,12 +12,16 @@
 //                                    the team's agents run in the foreground; later reruns keep it
 //   node install.mjs --fork          remove what --no-fork wrote
 //
+// What gets installed: seven subagents, three skills, one hook script, and settings.json gates
+// (PreToolUse, UserPromptExpansion, and SubagentStart for the seven roles to record start and inject project context).
+//
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
 //   /speckit-team <request>                   the pipeline; it asks which roles take part
+//   /speckit-team --project <name> <request>  runs with the standing context from .specify/projects/<name>/
 //   /speckit-team --team <roles> <request>    only the roles you name, comma-separated, from product-owner,
 //                                             architect, spec-auditor, test-writer, implementer, spec-gatekeeper
 //   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
-//   /speckit-patch <change>                   the fast track for a small change
+//   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,8 +42,9 @@ const SETTINGS_GATES = [
   // /speckit-team starts a request; typed with --team noagents, it records that no agent runs.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement|speckit-team' },
   // product-owner and architect have no gate to record where they started, so this does it once, as
-  // each starts, for the lane check at their Stop (#88).
-  { event: 'SubagentStart', matcher: 'product-owner|architect', mode: 'start' },
+  // each starts, for the lane check at their Stop (#88). For all seven roles it also injects the
+  // session's project block as the agent's starting context, when the launch named one (007).
+  { event: 'SubagentStart', matcher: AGENTS.join('|'), mode: 'start' },
 ];
 
 const argv = process.argv.slice(2);

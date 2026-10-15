@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-patch
 description: The fast track for a small change: one patcher run, then a commit and a pull request on a patch branch.
-argument-hint: "<small change>"
+argument-hint: "[--project <name>] <small change>"
 disable-model-invocation: true
 ---
 
@@ -10,6 +10,8 @@ Make this small change through the fast track: $ARGUMENTS
 
 The main session launches `patcher` once, checks its work and commits it. `patcher` itself never
 commits. Hooks and limits: the README.md of the speckit-agents repo.
+
+`--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before launching: say why and list available projects by running `node "{{HOOK}}" project`. Check `<name>` against the project name pattern (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, letters, digits, `-` and `_` only, at most 64 characters). If invalid, tell the user in one line that `<name>` is not a valid project name and stop with nothing launched.
 
 ## 1. Preconditions
 - `.specify/` exists. If not, stop: the fast track's hooks are inactive without it.
@@ -22,6 +24,10 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
   launches back. Then go on.
 
 ## 2. Before launching
+- If a project is active (`--project <name>` was given): in one Bash call, run `node "{{HOOK}}" project '<name>'` (single-quoted). If it exits non-zero:
+  - If the output contains `no project <name> in .specify/projects/; create it with --init.`: ask the user once with AskUserQuestion whether to create it (`Create project <name>?`). On yes, run `node "{{HOOK}}" project '<name>' --init`, show its output line, and stop with nothing launched. On no, stop with nothing launched.
+  - Otherwise, show what it printed and stop on exit 1 before creating the branch.
+  If it exits 0, tell the user in one line the active project from the header line before launching.
 - Note `git rev-parse HEAD` (the start), `git hash-object -- "{{HOOK}}"` (the installed hook's
   hash) and `git for-each-ref --format='%(refname) %(objectname)' refs/remotes` (the remote-tracking
   refs), in one Bash call. Your notes are out of `patcher`'s reach; the hook's own start record is not.
@@ -29,8 +35,7 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
   not on `main` or `master`, say what it is.
 
 ## 3. Launch
-Launch `patcher` once, in the foreground (`run_in_background: false`), with the change as given and
-nothing else.
+Launch `patcher` once, in the foreground (`run_in_background: false`), with the change as given and, when a project is active, one `Project: <name>` line (for example, `Project: billing`) and nothing else.
 
 ## 4. Commit
 On `DONE` with the report stating the existing tests passed, commit only when every check holds:
@@ -61,7 +66,7 @@ is an installed team file (an agent, hook, skill or settings file in the config 
 during the run, which the hook's message names.
 
 ## 5. Report
-Relay the outcome in at most 5 lines: what changed, the size against the budget, the test outcome,
+Relay the outcome in at most 5 lines: what changed, the active project (if one was active), the size against the budget, the test outcome,
 the PR link.
 - `FAILED`: say which test failed or that tests were not run; no commit, no PR.
 - `DONE` with an empty `files`: say that `patcher` changed no file; no commit, no PR.

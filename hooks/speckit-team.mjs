@@ -86,6 +86,12 @@ const PROJECTS_DIR = '.specify/projects';
 const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const MAX_INSTRUCTIONS = 8192;
 const MAX_KNOWLEDGE = 100;
+// Every line break a /m regex knows: CR, LF, U+2028 and U+2029. Built at run time, since a U+2028 in a regex
+// literal is itself a line break in the source.
+const LINE_BREAKS = new RegExp(`\r\n|[\r${String.fromCharCode(0x2028, 0x2029)}]`, 'g');
+// A file name that could start a line of its own in the block: a control character or a line separator.
+const NEWLINE = String.fromCharCode(10);
+const UNSAFE_NAME = new RegExp(`[\x00-\x1f\x7f${String.fromCharCode(0x2028, 0x2029)}]`);
 // What `project <name> --init` writes; left unchanged it counts as no instructions.
 const starterText = (name) => `# ${name}: project instructions\n\n`
   + `Replace this file with the rules every agent should follow for ${name}, one per line.\n`
@@ -202,14 +208,17 @@ function renderProject(name) {
   if (st) {
     if (!st.isFile()) return refused(`${rel}/instructions.md is not a file.`);
     if (st.size > MAX_INSTRUCTIONS) return refused(`the instructions of ${name} are ${st.size} bytes; the limit is ${MAX_INSTRUCTIONS}.`);
-    const text = fs.readFileSync(insFile, 'utf8').replace(/\r\n/g, '\n').replace(/\s+$/, '');
+    // Every line break a /m regex knows, so that no indented line hides a second one (\r, U+2028, U+2029).
+    const text = fs.readFileSync(insFile, 'utf8').replace(LINE_BREAKS, NEWLINE).replace(/\s+$/, '');
     const blank = (t) => t.split('\n').map((l) => l.trimEnd()).join('\n').trim();
     if (blank(text) && blank(text) !== blank(starterText(name))) ins = { text, size: st.size };
   }
   const files = [];
   const walk = (d, relDir) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-      if (e.name.startsWith('.') || e.isSymbolicLink()) continue;
+      // A name with a control character or a line separator could start a line of its own in the block.
+      // eslint-disable-next-line no-control-regex
+      if (e.name.startsWith('.') || e.isSymbolicLink() || UNSAFE_NAME.test(e.name)) continue;
       const r = `${relDir}/${e.name}`;
       if (e.isDirectory()) walk(path.join(d, e.name), r);
       else if (e.isFile() && r !== `${rel}/instructions.md`) files.push({ rel: r, size: fs.statSync(path.join(d, e.name)).size });
@@ -341,7 +350,7 @@ function testsAt(rev) {
   }
   return testsAtMemo.get(rev);
 }
-const inLane = (rule, rel) => (rule === 'tests' ? isTest(rel) || TASKS_FILE.test(rel) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
+const inLane = (rule, rel) => (rule === 'tests' ? !SPECKIT_CONFIG.test(rel) && (isTest(rel) || TASKS_FILE.test(rel)) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 // A prefix ending in / is a directory; anything else must match the whole path.
 const inPrefixes = (prefixes, rel) => prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)));
 const AGENT_ID = /^[\w-]{1,128}$/;
@@ -380,6 +389,9 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
 const SESSION_ID = /^[\w-]{1,128}$/;
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
+// The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
+const projectFile = (sessionId) => path.join(stateDir, 'project', `${sessionId}.json`);
+const parseProject = (prompt) => /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})[ \t]*$/m.exec(prompt)?.[1] ?? null;
 // null: not a string or no Team line; { bad }: the first word that is no role ('' for none).
 function parseTeam(prompt) {
   if (typeof prompt !== 'string') return null;
@@ -392,9 +404,11 @@ function parseTeam(prompt) {
   return { roles: TEAM_ROLES.filter((r) => words.includes(r)) };
 }
 // The roles a typed `/speckit-team` names (contract section 1): the words after a leading `--team` up
-// to and including the first that does not end in a comma, lower case. null without `--team`.
+// to and including the first that does not end in a comma, lower case. null without `--team`. One
+// leading `--project <name>` pair is skipped first (007 contract section 2), so the flags go in either order.
 function typedRoles(args) {
-  const words = args.trim().split(/\s+/);
+  let words = args.trim().split(/\s+/);
+  if (words[0] === '--project') words = words.slice(2);
   if (words[0] !== '--team') return null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
@@ -496,6 +510,9 @@ if (mode === 'scope') {
       + 'Tests belong to test-writer and production code to implementer: report what should change instead.');
   }
   if (rule === 'tests' && !inLane('tests', rel)) {
+    if (SPECKIT_CONFIG.test(rel)) {
+      deny(`${who} may not write ${rel}: .specify/ holds Spec Kit's config or a project's files, not a test. Report what should change instead.`);
+    }
     deny(`${who} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
       + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
   }
@@ -520,6 +537,7 @@ if (mode === 'gate') {
     const id = str(input.session_id);
     if (!id || !SESSION_ID.test(id)) process.exit(0);
     fs.rmSync(teamFile(id), { force: true });
+    fs.rmSync(projectFile(id), { force: true });
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
     writeJson(teamFile(id), { session_id: id, roles: [], noagents: true, at: new Date().toISOString() });
@@ -529,11 +547,24 @@ if (mode === 'gate') {
   // Reporting back is not work. Gating SubagentHandback leaves a blocked agent unable to say so.
   if (event === 'PreToolUse' && input.tool_name === 'SubagentHandback') process.exit(0);
   if (event === 'PreToolUse' && input.tool_name === 'Agent') {
-    // Never a decision: only the team record changes, and only at the main session's launch of a team
-    // role. A subagent's Agent call (#102) and a launch of any other agent (#103) change nothing.
+    // Never a decision: only the team and project records change, and only at the main session's launch
+    // of a team role (or patcher, for the project). A subagent's Agent call (#102) and a launch of any
+    // other agent (#103) change nothing.
     const id = str(input.session_id);
     const role = str(input.tool_input?.subagent_type)?.toLowerCase();
-    if (agentId || !id || !SESSION_ID.test(id) || !TEAM_ROLES.includes(role) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
+    if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
+    if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
+    // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
+    let projectNote = null;
+    const named = parseProject(input.tool_input.prompt);
+    fs.rmSync(projectFile(id), { force: true });
+    if (named) {
+      const r = renderProject(named);
+      if (r.refused) projectNote = `speckit-team: the Project line names ${named}, which is not a project (${r.refused}); agents start without project context`;
+      else writeJson(projectFile(id), { session_id: id, name: named, at: new Date().toISOString() });
+    }
+    const say = (m) => emit({ systemMessage: [projectNote, m].filter(Boolean).join('\n') });
+    if (role === 'patcher') { if (projectNote) say(null); process.exit(0); }
     const team = parseTeam(input.tool_input.prompt);
     // No Team line, or one naming a non-role: the full team (FR-002).
     const roles = team && !('bad' in team) ? team.roles : TEAM_ROLES;
@@ -541,12 +572,13 @@ if (mode === 'gate') {
     // Within a request the team never loses spec-auditor once it has it (#101); a typed /speckit-team
     // starts the next request.
     if (was?.roles.includes('spec-auditor') && !roles.includes('spec-auditor')) {
-      emit({ systemMessage: "speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team." });
+      say("speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team.");
     }
     writeJson(teamFile(id), { session_id: id, roles, at: new Date().toISOString() });
-    if (team && 'bad' in team) emit({ systemMessage: `speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply` });
-    if (team) emit({ systemMessage: `speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}` });
-    if (was?.noagents) emit({ systemMessage: "speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here" });
+    if (team && 'bad' in team) say(`speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply`);
+    if (team) say(`speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}`);
+    if (was?.noagents) say("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
+    if (projectNote) say(null);
     process.exit(0);
   }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
@@ -702,11 +734,22 @@ if (mode === 'ends') {
 
 // product-owner and architect have no gate to record their start on a first tool call, so the settings.json
 // entry records it here, at SubagentStart, for the lane check at their Stop (#88). Never a decision.
+// The same entry starts every team agent with its session's project, if the launch named one (feature
+// 007): the block goes to the agent as additionalContext. Never a decision.
 if (mode === 'start') {
-  if (!agentId || !AGENT_ID.test(agentId) || fs.existsSync(baseFile(agentId))) process.exit(0);
-  const sha = git(root, 'rev-parse', 'HEAD');
-  if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
-  process.exit(0);
+  const type = str(input.agent_type);
+  if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentId))) {
+    const sha = git(root, 'rev-parse', 'HEAD');
+    if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
+  }
+  const id = str(input.session_id);
+  if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
+  const rec = readState(projectFile(id));
+  if (rec === undefined) process.exit(0);
+  if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
+  const r = renderProject(rec.name);
+  if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });
+  emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: r.block } });
 }
 
 if (mode === 'lane') {

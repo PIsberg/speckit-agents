@@ -18,7 +18,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `agents/*.md`: the seven subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`.
+  `ends`, `start`, `lane`, `patch`, `project`.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
 - `install.mjs`: the installer; `setup.sh` and `setup.ps1` only check for Node and call it.
@@ -35,7 +35,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 283 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 308 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
@@ -66,6 +66,10 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   it with `TEAM_ROLES` (the six roles without `patcher`), spec-gatekeeper reports an absent role's check
   as skipped. `Unbuilt:` line after it: the task IDs of an absent test-writer or implementer, which
   spec-gatekeeper's open-task check skips. Both halves are held together by `test/install.test.mjs`.
+- `Project:` line of every launch prompt in a run with an active project: the skills (`speckit-team`
+  and `speckit-patch`) write it, the hook reads it with `parseProject` at `Agent` PreToolUse, and
+  `SubagentStart` injects the block as `additionalContext`. Both halves are held together by
+  `test/install.test.mjs`.
 - `--team noagents` reaches the hook only from the user's typed `/speckit-team` (`UserPromptExpansion`,
   `typedRoles`), never from a launch prompt, because it opens the main session's `/speckit-implement`
   gate. Held by `test/install.test.mjs` and `test/hook.test.mjs`; the typed path by `test/e2e.test.mjs`.

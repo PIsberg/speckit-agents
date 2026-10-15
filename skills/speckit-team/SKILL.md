@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...|noagents] <feature idea>"
+argument-hint: "[--team <role>,<role>...|noagents] [--project <name>] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -64,8 +64,19 @@ chosen roles in pipeline order, lower case, separated by a comma and a space, fo
 
     Team: test-writer, implementer
 
-A full-team run carries no `Team:` line, so its prompts are as above. Commit the approved files
-(spec, plan, tasks, the constitution) in the message of the next launch, whichever role it is.
+A full-team run carries no `Team:` line, so its prompts are as above.
+
+When a project is active (the `--project` flag was given), every launch prompt of every role and
+every fix round carries one `Project:` line, after the `Team:` and `Unbuilt:` lines when present, for
+example:
+
+    Project: billing
+
+Prompts carry only an agent's Inputs; the `Project:` line is the only exception. Without the flag,
+no prompt carries a `Project:` line (prompts are worded as before). Never paste the block or the
+project's instructions into any prompt: the hook injects them as `additionalContext` at
+`SubagentStart`. Commit the approved files (spec, plan, tasks, the constitution) in the message of
+the next launch, whichever role it is.
 
 ## Pace
 Wait for the user only where a step says **Stop:**, or where it says to hand something to the
@@ -90,7 +101,9 @@ in as many calls as it takes, all before the next launch.
   Then go on.
 
 ## Team
-`--team` counts only as the first word of the arguments: `--team <role>[,<role>...] <request>`. The
+`--team` and `--project` lead the arguments before the request text, in either order (`--team <roles> --project <name>` or `--project <name> --team <roles>`), each at most once. A `--team` or `--project` after the request text has started is request text.
+
+`--team` counts only as the first word of the arguments (or the first word after a leading `--project <name>`): `--team <role>[,<role>...] <request>`. The
 role list is the words after it up to and including the first word that does not end in a comma
 (`test-writer, implementer` and `test-writer,implementer` both name two roles). Names are
 case-insensitive, a name given twice counts once, and order does not matter. The six team roles, in
@@ -140,7 +153,7 @@ Only when the arguments start `--team noagents`. You run Spec Kit's own skills i
 Agent call at all, and no `Team:` line. Tell the user in one line that no agent runs, so the audit,
 the verification and every agent hook are skipped, and step 0b with them. Step 0 holds, except its
 Agent tool check. Wait only at the two stops below.
-1. **Spec.** Invoke the `speckit-specify` skill with the request text. Ask each open question (a
+1. **Spec.** If a project is active, read the block first from the `project` CLI output and follow the block (the project's instructions and knowledge files). The project block applies to this request only: a later request in the same conversation without the flag disregards it. Invoke the `speckit-specify` skill with the request text. Ask each open question (a
    `[NEEDS CLARIFICATION]` marker; at most 5, the most impactful first) with AskUserQuestion,
    recommended answer first, and write each answer into the requirement it settles and under
    `## Clarifications` as `- Q: <question> → A: <answer>`. The work goes on a feature branch, as in
@@ -154,8 +167,27 @@ Agent tool check. Wait only at the two stops below.
    `@agent-spec-auditor` or to start again by typing the command. Run the tests that cover each
    task, and the full suite once at the end. After 3 failed runs of the same tests in a row, stop
    fixing and hand the failing output to the user.
-4. **Hand over** by step 7; the report names the skipped audit, verification and agent hooks
+4. **Hand over** by step 7; the report names the active project (when one was active) and the skipped audit, verification and agent hooks
    instead of roles.
+
+## Project
+`--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before any launch: say why and list available projects by running `node "{{HOOK}}" project`.
+
+Before anything is launched:
+1. Check `<name>` against the project name pattern (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, letters,
+   digits, `-` and `_` only, at most 64 characters). If invalid, tell the user in one line that `<name>`
+   is not a valid project name: letters, digits, - and _ only, and stop with nothing launched.
+2. In one Bash call, run `node "{{HOOK}}" project '<name>'` (with `'<name>'` single-quoted, so no
+   untrusted name reaches the shell unchecked).
+3. If it exits with a non-zero status:
+   - If the output contains `no project <name> in .specify/projects/; create it with --init.`: ask the
+     user once with AskUserQuestion whether to create it (`Create project <name>?`). On yes, run
+     `node "{{HOOK}}" project '<name>' --init`, show its output line, and stop with nothing launched so
+     the user can write the project's rules first. On no, stop with nothing launched.
+   - Otherwise (or if the output's first line does not start `Project `), show what it printed and
+     stop before any launch.
+4. If it exits 0 and the first line starts `Project <name>:`, tell the user in one line the start notice
+   from the header line (for example, `Project billing: 2 knowledge files, instructions 812 bytes.`).
 
 ## 0b. Constitution (only while it is the template)
 Run this step only when the team has architect, spec-auditor or spec-gatekeeper, the roles that
@@ -291,6 +323,6 @@ with `last round`), then re-run spec-gatekeeper.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
-Report the roles that ran with each one's verdict, a row for each absent role as skipped, the
+Report the active project (when one was active), the roles that ran with each one's verdict, a row for each absent role as skipped, the
 unticked tasks and anything still open. In a run with implementer and no active feature, say the
 retry limit was the skill's count, not the hook's.

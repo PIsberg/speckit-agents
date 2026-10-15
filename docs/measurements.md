@@ -221,3 +221,9 @@ slice for rule VIII itself, the first audit passed, and Opus cost $0.79 instead 
 fell only from $1.90 to $1.83, because that architect planned 8 tasks instead of 5 and Sonnet's
 share grew by $0.24. One run each, on one constitution: how often the check saves a round
 elsewhere is not measured.
+
+## Project knowledge context cost
+
+Measured on 2026-10-15 (Claude Code 2.1.300, 007 L5 / SC-005):
+- The project block for `demo` (60 bytes instructions, 31 bytes knowledge file listing) adds 114 characters (~28 tokens) of `additionalContext` on `SubagentStart`.
+- At the maximum allowed size (8,192 bytes instructions, 100 knowledge files ~6,000 bytes header), the injected block adds at most ~14.2 KB (~3.5k tokens) to an agent's starting context, well within an agent's 200k context window and leaving ~196k for work.

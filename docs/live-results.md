@@ -3,6 +3,23 @@
 Checks run in a real Claude Code session, by date, newest first; what a check did not see is
 said where it was run. The README's [Live results](../README.md#live-results) is the summary.
 
+## Project knowledge
+
+<details>
+<summary><b>2026-10-15</b>: Claude Code 2.1.300, Windows 11, project knowledge live checks (007, L1 to L4 and L6), against a fake API</summary>
+
+Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructions.md` (60 bytes) and `rounding.md` (31 bytes), the branch's team installed via `node install.mjs`, running Claude Code 2.1.300 against a localhost fake API harness.
+
+| Check | Result |
+|---|---|
+| L1 injection | Passed. `/speckit-patch --project demo`: launch prompt carries `Project: demo`; `SubagentStart` hook injects the formatted project block as `additionalContext` into `patcher`'s first model request, containing the project header and indented instructions. |
+| L2 off by default | Passed. `/speckit-patch` without `--project`: launch prompt has no `Project:` line, no project block injected, and `.git/speckit-team/project/` record is not written. |
+| L3 protection | Passed. `patcher` attempting to write `.specify/projects/demo/rounding.md` is denied with `patcher may not write .specify/projects/demo/rounding.md: it is a protected path`. |
+| L4 Spec Kit keeps it | Passed. `specify init --here --force --integration claude` runs in the scratch repo; `.specify/projects/demo/instructions.md` is preserved intact. |
+| L6 pipeline role | Passed. `/speckit-team --team implementer --project demo`: launch prompt carries `Team: implementer` and `Project: demo`; `implementer` receives the injected project block as `additionalContext` in its first model request. |
+
+</details>
+
 ## The team and the fast track
 
 <details>

@@ -35,7 +35,9 @@ const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
-const GATES = ['PreToolUse:Skill|Agent', 'SubagentStart:product-owner|architect', 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
+// 007: SubagentStart matches the seven roles, so every team agent can start with its session's project.
+const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|patcher';
+const GATES = ['PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
 const flat = (s) => s.replace(/\s+/g, ' ');
 
@@ -257,7 +259,7 @@ test('#88 product-owner and architect: SubagentStart records their start, and th
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
   const start = settingsOf(dir).hooks.SubagentStart;
   assert.equal(start.length, 1);
-  assert.equal(start[0].matcher, 'product-owner|architect');
+  assert.equal(start[0].matcher, START_MATCHER);
   assert.equal(start[0].hooks[0].command, `node "${hookPath}" start`);
   for (const [a, prefixes] of [['product-owner', 'specs/ .specify/feature.json'], ['architect', 'specs/ CLAUDE.md']]) {
     const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8');
@@ -271,6 +273,23 @@ test('#88 product-owner and architect: SubagentStart records their start, and th
   assert.equal(install(dir, '--uninstall').status, 0);
   const after = fs.existsSync(path.join(dir, 'settings.json')) ? settingsOf(dir) : {};
   assert.equal(after.hooks?.SubagentStart, undefined, 'uninstall removes the entry');
+});
+
+// 007 T006: an install made before 007 has the two-role matcher; a reinstall widens it, and a second
+// reinstall changes nothing.
+test('007 a reinstall over the old SubagentStart matcher rewrites it to the seven roles, once', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const s = settingsOf(dir);
+  s.hooks.SubagentStart[0].matcher = 'product-owner|architect';
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(s, null, 2));
+  assert.equal(install(dir).status, 0);
+  const again = settingsOf(dir).hooks.SubagentStart;
+  assert.equal(again.length, 1);
+  assert.equal(again[0].matcher, START_MATCHER);
+  const once = bytes(dir);
+  assert.equal(install(dir).status, 0);
+  assert.deepEqual(bytes(dir), once, 'a second reinstall changes nothing');
 });
 
 // #89: at the 004 plan stop the one decision the owner changed was work no requirement asked for. Work
@@ -410,7 +429,7 @@ test('a second install changes nothing', () => {
   assert.equal(backups(dir).length, 1);
 });
 
-test('installed hook commands run through a shell from a path with a space', { skip: !spawnSync('bash', ['--version']).stdout }, () => {
+test('installed hook commands run through a shell from a path with a space', { skip: spawnSync('bash', ['-c', 'node --version']).status !== 0 }, () => {
   const dir = claudeDir();
   install(dir);
   const text = fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8');
@@ -1206,4 +1225,77 @@ test('006 T019 FR-010 US4-1: README "The pipeline" names the team question as th
   const alt = sec.match(/!\[([^\]]*)\]\(docs\/media\/pipeline\.gif\)/);
   assert.ok(alt, 'pipeline.gif image');
   assert.match(alt[1], /team/i, 'alt text names the team question');
+});
+
+// 007 T010: speckit-team SKILL.md parses --project, validates with the project CLI mode,
+// writes the Project: line in every launch prompt when the flag was given, and never pastes the block.
+test('007 T010 FR-002 FR-003 FR-005 FR-007 FR-011 FR-015: speckit-team skill parses --project, checks before launch, writes Project: line', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /\[--project <name>\]/);
+  const dir = claudeDir();
+  install(dir);
+  const installed = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
+  assert.match(installed, /node "[^"]+speckit-team\.mjs" project/);
+
+  assert.ok(flat(skill).includes('Project: billing') || flat(skill).includes('Project: <name>'), 'names the Project: line');
+  const handoffs = flat(skillSection(skill, '## Handoffs'));
+  assert.match(handoffs, /after (the )?`?Team:`? (and `?Unbuilt:`? )?line/i);
+  assert.match(handoffs, /every (role|agent)[^.]*fix round/i);
+  assert.match(handoffs, /never paste (the )?(block|instructions)|do not paste/i);
+  assert.match(handoffs, /Inputs[^.]*Project:|Project:[^.]*exception/i, 'Project: line is the exception to Inputs only');
+
+  const na = flat(skillSection(skill, '## No agents'));
+  assert.match(na, /follow (the )?(block|project's instructions)/i);
+  assert.match(na, /this request only|later request[^.]*disregard/i);
+
+  const proj = flat(skillSection(skill, '## Project'));
+  assert.match(proj, /tell the user in one line|start notice[^.]*project/i);
+  assert.match(flat(skillSection(skill, '## 7. Hand over')), /project/i);
+
+  assert.match(proj, /no project|does not exist/i);
+  assert.match(proj, /AskUserQuestion/i);
+  assert.match(proj, /--init/);
+  assert.match(proj, /stop/i);
+
+  assert.match(proj, /twice/i);
+  assert.match(proj, /no name|missing name/i);
+  assert.match(proj, /before (any|the first) launch|nothing is launched/i);
+
+  assert.match(proj, /pattern|\^[A-Za-z0-9]|letters, digits/i);
+  assert.match(proj, /single-quote|'<\w+>'/i);
+
+  assert.match(handoffs, /without (the )?flag|no project[^.]*no `?Project:`? line|only when (the )?flag/i);
+
+  const twin = /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})$/m;
+  const sample = skill.match(/Project: [A-Za-z0-9_-]+/)?.[0];
+  assert.ok(sample && twin.test(sample), `sample Project line "${sample}" matches hook twin pattern`);
+});
+
+// 007 T012 FR-002 FR-007 FR-011 FR-015 US3-1 US3-2: speckit-patch parses --project,
+// validates before branch creation, injects Project: line in launch, reports active project,
+// and speckit-triage keeps --project.
+test('007 T012: installed speckit-patch and speckit-triage handle --project <name>', () => {
+  const dir = claudeDir();
+  install(dir);
+  const patchText = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  assert.match(patchText.split('\n').find((l) => l.startsWith('argument-hint:')), /\[--project <name>\]/);
+
+  const step2 = patchText.slice(patchText.indexOf('## 2.'), patchText.indexOf('## 3.'));
+  assert.match(step2, /node "[^"]+speckit-team\.mjs" project/);
+  assert.match(step2, /switch -c patch\//);
+  assert.ok(step2.indexOf('project') < step2.indexOf('switch -c patch/'), 'project check comes before creating the branch');
+  assert.match(step2, /stop/i);
+
+  const step3 = patchText.slice(patchText.indexOf('## 3.'), patchText.indexOf('## 4.'));
+  assert.match(step3, /Project:\s*(<name>|[A-Za-z0-9_-]+)/);
+
+  assert.match(patchText, /twice/i);
+  assert.match(patchText, /no name|missing name/i);
+
+  assert.match(step2, /tell the user in one line|active project/i);
+  const step5 = patchText.slice(patchText.indexOf('## 5.'));
+  assert.match(step5, /project/i);
+
+  const triageText = fs.readFileSync(path.join(dir, 'skills', 'speckit-triage', 'SKILL.md'), 'utf8');
+  assert.match(triageText, /--project/);
 });
