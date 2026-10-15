@@ -51,20 +51,39 @@ Refusal: exit 1, stdout one line `speckit-team: project: <reason>`, where reason
 
 | Case | Reason |
 |---|---|
-| no name, or a second argument | `give exactly one project name` |
-| name fails the pattern (`..`, `/`, `\`, a leading `.`, over 64 characters) | `<name> is not a project name: letters, digits, - and _ only. Projects: <list>.` |
-| no such directory (exact case) | `no project <name> in .specify/projects/. Projects: <list>.` |
-| the directory is a symlink | `.specify/projects/<name> is a symlink; a project must be a directory in the repository` |
-| no instructions and no knowledge files | `project <name> is empty: add instructions.md or a knowledge file` |
-| `instructions.md` is not a regular file | `.specify/projects/<name>/instructions.md is not a file` |
-| instructions over 8,192 bytes | `the instructions of <name> are <n> bytes; the limit is 8192` |
-| over 100 knowledge files | `project <name> has <n> knowledge files; the limit is 100` |
-| not in a Spec Kit repo | `no .specify/ in this repository` |
-| an internal error | `internal error (<message>)` |
+| no name, or an argument other than `--init` after it | `give exactly one project name` |
+| name fails the pattern (`..`, `/`, `\`, a leading `.`, over 64 characters) | `<name> is not a project name: letters, digits, - and _ only.` |
+| no such directory (exact case) | `no project <name> in .specify/projects/; create it with --init.` |
+| the directory is a symlink | `.specify/projects/<name> is a symlink; a project must be a directory in the repository.` |
+| no instructions and no knowledge files (a starter `instructions.md` left unchanged counts as none) | `project <name> is empty: write its rules in .specify/projects/<name>/instructions.md or add a knowledge file.` |
+| `instructions.md` is not a regular file | `.specify/projects/<name>/instructions.md is not a file.` |
+| instructions over 8,192 bytes | `the instructions of <name> are <n> bytes; the limit is 8192.` |
+| over 100 knowledge files | `project <name> has <n> knowledge files; the limit is 100.` |
+| not in a Spec Kit repo | `no .specify/ in this repository.` |
+| an internal error | `internal error (<message>).` |
 
 `<list>` is the valid project names, comma-separated, or `none`. Every refusal except the last two
-rows ends with ` Projects: <list>.` (FR-007), also where the table does not show it. The mode
-writes no state.
+rows is followed by ` Projects: <list>.` (FR-007). The mode writes no state.
+
+## 3a. Creating a project: `node "<hook>" project <name> --init` (FR-015)
+
+Writes `.specify/projects/<name>/instructions.md` holding exactly the starter text below (with
+`<name>` filled in), creating the directories, and nothing else. Exit 0, stdout one line:
+`Created .specify/projects/<name>/instructions.md: write the project's rules there, add reference files beside it, commit, and run the request again.`
+
+```text
+# <name>: project instructions
+
+Replace this file with the rules every agent should follow for <name>, one per line.
+Put reference documents (API docs, style guides, domain notes) beside it as knowledge files.
+```
+
+Refused (exit 1, same format) when the name fails the pattern, when anything already exists at the
+directory's path, and outside a Spec Kit repo. The starter text, compared after normalising line
+endings and trailing whitespace, counts as no instructions.
+
+The skills, on `no project <name>` for a valid name, ask the user once whether to create it; on yes
+they run `--init`, relay its line and stop with nothing launched; on no they stop.
 
 ## 4. The `Project:` line
 

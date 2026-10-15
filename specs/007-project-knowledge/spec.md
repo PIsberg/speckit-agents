@@ -20,6 +20,10 @@
 
 - Q: Where under the repository, how delivered, what limits, which writes blocked, which permission? → A: All recommended options of plan.md: `.specify/projects/<name>/` (D1); the hook injects the context at each agent's start from a `Project:` line (D2, FR-003, FR-009, SC-002); 8,192 bytes and 100 files (D3, FR-010); spec-auditor's and spec-gatekeeper's Bash writes are a known limit (D4, FR-008, SC-003); no installer allow rule (D5).
 
+### Owner request 2026-10-15 (after three audits)
+
+- Q: Must the user create the project directory by hand? → A: No: the run offers to create it with a starter instructions file and stops so the rules get written first (FR-015). The owner asked to implement without a further audit.
+
 ### Audit 2026-10-15 (spec-auditor FAIL, finding F1)
 
 - Q: FR-005 promises identical decisions without the flag, but closing test-writer's lane on `.specify/` changes one in every run. Which gives? → A: FR-005 states it as its one exception (owner, 2026-10-15).
@@ -131,8 +135,8 @@ instructions: the audit gate still blocks implementer until an audit passes.
 
 ### Edge Cases
 
-- The flag names a project that does not exist: the run stops before launching anything and lists
-  the projects that do.
+- The flag names a project that does not exist: the run stops before launching anything, lists
+  the projects that do, and offers to create it (FR-015).
 - The flag is given twice, or with no name after it: the run stops before launching anything and
   says why.
 - The name contains a path separator or `..`: refused, the same way as an unknown project.
@@ -193,6 +197,10 @@ instructions: the audit gate still blocks implementer until an audit passes.
   knowledge file's contents; they carry at most the project's name.
 - **FR-014**: The README (install, quick start, guardrail table, troubleshooting), `CLAUDE.md` and
   the skills' argument hints MUST describe how to create a project, the flag and what it changes.
+- **FR-015** (added 2026-10-15, owner request): When the flag names a valid name with no project
+  yet, the run MUST offer to create the project's directory with a starter instructions file,
+  create it only on the user's yes, and then stop before launching anything, so the user writes the
+  rules first. A starter file left unchanged MUST count as no instructions.
 
 ### Key Entities
 

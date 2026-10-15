@@ -39,9 +39,13 @@ project; compare stdout and exit codes with contracts/project.md section 3.
   (`repo({ speckit: false })`) exit 1 with `no .specify/ in this repository`, and the same for a
   directory holding `.specify/` that is no git repository, and for a git repository nested in one
   that holds `.specify/` while its own top level does not (the hook's second silent exit, audit M2).
+  Contract section 3a (FR-015): `--init` creates exactly the starter file and prints its line;
+  refuses an existing project, a bad name and outside a Spec Kit repo; the starter left unchanged
+  (also with CRLF line endings) makes the project empty, and one edited line makes it valid.
 - [ ] T002 Implement in `hooks/speckit-team.mjs`: skip the stdin read when `mode === 'project'`
   (line 85); at both silent exits (the `specifyAbove` exit and the no-git-root or no-`.specify/` exit
-after `rev-parse`), print the not-a-Spec-Kit-repo refusal and exit 1 for this mode;
+  after `rev-parse`), print the not-a-Spec-Kit-repo refusal and exit 1 for this mode; `--init`
+  per contract section 3a;
   after `inSpecKitRepo = true` and before the `inputProblem` check, `if (mode === 'project')` print
   and exit. New: `const PROJECTS_DIR = '.specify/projects'`, `const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/`,
   `const MAX_INSTRUCTIONS = 8192`, `const MAX_KNOWLEDGE = 100`,
@@ -128,7 +132,9 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   `Team:` and `Unbuilt:`, and every role and fix round; it says never to paste the block or the
   instructions into a prompt; the `## No agents` section says to follow the block; the start notice
   and hand-over name the project (FR-011); the Handoffs rule that prompts carry only an agent's
-  Inputs names the `Project:` line as the exception; it refuses, before any launch, `--project`
+  Inputs names the `Project:` line as the exception; on `no project <name>` it asks once whether
+  to create it, runs `--init` only on yes and stops with nothing launched (FR-015, both skills); it
+  refuses, before any launch, `--project`
   given twice and `--project` with no name, listing the projects (FR-007, audit M1); it writes the
   `Project:` line only when the flag was given, so without it the launch prompts are worded as
   today (FR-005, SC-001); it checks the name against the pattern and single-quotes it before the
