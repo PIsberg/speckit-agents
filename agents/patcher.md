@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: patcher
 description: The fast track for small changes. One pass, budget 30 production lines and 2 files, protected paths denied, changes the working tree only. Use through /speckit-patch; not for features.
-tools: Read, Write, Edit, Bash
+tools: Bash, Edit, Read, Write
 model: sonnet
 color: cyan
 hooks:

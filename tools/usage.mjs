@@ -116,7 +116,8 @@ export function format({ main, agents, models }) {
   }
   out.push('input per model, main session and agents:');
   for (const [model, t] of Object.entries(models)) {
-    out.push(`  ${model}: uncached ${t.inputTokens}, cache read ${t.cacheReadInputTokens}, cache write ${t.cacheCreationInputTokens}`);
+    const total = t.inputTokens + t.cacheReadInputTokens + t.cacheCreationInputTokens;
+    out.push(`  ${model}: uncached ${t.inputTokens}, cache read ${t.cacheReadInputTokens}, cache write ${t.cacheCreationInputTokens} (cache hit rate ${pct(t.cacheReadInputTokens, total)})`);
   }
   return out.join('\n');
 }

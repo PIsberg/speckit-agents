@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: test-writer
 description: Spec Kit TDD red phase. Writes the test tasks from tasks.md as failing tests and proves each one fails for the right reason. Use after spec-auditor PASS and before implementer. Hooks restrict it to test files and tasks.md, and it is blocked until the audit has passed.
-tools: Read, Write, Edit, Bash
+tools: Bash, Edit, Read, Write
 model: sonnet
 color: orange
 hooks:

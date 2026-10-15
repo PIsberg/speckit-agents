@@ -78,7 +78,9 @@ test('usage prints the summary from the command line, and usage help without a t
   const ok = spawnSync(process.execPath, [TOOL, transcript()], { encoding: 'utf8' });
   assert.equal(ok.status, 0, ok.stderr);
   assert.match(ok.stdout, /agent launches: 2 \(1 foreground, 1 background\); responses that only waited for a background agent: 1/);
+  assert.match(ok.stdout, /cache hit rate/i);
   const missing = spawnSync(process.execPath, [TOOL], { encoding: 'utf8' });
   assert.equal(missing.status, 2);
   assert.match(missing.stderr, /usage: node tools\/usage\.mjs/);
 });
+

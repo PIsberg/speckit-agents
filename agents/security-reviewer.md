@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: security-reviewer
 description: Opt-in security review agent. Reviews feature specs for threat modeling, security requirements, and data exposure, and reviews implementation results (diffs, dependencies, vulnerabilities, and secrets) before handover.
-tools: Read, Bash
+tools: Bash, Edit, Read, Write
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
 model: sonnet
 color: magenta
