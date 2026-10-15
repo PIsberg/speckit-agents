@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: product-owner
 description: Spec Kit phase 1. Turns a feature idea into specs/NNN-feature/spec.md with speckit-specify, then returns clarification questions with recommended answers (it cannot ask you directly). Use to start or revise a feature's requirements in a repo with .specify/. Not for plans, tasks or code.
-tools: Read, Write, Edit, Bash
+tools: Bash, Edit, Read, Write
 model: sonnet
 color: blue
 skills:

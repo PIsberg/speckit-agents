@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: architect
 description: Spec Kit phases 2-3. Turns an approved spec.md into plan.md, data-model.md, contracts/ and a dependency-ordered tasks.md with speckit-plan and speckit-tasks. Use after product-owner reports READY FOR PLAN, or to revise a plan the spec-auditor failed. Writes no code or tests.
-tools: Read, Write, Edit, Bash
+tools: Bash, Edit, Read, Write
 model: opus
 color: purple
 skills:

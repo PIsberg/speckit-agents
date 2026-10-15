@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: implementer
 description: Spec Kit TDD green phase. Writes the minimal production code that makes test-writer's failing tests pass, task by task from tasks.md. Use after test-writer; can run several in parallel worktrees for disjoint [P] tasks. Hooks block it until the audit passes and forbid changing tests.
-tools: Read, Write, Edit, Bash
+tools: Bash, Edit, Read, Write
 model: sonnet
 color: green
 hooks:
