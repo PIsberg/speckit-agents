@@ -1,5 +1,21 @@
 <!--
 Sync Impact Report
+- Version change: 1.1.0 -> 1.2.0 (MINOR, 2026-10-15)
+- Modified sections: Installation Constraints, the "cost nothing without .specify/" bullet: the
+  allowance of one hook process per gated tool call now also covers one per start of a subagent the
+  gate's matcher names. Feature 007 widens the SubagentStart entry from product-owner and architect
+  (#88, which already started such a process) to the seven team agents, so a team-agent launch
+  outside a Spec Kit repo starts two processes, each exiting with no output. Owner decision
+  2026-10-15, spec-auditor finding M1.
+- Principles modified: none
+- Added sections: none
+- Removed sections: none
+- Templates: .specify/templates/plan-template.md (OK, Constitution Check derives gates from this file),
+  .specify/templates/spec-template.md (OK), .specify/templates/tasks-template.md (OK); README.md
+  (OK, states no process allowance)
+- Deferred TODOs: none
+
+Previous report (1.1.0):
 - Version change: 1.0.0 -> 1.1.0 (MINOR, 2026-10-11)
 - Modified sections: Installation Constraints, the "cost nothing without .specify/" bullet: "no
   measurable delay" replaced by an allowance for one hook process per gated tool call, exiting with
@@ -104,8 +120,8 @@ failing test or a live run exposed.
 - It MUST validate everything it will read before writing anything, so a failure never leaves a
   half install.
 - Installed components MUST cost nothing in repositories without `.specify/`: no blocking and no
-  output. A settings gate MAY start one hook process per gated tool call, which exits with no output
-  (148 ms measured on Windows).
+  output. A settings gate MAY start one hook process per gated tool call or per start of a subagent
+  its matcher names, which exits with no output (148 ms measured on Windows).
 - `--uninstall` MUST remove every file and settings entry the installer added, and nothing else.
 
 ## Workflow and Quality Gates
@@ -130,4 +146,4 @@ failing test or a live run exposed.
   redefining a principle, MINOR for adding one, PATCH for wording. Each amendment updates the
   Sync Impact Report above.
 
-**Version**: 1.1.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-11
+**Version**: 1.2.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-15

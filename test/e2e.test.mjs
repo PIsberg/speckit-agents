@@ -802,6 +802,29 @@ test('a typed /speckit-team --team noagents lets the main session call speckit-i
   assert.ok(none.requests[MAIN].length >= 2, story(none));
   assert.doesNotMatch(lastResult(none.requests[MAIN][1]), /Implementation gate/, story(none));
   assert.equal(state(s, 'team', `${sessionId(none)}.json`).noagents, true, story(none));
+  // 007 contract section 2: a leading --project pair does not hide --team noagents from the gate.
+  const first = await session(s, script, { prompt: `/speckit-team --project demo --team noagents ${MAIN}` });
+  assert.doesNotMatch(lastResult(first.requests[MAIN][1]), /Implementation gate/, story(first));
+  assert.equal(state(s, 'team', `${sessionId(first)}.json`).noagents, true, story(first));
+});
+
+// 007 (US1, contracts/project.md section 5): the launch's Project line is recorded by the Agent gate, and
+// the SubagentStart entry hands the block to the agent, so its first model request holds it. With
+// SPECKIT_E2E_NO_HOOK=1 the request has neither the header nor the instruction.
+test("a Project line in test-writer's launch puts the project block in its first model request (007 US1, FR-003)", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  s.write('.specify/projects/demo/instructions.md', 'Money is never a float.\n');
+  s.write('.specify/projects/demo/api.md', '# API\n');
+  const r = await session(s, {
+    [MAIN]: [teamAgent('e2e test-writer', 'e2e test-writer: go\nProject: demo')],
+    'e2e test-writer': [say('T001 fails on its assertion.\nRED')],
+  });
+  const first = r.requests['e2e test-writer'][0];
+  assert.ok(first, story(r));
+  const seen = `${textOf(first.system)}\n${shown(first)}`;
+  assert.match(seen, /Project demo: 1 knowledge file, instructions \d+ bytes\./, story(r));
+  assert.match(seen, /^ {2}Money is never a float\.$/m, story(r));
+  assert.equal(state(s, 'project', `${sessionId(r)}.json`).name, 'demo', story(r));
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.

@@ -9,7 +9,8 @@ disable-model-invocation: true
 Triage this request: $ARGUMENTS
 
 Suggest one track. This skill launches no agent and invokes no skill, and it changes no file. It
-prints one suggestion and stops; the user types the command.
+prints one suggestion and stops; the user types the command. When the request has `--project <name>`,
+the command it suggests keeps it.
 
 Suggest `/speckit-team` when any of these holds:
 - the request adds a new capability, command, flag or output;

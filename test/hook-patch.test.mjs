@@ -1134,3 +1134,16 @@ test('patch team: an unusable team in the start record is denied and the end che
     assert.equal(record(dir), null);
   }
 });
+
+test('patch: a run with a project record active measures the same budget and protected paths as one without (007 US3-2)', () => {
+  const r = forty();
+  const projDir = path.join(stateDir(r.dir), 'project');
+  fs.mkdirSync(projDir, { recursive: true });
+  fs.writeFileSync(path.join(projDir, 's1.json'), JSON.stringify({ session_id: 's1', name: 'billing', at: new Date().toISOString() }));
+  begin(r.dir, { session_id: 's1' });
+  edit(r.dir, 'src/forty.js', 0, 30);
+  okBash(r.dir, '30 lines allowed with project record');
+  edit(r.dir, 'src/forty.js', 30, 31);
+  overBash(r.dir, /31 changed production lines/);
+  assert.ok(denied(patchTool(r.dir, 'Write', { file_path: path.join(r.dir, '.specify', 'projects', 'billing', 'notes.md') }, { session_id: 's1' })), 'project path protected');
+});
