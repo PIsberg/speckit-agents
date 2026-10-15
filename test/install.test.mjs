@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'patcher'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 const UNRELATED = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] };
 
 function claudeDir(settings) {
@@ -35,8 +35,8 @@ const bytes = (dir) => fs.readFileSync(path.join(dir, 'settings.json'));
 const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => groups
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
-// 007: SubagentStart matches the seven roles, so every team agent can start with its session's project.
-const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|patcher';
+// SubagentStart matches the eight roles, so every team agent can start with its session's project.
+const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|security-reviewer|patcher';
 const GATES = ['PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
 const flat = (s) => s.replace(/\s+/g, ' ');
@@ -725,8 +725,8 @@ test('--board with a failing Claude Code installs the team, fails, and uninstall
 // Real `claude plugin` runs against the throwaway config dir. Spawned without a shell, so a missing
 // claude, or an npm-installed claude.cmd, reports these skipped, not passed, except in CI, where
 // SPECKIT_REQUIRE_CLAUDE=1 makes them run and fail.
-const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir } });
-const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
+const claudeIn = (dir, ...args) => spawnSync('claude', args, { encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: ['ignore', 'pipe', 'pipe'] });
+const noClaude = spawnSync('claude', ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] }).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
 const boardIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'list', '--json').stdout).find((p) => p.id === 'speckit-board@speckit-agents');
 const marketsIn = (dir) => JSON.parse(claudeIn(dir, 'plugin', 'marketplace', 'list', '--json').stdout).map((m) => m.name);
 // Claude Code reports a folder by its real path: macOS's temp dir /var/... comes back as /private/var/....
@@ -917,7 +917,7 @@ test('006 T008 FR-001 FR-005 FR-006: skill takes --team, names the six roles as 
   const inHook = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
   assert.deepEqual(inHook, TEAM_ORDER, 'TEAM_ROLES in the hook equals agents/*.md without patcher');
   const listed = new RegExp(TEAM_ORDER.map((r) => '`?' + r + '`?').join('[,\\s]+(?:and\\s+)?'));
-  assert.match(team, listed, 'the six role names, in pipeline order');
+  assert.match(team, listed, 'the role names, in pipeline order');
   assert.match(team, /patcher/, 'patcher is named as not a team role');
   assert.match(team, /first word/i, '--team counts only as the first word');
   assert.match(team, /case-insensitive|case insensitive|regardless of case/i);
@@ -1094,7 +1094,7 @@ test('006 T016 FR-011: README has a "Choosing the team" section whose table name
   assert.ok(sec, 'README.md has a "#### Choosing the team" subsection');
   const hookSrc = repoText('hooks', 'speckit-team.mjs');
   const roles = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
-  assert.equal(roles.length, 6);
+  assert.equal(roles.length, 7);
   const rows = sec.split('\n').filter((l) => l.trim().startsWith('|'));
   for (const r of roles) {
     const row = rows.find((l) => l.includes(r));
@@ -1299,3 +1299,33 @@ test('007 T012: installed speckit-patch and speckit-triage handle --project <nam
   const triageText = fs.readFileSync(path.join(dir, 'skills', 'speckit-triage', 'SKILL.md'), 'utf8');
   assert.match(triageText, /--project/);
 });
+
+test('installed security-reviewer agent has security review instructions and correct frontmatter', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'security-reviewer.md')), 'agents/security-reviewer.md installed');
+  const text = fs.readFileSync(path.join(dir, 'agents', 'security-reviewer.md'), 'utf8');
+  assert.match(text, /speckit-agents: managed/);
+  assert.match(text, /^name:\s*security-reviewer$/m);
+  assert.match(text, /^color:\s*magenta$/m);
+  assert.match(text, /disallowedTools:.*Write/);
+  assert.match(text, /spec/i, 'mentions spec review');
+  assert.match(text, /threat|vulnerabilit|injection|secret/i, 'covers security concepts');
+  assert.match(text, /result|diff/i, 'mentions reviewing the result or diff');
+});
+
+test('installed speckit-team skill documents opting in security-reviewer via --security or --team, and its spec and result review phases', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
+  assert.match(text.split('\n').find((l) => l.startsWith('argument-hint:')), /--security/);
+  const teamSec = flat(skillSection(text, '## Team'));
+  assert.match(teamSec, /security-reviewer/);
+  assert.match(teamSec, /--security/);
+  assert.match(teamSec, /opt-in|opting in/i);
+  assert.match(text, /security-reviewer[^.]*spec/i);
+  assert.match(text, /security-reviewer[^.]*(result|verify|diff)/i);
+  assert.match(text, /route CRITICAL and HIGH findings to product-owner \(or to the user/i);
+  assert.match(text, /route CRITICAL and HIGH findings to implementer \(or test-writer, or to the user/i);
+});
+

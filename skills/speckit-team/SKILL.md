@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...|noagents] [--project <name>] <feature idea>"
+argument-hint: "[--team <role>,<role>...|noagents] [--security] [--project <name>] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -51,6 +51,7 @@ and answers, or another agent's full report.
   greps for itself: in the 004 run a list of lines from a grep cut at 200 columns missed four of
   them, and cost one more architect.
 - spec-auditor: the feature directory.
+- security-reviewer: when in spec state, the feature directory and `spec.md`; when reviewing the result, the feature directory and the command to inspect the diff (`git diff main...HEAD` or `master...HEAD`).
 - test-writer: the round's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
   implementer launch only to tick them. In a one-round run (step 4-5) the brief instead.
@@ -101,14 +102,16 @@ in as many calls as it takes, all before the next launch.
   Then go on.
 
 ## Team
-`--team` and `--project` lead the arguments before the request text, in either order (`--team <roles> --project <name>` or `--project <name> --team <roles>`), each at most once. A `--team` or `--project` after the request text has started is request text.
+`--team`, `--security` and `--project` lead the arguments before the request text, in any order (`--team <roles> --project <name>`, `--security <request>`, etc.), each at most once. A `--team`, `--security` or `--project` after the request text has started is request text.
 
-`--team` counts only as the first word of the arguments (or the first word after a leading `--project <name>`): `--team <role>[,<role>...] <request>`. The
+`--team` counts only as the first word of the arguments (or the first word after a leading `--project <name>` or `--security`): `--team <role>[,<role>...] <request>`. The
 role list is the words after it up to and including the first word that does not end in a comma
 (`test-writer, implementer` and `test-writer,implementer` both name two roles). Names are
-case-insensitive, a name given twice counts once, and order does not matter. The six team roles, in
-pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer` and
-`spec-gatekeeper`; `patcher` is not a team role (it is the fast track's). All six named is the full
+case-insensitive, a name given twice counts once, and order does not matter. The team roles, in
+pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`,
+`spec-gatekeeper` and `security-reviewer`; `patcher` is not a team role (it is the fast track's).
+The `security-reviewer` is opt-in: it is included when requested via `--security` or named in `--team`
+(`--team ...,security-reviewer` or alias `security`). All six core roles named is the full
 team, the same run as without `--team`.
 
 `--team noagents` (the list is the one word `noagents`, in any case) runs no agent at all: you run
@@ -124,9 +127,9 @@ With no roles named (no `--team`), ask once, before any launch, with one AskUser
 3. Implement only: implementer.
 4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.
 
-A free-text answer ("Other") is a role list read as above and checked by the same refusals below. A request with `--team` is not asked: the question is only for requests without it.
+A free-text answer ("Other") is a role list read as above and checked by the same refusals below. A request with `--team` is not asked: the question is only for requests without it. When `--security` was given with no `--team`, security-reviewer is added to the chosen team.
 
-Before anything is launched, refuse in one message that says why and lists the six valid names:
+Before anything is launched, refuse in one message that says why and lists the valid names:
 - a name that is not a team role (also `--team` followed straight by the request: its first word
   is the unknown name): that name is not a team role;
 - an empty team: no roles named;
@@ -147,6 +150,7 @@ Skipped rows, per absent role:
 - test-writer: the red step and the test tasks, which stay unticked.
 - implementer: the stub and green steps; its tasks stay unticked.
 - spec-gatekeeper: verification and REJECTED routing, the recorded last word.
+- security-reviewer: the security review of the spec and the security review of the result.
 
 ## No agents
 Only when the arguments start `--team noagents`. You run Spec Kit's own skills in this session: no
@@ -213,6 +217,7 @@ Then make sure the work is on a feature branch. Spec Kit's git extension creates
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory
 (`git switch -c <its basename>`); uncommitted work moves with it.
+If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), then relaunch security-reviewer. On PASS, proceed to the spec review stop.
 **Stop:** the user reviews `spec.md`. Once they approve, commit it, and the constitution if step 0b
 wrote it, on that branch, in the message that launches the architect: Claude Code runs the calls of
 one message in order, so the commit lands before the architect starts and needs no request of its
@@ -320,9 +325,10 @@ implementer for it with `last round`, and verify after its GREEN. Hand to the us
 agent can do. On REJECTED, route each reason to test-writer or implementer, whichever is chosen (a reason for a
 role not chosen goes to the user) (an implementer then
 with `last round`), then re-run spec-gatekeeper.
+If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), then relaunch security-reviewer. On PASS, proceed to handover.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
-Report the active project (when one was active), the roles that ran with each one's verdict, a row for each absent role as skipped, the
+Report the active project (when one was active), the roles that ran with each one's verdict (including security-reviewer when opted in), a row for each absent role as skipped, the
 unticked tasks and anything still open. In a run with implementer and no active feature, say the
 retry limit was the skill's count, not the hook's.

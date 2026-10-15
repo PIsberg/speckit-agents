@@ -30,6 +30,8 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
            └── you answer   └── findings routed back on FAIL ◄── 3 REDs in a row ──┘
 ```
 
+![speckit-agents architecture](docs/media/architecture.jpg)
+
 ## Highlights
 
 - **One agent per phase.** product-owner specifies, architect plans, spec-auditor audits,
@@ -325,6 +327,7 @@ second.
 | [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it, or `FIXED` when it only corrected an existing test and the suite is green | sonnet |
 | [`implementer`](agents/implementer.md) | stubs, TDD green | anything except test files and `.specify/` | signature stubs (`RESULT: STUB`), or committed code with the tests that cover it green, and the full suite in the last round (`RESULT: GREEN` / `RED`) | sonnet |
 | [`spec-gatekeeper`](agents/spec-gatekeeper.md) | final check | nothing | `APPROVED` or `REJECTED`, with a requirement-to-test table | sonnet |
+| [`security-reviewer`](agents/security-reviewer.md) | opt-in review | nothing | `VERDICT: PASS` or `FAIL`; reviews spec state and reviews implementation result | sonnet |
 | [`patcher`](agents/patcher.md) | fast track | the working tree except protected paths, within 30 production lines and 2 files, never a commit | a report that `/speckit-patch` commits from, ending `DONE`, or `ESCALATE` or `FAILED` | sonnet |
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
@@ -347,8 +350,6 @@ total about 1,900 characters (1,872 counted in the `description:` lines), about 
 will not do, so routing does not have to guess.
 
 ## Why This Architecture Succeeds
-
-![The four layers: /speckit-team, /speckit-patch, /speckit-triage and /speckit-board on top, the seven agents with their models and lanes, the six pipeline stages with the audit and retry kick-backs, and the artifacts each stage produces](docs/media/architecture-visualized.svg)
 
 **Prevents "Garbage In, Garbage Out":** Most agent pipelines fail because the initial spec is
 vague, and the coding agent fills in the blanks with hallucinations. Your product-owner forcing a
@@ -380,14 +381,14 @@ launches each agent with the inputs it needs and relays the product owner's ques
 
 #### Choosing the team
 
-`/speckit-team [--team <role>[,<role>...]] <request>`. `--team` counts only as the first word; names are
+`/speckit-team [--team <role>[,<role>...]] [--security] <request>`. `--team` counts only as the first word; names are
 case-insensitive and order does not matter. Without it the skill asks one question before any
 launch, a stop like the others: Full team (recommended), Build only (test-writer, implementer),
 Implement only (implementer), or Spec and build with no audit or verification (product-owner,
-architect, test-writer, implementer). Its free-text answer is a role list. All six roles is the full
-team. `patcher` is not a team role.
+architect, test-writer, implementer). Its free-text answer is a role list. All six core roles is the full
+team. The `security-reviewer` is opt-in, included via `--security` or named in `--team` (`security-reviewer` or alias `security`). `patcher` is not a team role.
 
-The skill refuses before launching anything, naming the six valid roles: a name that is not a role;
+The skill refuses before launching anything, naming the valid roles: a name that is not a role;
 `noagents` with a role; neither test-writer nor implementer; architect without product-owner;
 spec-auditor without architect.
 
@@ -414,6 +415,7 @@ What an absent role skips, and the guardrails that go with it:
 | `test-writer` | the red step; the test tasks stay unticked | spec-gatekeeper's test trace and its open-task check on the test tasks |
 | `implementer` | the stub and green steps; the other tasks stay unticked | the stub pass (a test failing on a missing symbol counts as red), spec-gatekeeper's passing tests and its open-task check on those tasks |
 | `spec-gatekeeper` | verification and REJECTED routing | the recorded last word |
+| `security-reviewer` | the security review of the spec and the security review of the result | none |
 
 Every run keeps the hand-over (PR and CI), each chosen agent's `scope`, `lane`, `ends` and `result`
 hooks, the retry limit while implementer is chosen, tests before implementation when both
@@ -1245,13 +1247,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 100 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 62 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 84 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 38 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 40 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1299,7 +1301,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 29
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 31
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1319,10 +1321,10 @@ need no login and cost nothing.
   ([#72](https://github.com/PIsberg/speckit-agents/issues/72)) and once in `default` with the
   installer's allow rule and one for the script, where it ran with no prompt
   ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 29
+  fire lets the action through. With the installed hook replaced by one that only exits, all 31
   fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 31 failures, none of the 29 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  31 of the 38 tests fail (the 29 scripted ones and the two blocking no-model cases); the other seven
+  33 of the 40 tests fail (the 31 scripted ones and the two blocking no-model cases); the other seven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1672,7 +1674,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
 node install.mjs --uninstall
 ```
 
-This removes the seven agents, the three skills, the hook, the three `settings.json` entries and the
+This removes the eight agents, the three skills, the hook, the three `settings.json` entries and the
 allow rule it added, and leaves nothing of the installer's behind:
 
 - **Settings:** if nothing else changed your `settings.json` since the install, its original bytes
@@ -1758,9 +1760,6 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 > ([#60](https://github.com/PIsberg/speckit-agents/issues/60)); otherwise the run exits 1 and the
 > files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing. On macOS and Linux
 > the repo's path contains your home directory, so a session that prints it fails the check.
-
-The architecture diagram, `docs/media/architecture-visualized.svg`, is drawn by hand, not
-recorded: edit it when an agent's model or lane, a pipeline stage or the retry limit changes.
 
 ### Measuring token usage
 

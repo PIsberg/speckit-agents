@@ -1471,3 +1471,58 @@ test('007 T014 US4: tests lane denies .specify/, scope rules protect projects, i
   };
   checkDir(stateDir(dir));
 });
+
+test('security agent: parseTeam parses security-reviewer and alias security, and records it in session team', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: test-writer, implementer, security-reviewer');
+  assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer', 'security-reviewer']);
+
+  const { dir: d2 } = repo();
+  agentLaunch(d2, 'Team: test-writer, implementer, security');
+  assert.deepEqual(teamRecord(d2).roles, ['test-writer', 'implementer', 'security-reviewer']);
+});
+
+test('security agent: typedRoles handles --security flag alone or with --team', () => {
+  const { dir } = repo();
+  const out1 = typedTeam(dir, '--security --team noagents x');
+  assert.equal(teamRecord(dir)?.noagents, true);
+
+  const { dir: d2 } = repo();
+  const out2 = typedTeam(d2, '--team noagents --security x');
+  assert.equal(teamRecord(d2)?.noagents, true);
+
+  const { dir: d3 } = repo();
+  assert.equal(typedTeam(d3, '--security x'), null);
+  assert.ok(!fs.existsSync(teamFile(d3)));
+
+  for (const args of [
+    '--security --security --team noagents x',
+    '--security --project demo --security --team noagents x',
+    '--project demo --security --project demo --team noagents x',
+  ]) {
+    const { dir: d } = repo();
+    assert.equal(typedTeam(d, args), null, args);
+    assert.ok(!fs.existsSync(teamFile(d)), args);
+  }
+});
+
+test('security agent: main session can launch security-reviewer', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: product-owner, security-reviewer, implementer');
+  const launch = run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Agent',
+    session_id: 's1',
+    tool_input: { subagent_type: 'security-reviewer', prompt: 'Team: product-owner, security-reviewer, implementer\nReview spec' },
+  });
+  assert.equal(launch?.decision, undefined, 'launch of security-reviewer is allowed');
+  assert.deepEqual(teamRecord(dir).roles, ['product-owner', 'implementer', 'security-reviewer']);
+});
+
+test('security agent: default launch with no Team line does not include security-reviewer', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Go build');
+  assert.deepEqual(teamRecord(dir).roles, ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper']);
+  assert.ok(!teamRecord(dir).roles.includes('security-reviewer'), 'opt-in role is not in default team');
+});
+
