@@ -36,7 +36,8 @@ returns what it returns today (FR-005).
 `.git/speckit-team/project/` ([data-model.md](data-model.md))
 
 **Testing**: `node:test`: `test/hook.test.mjs` (CLI mode, record, injection, lane fix),
-`test/install.test.mjs` (matcher, skill texts), `test/e2e.test.mjs` (real `claude -p` against the
+`test/install.test.mjs` (matcher, skill texts), `test/hook-patch.test.mjs` (the fast track's budget
+with a project record), `test/e2e.test.mjs` (real `claude -p` against the
 fake API: the block reaches the subagent's first request; the typed `--project` before
 `--team noagents`)
 
@@ -45,8 +46,9 @@ fake API: the block reaches the subagent's first request; the typed `--project` 
 **Project Type**: Claude Code agent team (prompts plus one hook script and an installer)
 
 **Performance Goals**: `SubagentStart` now starts one hook process for five more roles: one process
-per agent launch, against the 500 ms budget (constitution III). Today's `start` path is the yardstick;
-T-perf measures the new one (20 runs, with and without a project record) and the plan records it.
+per agent launch. Budget: 500 ms per process, the figure feature 006 set (constitution III asks the
+plan for a budget and states none). Today's `start` path is the yardstick; T017 measures the new one
+and records it in research.md R6, which the audit fingerprint does not cover.
 
 **Constraints**: hooks fail open (a crash gives the agent no project context and the user a
 `systemMessage`); no guardrail reads project content (FR-009)
@@ -64,7 +66,7 @@ model request on 2.1.293 (research R1); the e2e case fails if it does not, and f
 | I. Test in `test/` under `npm test`, failing first | every slice starts with its test task; the lane fix and the `Team:` injection were reproduced before planning (research R2, R3) |
 | I. Assert what a caller observes | CLI stdout and exit code, the hook's `additionalContext` JSON, deny decisions, the record file, the subagent's request at the fake API |
 | I. No test that passes because the code never ran | the e2e injection case fails with `SPECKIT_E2E_NO_HOOK=1` |
-| II. No throw on any input; a test per throwing path | a directory named `instructions.md`, an unreadable record, a project removed mid-run, a non-string prompt, stdin left open |
+| II. No throw on any input; a test per throwing path | a directory named `instructions.md`, an unreadable record, a project removed mid-run, a non-string prompt or `subagent_type`, a `SubagentStart` without a usable `session_id` or `agent_type`, a record with a bad `name`, stdin left open (T001, T003) |
 | II. Wiring change verified live | the `SubagentStart` matcher widens: quickstart L1 to L3, recorded in README "Live results" |
 | II. Quoted absolute forward-slash command | only the matcher changes; the command is `hookCommand('start')` as today |
 | III. Observers never block; budget | `start` and the record path never decide; measured against 500 ms |
@@ -74,7 +76,7 @@ model request on 2.1.293 (research R1); the e2e case fails if it does not, and f
 | VII. Every platform | exact-case name match on case-insensitive file systems; forward-slash paths; e2e on all three in CI |
 | VIII. Docs in the same change | README (new section, guardrail table, troubleshooting, known limits, test count), CLAUDE.md (modes, the `Project:` line twin), hook header, installer help, measurements |
 | Install: idempotent, uninstall removes all | the widened matcher is rewritten on reinstall by `withGates`; uninstall removes it (install.test) |
-| Install: nothing outside `.specify/` | `SubagentStart` runs for seven role names in every repo and exits at once outside a Spec Kit repo, as constitution 1.1.0 allows for gates |
+| Install: nothing outside `.specify/` | the allowance is one hook process per gated call, exiting with no output. A team-agent launch outside a Spec Kit repo is two gated calls, each with its own settings entry: the `Agent` tool call (PreToolUse, one process, since 006) and the subagent's start (`SubagentStart`, one process, since #88 for product-owner and architect, now for all seven roles). Each exits at `specifyAbove` with no output and no blocking, and only these seven agent names match, so no other agent in any repo starts a process at its start |
 
 Not applicable: plugin rules (no plugin code); event schema (no event emitted); Governance (no
 amendment).
@@ -102,7 +104,8 @@ skills/speckit-team/SKILL.md    # --project parsing, start notice, Project: line
 skills/speckit-patch/SKILL.md   # --project parsing, Project: line in patcher's launch
 skills/speckit-triage/SKILL.md  # keeps the flag in its suggestion
 README.md, CLAUDE.md, docs/measurements.md
-test/hook.test.mjs, test/install.test.mjs, test/e2e.test.mjs
+test/hook.test.mjs, test/install.test.mjs, test/hook-patch.test.mjs, test/e2e.test.mjs
+docs/live-results.md            # L1 to L4
 ```
 
 Unchanged: the seven agents' files; the board mod (retired, #11); `architecture-visualized.svg` (no

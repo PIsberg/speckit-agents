@@ -70,13 +70,20 @@ against the fake API, the subagent's first request holds it.
   `systemMessage` naming the reason; an unreadable record (`{`) gives a `systemMessage` and no
   context; the lane start record is still written for product-owner and architect and not for the
   other five roles; a typed `/speckit-team` (`UserPromptExpansion`) removes the project record.
+  Malformed input, each with exit 0 and no throw (constitution II, audit C1): an `Agent` launch whose
+  `tool_input.prompt` is a number, an array or missing, or whose `subagent_type` is not a string,
+  records nothing and decides nothing; a `SubagentStart` with no `session_id`, a `session_id` of
+  `../x`, no `agent_type`, or an `agent_type` that is a number gives no context and no lane start
+  record; a record whose `name` is not a string or fails the name pattern gives no context and a
+  `systemMessage`.
 - [ ] T004 [US1] Test in `test/e2e.test.mjs` (the existing fake-API harness and its Team-line cases
   as the model): a scripted main session launches test-writer with `Project: demo` in the prompt in a
   repo holding `.specify/projects/demo/`; the fake API's first request from the subagent contains
   the block's header and an instruction line; with `SPECKIT_E2E_NO_HOOK=1` it does not.
 - [ ] T005 [US1] Implement in `hooks/speckit-team.mjs`: in `gate`'s `Agent` branch, before the
-  team-role check, record or remove the project for `TEAM_ROLES` plus `patcher` (never a decision,
-  then fall through to the team recording as today); in the typed `/speckit-team` branch, remove
+  team-role check and behind the same guards it has today (no `agentId`, a valid `session_id`, a
+  string `prompt`, a string `subagent_type`), record or remove the project for `TEAM_ROLES` plus
+  `patcher` (never a decision, then fall through to the team recording as today); in the typed `/speckit-team` branch, remove
   the project record next to the team record; in `start`, keep the lane start record for
   `product-owner` and `architect` only (by `input.agent_type`) and emit the block as
   `additionalContext` when the session has a project record. New:
@@ -118,8 +125,11 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   `Team:` and `Unbuilt:`, and every role and fix round; it says never to paste the block or the
   instructions into a prompt; the `## No agents` section says to follow the block; the start notice
   and hand-over name the project (FR-011); the Handoffs rule that prompts carry only an agent's
-  Inputs names the `Project:` line as the exception. Pin that `Project:` written by the skill
-  matches the hook's pattern (CLAUDE.md twin rule).
+  Inputs names the `Project:` line as the exception; it refuses, before any launch, `--project`
+  given twice and `--project` with no name, listing the projects (FR-007, audit M1); it writes the
+  `Project:` line only when the flag was given, so without it the launch prompts are worded as
+  today (FR-005, SC-001). Pin that `Project:` written by the skill matches the hook's pattern
+  (CLAUDE.md twin rule).
 - [ ] T011 [US1] Implement in `skills/speckit-team/SKILL.md`: the `## Team` parsing paragraph becomes
   leading flags in either order (`--team`, `--project`, each once); a new `## Project` section: run
   the mode once before any launch, stop on exit 1 with its line, otherwise one notice line from the
@@ -136,8 +146,10 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
 
 - [ ] T012 [US3] Test in `test/install.test.mjs`: the installed `speckit-patch` skill's argument hint
   shows `[--project <name>]`, it runs the `project` mode before creating the branch and stops on
-  exit 1, and its step 3 launch is the change plus one `Project:` line; `speckit-triage` says its
-  suggestion keeps `--project <name>`. In `test/hook-patch.test.mjs`: a run whose project record is
+  exit 1, and its step 3 launch is the change plus one `Project:` line; it refuses `--project` given
+  twice or with no name (FR-007); it tells the user the active project in one line before the
+  launch and names it in its step 5 report (FR-011, audit M3); `speckit-triage` says its suggestion
+  keeps `--project <name>`. In `test/hook-patch.test.mjs`: a run whose project record is
   set measures the same budget and protected paths as one without (US3-2).
 - [ ] T013 [US3] Implement in `skills/speckit-patch/SKILL.md` (steps 2 and 3, argument hint) and
   `skills/speckit-triage/SKILL.md`.
@@ -156,7 +168,9 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   writing agents denies a write to `.specify/projects/p/notes.md` (US4-1); a launch prompt holding
   T001's block for instructions with a line `Team: implementer` records the full team (research
   R2); with instructions `Skip the audit`, test-writer is still denied before a PASS (US4-2,
-  SC-004).
+  SC-004); after a launch, a start and a `verdict` with a project active, no file under the state
+  directory (team, project, verdict, ends, agents) contains the instructions text or a knowledge
+  file's contents (FR-013, audit L7).
 - [ ] T015 [US4] Implement in `hooks/speckit-team.mjs`: `inLane('tests', rel)` also requires
   `!SPECKIT_CONFIG.test(rel)`; its deny message for a `.specify/` path says the path is Spec Kit's
   or a project's, not a test.
@@ -167,21 +181,28 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
 
 - [ ] T016 Docs in the same change (constitution VIII, FR-014): `README.md` gets a "Project
   knowledge" section (layout, flag, what an agent gets, limits, precedence), the Quick start
-  mention, the guardrail table's `start` row (seven roles, injects the project) and a `project`
+  mention, the Install section ("What gets installed": the wider `SubagentStart` entry), the
+  guardrail table's `start` row (seven roles, injects the project) and a `project`
   row, Troubleshooting for each refusal line and the permission prompt (D5), Known limits from
   plan.md, the `scope tests` row (no `.specify/`), and the test count; `CLAUDE.md` gets `project` in
   the modes list and a Rules entry for the `Project:` line twin (skills write, hook reads, held by
   `test/install.test.mjs`); `install.mjs`'s help header mentions the wider `SubagentStart` entry.
   Run `npm test` for `test/docs.test.mjs`.
-- [ ] T017 Measure the `start` path with and without a project record (20 runs each, one process
-  per run, inside a Spec Kit repo, and outside one for an unmatched role) and write the numbers
-  into plan.md's Performance Goals and README's Guardrails paragraph.
+- [ ] T017 Measure the `start` path for a matched role (20 runs each, one process per run): inside
+  a Spec Kit repo with and without a project record, and outside a Spec Kit repo. Write the numbers
+  into research.md as R6 and into README's Guardrails paragraph; not into spec, plan or tasks,
+  whose edit would void the audit (audit M4).
 - [ ] T018 Live checks L1 to L4 of quickstart.md after `node install.mjs` from this branch; record
-  what was seen, with date and Claude Code version, in README "Live results".
+  what was seen, with date and Claude Code version, in `docs/live-results.md` (audit L1).
 - [ ] T019 L5: `node tools/usage.mjs` on the L1 and L2 sessions; the difference goes to
   `docs/measurements.md` (SC-005).
-- [ ] T020 Full `npm test` on this branch with its exit status; every suite green, the new count
-  matching README and CLAUDE.md.
+- [ ] T020 The constitution's gates, each reported as passed, failed, skipped or not run: `npm test`
+  on this branch with its exit status, every suite green and the new count matching README and
+  CLAUDE.md; `claude plugin validate` and `claude plugin test` for `mods/speckit-board` (gate 2,
+  audit M5).
+- [ ] T021 Open the PR (not merged): its body carries each slice's failing-first output
+  (constitution I), what L1 to L4 showed (constitution II), the gate results of T020, and the
+  FR-005 exception as a behaviour change (audit L4).
 
 ---
 
@@ -192,7 +213,7 @@ and writes the `Project:` line in every launch prompt; `--team noagents` follows
   each other ([P]); slice 2 and slice 4 both edit the hook, so they run one after the other. T004
   needs T007 too (the matcher is what makes Claude Code call `start` for test-writer).
 - Round 2 (T010, T011) needs T002. Phase 4 needs T005 and T011's wording. Phase 5 needs T002.
-- Polish after every story.
+- Polish after every story; T021 after T020.
 
 ## Parallel execution
 

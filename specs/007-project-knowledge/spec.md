@@ -20,6 +20,10 @@
 
 - Q: Where under the repository, how delivered, what limits, which writes blocked, which permission? → A: All recommended options of plan.md: `.specify/projects/<name>/` (D1); the hook injects the context at each agent's start from a `Project:` line (D2, FR-003, FR-009, SC-002); 8,192 bytes and 100 files (D3, FR-010); spec-auditor's and spec-gatekeeper's Bash writes are a known limit (D4, FR-008, SC-003); no installer allow rule (D5).
 
+### Audit 2026-10-15 (spec-auditor FAIL, finding F1)
+
+- Q: FR-005 promises identical decisions without the flag, but closing test-writer's lane on `.specify/` changes one in every run. Which gives? → A: FR-005 states it as its one exception (owner, 2026-10-15).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ground a pipeline run in a project (Priority: P1)
@@ -67,7 +71,8 @@ its launch prompts and hook decisions with the pre-change version: identical.
 **Acceptance Scenarios**:
 
 1. **Given** a project on disk and a request without the flag, **When** the run proceeds, **Then**
-   no launch prompt mentions the project and every guardrail decides as before this feature.
+   no launch prompt mentions the project and every guardrail decides as before this feature,
+   except test-writer's tests lane on `.specify/` paths (FR-005).
 2. **Given** a run with the flag, **When** the next request is started without it, **Then** that
    request runs with no project: the choice does not carry over.
 
@@ -159,7 +164,11 @@ gate still blocks implementer until an audit passes.
   file's contents, and each agent reads the files its task needs. The list MUST tell the agent to
   check it before deciding something a listed file could cover.
 - **FR-005**: Without the flag, launch prompts, stops and guardrail decisions MUST be identical to
-  the behaviour before this feature, whether or not any project exists on disk.
+  the behaviour before this feature, whether or not any project exists on disk, with one exception:
+  test-writer's tests lane (its scope rule and its lane check) no longer accepts a path under
+  `.specify/`, with or without the flag. Before this feature it accepted any such path that a test
+  pattern matched (`.specify/<anything>/test/...`), which left Spec Kit's config and every project
+  writable by test-writer.
 - **FR-006**: The project choice MUST apply to one request only and MUST NOT persist into later
   requests.
 - **FR-007**: The run MUST refuse, before launching anything, an unknown project, an empty project,

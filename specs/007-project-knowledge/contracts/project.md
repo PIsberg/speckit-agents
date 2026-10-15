@@ -62,7 +62,9 @@ Refusal: exit 1, stdout one line `speckit-team: project: <reason>`, where reason
 | not in a Spec Kit repo | `no .specify/ in this repository` |
 | an internal error | `internal error (<message>)` |
 
-`<list>` is the valid project names, comma-separated, or `none`. The mode writes no state.
+`<list>` is the valid project names, comma-separated, or `none`. Every refusal except the last two
+rows ends with ` Projects: <list>.` (FR-007), also where the table does not show it. The mode
+writes no state.
 
 ## 4. The `Project:` line
 

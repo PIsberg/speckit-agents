@@ -15,7 +15,7 @@ Then, in Claude Code: `/speckit-patch --project demo add a rounding helper`. The
 ## Live checks (constitution II: the SubagentStart matcher changes)
 
 Run after installing from this branch (`node install.mjs`), in a scratch Spec Kit repo with the demo
-project, and record what was seen in README.md "Live results".
+project, and record what was seen in `docs/live-results.md`.
 
 - **L1, injection**: `/speckit-patch --project demo <change>`. The patcher's transcript
   (`~/.claude/projects/<slug>/<session>/subagents/`) starts with the block as context, and its
