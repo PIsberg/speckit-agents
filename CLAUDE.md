@@ -40,7 +40,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
   (those tests fail instead of skipping), then type-checks the board mod on Linux:
   `npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`, after a
-  `claude --plugin-dir mods/speckit-board` session has laid its types. A `live-board` job runs
+  `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with eslint 10.8.0
+  (`eslint.config.mjs`, the version `.pre-commit-config.yaml` pins). A `live-board` job runs
   `tools/live-board.mjs` on Linux and macOS (vhs from its release, checksum pinned).
 - Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does. A new hook entry gets a case
   there that fails with the installed hook replaced by `process.exit(0)` (`SPECKIT_E2E_NO_HOOK=1`).

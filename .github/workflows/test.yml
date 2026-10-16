@@ -51,6 +51,12 @@ jobs:
           CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-types" claude --plugin-dir mods/speckit-board -p "/speckit-board refresh" > /dev/null || true
           test -f mods/speckit-board/tsconfig.json
           npx -y -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
+      # The eslint .pre-commit-config.yaml runs, at its version, on the files it sees: the tracked
+      # JavaScript. A commit made without pre-commit installed is checked here.
+      - name: Lint (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: npx -y eslint@10.8.0 $(git ls-files '*.js' '*.mjs' '*.cjs')
 
   # The board's interactive checks, feature 004's L3 to L6: tools/live-board.mjs lets vhs drive a real
   # Claude Code session against a fake API (no login, no model, $0) and fails on a failed check. On

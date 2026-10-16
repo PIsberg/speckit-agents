@@ -1286,6 +1286,15 @@ run:
 npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
 ```
 
+Last on Linux it lints the tracked JavaScript with the same eslint 10.8.0 that
+[`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs at each commit, configured by
+[`eslint.config.mjs`](eslint.config.mjs) with `@eslint/js`'s recommended rules written out, since
+pre-commit's own environment cannot import them. Locally:
+
+```sh
+npx -y eslint@10.8.0 $(git ls-files '*.js' '*.mjs' '*.cjs')
+```
+
 A second job, `live-board`, runs the board's interactive checks on Linux and macOS
 ([#116](https://github.com/PIsberg/speckit-agents/issues/116)): it installs vhs 0.11.0 from its
 release, the checksum pinned, and ttyd and ffmpeg from apt or Homebrew, then runs
