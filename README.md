@@ -14,13 +14,14 @@
 
 </div>
 
-A team of seven [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) that carries a
+A team of eight [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) that carries a
 feature through [GitHub Spec Kit](https://github.com/github/spec-kit), from idea to pull request.
 Six of them each own one phase. [Hooks](https://code.claude.com/docs/en/hooks), not prompt text, keep
 each one in its lane: the planner cannot write code, the implementer cannot touch tests, and
 nobody writes code until an independent auditor has passed the spec. The seventh, `patcher`, is a
 fast track beside the pipeline for a change of at most 30 production lines in 2 files
-(`/speckit-patch`), with no spec, plan or audit; hooks keep it inside that budget too.
+(`/speckit-patch`), with no spec, plan or audit; hooks keep it inside that budget too. The eighth,
+`security-reviewer`, joins a run only when asked (`/speckit-team --security`).
 
 ```
 idea ─► product-owner ─► architect ─► spec-auditor ─► per round: stubs─► red ─► green ─► spec-gatekeeper ─► PR
@@ -143,7 +144,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 
 | Installed file | What it is |
 |---|---|
-| `agents/{product-owner,architect,spec-auditor,test-writer,implementer,spec-gatekeeper,patcher}.md` | the seven subagents |
+| `agents/{product-owner,architect,spec-auditor,test-writer,implementer,spec-gatekeeper,security-reviewer,patcher}.md` | the eight subagents |
 | `skills/speckit-team/SKILL.md` | the `/speckit-team` command that runs the pipeline |
 | `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
@@ -290,7 +291,8 @@ runs will word things differently. The three recordings that wait on agents are 
 ### The team in the `@` typeahead
 
 Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
-folders. Claude Code 2.1.296 stops the list at 15 entries, so it shows six of the team's seven
+folders. Claude Code 2.1.296 stops the list at 15 entries. In the recording below, made on
+2026-10-10 when the team had seven agents (security-reviewer came on 2026-10-15), it shows six of them
 among Claude Code's own five agents: test-writer, last in alphabetical order, is left out. Claude Code
 2.1.295 removed the `/agents` menu this section used to show.
 
@@ -348,8 +350,8 @@ rejection message tells the agent what to do instead.
 
 ### Why each agent has a narrow description
 
-Claude Code puts every agent's description into every session so it can route work. These seven
-total about 1,900 characters (1,872 counted in the `description:` lines), about 470 tokens. The token figure is an estimate, not a measurement: 1,872 characters at the usual 4 characters per token for English text (counting tokens needs a model call, which was not made). Each one says when to use the agent and what it
+Claude Code puts every agent's description into every session so it can route work. These eight
+total about 2,100 characters (2,090 counted in the `description:` lines), about 520 tokens. The token figure is an estimate, not a measurement: 2,090 characters at the usual 4 characters per token for English text (counting tokens needs a model call, which was not made). Each one says when to use the agent and what it
 will not do, so routing does not have to guess.
 
 ## Why This Architecture Succeeds
@@ -1247,13 +1249,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 327 tests:
+`npm test` runs 328 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 62 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 89 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 90 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
@@ -1559,7 +1561,7 @@ message names, then let it finish.
 
 ### Install fails with "not installed by speckit-agents"
 
-You already have an agent with one of these seven names. Rename yours, or pass `--force` to back it
+You already have an agent with one of these eight names. Rename yours, or pass `--force` to back it
 up and replace it.
 
 ### "no project <name> in .specify/projects/; create it with --init."
@@ -1724,8 +1726,8 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 
 | Path | What it holds |
 |---|---|
-| [`agents/`](agents/) | the seven subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
-| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane` and `patch` |
+| [`agents/`](agents/) | the eight subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
+| [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the hook modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane` and `patch`, and `project`, which the skills run from Bash |
 | [`skills/`](skills/) | the `/speckit-team` pipeline skill, the `/speckit-patch` fast-track skill and the advisory `/speckit-triage` skill, each in `<name>/SKILL.md` |
 | [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
@@ -1734,7 +1736,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
-| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 006 |
+| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 008 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
 ### Making a change

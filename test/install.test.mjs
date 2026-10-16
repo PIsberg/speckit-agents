@@ -389,6 +389,21 @@ test("README states the agent bodies' length as agents/*.md has it", () => {
   assert.ok(readme.includes(`its ${body('patcher')}-line body`), `patcher body: ${body('patcher')}`);
 });
 
+// security-reviewer made the team eight, and the README went on saying seven in five places.
+test('README counts the agents and their description characters as agents/*.md has them', () => {
+  const repo = path.dirname(INSTALL);
+  const files = fs.readdirSync(path.join(repo, 'agents')).filter((f) => f.endsWith('.md'));
+  assert.deepEqual(files.map((f) => f.replace(/\.md$/, '')).sort(), [...AGENTS].sort(), 'AGENTS names every agent file');
+  const n = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][files.length];
+  const chars = files.reduce((sum, f) => sum
+    + (/^description: (.*)$/m.exec(fs.readFileSync(path.join(repo, 'agents', f), 'utf8'))?.[1].trimEnd().length ?? 0), 0);
+  const readme = flat(fs.readFileSync(path.join(repo, 'README.md'), 'utf8'));
+  for (const phrase of [`A team of ${n} [Claude Code subagents]`, `the ${n} subagents |`, `the ${n} subagent definitions`,
+    `one of these ${n} names`, `These ${n} total`, `(${chars.toLocaleString('en-US')} counted in the \`description:\` lines)`]) {
+    assert.ok(readme.includes(phrase), `README.md: ${phrase}`);
+  }
+});
+
 // 003 FR-013, FR-012, US5-1, US5-2 (T015): the advisory triage skill.
 test('installed speckit-triage skill is advisory, names both commands and the four signals, and uninstalls', () => {
   const dir = claudeDir();
