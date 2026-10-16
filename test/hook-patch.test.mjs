@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { HOOK, FEAT, repo, run, write, denied, pass, handback, decided, stateDir, commitAll, msg } from './hook-helpers.mjs';
+import { HOOK, repo, run, write, denied, decided, stateDir, commitAll, msg } from './hook-helpers.mjs';
 
 // ---- patch, PreToolUse: the budget stops the run (feature 003, T003) ----------------------------
 const MARK = 'PATCH-CONTENT-7f3a';
@@ -1088,7 +1088,7 @@ test('patch team: only agents/, hooks/, skills/<name>/ and the two settings file
   const { dir, hook, cfg } = teamRun({ prepare: (c) => { put(c, 'projects/x.jsonl', '{}'); put(c, 'skills/x/sub/deep.md', 'deep'); } });
   const { team } = JSON.parse(fs.readFileSync(startFile(dir), 'utf8'));
   assert.match(String(team?.['agents/patcher.md']), /^[0-9a-f]{64}$/, 'a team file is hashed');
-  assert.deepEqual(Object.keys(team ?? {}).filter((k) => /^projects[\/]|sub[\/]/.test(k)), []);
+  assert.deepEqual(Object.keys(team ?? {}).filter((k) => /^projects\/|sub\//.test(k)), []);
   put(cfg, 'projects/x.jsonl', '{"changed":1}'); put(cfg, 'skills/x/sub/deep.md', 'changed');
   noStop(tstop(dir, hook));
   assert.ok(record(dir), 'a change outside the hashed set is accepted');

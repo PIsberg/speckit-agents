@@ -389,6 +389,21 @@ test("README states the agent bodies' length as agents/*.md has it", () => {
   assert.ok(readme.includes(`its ${body('patcher')}-line body`), `patcher body: ${body('patcher')}`);
 });
 
+// security-reviewer made the team eight, and the README went on saying seven in five places.
+test('README counts the agents and their description characters as agents/*.md has them', () => {
+  const repo = path.dirname(INSTALL);
+  const files = fs.readdirSync(path.join(repo, 'agents')).filter((f) => f.endsWith('.md'));
+  assert.deepEqual(files.map((f) => f.replace(/\.md$/, '')).sort(), [...AGENTS].sort(), 'AGENTS names every agent file');
+  const n = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][files.length];
+  const chars = files.reduce((sum, f) => sum
+    + (/^description: (.*)$/m.exec(fs.readFileSync(path.join(repo, 'agents', f), 'utf8'))?.[1].trimEnd().length ?? 0), 0);
+  const readme = flat(fs.readFileSync(path.join(repo, 'README.md'), 'utf8'));
+  for (const phrase of [`A team of ${n} [Claude Code subagents]`, `the ${n} subagents |`, `the ${n} subagent definitions`,
+    `one of these ${n} names`, `These ${n} total`, `(${chars.toLocaleString('en-US')} counted in the \`description:\` lines)`]) {
+    assert.ok(readme.includes(phrase), `README.md: ${phrase}`);
+  }
+});
+
 // 003 FR-013, FR-012, US5-1, US5-2 (T015): the advisory triage skill.
 test('installed speckit-triage skill is advisory, names both commands and the four signals, and uninstalls', () => {
   const dir = claudeDir();
@@ -473,6 +488,24 @@ test('--dry-run writes nothing', () => {
   assert.match(r.stdout, /\[dry-run\] install/);
   assert.deepEqual(fs.readdirSync(dir), ['settings.json']);
   assert.equal(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'), before);
+});
+
+// A mistyped flag was ignored, so `--dryrun` wrote everything and `--unistall` installed.
+test('an unknown argument, or --claude-dir followed by a flag, is refused before anything is written', () => {
+  for (const typo of ['--dryrun', '--unistall', 'uninstall', '--board=yes']) {
+    const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
+    const before = bytes(dir);
+    const r = install(dir, typo);
+    assert.equal(r.status, 1, `${typo}: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(`unknown argument ${typo}.*--help`), typo);
+    assert.deepEqual(fs.readdirSync(dir), ['settings.json'], typo);
+    assert.deepEqual(bytes(dir), before, typo);
+  }
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'skagents-cwd-'));
+  const r = spawnSync(process.execPath, [INSTALL, '--claude-dir', '--dry-run'], { encoding: 'utf8', cwd });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /--claude-dir needs a directory/);
+  assert.deepEqual(fs.readdirSync(cwd), [], 'nothing installed into a directory named --dry-run');
 });
 
 test('--uninstall removes only what it installed', () => {
