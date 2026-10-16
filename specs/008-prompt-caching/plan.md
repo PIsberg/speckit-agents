@@ -4,6 +4,10 @@
 
 **Input**: Feature specification from `specs/008-prompt-caching/spec.md`
 
+> **2026-10-16:** Layers 2 to 4 and the inverted persona below assume this repository builds the API
+> request; Claude Code does. Only the tool determinism and the telemetry were built. See spec.md,
+> Outcome.
+
 ---
 
 ## Summary

@@ -227,3 +227,25 @@ elsewhere is not measured.
 Measured on 2026-10-15 (Claude Code 2.1.300, 007 L5 / SC-005):
 - The project block for `demo` (60 bytes instructions, 31 bytes knowledge file listing) adds 114 characters (~28 tokens) of `additionalContext` on `SubagentStart`.
 - At the maximum allowed size (8,192 bytes instructions, 100 knowledge files ~6,000 bytes header), the injected block adds at most ~14.2 KB (~3.5k tokens) to an agent's starting context, well within an agent's 200k context window and leaving ~196k for work.
+
+## What the prompt cache shares between agents
+
+Measured 2026-10-16. The request shape, on Claude Code 2.1.301 against the e2e fake API: a subagent
+gets its tools in the order of its `tools:` frontmatter line, unsorted; then `system` as a billing
+header, a fixed 62-character block with a cache breakpoint, and the agent's body as one block with a
+breakpoint; then the messages, with a breakpoint on the last user turn. Hook output reaches the
+messages only. So the only prefix two different agents can share is the tools list, and only if
+their lines are identical. Text put first in every body is not shared, because no breakpoint sits
+inside the body.
+
+The run of 2026-10-09 and 10 (53 agents, 2.1.29x), first request of each agent, tokens read from the
+cache: 0 for 16 agents; 3,040 for 12, all on Sonnet with the line `Read, Write, Edit, Bash`; 3,418 to
+4,366 for 24; 13,984 for one test-writer relaunched 3 minutes after the previous one. Per model over
+the whole run, cache reads were 97% of Opus input and 92% of Sonnet input.
+
+What it led to: agents with one capability keep one `tools:` line, held by
+[`test/prompt-caching.test.mjs`](../test/prompt-caching.test.mjs), with Claude Code's ordering pinned
+in [`test/e2e.test.mjs`](../test/e2e.test.mjs); and `tools/usage.mjs` names only a relaunch that lost
+its prefix, since a first launch always writes its own body. Why same-type relaunches a minute apart
+mostly read about 4k and not their whole prefix is not established: something in the body block
+changes between launches, but what was not measured.

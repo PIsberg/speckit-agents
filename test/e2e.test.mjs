@@ -338,6 +338,29 @@ test('two foreground Agent calls in one message run side by side, with and witho
   }
 });
 
+// The agents with one capability declare one `tools:` line (test/prompt-caching.test.mjs) because Claude
+// Code sends an agent's tools in its frontmatter order, unsorted, ahead of the system prompt: agents
+// with the same line share that prefix in the prompt cache, those with a shuffled one do not. The
+// agent's own body is a system block of its own, behind a cache breakpoint, so text written into the
+// body is never shared with another agent. Measured 2026-10-16 on 2.1.301. Needs no hook of the team.
+test("Claude Code sends an agent's tools in frontmatter order and its body as its own cached system block", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  fs.writeFileSync(path.join(s.cfg, 'agents', 'e2e-unsorted.md'),
+    '---\nname: e2e-unsorted\ndescription: e2e only\ntools: Write, Read, Edit, Bash\n---\n\nE2E UNSORTED BODY.\n');
+  const r = await session(s, {
+    [MAIN]: [[agent('e2e-unsorted', 'e2e unsorted'), agent('test-writer', 'e2e sorted')]],
+    'e2e unsorted': [say('Done.')],
+    'e2e sorted': [say('RED')],
+  });
+  const [unsorted, sorted] = [r.requests['e2e unsorted'][0], r.requests['e2e sorted'][0]];
+  assert.ok(unsorted && sorted, story(r));
+  assert.deepEqual(unsorted.tools.map((t) => t.name), ['Write', 'Read', 'Edit', 'Bash'], story(r));
+  assert.deepEqual(sorted.tools.map((t) => t.name), ['Bash', 'Edit', 'Read', 'Write'], story(r));
+  const body = unsorted.system.find((b) => b.text?.startsWith('E2E UNSORTED BODY.'));
+  assert.ok(body, `no system block starts with the agent's body: ${JSON.stringify(unsorted.system.map((b) => b.text?.slice(0, 60)))}`);
+  assert.deepEqual(body.cache_control, { type: 'ephemeral' });
+});
+
 // #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
 // --plugin-dir: Claude Code starts it, it sets the status line and raises its startup toast, and its
 // commands answer with no model call (004 quickstart L1, L2). Needs no hook of the team.
@@ -887,6 +910,18 @@ test('security-reviewer in real session: reports VERDICT: FAIL on critical findi
   });
   assert.match(lastResult(rFail.requests[MAIN][1]), /VERDICT: FAIL/, story(rFail));
   assert.match(lastResult(rFail.requests[MAIN][1]), /CRITICAL/, story(rFail));
+});
+
+// The skill routes on security-reviewer's last line, so a report without its verdict is refused once,
+// like spec-gatekeeper's. With SPECKIT_E2E_NO_HOOK=1 the first report goes through unrefused.
+test("security-reviewer's report must end in VERDICT: PASS or VERDICT: FAIL", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('security-reviewer', 'e2e security ends')],
+    'e2e security ends': [say('No CRITICAL or HIGH findings.\nPASS, pending a dependency audit'), say('No CRITICAL or HIGH findings.\nVERDICT: PASS')],
+  });
+  assert.match(shown(r.requests['e2e security ends'][1]), /Your report must end with a final line that is exactly one of: VERDICT: PASS, VERDICT: FAIL/, story(r));
+  assert.match(lastResult(r.requests[MAIN][1]), /^\s*VERDICT: PASS$/m, story(r));
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.

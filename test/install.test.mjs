@@ -57,6 +57,8 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   const implementer = fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8');
   assert.match(implementer, new RegExp(`node "${hookPath}" gate retries`));
   assert.match(implementer, new RegExp(`node "${hookPath}" result`));
+  const securityReviewer = fs.readFileSync(path.join(dir, 'agents', 'security-reviewer.md'), 'utf8');
+  assert.match(securityReviewer, new RegExp(`node "${hookPath}" ends "VERDICT: PASS" "VERDICT: FAIL"`));
   assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md')));
 
   // 003 FR-001, FR-006, FR-012, plan.md decision 14: the fast track's agent and skill.
@@ -1327,5 +1329,29 @@ test('installed speckit-team skill documents opting in security-reviewer via --s
   assert.match(text, /security-reviewer[^.]*(result|verify|diff)/i);
   assert.match(text, /route CRITICAL and HIGH findings to product-owner \(or to the user/i);
   assert.match(text, /route CRITICAL and HIGH findings to implementer \(or test-writer, or to the user/i);
+});
+
+// Live run 2026-10-16 (`--team implementer,security-reviewer`, a request naming a test file): the main
+// session told implementer to write the tests too, the lane check made it delete them, and the run
+// stopped before the security review. Without test-writer the brief leaves tests out.
+test('installed speckit-team skill keeps tests out of the brief of a team without test-writer', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const round = flat(skillSection(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'), '## 4-5. Red and green, one round at a time'));
+  assert.match(round, /Without test-writer, nobody writes tests: never ask implementer for a test file/);
+  assert.match(round, /hand-over lists the tests the request named as not written/);
+});
+
+// A fix for a result-phase finding changes code spec-gatekeeper already approved, so the skill sends it
+// back through verification; and, as with the audit, two FAILs in a row go to the user, not a third round.
+test('installed speckit-team skill re-verifies a security fix and stops security rounds after two FAILs', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const spec = /If security-reviewer is in the team: launch security-reviewer[^\n]*?phase: spec`.*?proceed to the spec review stop\./.exec(text)?.[0];
+  const result = /If security-reviewer is in the team: after spec-gatekeeper.*?proceed to handover\./.exec(text)?.[0];
+  assert.ok(spec && result, 'both security-reviewer phases are in the skill');
+  for (const phase of [spec, result]) assert.match(phase, /After two FAILs, hand the findings to the user/);
+  assert.match(result, /re-run spec-gatekeeper[^.]*before[^.]*security-reviewer/);
 });
 

@@ -6,6 +6,31 @@ said where it was run. The README's [Live results](../README.md#live-results) is
 ## Project knowledge
 
 <details>
+<summary><b>2026-10-16</b>: Claude Code 2.1.301, Windows 11, a project and security-reviewer with real models (007, the security-reviewer agent)</summary>
+
+Setup: a scratch repo with `.specify/` laid down by hand (`specify init` hung when spawned from the
+session), a `demo` project whose `instructions.md` requires every new JavaScript file to start with
+`// demo-project: reviewed`, and the branch's team installed into a throwaway config dir. Twice,
+headless: `/speckit-team --team implementer,security-reviewer --project demo Add src/greet.js
+exporting greet(name) ... with node:test tests in test/greet.test.js.`, main session on Sonnet,
+`acceptEdits`, fork subagents off. The repo sat under the home directory, so `~/.claude/CLAUDE.md`
+loaded as project instructions in both runs; its rules (branch first, tests first) were in play.
+
+| Check | Result |
+|---|---|
+| Team line with security-reviewer | Seen. The `Agent` gate recorded `team for this session: implementer, security-reviewer; audit gate off`. |
+| Project block, real model | Seen. `SubagentStart` gave implementer and security-reviewer the `demo` block; implementer started `src/greet.js` with `// demo-project: reviewed`, the rule nothing else in the run named. |
+| Run 1 ($0.23, 6 turns) | A defect. With no test-writer, the main session told implementer to write the tests too. Implementer's lane check at Stop made it delete `test/greet.test.js`, and the main session stopped before the security review. The skill now says that without test-writer nobody writes tests (`test/install.test.mjs`). |
+| Run 2 ($0.25, 6 turns), skill fixed | Seen. Implementer's brief left the tests out; it reported `RESULT: GREEN`. security-reviewer ran `phase: result` on `git diff main...HEAD` and ended `VERDICT: PASS` with two LOW findings (no negative tests; output unescaped if put in HTML). Its `ends` hook accepted the report: `.git/speckit-team/agents/<id>.ends-ok` was written. The hand-over listed the tests as not written. |
+| `tools/usage.mjs` on run 2 | Cache hit rate 84% on Sonnet; no lost-prefix entry, as expected with one agent per type. |
+
+Not seen: security-reviewer's spec phase, a `VERDICT: FAIL` and its routing, and the `ends` refusal
+with a real model (the model ended its report correctly the first time; the refusal is held by
+`test/e2e.test.mjs`).
+
+</details>
+
+<details>
 <summary><b>2026-10-15</b>: Claude Code 2.1.300, Windows 11, project knowledge live checks (007, L1 to L4 and L6), against a fake API</summary>
 
 Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructions.md` (60 bytes) and `rounding.md` (31 bytes), the branch's team installed via `node install.mjs`, running Claude Code 2.1.300 against a localhost fake API harness.
