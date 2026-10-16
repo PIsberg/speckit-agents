@@ -1526,3 +1526,23 @@ test('security agent: default launch with no Team line does not include security
   assert.ok(!teamRecord(dir).roles.includes('security-reviewer'), 'opt-in role is not in default team');
 });
 
+// agent_id names the per-agent state files. It was joined into their paths unchecked, while session_id
+// is checked, so an id with path segments wrote the hook's state anywhere the hook could write.
+test('an agent_id that is not an id never puts state outside .git/speckit-team/agents/, and the once-only asks still hold', () => {
+  const { dir } = repo();
+  pass(dir);
+  const agent_id = '../../../escaped';
+  const escaped = () => [dir, path.join(dir, '.git'), stateDir(dir)]
+    .flatMap((d) => fs.readdirSync(d).filter((f) => f.startsWith('escaped')).map((f) => path.join(d, f)));
+  assert.equal(write(dir, ['gate'], 'src/main/App.java', { agent_id }), null, 'gate: the audit passed, the write goes through');
+  run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id });
+  const ends = ['ends', 'DONE'];
+  const report = { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'no word' }, agent_id };
+  assert.ok(denied(run(dir, ends, report)), 'ends: refused once');
+  assert.equal(run(dir, ends, report), null, 'ends: never twice');
+  assert.ok(denied(run(dir, ['result'], report)), 'result: refused once');
+  assert.deepEqual(escaped(), []);
+  const kept = fs.readdirSync(path.join(stateDir(dir), 'agents'));
+  assert.ok(kept.length >= 4, `the state is kept under agents/: ${kept}`);
+});
+

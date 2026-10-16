@@ -119,6 +119,11 @@ const event = input.hook_event_name;
 // Fields used as paths must be strings; any other type is treated as absent.
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const agentId = str(input.agent_id);
+// The name of an agent's state files under agents/. An id that is not word characters is hashed, so a
+// path segment in it can never place a file outside the state directory.
+const AGENT_ID = /^[\w-]{1,128}$/;
+const agentKey = agentId && (AGENT_ID.test(agentId) ? agentId
+  : `id-${createHash('sha256').update(agentId).digest('hex').slice(0, 32)}`);
 // Safety net under every specific check below: a hook must never exit with a crash, because Claude
 // Code then lets the action through and says nothing. Inside a Spec Kit repo any error that slips
 // through becomes no decision plus a visible message; outside one it stays silent.
@@ -353,7 +358,6 @@ function testsAt(rev) {
 const inLane = (rule, rel) => (rule === 'tests' ? !SPECKIT_CONFIG.test(rel) && (isTest(rel) || TASKS_FILE.test(rel)) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 // A prefix ending in / is a directory; anything else must match the whole path.
 const inPrefixes = (prefixes, rel) => prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)));
-const AGENT_ID = /^[\w-]{1,128}$/;
 
 // The active feature as a repo-relative path. Spec Kit accepts an absolute feature_directory too;
 // joined under the root as-is it named four missing files, and that fingerprint never went stale.
@@ -624,9 +628,9 @@ if (mode === 'gate') {
         + `Stop and report back; do not try to reset the count. ${next}, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
     }
   }
-  if (agentId && !fs.existsSync(baseFile(agentId))) {
+  if (agentId && !fs.existsSync(baseFile(agentKey))) {
     const sha = git(root, 'rev-parse', 'HEAD');
-    if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
+    if (sha) writeJson(baseFile(agentKey), { sha, dirty: changedSince('HEAD') });
   }
   process.exit(0);
 }
@@ -634,8 +638,8 @@ if (mode === 'gate') {
 if (mode === 'verdict') {
   // The auditor's first tool call records the files it starts from: a verdict is about the files it
   // read, and one that finishes after they changed would stamp itself on files nobody audited (#77).
-  const startFile = agentId && path.join(stateDir, 'agents', `${agentId}.audit-start.json`);
-  const doneFile = agentId && path.join(stateDir, 'agents', `${agentId}.verdict-done`);
+  const startFile = agentKey && path.join(stateDir, 'agents', `${agentKey}.audit-start.json`);
+  const doneFile = agentKey && path.join(stateDir, 'agents', `${agentKey}.verdict-done`);
   if (event === 'PreToolUse' && input.tool_name !== 'SubagentHandback') {
     const feat = feature();
     if (!startFile || !feat) process.exit(0);
@@ -654,7 +658,7 @@ if (mode === 'verdict') {
   if (!found) {
     if (viaHandback) {
       // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
-      const asked = agentId && path.join(stateDir, 'agents', `${agentId}.verdict-asked`);
+      const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.verdict-asked`);
       if (!asked || fs.existsSync(asked)) process.exit(0);
       writeJson(asked, {});
       deny(`${ask} Add it and send the report again.`);
@@ -688,12 +692,12 @@ if (mode === 'result') {
   const feat = feature();
   if (!feat) process.exit(0);
   // The Stop that follows a counted handback is the same attempt, not a second one.
-  const done = agentId && path.join(stateDir, 'agents', `${agentId}.result`);
+  const done = agentKey && path.join(stateDir, 'agents', `${agentKey}.result`);
   if (done && fs.existsSync(done)) process.exit(0);
   const found = [...reportText(viaHandback).matchAll(/^[\s*>#]*RESULT:?[\s*]*(GREEN|RED|STUB)\b/gim)].pop();
   if (!found) {
     const ask = 'End your report with a final line that is exactly `RESULT: GREEN`, `RESULT: RED` or `RESULT: STUB`.';
-    const asked = agentId && path.join(stateDir, 'agents', `${agentId}.result-asked`);
+    const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.result-asked`);
     // Refuse once, so the report gets its result; never twice, so the agent is never gagged.
     if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(`${ask} Add it and send the report again.`); }
     if (!viaHandback && !input.stop_hook_active) block(ask);
@@ -727,7 +731,7 @@ if (mode === 'ends') {
   const record = args[0] === '--record';
   const words = record ? args.slice(1) : args;
   if (!words.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
-  const ok = agentId && path.join(stateDir, 'agents', `${agentId}.ends-ok`);
+  const ok = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
   const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
   const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
@@ -742,7 +746,7 @@ if (mode === 'ends') {
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
     + 'Finish the work first, then send the full report.';
-  const asked = agentId && path.join(stateDir, 'agents', `${agentId}.ends-asked`);
+  const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-asked`);
   if (viaHandback && asked && !fs.existsSync(asked)) { writeJson(asked, {}); deny(ask); }
   if (!viaHandback && !input.stop_hook_active) block(ask);
   process.exit(0);
@@ -754,9 +758,9 @@ if (mode === 'ends') {
 // 007): the block goes to the agent as additionalContext. Never a decision.
 if (mode === 'start') {
   const type = str(input.agent_type);
-  if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentId))) {
+  if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
     const sha = git(root, 'rev-parse', 'HEAD');
-    if (sha) writeJson(baseFile(agentId), { sha, dirty: changedSince('HEAD') });
+    if (sha) writeJson(baseFile(agentKey), { sha, dirty: changedSince('HEAD') });
   }
   const id = str(input.session_id);
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
@@ -772,7 +776,7 @@ if (mode === 'lane') {
   // `only <prefix>...` holds product-owner and architect to the prefixes of their scope rule.
   const [rule, ...prefixes] = args;
   const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : inLane(rule, rel));
-  const f = agentId && baseFile(agentId);
+  const f = agentId && baseFile(agentKey);
   const base = f && readState(f);
   if (!base) {
     if (base === null) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is unreadable.` });
