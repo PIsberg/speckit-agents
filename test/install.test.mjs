@@ -475,6 +475,24 @@ test('--dry-run writes nothing', () => {
   assert.equal(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'), before);
 });
 
+// A mistyped flag was ignored, so `--dryrun` wrote everything and `--unistall` installed.
+test('an unknown argument, or --claude-dir followed by a flag, is refused before anything is written', () => {
+  for (const typo of ['--dryrun', '--unistall', 'uninstall', '--board=yes']) {
+    const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
+    const before = bytes(dir);
+    const r = install(dir, typo);
+    assert.equal(r.status, 1, `${typo}: ${r.stdout}`);
+    assert.match(r.stderr, new RegExp(`unknown argument ${typo}.*--help`), typo);
+    assert.deepEqual(fs.readdirSync(dir), ['settings.json'], typo);
+    assert.deepEqual(bytes(dir), before, typo);
+  }
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'skagents-cwd-'));
+  const r = spawnSync(process.execPath, [INSTALL, '--claude-dir', '--dry-run'], { encoding: 'utf8', cwd });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stderr, /--claude-dir needs a directory/);
+  assert.deepEqual(fs.readdirSync(cwd), [], 'nothing installed into a directory named --dry-run');
+});
+
 test('--uninstall removes only what it installed', () => {
   const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
   install(dir);

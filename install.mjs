@@ -12,6 +12,8 @@
 //                                    the team's agents run in the foreground; later reruns keep it
 //   node install.mjs --fork          remove what --no-fork wrote
 //
+// Any other argument is refused before anything is written.
+//
 // What gets installed: eight subagents, three skills, one hook script, and settings.json gates
 // (PreToolUse, UserPromptExpansion, and SubagentStart for the eight roles to record start and inject project context).
 //
@@ -57,8 +59,15 @@ if (flag('--help') || flag('-h')) {
   process.exit(0);
 }
 const dirArg = argv.indexOf('--claude-dir');
-if (dirArg >= 0 && !argv[dirArg + 1]) {
+if (dirArg >= 0 && (!argv[dirArg + 1] || argv[dirArg + 1].startsWith('--'))) {
   console.error('ERROR: --claude-dir needs a directory.');
+  process.exit(1);
+}
+// A mistyped flag used to be ignored: `--dryrun` wrote everything and `--unistall` installed.
+const FLAGS = ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board', '--no-fork', '--fork'];
+const unknown = argv.find((a, i) => !FLAGS.includes(a) && !(i === dirArg + 1 && dirArg >= 0));
+if (unknown !== undefined) {
+  console.error(`ERROR: unknown argument ${unknown}. node install.mjs --help lists the flags.`);
   process.exit(1);
 }
 const claudeDir = path.resolve(dirArg >= 0 ? argv[dirArg + 1] : process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
