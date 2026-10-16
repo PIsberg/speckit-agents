@@ -397,7 +397,7 @@ if (uninstall) {
   // settings without the gates, in the file's own format. Never a backup at uninstall.
   if (settingsText !== null) {
     const backup = m.settingsBackup && read(abs(m.settingsBackup));
-    let original = null;
+    let original;
     try { original = backup === null || backup === undefined ? null : JSON.parse(backup); } catch { original = null; }
     const stripped = keepEmptyContainers(withNoNetworkRule(withFork(withGates(settings, false), false, Boolean(m.addedForkEnv)).next,
       false, Boolean(m.addedNoNetworkRule)).next, original);

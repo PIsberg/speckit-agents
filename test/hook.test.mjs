@@ -1486,10 +1486,12 @@ test('security agent: typedRoles handles --security flag alone or with --team', 
   const { dir } = repo();
   const out1 = typedTeam(dir, '--security --team noagents x');
   assert.equal(teamRecord(dir)?.noagents, true);
+  assert.match(msg(out1), /no agents for this request/, 'the user is told the audit gate is skipped');
 
   const { dir: d2 } = repo();
   const out2 = typedTeam(d2, '--team noagents --security x');
   assert.equal(teamRecord(d2)?.noagents, true);
+  assert.match(msg(out2), /no agents for this request/);
 
   const { dir: d3 } = repo();
   assert.equal(typedTeam(d3, '--security x'), null);

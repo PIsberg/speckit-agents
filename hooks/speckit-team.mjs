@@ -222,7 +222,6 @@ function renderProject(name) {
   const walk = (d, relDir) => {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
       // A name with a control character or a line separator could start a line of its own in the block.
-      // eslint-disable-next-line no-control-regex
       if (e.name.startsWith('.') || e.isSymbolicLink() || UNSAFE_NAME.test(e.name)) continue;
       const r = `${relDir}/${e.name}`;
       if (e.isDirectory()) walk(path.join(d, e.name), r);
@@ -953,6 +952,7 @@ function braceExpand(word) {
       return cuts.slice(1).flatMap((c, n) => braceExpand(head + word.slice(cuts[n] + 1, c) + tail));
     }
   }
+  // eslint-disable-next-line no-control-regex -- the brace markers are control characters on purpose
   return [word.replace(/[\u0001-\u0003]/g, (m) => ({ [BRACE_OPEN]: '{', [BRACE_COMMA]: ',', [BRACE_CLOSE]: '}' })[m])];
 }
 function ansiC(body) {
