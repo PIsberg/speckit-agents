@@ -2,6 +2,9 @@
 
 **Feature**: `008-prompt-caching` | **Date**: 2026-10-15
 
+> **2026-10-16:** The prompt entities below were never built (spec.md, Outcome); only the usage
+> metrics are.
+
 ---
 
 ## 1. Entities & Schemas

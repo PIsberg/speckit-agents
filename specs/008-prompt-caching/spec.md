@@ -4,7 +4,25 @@
 
 **Created**: 2026-10-15
 
-**Status**: Draft
+**Status**: Partly implemented (FR-002, FR-003, FR-013, FR-014); the rest is out of this repository's reach, see Outcome
+
+## Outcome (2026-10-16)
+
+Claude Code builds every API request, so this repository decides only an agent's `tools:` line and
+its body. Measured on Claude Code 2.1.301 against the e2e fake API (pinned in `test/e2e.test.mjs`), a
+subagent's request is: its tools in frontmatter order, unsorted; then `system` as a billing header,
+a fixed 62-character block with a cache breakpoint, and the agent's body plus Claude Code's own notes
+as one block with a breakpoint; then the messages, with a breakpoint on the last user turn. Hook
+output (`additionalContext`) arrives in the messages, never in `system`.
+
+So the layering in FR-001, FR-004 and FR-006 to FR-012 cannot be built from here: there is no block
+ahead of the agent's body to put shared text in, and no way to place a breakpoint. The
+`tools/prompt-cache.mjs` module the first PR (#132) added built such payloads, but nothing called it, and it
+was removed. What does hold: agents with one capability declare one `tools:` line (FR-002, FR-003),
+which a real run shows paying off (writer agents read about 3,000 tokens of tools back from each
+other's launches); and `tools/usage.mjs` reports the hit rate per model (FR-013) and flags a relaunch
+of the same type that read nothing back within the cache lifetime (FR-014, narrowed: a first launch
+writes its own prefix by design). The rest: issue #133.
 
 **Input**: User strategy for Anthropic API prefix-based prompt caching optimization across `speckit-agents` multi-agent coordination (Sonnet and Opus), shared project knowledge (`.specify/projects/<name>/`), dual security gates (`security-reviewer` in spec and result phases), stable phase artifacts (`spec.md`, `plan.md`, `tasks.md`), and iterative loops (TDD retries and kick-backs).
 

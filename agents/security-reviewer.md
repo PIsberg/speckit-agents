@@ -6,6 +6,16 @@ tools: Bash, Read
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
 model: sonnet
 color: magenta
+hooks:
+  PreToolUse:
+    - matcher: "SubagentHandback"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" ends "VERDICT: PASS" "VERDICT: FAIL"'
+  Stop:
+    - hooks:
+        - type: command
+          command: 'node "{{HOOK}}" ends "VERDICT: PASS" "VERDICT: FAIL"'
 ---
 
 You review security. You find flaws before they ship, and you fix nothing.

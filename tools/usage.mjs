@@ -16,6 +16,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The default prompt cache lifetime; a relaunch later than this starts cold anyway.
+const CACHE_TTL_MS = 5 * 60 * 1000;
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => p?.text ?? '').join('\n') : '');
 const BACKGROUND = /Async agent launched/;
 
@@ -40,7 +42,7 @@ export function responses(rows, { sidechain = false } = {}) {
     if (m?.role !== 'assistant' || !m.usage) continue;
     const key = m.id ?? `line${n++}`;
     const u = m.usage;
-    const e = byId.get(key) ?? { model: m.model ?? '?', after, tools: 0 };
+    const e = byId.get(key) ?? { model: m.model ?? '?', after, tools: 0, at: r.timestamp };
     e.uncached = u.input_tokens ?? 0;
     e.cacheRead = u.cache_read_input_tokens ?? 0;
     e.cacheWrite = u.cache_creation_input_tokens ?? 0;
@@ -92,15 +94,22 @@ export function summarise(file) {
     return { type, responses: r.length, input: sum(r, 'input'), peak: Math.max(0, ...r.map((x) => x.input)), models: [...new Set(r.map((x) => x.model))] };
   });
 
+  // An agent's system prompt and tools are its own, so the first launch of a type always writes the
+  // cache. A relaunch of the same type on the same model within the cache lifetime of the previous
+  // one's last request should read at least the shared prefix back; one that reads nothing lost it.
+  // In launch order: agent file names are random ids.
   const warnings = [];
-  const modelSeen = new Set(main.models);
-  for (const { type, responses: r } of agentDetails) {
-    if (r.length === 0) continue;
+  const lastOf = new Map();
+  const started = agentDetails.filter((a) => a.responses.length)
+    .sort((a, b) => String(a.responses[0].at ?? '').localeCompare(String(b.responses[0].at ?? '')));
+  for (const { type, responses: r } of started) {
     const first = r[0];
-    if (modelSeen.has(first.model) && first.cacheWrite > 0 && first.cacheRead === 0) {
-      warnings.push(`agent '${type}' had a cold cache write on '${first.model}' (possible cache divergence on handoff)`);
+    const key = `${type}\n${first.model}`;
+    const gap = Date.parse(first.at) - Date.parse(lastOf.get(key)?.at);
+    if (gap >= 0 && gap <= CACHE_TTL_MS && first.cacheRead === 0 && first.cacheWrite > 0) {
+      warnings.push(`agent '${type}' on '${first.model}' read nothing from the cache although the previous '${type}' made a request ${Math.round(gap / 1000)}s before it: its prompt prefix changed between launches`);
     }
-    for (const m of r.map((x) => x.model)) modelSeen.add(m);
+    lastOf.set(key, r.at(-1));
   }
 
   // Named as in the `modelUsage` of `claude -p --output-format json`, to compare against it.
@@ -134,7 +143,7 @@ export function format({ main, agents, models, warnings = [] }) {
     out.push(`  ${model}: uncached ${t.inputTokens}, cache read ${t.cacheReadInputTokens}, cache write ${t.cacheCreationInputTokens} (cache hit rate ${pct(t.cacheReadInputTokens, total)})`);
   }
   if (warnings.length) {
-    out.push('cache divergence warnings:');
+    out.push('agents that lost their cached prefix on a relaunch:');
     for (const w of warnings) out.push(`  ${w}`);
   }
   return out.join('\n');

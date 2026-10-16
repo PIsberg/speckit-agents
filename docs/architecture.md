@@ -26,13 +26,14 @@ The `security-reviewer` agent is an opt-in reviewer (`/speckit-team --security` 
 1. **Spec Review Phase (`phase: spec`)**:
    - Runs after `product-owner` reports `READY FOR PLAN`, before the user reviews `spec.md`.
    - Inspects `spec.md`, `plan.md`, and constitution for threat models, trust boundaries, auth/access controls, and sensitive data exposure.
-   - On `FAIL` (CRITICAL or HIGH findings), routes findings back to `product-owner` (or the user if absent), then re-runs.
+   - On `FAIL` (CRITICAL or HIGH findings), routes findings back to `product-owner` (or the user if absent), then re-runs. After two FAILs the findings go to the user.
    - On `PASS`, advances to the user spec review stop.
 
 2. **Result Review Phase (`phase: result`)**:
    - Runs after `spec-gatekeeper` verification (or after the final build round when `spec-gatekeeper` is absent), before handover.
    - Inspects the git diff (`git diff main...HEAD`), changed files, dependencies, and automated tests for OWASP vulnerabilities, secrets, and injection flaws.
-   - On `FAIL` (CRITICAL or HIGH findings), routes findings to `implementer` or `test-writer` (or the user if absent), then re-runs.
+   - On `FAIL` (CRITICAL or HIGH findings), routes findings to `implementer` or `test-writer` (or the user if absent). The fix changes code `spec-gatekeeper` approved, so `spec-gatekeeper` (when chosen) verifies again before the re-run. After two FAILs the findings go to the user.
+   - Either phase's report must end in `VERDICT: PASS` or `VERDICT: FAIL`: an `ends` hook refuses it once otherwise.
    - On `PASS`, proceeds to PR handover.
 
 ```mermaid

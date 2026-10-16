@@ -84,29 +84,54 @@ test('usage prints the summary from the command line, and usage help without a t
   assert.match(missing.stderr, /usage: node tools\/usage\.mjs/);
 });
 
-function transcriptWithDivergence() {
+// A session on Sonnet whose agents are given as [file id, type, first-request time, cache read of the
+// first request]. Each agent makes two requests a minute apart. The file ids sort in another order
+// than the times, as Claude Code's random agent ids do.
+function sessionWithAgents(agents) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skusage-div-'));
   const file = path.join(dir, 'sess.jsonl');
-  const lines = [
-    hear('/speckit-team test'),
-    say('m1', usage(1000, 100), [{ type: 'text', text: 'Start' }]),
-  ];
-  fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n'));
+  fs.writeFileSync(file, [hear('/speckit-team test'), say('m1', usage(1000, 100), [{ type: 'text', text: 'Start' }])].map((l) => JSON.stringify(l)).join('\n'));
   const sub = path.join(dir, 'sess', 'subagents');
   fs.mkdirSync(sub, { recursive: true });
-  const side = { isSidechain: true, agentId: 'a2', model: 'claude-sonnet-5-5' };
-  fs.writeFileSync(path.join(sub, 'agent-a2.jsonl'), [
-    hear('Work', side),
-    say('s1', usage(0, 500), [{ type: 'text', text: 'Cold write' }], side),
-  ].map((l) => JSON.stringify(l)).join('\n'));
-  fs.writeFileSync(path.join(sub, 'agent-a2.meta.json'), JSON.stringify({ agentType: 'security-reviewer' }));
+  for (const [id, type, at, read] of agents) {
+    const side = { isSidechain: true, agentId: id, model: 'claude-sonnet-5-5' };
+    const later = new Date(Date.parse(at) + 60_000).toISOString();
+    fs.writeFileSync(path.join(sub, `agent-${id}.jsonl`), [
+      hear('Work', side),
+      say(`${id}-1`, usage(read, 500), [{ type: 'text', text: 'Reading.' }], { ...side, timestamp: at }),
+      say(`${id}-2`, usage(read + 500), [{ type: 'text', text: 'Done.' }], { ...side, timestamp: later }),
+    ].map((l) => JSON.stringify(l)).join('\n'));
+    fs.writeFileSync(path.join(sub, `agent-${id}.meta.json`), JSON.stringify({ agentType: type }));
+  }
   return file;
 }
 
-test('usage warns on cold cache write during same-model agent handoff', () => {
-  const file = transcriptWithDivergence();
-  const res = summarise(file);
-  assert.equal(res.warnings.length, 1);
-  assert.match(res.warnings[0], /security-reviewer.*cold cache write.*claude-sonnet-5-5/);
+test('usage does not warn on the first launch of an agent type: its prompt is its own, so the cold write is expected', () => {
+  // The 2026-10-09 run had 53 agents; flagging every first cold write on the main session's model
+  // marked 15 of them, each the first of its type or after the cache expired.
+  const { warnings } = summarise(sessionWithAgents([
+    ['f1', 'product-owner', '2026-10-09T21:06:00Z', 0],
+    ['a2', 'security-reviewer', '2026-10-09T21:10:00Z', 0],
+  ]));
+  assert.deepEqual(warnings, []);
+});
+
+test('usage warns when a relaunch of the same type within the cache lifetime reads nothing back, in launch order', () => {
+  // f1 sorts after a2 by file name but started first; a2 is the relaunch that lost the prefix.
+  const { warnings } = summarise(sessionWithAgents([
+    ['f1', 'architect', '2026-10-09T21:14:00Z', 0],
+    ['a2', 'architect', '2026-10-09T21:17:00Z', 0],
+    ['b3', 'architect', '2026-10-09T21:20:00Z', 4366],
+  ]));
+  assert.equal(warnings.length, 1, warnings.join('\n'));
+  assert.match(warnings[0], /architect.*claude-sonnet-5-5.*120s/);
+});
+
+test('usage does not warn on a relaunch after the cache lifetime has passed', () => {
+  const { warnings } = summarise(sessionWithAgents([
+    ['f1', 'implementer', '2026-10-10T06:10:00Z', 0],
+    ['a2', 'implementer', '2026-10-10T07:04:00Z', 0],
+  ]));
+  assert.deepEqual(warnings, []);
 });
 

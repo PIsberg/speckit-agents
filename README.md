@@ -148,7 +148,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-patch/SKILL.md` | the `/speckit-patch` command that runs the [fast track](#the-fast-track) |
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `hooks/speckit-team.mjs` | every guardrail |
-| `settings.json` | three hook entries merged in (`PreToolUse`, `UserPromptExpansion`, and `SubagentStart` for the seven roles to record start and inject project context), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
+| `settings.json` | three hook entries merged in (`PreToolUse`, `UserPromptExpansion`, and `SubagentStart` for the eight agents to record start and inject project context), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
 
 #### Installer options
 
@@ -415,7 +415,7 @@ What an absent role skips, and the guardrails that go with it:
 | `test-writer` | the red step; the test tasks stay unticked | spec-gatekeeper's test trace and its open-task check on the test tasks |
 | `implementer` | the stub and green steps; the other tasks stay unticked | the stub pass (a test failing on a missing symbol counts as red), spec-gatekeeper's passing tests and its open-task check on those tasks |
 | `spec-gatekeeper` | verification and REJECTED routing | the recorded last word |
-| `security-reviewer` | the security review of the spec and the security review of the result | none |
+| `security-reviewer` | the security review of the spec and the security review of the result | its `ends` check on the `VERDICT:` line |
 
 Every run keeps the hand-over (PR and CI), each chosen agent's `scope`, `lane`, `ends` and `result`
 hooks, the retry limit while implementer is chosen, tests before implementation when both
@@ -760,11 +760,11 @@ Activate it for a run with `--project <name>`:
 /speckit-patch --project billing Fix currency formatting in PDF export
 ```
 
-`--project` and `--team` can be passed in either order before the request text (`--project billing --team test-writer,implementer` or `--team test-writer,implementer --project billing`), each at most once.
+`--project`, `--team` and `--security` can be passed in any order before the request text (`--project billing --team test-writer,implementer` or `--team test-writer,implementer --project billing`), each at most once.
 
 #### What an agent gets
 
-Before anything is launched, the skill checks the project with `node hooks/speckit-team.mjs project <name>`. If valid, the hook's `SubagentStart` event injects the project block into the agent's prompt as `additionalContext` for all seven roles (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `spec-gatekeeper`, and `patcher`).
+Before anything is launched, the skill checks the project with `node hooks/speckit-team.mjs project <name>`. If valid, the hook's `SubagentStart` event injects the project block into the agent's prompt as `additionalContext` for all eight agents (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `spec-gatekeeper`, `security-reviewer`, and `patcher`).
 
 The injected block contains:
 1. The project header with the name, instruction byte size, and sorted list of knowledge files with byte sizes.
@@ -822,10 +822,11 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
-| `start` | `settings.json`: `SubagentStart` of the seven roles | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all seven roles when a project is active (007); never decides |
+| `start` | `settings.json`: `SubagentStart` of the eight agents | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all eight when a project is active (007); never decides |
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
+| `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The three
 `settings.json` entries are the ones the installer merges in. `start` is one of them because Claude
@@ -1243,17 +1244,18 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 308 tests:
+`npm test` runs 325 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 104 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 62 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 84 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 88 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
-| [`test/usage.test.mjs`](test/usage.test.mjs) | 4 | `tools/usage.mjs`, on a synthetic transcript |
+| [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
+| [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 40 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 42 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1301,7 +1303,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 31
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 32
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1321,10 +1323,11 @@ need no login and cost nothing.
   ([#72](https://github.com/PIsberg/speckit-agents/issues/72)) and once in `default` with the
   installer's allow rule and one for the script, where it ran with no prompt
   ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 31
-  fail, as do the two blocking cases above (measured again 2026-10-12, Claude Code 2.1.296: 31 failures, none of the 29 passed). Setting
+  fire lets the action through. With the installed hook replaced by one that only exits, all 32
+  fail, as do the two blocking cases above (measured again 2026-10-16, Claude Code 2.1.301: 34
+  failures, none of the 32 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  33 of the 40 tests fail (the 31 scripted ones and the two blocking no-model cases); the other seven
+  34 of the 42 tests fail (the 32 scripted ones and the two blocking no-model cases); the other eight
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1341,7 +1344,12 @@ need no login and cost nothing.
   commit with the next launch relies on it. A fifth pins that two Agent calls in one message run
   side by side, with and without `isolation: "worktree"`: each agent's Bash call waits 5 s, both
   start before either finishes, and the main session's next request comes after both. With the
-  calls in two messages it fails. [Parallel slices](#parallel-slices) relies on it.
+  calls in two messages it fails. [Parallel slices](#parallel-slices) relies on it. A sixth pins
+  what the prompt cache can share between agents: Claude Code sends an agent's tools in the order of
+  its `tools:` line, unsorted (an agent declaring `Write, Read, Edit, Bash` gets them in that order),
+  and its body as a system block of its own with a cache breakpoint. The one `tools:` line per
+  capability that `test/prompt-caching.test.mjs` holds relies on it
+  ([What the prompt cache shares between agents](docs/measurements.md#what-the-prompt-cache-shares-between-agents)).
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -1389,6 +1397,8 @@ Seen live from 2026-10-06 to 2026-10-11: the typed `/speckit-implement` gate, a 
 audit gate, the verdict and retry records, the retry limit, `ends` refusing a report, single slices,
 full `/speckit-team` runs and, on 2026-10-10, the fast track. On 2026-10-12, in an interactive session
 against a fake API (no model ran): the fast track's hooks, and the team question answered Build only.
+On 2026-10-16, with real models: a `--project` block reaching implementer and security-reviewer, and
+security-reviewer's result review with its `ends` check.
 The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
@@ -1775,5 +1785,13 @@ It prints the main session's input, how many agents it launched in the foregroun
 background, the requests that only waited for a background agent, each agent's input and peak, and
 the input per model. That last part matches the `modelUsage` input fields of
 `claude -p --output-format json` exactly (checked against all four runs in
-[Context budget](#context-budget)). Output tokens are left out, because transcripts undercount
-them. Measure a change to the skill or an agent with it before and after.
+[Context budget](#context-budget)), with each model's cache hit rate (cache reads over all input)
+after it. Output tokens are left out, because transcripts undercount them. Measure a change to the
+skill or an agent with it before and after.
+
+Last, it lists any agent that lost its cached prefix: a relaunch of a type on the same model, within
+5 minutes of the previous one's last request, whose first request read nothing from the cache. A
+first launch is never listed, since an agent's body is a system block of its own and is always
+written fresh. On the 53-agent run of 2026-10-09 and 10 it lists none. There, 52 first requests read 0 to
+4,366 tokens back (writer agents about 3,000 from each other's launches: their shared `tools:`
+line), and one test-writer, relaunched 3 minutes after the last, read its whole 13,984.

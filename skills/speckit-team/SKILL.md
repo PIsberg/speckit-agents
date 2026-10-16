@@ -217,7 +217,7 @@ Then make sure the work is on a feature branch. Spec Kit's git extension creates
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory
 (`git switch -c <its basename>`); uncommitted work moves with it.
-If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), then relaunch security-reviewer. On PASS, proceed to the spec review stop.
+If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), then relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to the spec review stop.
 **Stop:** the user reviews `spec.md`. Once they approve, commit it, and the constitution if step 0b
 wrote it, on that branch, in the message that launches the architect: Claude Code runs the calls of
 one message in order, so the commit lands before the architect starts and needs no request of its
@@ -261,7 +261,9 @@ Skip a step whose role is absent from the team, and never launch anyone for the 
 role. Without architect there is no `tasks.md`: run one round on a brief, the request text or, with
 product-owner, the approved `spec.md`. One test-writer then one implementer get the brief in their
 prompt in place of task IDs and tick nothing; implementer gets `last round`. A stub pass runs only
-when test-writer reports a missing production symbol.
+when test-writer reports a missing production symbol. Without test-writer, nobody writes tests: never
+ask implementer for a test file, since its lane check makes it delete one at its Stop; leave them out
+of its brief, and the hand-over lists the tests the request named as not written.
 
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
 that cover it, as the architect wrote them. A round is the slices of one phase of `tasks.md` (Setup,
@@ -325,7 +327,7 @@ implementer for it with `last round`, and verify after its GREEN. Hand to the us
 agent can do. On REJECTED, route each reason to test-writer or implementer, whichever is chosen (a reason for a
 role not chosen goes to the user) (an implementer then
 with `last round`), then re-run spec-gatekeeper.
-If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), then relaunch security-reviewer. On PASS, proceed to handover.
+If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), an implementer then with `last round`; the fix changes code spec-gatekeeper approved, so re-run spec-gatekeeper (when chosen) before you relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to handover.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.

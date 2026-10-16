@@ -2,6 +2,9 @@
 
 **Feature**: `008-prompt-caching` | **Date**: 2026-10-15
 
+> **2026-10-16:** Not in effect. Claude Code builds the payload; the shape it actually sends a
+> subagent is in spec.md, Outcome.
+
 ---
 
 ## 1. Request Wire Payload Format
