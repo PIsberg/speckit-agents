@@ -1238,7 +1238,9 @@ and by `test/install.test.mjs` for the board-only install. One end-to-end test l
 so CI sees on Linux, macOS and Windows that Claude Code starts it, that it sets its status line and
 raises its startup toast, and that `/speckit-board status`, `clear` and an unknown argument answer
 at 0 turns ([#19](https://github.com/PIsberg/speckit-agents/issues/19)). `docs/media/board.png`
-predates the `[ clear ]` button ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).
+was recorded on 2026-10-17 (Claude Code 2.1.302): the pane's `[ clear ]` button
+([#84](https://github.com/PIsberg/speckit-agents/issues/84)) and test-writer's `RED` drawn red beside
+its green tick ([#82](https://github.com/PIsberg/speckit-agents/issues/82)).
 
 **Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09, and
 headless on Windows on 2026-10-11 for the board-only install and the `clear` argument. On

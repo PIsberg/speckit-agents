@@ -31,4 +31,4 @@ were run on 2026-10-11 (README.md, "Board mod", "Verified"); `test/e2e.test.mjs`
 were run on 2026-10-12 in an interactive session that vhs drove against a fake API, the two
 spec-auditors scripted stand-ins: `node tools/live-board.mjs` repeats them and prints each result
 (docs/live-results.md, "The board"), and CI's `live-board` job runs it for every pull request. It hashes L6's files with `git hash-object`, which every OS has,
-in place of `sha256sum`. The screenshot is still deferred (#84).
+in place of `sha256sum`. The screenshot was re-recorded on 2026-10-17 (#84).
