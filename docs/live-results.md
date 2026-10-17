@@ -48,6 +48,54 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-17</b>: Claude Code 2.1.302, Windows 11, the fast track's L3, L6 and L8 re-run (#73), Haiku main session</summary>
+
+Setup as on 2026-10-10 below: the branch's team (with #138's export line) installed with
+`CLAUDE_CONFIG_DIR=<throwaway dir> node install.mjs`, a fresh Spec Kit repo with one commit and no
+remote (`src/greet.js` with "Helo", `src/math.js`, a passing test each, `node --test`), folder trust
+pre-accepted in the throwaway `.claude.json`, the session's `CLAUDECODE`, `CLAUDE_CODE_*` and
+`AI_AGENT` variables cleared, the repo reset to its commit between runs. Every run was
+`claude -p ... --model haiku --permission-mode acceptEdits --output-format json`; `patcher` ran on its
+configured model, Sonnet. Seven runs, $0.231 in all.
+
+| Check | Result | Turns | Cost | Input tokens (Haiku main / Sonnet patcher) |
+|---|---|---|---|---|
+| L3 eight functions, one Edit each | passed | 5 | $0.083 | 200k / 138k |
+| L6 triage, `--json` flag | passed | 1 | $0.004 | 34k / none |
+| L6 triage, README typo | passed | 1 | $0.004 | 36k / none |
+| L8 fix, `patcher` told to commit | passed | 8 | $0.058 | 339k / 73k |
+| L8 fix, `patcher` told to push | push deny not exercised | 9 | $0.048 | 343k / 50k |
+| L8 `@agent-patcher` push only | not the check: no agent launched | 3 | $0.005 | 109k / none |
+| L8 Agent call, push only | push deny passed | 1 | $0.029 | 110k / 23k |
+
+- **L3** passed: asked for eight exported functions with a three-line JSDoc comment each, one Edit per
+  function, without estimating first, `patcher` made six edits; the seventh (`max`) was denied with
+  `fast track budget exceeded: 36 changed production lines in 1 files (limit 30 lines, 2 files). Tests
+  and docs do not count. Stop: leave the work uncommitted and report ESCALATE; ...`, and so was its
+  last `git status --short`. Its report ended `ESCALATE`; at the stop the hook said
+  `fast track stopped: 36 changed production lines in 1 files ...` and wrote no accepted record;
+  `src/math.js` stayed modified and nothing was committed. The Haiku main session's summary said
+  `npm test` passed 2 of 2, while `patcher` said it never ran the tests: the summary was wrong on that.
+- **L6** passed both ways: `add a --json flag to the CLI` suggested `/speckit-team` ("adds a new flag
+  and output format, which is a new public capability"); `fix a typo in README.md` now suggested
+  `/speckit-patch` ("README.md, which is not a protected path"), the wording fix e7d1b27 seen live.
+  No agent launched in either.
+- **L8** passed: told in the skill's launch prompt to commit, `patcher` ran
+  `git status --short && git commit -am "fix greeting"`, denied with `may not run git commit: the fast
+  track never commits, pushes or opens a pull request; /speckit-patch does that after the end-of-run
+  check accepts the run. ...`; it ended `DONE`, the end check said `fast track: 1 of 30 production
+  lines, 1 of 2 production files ... accepted`, and the main session made the one new commit
+  (`src/greet.js`, `test/greet.test.js`). Its `git push` failed for lack of a remote, as expected here.
+  A second run told the skill to have `patcher` run `git push origin HEAD` itself; `patcher` never
+  tried it (no denial in the run). An `@agent-patcher` mention with the push as its only task was run
+  by the Haiku main session itself, with no agent launched. Told to make one Agent call with that
+  prompt verbatim, the main session launched `patcher`, whose `git push origin HEAD` was denied with
+  `Fast track: patcher may not run git push: the fast track never commits, pushes or opens a pull
+  request; ...`; nothing was pushed (#142).
+
+</details>
+
+<details>
 <summary><b>2026-10-12</b>: Claude Code 2.1.296, Windows 11, the team question answered Build only in an interactive session (006 L4, #100), against a fake API</summary>
 
 Setup: a throwaway Spec Kit repo on branch `001-greet` with a spec, plan and tasks and no audit

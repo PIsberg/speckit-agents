@@ -741,11 +741,12 @@ run.
   the `/speckit-implement` gate unchanged (L7); and, over budget, the end check's message and no
   accepted record (L3). Run with a Haiku main session, headless, on a repo with no remote, so no
   push or pull request was made.
-- **Seen live, but not as the checks expected:** `/speckit-triage fix a typo in README.md`
-  suggested `/speckit-team` instead of `/speckit-patch` (L6, failed); the mid-run budget deny
-  never fired because the model wrote everything in one Bash call, and its report ended `DONE`,
-  not `ESCALATE` (L3); the deny of `patcher`'s own `git commit` and `git push` never fired because
-  the model never tried one, so it rests on the unit and end-to-end tests (L8).
+- **Re-run live (2026-10-17, Claude Code 2.1.302, [Live results](docs/live-results.md)), where the
+  first run did not see the check:** the mid-run budget deny, on the Edit after the one that crossed
+  30 lines, with the report ending `ESCALATE` (L3); `/speckit-triage fix a typo in README.md`
+  suggesting `/speckit-patch` (L6); and `patcher`'s own `git commit` denied with
+  `may not run git commit`, the main session committing after the accepted end, and its
+  `git push` denied with `may not run git push` (L8).
 - **Verified by unit and end-to-end test only:** every hook decision above in
   [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs); the installed agent and skills in
   [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
