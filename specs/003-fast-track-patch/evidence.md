@@ -343,7 +343,14 @@ changed. Cost is `total_cost_usd` and tokens are input (uncached, cache read and
   Not retried. The deny rests on the unit and end-to-end tests.
 
 
-Status of the open items, stated plainly:
+**Re-run on 2026-10-17** (Claude Code 2.1.302, same setup, seven runs, $0.231; README.md links the
+record in `docs/live-results.md`): L3 passed (the seventh of eight separate Edits was denied with the
+budget message, the report ended `ESCALATE`, no commit), L6 passed both ways (the README typo now gets
+`/speckit-patch`), and L8 passed (`patcher`'s `git commit` denied with `may not run git commit`, the
+main session made the one commit; in a run whose only task was the push, `patcher`'s `git push` was
+denied with `may not run git push`). The items below are closed by that re-run.
+
+Status of the open items on 2026-10-10, stated plainly:
 
 - **L6 failed.** `/speckit-triage fix a typo in README.md` named README.md as a protected path.
   The wording fix (e7d1b27, "triage skill names the protected set instead of pointing at

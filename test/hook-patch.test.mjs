@@ -607,6 +607,27 @@ test('patch: under the line, gh finds no stored login and refuses an API call be
   assert.match(api.stderr + api.stdout, /gh auth login|set the GH_TOKEN environment variable/);
 });
 
+// #138: a token in the environment, as in CI, skips the stored login, so the line also sets the forge
+// CLIs' token variables to empty, which gh and glab read as unset.
+const FORGE_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN',
+  'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'];
+test('patch: a command it lets through runs with the forge CLIs\' token variables empty (#138)', () => {
+  const { dir } = cmdRepo();
+  const env = forgeEnv(dir);
+  for (const k of FORGE_TOKENS) assert.equal(env[k], '', `${k} is set, and empty`);
+});
+
+test('patch: under the line, gh ignores a token the environment passes and refuses an API call before any request (#138)', { skip: noGh }, () => {
+  const { dir } = cmdRepo();
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'skpatch-gh-'));
+  // A host on localhost, so a regression that lets the token through never leaves the machine.
+  const gh = (args, line = {}) => spawnSync('gh', args, { cwd: dir, encoding: 'utf8', env: { ...noTokens, GH_CONFIG_DIR: empty, GH_ENTERPRISE_TOKEN: 'from-the-environment', ...line } });
+  assert.match(gh(['auth', 'token', '--hostname', '127.0.0.1']).stdout, /from-the-environment/, 'without the line the token is used');
+  const api = gh(['api', '--hostname', '127.0.0.1', 'user'], forgeEnv(dir));
+  assert.equal(api.status, 4, api.stderr + api.stdout);
+  assert.match(api.stderr + api.stdout, /gh auth login|set the GH_TOKEN environment variable/);
+});
+
 // #122: install.mjs allows the exact export line, so the rewritten command asks for nothing the command
 // itself would not, in every mode (checked against a fake API with 2.1.296, auto mode's classifier
 // included). Where the installed settings.json holds that rule, every mode gets the switch-off; where it

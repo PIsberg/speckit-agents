@@ -671,8 +671,14 @@ and any other change is caught at the end.
   The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login`,
   a config folder that does not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
   stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
-  gh 2.89, glab not checked). The folder is relative, so the line is the same on every machine. A
-  script that needs `gh`'s login fails under `patcher` for the same reason. Claude Code checks each
+  gh 2.89). The folder is relative, so the line is the same on every machine. Last come
+  `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`:
+  a token in the environment, as in CI, would skip the stored login, and gh and glab read an empty
+  one as unset ([#138](https://github.com/PIsberg/speckit-agents/issues/138); checked with gh 2.89
+  and glab 1.123.0, which sent no token under the line). A script that needs `gh`'s login fails
+  under `patcher` for the same reason, and so does a test suite that reads one of those variables,
+  such as one that calls the GitHub or GitLab API with `GITHUB_TOKEN` or a release dry run: under
+  `patcher` it sees the variable empty. Run such a suite outside the fast track. Claude Code checks each
   part of a rewritten command against your permission rules, and the export line needs a rule of its
   own: without one, every command you allowed would ask again (with 2.1.296
   an allowed `echo` asked "The following part requires approval: export GIT_CONFIG_COUNT=..."). So
@@ -735,11 +741,12 @@ run.
   the `/speckit-implement` gate unchanged (L7); and, over budget, the end check's message and no
   accepted record (L3). Run with a Haiku main session, headless, on a repo with no remote, so no
   push or pull request was made.
-- **Seen live, but not as the checks expected:** `/speckit-triage fix a typo in README.md`
-  suggested `/speckit-team` instead of `/speckit-patch` (L6, failed); the mid-run budget deny
-  never fired because the model wrote everything in one Bash call, and its report ended `DONE`,
-  not `ESCALATE` (L3); the deny of `patcher`'s own `git commit` and `git push` never fired because
-  the model never tried one, so it rests on the unit and end-to-end tests (L8).
+- **Re-run live (2026-10-17, Claude Code 2.1.302, [Live results](docs/live-results.md)), where the
+  first run did not see the check:** the mid-run budget deny, on the Edit after the one that crossed
+  30 lines, with the report ending `ESCALATE` (L3); `/speckit-triage fix a typo in README.md`
+  suggesting `/speckit-patch` (L6); and `patcher`'s own `git commit` denied with
+  `may not run git commit`, the main session committing after the accepted end, and its
+  `git push` denied with `may not run git push` (L8).
 - **Verified by unit and end-to-end test only:** every hook decision above in
   [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs); the installed agent and skills in
   [`test/install.test.mjs`](test/install.test.mjs); the three hook entries of `patcher` firing under
@@ -1264,20 +1271,21 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 335 tests:
+`npm test` runs 344 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 65 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 91 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 67 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 92 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 44 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 46 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 4 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1332,7 +1340,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 33
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 34
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1355,12 +1363,16 @@ need no login and cost nothing.
   `gh api` with a stored login for 127.0.0.1, and gh stops for lack of a login, because the same line
   hid its config folder; without the hook it tries to connect
   ([#123](https://github.com/PIsberg/speckit-agents/issues/123); skipped where `gh` is not on PATH).
+  In another, in `default` with the installer's allow rule, the script's `gh api` gets a token from
+  the environment, and gh stops for lack of one with no prompt, because the line empties the token
+  variables; without the hook it uses the token and tries to connect
+  ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 33
-  fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 35
-  failures, none of the 33 passed). Setting
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 34
+  fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
+  failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  35 of the 44 tests fail (the 33 scripted ones and the two blocking no-model cases); the other nine
+  36 of the 46 tests fail (the 34 scripted ones and the two blocking no-model cases); the other ten
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1386,14 +1398,47 @@ need no login and cost nothing.
   A seventh pins that the body block is the same on every launch of an agent type, and that the
   billing header ahead of it follows characters 4, 7 and 20 of the launch prompt: prompts that differ
   only after the 21st character send the same system blocks, one that differs at character 7 does
-  not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)).
+  not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)); the real API does not count
+  that header in the cache key. An eighth pins what does cost a relaunch: Claude Code's context
+  blocks come ahead of the launch prompt in the first message with no cache breakpoint between them,
+  so a relaunch with another prompt writes them again.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
 fails these tests with no hook at fault: the failure message gives each sender's request count and
-Claude Code's last events, so check those before changing a hook. A full pipeline run with real
-models is
-[#46](https://github.com/PIsberg/speckit-agents/issues/46).
+Claude Code's last events, so check those before changing a hook.
+
+### Full run with real models
+
+The tests above never call a model. A whole `/speckit-team` run with real ones is
+[`tools/full-run.mjs`](tools/full-run.mjs), which the `full-run` workflow runs
+([#46](https://github.com/PIsberg/speckit-agents/issues/46)). It builds a scratch Spec Kit repo from
+this checkout's Spec Kit files and [`test/fixtures/full-run/`](test/fixtures/full-run/) (a constitution,
+`CLAUDE.md`, a one-function `src/math.js` and its test, and the feature request, a `sum()` function),
+installs the team into a throwaway config dir, and runs `claude -p "/speckit-team <request>"`. Each
+stop of the skill ends a turn; the next turn resumes the session with one answer that takes the full
+team and approves every recommended option, until spec-gatekeeper has given its word or 8 turns have
+run. It then checks only what does not depend on the models' wording, and fails the run on any of:
+no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a task of `tasks.md` left
+unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
+main-session response that only waited, or a cost over the ceiling (`total_cost_usd` of the last
+turn, which counts the turns before it). It writes `run.json` and exits 0 only when every check
+passed. Nothing is retried, because a retry would hide a real regression.
+
+```sh
+ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet --max-cost 6
+```
+
+The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
+$4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand
+(`workflow_dispatch`, with the main session's model and the ceiling as inputs), on Mondays, and on a
+pull request labelled `e2e` from a branch of this repository, never from a fork. It is skipped until
+the owner adds the `ANTHROPIC_API_KEY` secret and sets the repository variable `FULL_RUN_ENABLED` to
+`true`; a failed run uploads the transcripts, the hook's records, the feature's files and `run.json`.
+`test/full-run.test.mjs` checks the scratch repo, each check against a synthetic run, and the
+workflow's triggers, at no cost. Not yet run with a real model: the driver was tried against a fake
+API on localhost (three resumed turns, the transcript found, each check failing as it should), not
+against the real one, which waits on the secret.
 
 ### Live check
 
@@ -1674,11 +1719,13 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   - **network access:** git's network transports are off for `patcher`'s commands
     ([What the hooks stop](#what-the-hooks-stop)), so git refuses any push or fetch over the
     network, a push straight to a URL included. `gh` and `glab` find no stored login
-    ([#123](https://github.com/PIsberg/speckit-agents/issues/123)), but a token in the environment
-    (`GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, as in CI) still works, and so does a script that
-    reads the keyring with `gh auth token` (gh 2.89), which is deliberate. Anything else is not
+    ([#123](https://github.com/PIsberg/speckit-agents/issues/123)) and no token in the environment
+    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)), but a script that reads the
+    keyring with `gh auth token` (gh 2.89) still gets one, which is deliberate. Anything else is not
     limited: `curl` with a token, `tea`, `npm publish` from a script
-    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
+    ([#141](https://github.com/PIsberg/speckit-agents/issues/141)). glab also sends its request
+    without a token rather than stopping, and writes `.speckit-no-forge-login/` into the working
+    directory ([#140](https://github.com/PIsberg/speckit-agents/issues/140)).
     Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
     the history and remote commands named above are denied, a push or fetch through a named remote
     is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,
@@ -1761,6 +1808,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
+| [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |

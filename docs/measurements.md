@@ -256,12 +256,33 @@ agent type. What changes is the billing header, the first system block, ahead of
 prompt. Four test-writer launches: prompts differing only at character 6, or only after character
 20, sent the same suffix (`fec`); a prompt differing at character 7 sent `b41`, one differing at 20
 sent `7d0`, and the pinned test adds one differing only at character 4, which changes it too.
-`/speckit-team`'s launch prompts start with what differs per launch (task IDs, a feature path), so
-those characters seldom match. That fits both numbers above: most relaunches read only
-the tools, and the one test-writer that read 13,984 would be a launch whose three characters
-happened to match. Not established: that the API counts the billing block in its cache key, which a
-fake API cannot show. If it does, every launch prompt starting with one fixed line of 21 characters
-or more would give every launch the same billing block, and a relaunch could read its body (10k to
-20k tokens) instead of writing it. Checking that takes two real launches of one agent type, one with
-such a line and one without, compared on `cache_read_input_tokens`. Pinned in
-[`test/e2e.test.mjs`](../test/e2e.test.mjs).
+Pinned in [`test/e2e.test.mjs`](../test/e2e.test.mjs).
+
+The billing header turned out not to matter. Checked 2026-10-17 against the real API, Claude Code
+2.1.302, headless, Haiku main session, one or two `patcher` launches per session with a task that uses no
+tool, six sessions, $0.242 in all. The last four ran through a logging pass-through proxy on
+localhost (hashes, lengths and usage, no headers), where the same prefix came to 4,035 tokens instead
+of 4,151:
+
+| Launch prompts | Second launch's first request |
+|---|---|
+| differ at character 4 (different billing header) | read 4,151, wrote 7,033 |
+| same first 23 characters, `speckit-team launch v1.` (same billing header) | read 4,151, wrote 7,043 |
+| the same, through the proxy (billing header `5e2` on both) | read 4,035, wrote 7,043 |
+| identical, through the proxy | read 11,068, wrote 0 |
+
+The proxy showed what both launches of a pair sent: the same tools, the same three system blocks
+(billing header, the 62-character block, and patcher's body plus Claude Code's notes, 3,529
+characters), so the 4,035 tokens read are the tools and the whole system prefix, body included. A
+first launch also read those 4,035 back from an earlier session whose billing header differed
+(`e3b` against `5e2`): the header is not in the cache key, and a fixed first line saves nothing.
+
+What a relaunch writes again is its first user message: three `<system-reminder>` blocks of Claude
+Code's context (17,047, 879 and 583 characters, the same on every launch) and then the launch prompt,
+with no cache breakpoint on any of them. The first breakpoint sits on the next message, Claude Code's
+`# Environment` block (1,056 characters). So a prompt that differs anywhere makes the whole message a
+write, about 7,000 tokens for `patcher` in a scratch repo; the context grows with the CLAUDE.md files
+it carries. This repository cannot move that breakpoint: the context and its order are Claude Code's.
+A breakpoint on the last context block, before the prompt, would let every relaunch read it back;
+that is a Claude Code change (#133). The shape is pinned in
+[`test/e2e.test.mjs`](../test/e2e.test.mjs), which fails if Claude Code moves the breakpoint.

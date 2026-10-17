@@ -1287,9 +1287,12 @@ const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user']
 // #123: a forge's API does not go through git. gh and glab read their stored login through their
 // config folder; one that does not exist names no host, so a script's `gh pr merge` or `gh api` stops
 // for lack of a login before any request. Relative, so the line, and install.mjs's exact rule for it,
-// are the same on every machine. A token in the environment still works, and so does
-// `gh auth token`, which reads the keyring directly (gh 2.89). Twin: NO_FORGE_LOGIN in install.mjs.
-const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login']];
+// are the same on every machine. #138: a token in the environment, as in CI, skips the stored login,
+// so the forge CLIs' token variables are set to empty, which gh and glab read as unset (owner
+// decision: a test suite that reads them sees none under patcher). `gh auth token`, which reads the
+// keyring directly (gh 2.89), still works. Twin: NO_FORGE_LOGIN in install.mjs.
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login'],
+  ...['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'].map((k) => [k, ''])];
 const allowedExactly = (line) => {
   let s; try { s = JSON.parse(readOr(path.join(TEAM_DIR, 'settings.json'), 'null')); } catch { return false; }
   return Array.isArray(s?.permissions?.allow) && s.permissions.allow.includes(`Bash(${line})`);
