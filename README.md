@@ -1271,7 +1271,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 339 tests:
+`npm test` runs 344 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1285,6 +1285,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 46 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 4 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1405,9 +1406,39 @@ need no login and cost nothing.
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
 fails these tests with no hook at fault: the failure message gives each sender's request count and
-Claude Code's last events, so check those before changing a hook. A full pipeline run with real
-models is
-[#46](https://github.com/PIsberg/speckit-agents/issues/46).
+Claude Code's last events, so check those before changing a hook.
+
+### Full run with real models
+
+The tests above never call a model. A whole `/speckit-team` run with real ones is
+[`tools/full-run.mjs`](tools/full-run.mjs), which the `full-run` workflow runs
+([#46](https://github.com/PIsberg/speckit-agents/issues/46)). It builds a scratch Spec Kit repo from
+this checkout's Spec Kit files and [`test/fixtures/full-run/`](test/fixtures/full-run/) (a constitution,
+`CLAUDE.md`, a one-function `src/math.js` and its test, and the feature request, a `sum()` function),
+installs the team into a throwaway config dir, and runs `claude -p "/speckit-team <request>"`. Each
+stop of the skill ends a turn; the next turn resumes the session with one answer that takes the full
+team and approves every recommended option, until spec-gatekeeper has given its word or 8 turns have
+run. It then checks only what does not depend on the models' wording, and fails the run on any of:
+no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a task of `tasks.md` left
+unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
+main-session response that only waited, or a cost over the ceiling (`total_cost_usd` of the last
+turn, which counts the turns before it). It writes `run.json` and exits 0 only when every check
+passed. Nothing is retried, because a retry would hide a real regression.
+
+```sh
+ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet --max-cost 6
+```
+
+The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
+$4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand
+(`workflow_dispatch`, with the main session's model and the ceiling as inputs), on Mondays, and on a
+pull request labelled `e2e` from a branch of this repository, never from a fork. It is skipped until
+the owner adds the `ANTHROPIC_API_KEY` secret and sets the repository variable `FULL_RUN_ENABLED` to
+`true`; a failed run uploads the transcripts, the hook's records, the feature's files and `run.json`.
+`test/full-run.test.mjs` checks the scratch repo, each check against a synthetic run, and the
+workflow's triggers, at no cost. Not yet run with a real model: the driver was tried against a fake
+API on localhost (three resumed turns, the transcript found, each check failing as it should), not
+against the real one, which waits on the secret.
 
 ### Live check
 
@@ -1777,6 +1808,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
+| [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |

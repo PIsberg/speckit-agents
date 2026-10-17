@@ -29,12 +29,14 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `tools/usage.mjs`: a session's input tokens from its transcript; measure a skill or agent change
   before and after. `tools/live-board.mjs`: the board's interactive checks, vhs driving a real session
   against a fake API at $0; run it after changing what the board draws or its buttons do.
+  `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
+  the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key).
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
 - `.claude/settings.json`: `CLAUDE_CODE_FORK_SUBAGENT=0`, so the team's agents run in the foreground
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 339 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 344 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
