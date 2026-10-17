@@ -1,12 +1,12 @@
 // Run: npm test (or node --test "test/*.test.mjs")
 // docs/media/leaks.mjs: a recording whose frames show who recorded it (#60) must never reach
-// docs/media, where it could be committed. The frames are vhs's text dump of each tape.
+// docs/media, where it could be committed. The check reads vhs's text dump of each tape.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { identities, publish } from '../docs/media/leaks.mjs';
+import { identities, publish, sessionEnv } from '../docs/media/leaks.mjs';
 
 function dirs() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-media-'));
@@ -45,6 +45,13 @@ test('with no name to look for, nothing is published', () => {
   const { out, media } = dirs();
   assert.notDeepEqual(publish({ dump: 'clean', names: [], out, media }), []);
   assert.deepEqual(fs.readdirSync(media), []);
+});
+
+test("the recorded session's temp folder is the drive letter's, where an agent's scratchpad lives (#62)", () => {
+  const env = { PATH: 'p', TEMP: 'C:\\Users\\Pat\\AppData\\Local\\Temp', TMP: 'C:\\Users\\Pat\\AppData\\Local\\Temp' };
+  assert.deepEqual(sessionEnv(env, 'R:\\tmp'), { PATH: 'p', TEMP: 'R:\\tmp', TMP: 'R:\\tmp', TMPDIR: 'R:\\tmp' });
+  assert.equal(env.TEMP, 'C:\\Users\\Pat\\AppData\\Local\\Temp');
+  assert.equal(sessionEnv(env, null), env);
 });
 
 test("the names are the user name, the home folder's and its 8.3 short form", () => {

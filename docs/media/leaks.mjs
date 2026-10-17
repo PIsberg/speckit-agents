@@ -1,8 +1,10 @@
 // The check record.mjs runs after each tape. A session can show who recorded it through an absolute
 // path: a typeahead entry, an agent's prompt, a Bash call the model chose (#60). What a model prints
-// is not up to the tape, so every recording is checked against vhs's text dump of its frames. vhs
-// writes the recording to the demo folder, and it is copied into docs/media only when no frame
-// shows a name; a failed run, a missing dump or a file the tape writes elsewhere never gets there.
+// is not up to the tape, so every recording is checked against vhs's text dump. vhs writes the
+// recording to the demo folder, and it is copied into docs/media only when the dump shows no name; a
+// failed run, a missing dump or a file the tape writes elsewhere never gets there. The dump holds the
+// screen after each tape command only, not the frames drawn during a Sleep or a Wait, so a name an
+// agent prints mid-run can pass (#62): someone still has to look at every frame.
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -25,8 +27,15 @@ function shows(dump, names) {
   return names.filter((n) => joined.includes(squash(n))).map((n) => `${n}, split across rows`);
 }
 
-// Copies every file vhs wrote for a tape (`out`) into docs/media (`media`), but only if no frame
-// shows a name. Returns what showed one: empty when the files were copied.
+// The environment vhs and the session it records run with. Claude Code gives each agent a scratchpad
+// under the temp folder, which on Windows sits in the home folder; with the drive letter's own
+// folder (`tmp`) a scratchpad path an agent prints reads R:\tmp\... instead. Without one, `env`.
+export function sessionEnv(env, tmp) {
+  return tmp ? { ...env, TEMP: tmp, TMP: tmp, TMPDIR: tmp } : env;
+}
+
+// Copies every file vhs wrote for a tape (`out`) into docs/media (`media`), but only if the dump
+// shows no name. Returns what showed one: empty when the files were copied.
 export function publish({ dump, names, out, media }) {
   const shown = shows(dump, names);
   if (!shown.length) for (const f of fs.readdirSync(out)) fs.copyFileSync(path.join(out, f), path.join(media, f));

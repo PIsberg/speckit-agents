@@ -1,7 +1,8 @@
 # architect tries to write production code and its scope hook denies it. Recorded by record.mjs,
 # which fills in the {{...}} fields.
 Output "{{OUTPUT}}"
-# Every frame as text, so a reviewer can search them all for account details.
+# The screen as text after each command, so a reviewer can search it for account details. Frames
+# drawn during a Sleep or a Wait are not in it (#62): look at the GIF too.
 Output "{{WORK}}/guardrail-denial.txt"
 Set Shell {{SHELL}}
 Set FontSize 16

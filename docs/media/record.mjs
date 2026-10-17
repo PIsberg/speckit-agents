@@ -11,16 +11,17 @@
 // The team is installed into the scratch repo's own .claude/, and Claude Code is started with
 // --setting-sources project,local and --strict-mcp-config, so your user-level hooks, plugins,
 // statusline and MCP servers stay out of the recording. Each tape records into the demo folder, and
-// its GIF and screenshots are copied into docs/media only if no frame shows your user name or your
-// home folder's name (leaks.mjs). Still look at each GIF and screenshot before committing it: the
-// usage line can show other account details.
+// its GIF and screenshots are copied into docs/media only if its text dump shows neither your user
+// name nor your home folder's name (leaks.mjs). Still look at every frame of each GIF and screenshot
+// before committing it: the dump misses frames drawn during a Sleep or a Wait (#62), and the usage
+// line can show other account details.
 // The startup logo names your plan; no setting hides it, and the README's GIFs keep it (#63).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { identities, publish } from './leaks.mjs';
+import { identities, publish, sessionEnv } from './leaks.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -42,6 +43,10 @@ const work = process.env.SPECKIT_DEMO_DIR
   ? path.resolve(process.env.SPECKIT_DEMO_DIR)
   : path.join(os.homedir(), '.cache', 'speckit-agents-demo');
 let demo = path.join(work, 'repo');
+// The recorded session's temp folder, set only with a drive letter. Claude Code names each agent a
+// scratchpad under it, and an agent that prints that path would otherwise show
+// C:\Users\<name>\AppData\Local\Temp on screen, in frames the dump never holds (#62).
+let tmp = null;
 
 function fail(msg) {
   console.error(`record: ${msg}`);
@@ -79,7 +84,10 @@ function buildDemo({ onDrive }) {
   fs.mkdirSync(work, { recursive: true, mode: 0o700 });
   // Before anything is installed, so the hook paths the installer writes use the drive letter too.
   const drive = onDrive && mapDrive();
-  if (drive) demo = `${drive}\\repo`;
+  if (drive) {
+    demo = `${drive}\\repo`;
+    tmp = `${drive}\\tmp`;
+  }
   fs.mkdirSync(demo);
   git('init', '-q', '-b', 'main');
   // Without --script, specify waits on an interactive picker. Without UTF-8, specify on Windows
@@ -160,7 +168,7 @@ const names = identities({
 });
 
 // vhs writes a tape's GIF and screenshots to out/<tape>/ in the demo folder; publish() copies them
-// into docs/media only if no frame shows one of the names.
+// into docs/media only if the dump shows none of the names.
 function record(name) {
   const slash = (p) => p.replaceAll('\\', '/');
   const out = path.join(work, 'out', name);
@@ -175,7 +183,8 @@ function record(name) {
     .replaceAll('{{CLAUDE}}', CLAUDE);
   const file = path.join(work, `${name}.tape`);
   fs.writeFileSync(file, tape);
-  const r = spawnSync('vhs', [file], { cwd: demo, stdio: 'inherit' });
+  if (tmp) fs.mkdirSync(tmp, { recursive: true });
+  const r = spawnSync('vhs', [file], { cwd: demo, stdio: 'inherit', env: sessionEnv(process.env, tmp) });
   if (r.status !== 0) return `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
   const dump = path.join(work, `${name}.txt`);
   if (!fs.existsSync(dump)) return `FAILED (no ${dump} to check for your user name)`;

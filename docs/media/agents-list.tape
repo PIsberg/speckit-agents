@@ -11,7 +11,8 @@
 # {{...}} fields and runs the tape from a drive letter mapped onto the demo folder, so paths on
 # screen read R:\repo rather than one with the user name in it.
 Output "{{OUTPUT}}"
-# Every frame as text, so a reviewer can search them all for account details.
+# The screen as text after each command, so a reviewer can search it for account details. Frames
+# drawn during a Sleep or a Wait are not in it (#62): look at the GIF too.
 Output "{{WORK}}/agents-list.txt"
 Set Shell {{SHELL}}
 Set FontSize 16
