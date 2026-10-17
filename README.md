@@ -321,7 +321,10 @@ and the denial tells the agent whose lane production code is in.
 `/speckit-team` first asks which team to use, the team question, the first of the pipeline's four
 stops (the demo answers it with the full team). It then launches product-owner, which writes the
 spec and returns its questions, and the main session puts product-owner's questions to you: the
-second.
+second. Recorded on 2026-10-17 (Claude Code 2.1.302) with the idea "Let greet say hello in the
+user's own language": product-owner, in the background as in any interactive session with fork
+subagents on, wrote `specs/002-localized-greeting` and returned two questions. Haiku's first call to
+ask them failed on an empty second question ("Invalid tool parameters"), and it asked again.
 
 ![/speckit-team asking which team to use, then handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 

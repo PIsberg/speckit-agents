@@ -27,9 +27,7 @@ function anchors(file) {
 
 // Recordings the README embeds that were never made, each with its issue. Once one exists, its entry
 // must go, so the list cannot hide a file that went missing later.
-const NOT_RECORDED = {
-  'docs/media/pipeline.gif': '#99',
-};
+const NOT_RECORDED = {};
 
 test('every relative link in README.md, CLAUDE.md and docs/ names a file that exists, and a heading in it', () => {
   for (const [file, issue] of Object.entries(NOT_RECORDED)) {
