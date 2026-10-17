@@ -1669,7 +1669,8 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
     ([#123](https://github.com/PIsberg/speckit-agents/issues/123)), but a token in the environment
     (`GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, as in CI) still works, and so does a script that
     reads the keyring with `gh auth token` (gh 2.89), which is deliberate. Anything else is not
-    limited: `curl` with a token, `tea`, `npm publish` from a script.
+    limited: `curl` with a token, `tea`, `npm publish` from a script
+    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
     Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
     the history and remote commands named above are denied, a push or fetch through a named remote
     is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,
