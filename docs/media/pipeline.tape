@@ -1,7 +1,8 @@
 # /speckit-team from the idea through the team question to the product owner's first questions, the pipeline's first two stops.
 # Recorded by record.mjs, which fills in the {{...}} fields.
 Output "{{OUTPUT}}"
-# Every frame as text, so a reviewer can search them all for account details.
+# The screen as text after each command, so a reviewer can search it for account details. Frames
+# drawn during a Sleep or a Wait are not in it (#62): look at the GIF too.
 Output "{{WORK}}/pipeline.txt"
 Set Shell {{SHELL}}
 Set FontSize 16
@@ -26,7 +27,10 @@ Enter
 Sleep 5s
 Show
 
-Type "/speckit-team Let greet take a --shout flag that prints the greeting in capitals"
+# The idea leaves real questions open (which languages, how greet picks one, what it falls back
+# to). A precise one, "a --shout flag that prints the greeting in capitals", gave Haiku's
+# product-owner nothing to ask in three takes on 2026-10-11, and the wait below timed out (#99).
+Type "/speckit-team Let greet say hello in the user's own language"
 Sleep 1s
 # "Enter 1" is Enter once: a bare "Enter" line below is the answer to the team question.
 Enter 1

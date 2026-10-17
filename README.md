@@ -291,20 +291,23 @@ runs will word things differently. The three recordings that wait on agents are 
 ### The team in the `@` typeahead
 
 Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
-folders. Claude Code 2.1.296 stops the list at 15 entries. In the recording below, made on
-2026-10-10 when the team had seven agents (security-reviewer came on 2026-10-15), it shows six of them
-among Claude Code's own five agents: test-writer, last in alphabetical order, is left out. Claude Code
-2.1.295 removed the `/agents` menu this section used to show.
+folders. Claude Code stops the list at 15 entries. In the recording below (Claude Code 2.1.302,
+2026-10-17) it shows six of the team's eight agents among Claude Code's own five: spec-gatekeeper and
+test-writer, last in alphabetical order, are left out. Claude Code 2.1.295 removed the `/agents` menu
+this section used to show.
 
-![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, patcher, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
+![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, patcher, product-owner, security-reviewer and spec-auditor among Claude Code's own](docs/media/agents-list.gif)
 
 ### A subagent at work
 
 `@agent-spec-auditor` audits a feature inside the main session: the collapsed progress view, the
 full transcript with Ctrl+O, then the `VERDICT:` it hands back, which a hook records for the
-implementation gate.
+implementation gate. Recorded on 2026-10-17 (Claude Code 2.1.302) with `CLAUDE_CODE_FORK_SUBAGENT=0`
+and a prompt asking for `run_in_background false`: with fork subagents on, an interactive session's
+default, the agent runs in the background and reports as a message instead
+([Foreground launches](#foreground-launches)). On the demo feature it returns `VERDICT: FAIL`.
 
-![spec-auditor running inline, expanded with Ctrl+O, ending in a VERDICT line](docs/media/subagent-inline.gif)
+![spec-auditor running inline, expanded with Ctrl+O, then Done and the main session's summary of its VERDICT: FAIL findings](docs/media/subagent-inline.gif)
 
 ### A guardrail firing
 
@@ -318,7 +321,10 @@ and the denial tells the agent whose lane production code is in.
 `/speckit-team` first asks which team to use, the team question, the first of the pipeline's four
 stops (the demo answers it with the full team). It then launches product-owner, which writes the
 spec and returns its questions, and the main session puts product-owner's questions to you: the
-second.
+second. Recorded on 2026-10-17 (Claude Code 2.1.302) with the idea "Let greet say hello in the
+user's own language": product-owner, in the background as in any interactive session with fork
+subagents on, wrote `specs/002-localized-greeting` and returned two questions. Haiku's first call to
+ask them failed on an empty second question ("Invalid tool parameters"), and it asked again.
 
 ![/speckit-team asking which team to use, then handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 
@@ -1238,7 +1244,9 @@ and by `test/install.test.mjs` for the board-only install. One end-to-end test l
 so CI sees on Linux, macOS and Windows that Claude Code starts it, that it sets its status line and
 raises its startup toast, and that `/speckit-board status`, `clear` and an unknown argument answer
 at 0 turns ([#19](https://github.com/PIsberg/speckit-agents/issues/19)). `docs/media/board.png`
-predates the `[ clear ]` button ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).
+was recorded on 2026-10-17 (Claude Code 2.1.302): the pane's `[ clear ]` button
+([#84](https://github.com/PIsberg/speckit-agents/issues/84)) and test-writer's `RED` drawn red beside
+its green tick ([#82](https://github.com/PIsberg/speckit-agents/issues/82)).
 
 **Live.** On Windows, interactive and headless, and headless on Linux, 2026-10-08 and 09, and
 headless on Windows on 2026-10-11 for the board-only install and the `clear` argument. On
@@ -1256,7 +1264,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 334 tests:
+`npm test` runs 335 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1266,7 +1274,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
-| [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
+| [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 44 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
@@ -1788,7 +1796,8 @@ team into that repo's `.claude/`, and starts Claude Code with
 MCP servers stay out of the frame. On Windows the tapes reach that repo through a drive letter
 mapped onto the folder with `subst` (the first free one from `R:`), so the paths a session prints
 read `R:\repo` instead of one with your user name in it; the letter is removed when the script
-ends. The `board` tape loads the board from this checkout with
+ends. The session's `TEMP`, `TMP` and `TMPDIR` point at `R:\tmp` on the same letter, because Claude
+Code gives each agent a scratchpad under the temp folder and an agent can print its path. The `board` tape loads the board from this checkout with
 `--plugin-dir`, in fullscreen so the pane docks, after staging the demo feature mid-build: three
 tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-writer and
 implementer for stand-ins that only report, so its agent rows cost two short Haiku runs.
@@ -1798,12 +1807,16 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 > the startup logo (`CLAUDE_CODE_HIDE_CWD=1`), but the logo still names the model and your plan,
 > such as `Haiku 5.5 · Claude Max`. No setting hides the plan, and the README's GIFs keep it
 > (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape records
-> into the demo folder and writes every frame as text to `<tape>.txt` there. `record.mjs` copies a
-> recording into `docs/media/` only if no frame shows your user name, your home folder's name or,
-> on Windows, its 8.3 short form, even split across two rows
+> into the demo folder and writes the screen as text to `<tape>.txt` there, after each tape
+> command. `record.mjs` copies a recording into `docs/media/` only if that text shows neither your
+> user name, your home folder's name nor, on Windows, its 8.3 short form, even split across two rows
 > ([#60](https://github.com/PIsberg/speckit-agents/issues/60)); otherwise the run exits 1 and the
 > files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing. On macOS and Linux
-> the repo's path contains your home directory, so a session that prints it fails the check.
+> the repo's path contains your home directory, so a session that prints it fails the check. The
+> text misses every frame drawn during a `Sleep` or a `Wait`: on 2026-10-17 an agent's Bash call
+> printed its scratchpad path, user name included, in such frames, and the check passed
+> ([#62](https://github.com/PIsberg/speckit-agents/issues/62)). A passed check is not a clean
+> recording; step through the frames.
 
 ### Measuring token usage
 
