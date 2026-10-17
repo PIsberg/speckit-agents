@@ -48,6 +48,32 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-17</b>: Claude Code 2.1.302, Windows 11, a real main session answered Build only (006 L4, #100), Haiku main session</summary>
+
+Setup: the branch's team installed into a throwaway config dir, a fresh Spec Kit repo with the demo
+feature `001-greet` (spec, plan, tasks, no audit recorded) on its branch, an interactive session
+(`claude --model haiku`, auto mode, fork subagents on, Claude Code's defaults) started and driven by
+vhs. Typed: `/speckit-team add a file hello.txt that says hello`; vhs then pressed Down and Enter at
+the question, and Ctrl+C three times once the launch showed.
+
+| What | Result |
+|---|---|
+| The question | One AskUserQuestion with the skill's options in order: `Full team (Recommended)`, `Build only`, `Implement only`, `Spec and build`. |
+| The answer | `="Build only"` reached the main session, which said the team is test-writer then implementer, cut a `team/...` branch from `main`, and launched test-writer in the background. |
+| The launch prompt | Its first line was `Team: test-writer, implementer`, as the skill writes it. |
+| The team message | `speckit-team: team for this session: test-writer, implementer; audit gate off, spec-auditor is not in the team`. |
+| Cost | Main session 7 responses, 0.48M input (92% cache reads); test-writer 2 responses, 0.03M, before the session was stopped (`tools/usage.mjs`). An interactive session reports no dollar figure. |
+| Esc at the question | A fourth run pressed Esc instead: the AskUserQuestion call came back rejected, no Agent call followed, and the main session stopped. That session put a second question, new branch or stay on `001-greet`, beside the team one. |
+
+This is the half the 2026-10-12 run below left open: a real model mapping the answer to the `Team:`
+line, and L4's last step, Esc out of the question. The first take stopped too early, because its
+wait matched `test-writer` in the question's own option text; the second typed before the prompt was
+ready and sent nothing; the third, waiting for the input line and then for the team message, is the
+one above.
+
+</details>
+
+<details>
 <summary><b>2026-10-17</b>: Claude Code 2.1.302, Windows 11, the fast track's L3, L6 and L8 re-run (#73), Haiku main session</summary>
 
 Setup as on 2026-10-10 below: the branch's team (with #138's export line) installed with
