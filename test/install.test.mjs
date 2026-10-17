@@ -687,14 +687,15 @@ test("install allows the patch hook's export line exactly and once, keeps the us
   assert.deepEqual(bytes(dir), before, 'uninstall restores settings.json byte for byte');
 });
 
-// #123 added the forge CLIs' config folders to the line, so the rule an earlier install wrote no longer
-// matches it. A reinstall replaces that rule where this installer wrote it, and leaves a user's copy.
-test('a reinstall replaces the export rule an earlier install wrote, and the line names no stored forge login (#123)', () => {
+// #123 added the forge CLIs' config folders to the line, and #138 their token variables, so the rules
+// earlier installs wrote no longer match it. A reinstall replaces each where this installer wrote it,
+// and leaves a user's copy.
+for (const [issue, from] of [['#122', / GH_CONFIG_DIR=.*\)$/], ['#123', / GH_TOKEN=.*\)$/]]) test(`a reinstall replaces the export rule an install of ${issue} wrote, and the line names no stored forge login or token (#123, #138)`, () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
   const [rule] = exportRules(dir);
-  assert.match(rule, / GH_CONFIG_DIR=\.speckit-no-forge-login GLAB_CONFIG_DIR=\.speckit-no-forge-login\)$/);
-  const old = rule.replace(/ GH_CONFIG_DIR=.*\)$/, ')');
+  assert.match(rule, / GH_CONFIG_DIR=\.speckit-no-forge-login GLAB_CONFIG_DIR=\.speckit-no-forge-login GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=\)$/);
+  const old = rule.replace(from, ')');
   const s = settingsOf(dir);
   s.permissions.allow = s.permissions.allow.map((a) => (a === rule ? old : a));
   fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(s, null, 2));

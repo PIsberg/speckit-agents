@@ -257,13 +257,15 @@ function withFork(current, want, added) {
 // if this installer wrote it: JSON has no room for the marker, so the manifest records it.
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
-// #123: the forge CLIs' config folders, which the line points where no stored login is. Twin:
-// NO_FORGE_LOGIN in the hook.
-const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login']];
+// #123: the forge CLIs' config folders, which the line points where no stored login is; #138: their
+// token variables, which it empties. Twin: NO_FORGE_LOGIN in the hook.
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login'],
+  ...['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'].map((k) => [k, ''])];
 const GIT_PAIRS = `GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')}`;
 const NO_NETWORK_RULE = `Bash(export ${GIT_PAIRS} ${NO_FORGE_LOGIN.map(([k, v]) => `${k}=${v}`).join(' ')})`;
-// Rules earlier versions of this installer wrote, which the hook's line no longer matches: #122's.
-const OLD_NO_NETWORK_RULES = [`Bash(export ${GIT_PAIRS})`];
+// Rules earlier versions of this installer wrote, which the hook's line no longer matches: #122's and #123's.
+const OLD_NO_NETWORK_RULES = [`Bash(export ${GIT_PAIRS})`,
+  `Bash(export ${GIT_PAIRS} ${NO_FORGE_LOGIN.slice(0, 2).map(([k, v]) => `${k}=${v}`).join(' ')})`];
 function withNoNetworkRule(current, want, added) {
   const next = JSON.parse(JSON.stringify(current));
   const had = next.permissions?.allow ?? [];

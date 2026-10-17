@@ -762,6 +762,26 @@ test('a gh api call from a script patcher runs finds no stored login (#123)', { 
   assert.match(lastResult(r.requests['e2e patcher'][2]), /Exit code 4[\s\S]*(gh auth login|set the GH_TOKEN environment variable)/, story(r));
 });
 
+// #138: a token in the environment skips the stored login, so the line also empties the forge CLIs'
+// token variables. In default mode with the installed allow rule, which the empty assignments must still
+// match, the script runs with no prompt and gh stops for lack of a token. With SPECKIT_E2E_NO_HOOK=1 gh
+// uses the token and tries https://127.0.0.1:443 instead.
+test('in default mode, a gh api call from a script patcher runs gets no token from the environment, with no prompt (#138)', { skip: noClaude || noGh, timeout: 120_000 }, async () => {
+  const s = setup();
+  const file = path.join(s.cfg, 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  ((settings.permissions ??= {}).allow ??= []).push('Bash(sh merge.sh)');
+  fs.writeFileSync(file, JSON.stringify(settings, null, 2));
+  s.write('merge.sh', 'gh api --hostname 127.0.0.1 user\n');
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'ske2e-gh-'));
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [call('Bash', { command: 'sh merge.sh', description: 'Run the script' }), say('Ran it.\nDONE')],
+  }, { permissionMode: 'default', env: { GH_CONFIG_DIR: empty, GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: 'from-the-environment', GITHUB_ENTERPRISE_TOKEN: '', GH_HOST: '' } });
+  assert.ok(r.requests['e2e patcher'].length >= 2, story(r));
+  assert.match(lastResult(r.requests['e2e patcher'][1]), /Exit code 4[\s\S]*(gh auth login|set the GH_TOKEN environment variable)/, story(r));
+});
+
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
 // The three cases below need the installed hook to fire on PreToolUse Agent; with SPECKIT_E2E_NO_HOOK=1
 // the second and third fail.

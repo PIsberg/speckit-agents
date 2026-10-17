@@ -103,7 +103,9 @@ In this order:
    `GIT_CONFIG_VALUE_<n+i>` for `protocol.allow=never`, `protocol.file.allow=user` and
    `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then
    `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login` (added for #123 on
-   2026-10-17: a config folder that does not exist, so `gh` and `glab` find no stored login), then a
+   2026-10-17: a config folder that does not exist, so `gh` and `glab` find no stored login), then
+   `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`
+   (added for #138 on 2026-10-17: empty, so neither CLI uses a token from the environment), then a
    newline and the command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
    integer. Every other `tool_input` field is kept. Otherwise: allow with no output. Claude Code
    checks each part of the rewritten command against the user's rules, so without that allow rule

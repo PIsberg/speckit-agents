@@ -671,8 +671,14 @@ and any other change is caught at the end.
   The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login`,
   a config folder that does not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
   stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
-  gh 2.89, glab not checked). The folder is relative, so the line is the same on every machine. A
-  script that needs `gh`'s login fails under `patcher` for the same reason. Claude Code checks each
+  gh 2.89). The folder is relative, so the line is the same on every machine. Last come
+  `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`:
+  a token in the environment, as in CI, would skip the stored login, and gh and glab read an empty
+  one as unset ([#138](https://github.com/PIsberg/speckit-agents/issues/138); checked with gh 2.89
+  and glab 1.123.0, which sent no token under the line). A script that needs `gh`'s login fails
+  under `patcher` for the same reason, and so does a test suite that reads one of those variables,
+  such as one that calls the GitHub or GitLab API with `GITHUB_TOKEN` or a release dry run: under
+  `patcher` it sees the variable empty. Run such a suite outside the fast track. Claude Code checks each
   part of a rewritten command against your permission rules, and the export line needs a rule of its
   own: without one, every command you allowed would ask again (with 2.1.296
   an allowed `echo` asked "The following part requires approval: export GIT_CONFIG_COUNT=..."). So
@@ -1264,18 +1270,18 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 335 tests:
+`npm test` runs 339 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 65 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 91 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 67 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 92 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 44 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 45 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1332,7 +1338,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 33
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 34
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1356,7 +1362,7 @@ need no login and cost nothing.
   hid its config folder; without the hook it tries to connect
   ([#123](https://github.com/PIsberg/speckit-agents/issues/123); skipped where `gh` is not on PATH).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 33
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 34
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 35
   failures, none of the 33 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
@@ -1674,11 +1680,13 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   - **network access:** git's network transports are off for `patcher`'s commands
     ([What the hooks stop](#what-the-hooks-stop)), so git refuses any push or fetch over the
     network, a push straight to a URL included. `gh` and `glab` find no stored login
-    ([#123](https://github.com/PIsberg/speckit-agents/issues/123)), but a token in the environment
-    (`GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, as in CI) still works, and so does a script that
-    reads the keyring with `gh auth token` (gh 2.89), which is deliberate. Anything else is not
+    ([#123](https://github.com/PIsberg/speckit-agents/issues/123)) and no token in the environment
+    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)), but a script that reads the
+    keyring with `gh auth token` (gh 2.89) still gets one, which is deliberate. Anything else is not
     limited: `curl` with a token, `tea`, `npm publish` from a script
-    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
+    ([#141](https://github.com/PIsberg/speckit-agents/issues/141)). glab also sends its request
+    without a token rather than stopping, and writes `.speckit-no-forge-login/` into the working
+    directory ([#140](https://github.com/PIsberg/speckit-agents/issues/140)).
     Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
     the history and remote commands named above are denied, a push or fetch through a named remote
     is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,
