@@ -576,6 +576,36 @@ test('patch: in bypassPermissions a command it lets through runs with git networ
   assert.equal(patchTool(dir, 'Bash', { command: 42 }, BYPASS), null, 'a non-string command is left alone');
 });
 
+// #123: a forge's API does not go through git, so the same line points gh and glab at a config folder
+// that does not exist: a script's `gh pr merge` or `gh api` finds no stored login. The folder is
+// relative, so the line, and the exact rule install.mjs writes for it, are the same on every machine.
+const noTokens = Object.fromEntries(Object.entries(process.env)
+  .filter(([k]) => !['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST'].includes(k.toUpperCase())));
+const noGh = spawnSync('gh', ['--version']).error ? 'gh is not on PATH' : false;
+const forgeEnv = (dir) => exported(patchTool(dir, 'Bash', { command: 'npm test' }, BYPASS).hookSpecificOutput.updatedInput.command.split('\n')[0]);
+
+test('patch: a command it lets through runs with the forge CLIs pointed at a relative config folder that does not exist (#123)', () => {
+  const { dir } = cmdRepo();
+  const env = forgeEnv(dir);
+  for (const k of ['GH_CONFIG_DIR', 'GLAB_CONFIG_DIR']) {
+    assert.ok(env[k] && !path.isAbsolute(env[k]) && !/\s/.test(env[k]), `${k}: ${env[k]}`);
+    assert.ok(!fs.existsSync(path.join(dir, env[k])), `${k} names no folder in the repo`);
+  }
+});
+
+test('patch: under the line, gh finds no stored login and refuses an API call before any request (#123)', { skip: noGh }, () => {
+  const { dir } = cmdRepo();
+  const stored = fs.mkdtempSync(path.join(os.tmpdir(), 'skpatch-gh-'));
+  fs.writeFileSync(path.join(stored, 'hosts.yml'), 'github.com:\n    oauth_token: gho_fake\n    user: someone\n    git_protocol: https\n');
+  const gh = (args, line = {}) => spawnSync('gh', args, { cwd: dir, encoding: 'utf8', env: { ...noTokens, GH_CONFIG_DIR: stored, ...line } });
+  assert.equal(gh(['config', 'get', '-h', 'github.com', 'user']).stdout.trim(), 'someone', 'without the line the stored login is found');
+  const line = forgeEnv(dir);
+  assert.equal(gh(['config', 'get', '-h', 'github.com', 'user'], line).stdout.trim(), '', 'under the line it is not');
+  const api = gh(['api', 'user'], line);
+  assert.notEqual(api.status, 0);
+  assert.match(api.stderr + api.stdout, /gh auth login/);
+});
+
 // #122: install.mjs allows the exact export line, so the rewritten command asks for nothing the command
 // itself would not, in every mode (checked against a fake API with 2.1.296, auto mode's classifier
 // included). Where the installed settings.json holds that rule, every mode gets the switch-off; where it

@@ -246,6 +246,22 @@ the whole run, cache reads were 97% of Opus input and 92% of Sonnet input.
 What it led to: agents with one capability keep one `tools:` line, held by
 [`test/prompt-caching.test.mjs`](../test/prompt-caching.test.mjs), with Claude Code's ordering pinned
 in [`test/e2e.test.mjs`](../test/e2e.test.mjs); and `tools/usage.mjs` names only a relaunch that lost
-its prefix, since a first launch always writes its own body. Why same-type relaunches a minute apart
-mostly read about 4k and not their whole prefix is not established: something in the body block
-changes between launches, but what was not measured.
+its prefix, since a first launch always writes its own body.
+
+Why same-type relaunches a minute apart mostly read about 4k, the tools, and not their whole prefix
+([#133](https://github.com/PIsberg/speckit-agents/issues/133)), checked 2026-10-17 against the e2e fake
+API on Claude Code 2.1.302 and 2.1.293: the body block is byte for byte the same on every launch of an
+agent type. What changes is the billing header, the first system block, ahead of every breakpoint:
+`cc_version=2.1.302.<3 hex>`, where the suffix follows characters 4, 7 and 20 (from 0) of the launch
+prompt. Four test-writer launches: prompts differing only at character 6, or only after character
+20, sent the same suffix (`fec`); a prompt differing at character 7 sent `b41`, one differing at 20
+sent `7d0`, and the pinned test adds one differing only at character 4, which changes it too.
+`/speckit-team`'s launch prompts start with what differs per launch (task IDs, a feature path), so
+those characters seldom match. That fits both numbers above: most relaunches read only
+the tools, and the one test-writer that read 13,984 would be a launch whose three characters
+happened to match. Not established: that the API counts the billing block in its cache key, which a
+fake API cannot show. If it does, every launch prompt starting with one fixed line of 21 characters
+or more would give every launch the same billing block, and a relaunch could read its body (10k to
+20k tokens) instead of writing it. Checking that takes two real launches of one agent type, one with
+such a line and one without, compared on `cache_read_input_tokens`. Pinned in
+[`test/e2e.test.mjs`](../test/e2e.test.mjs).

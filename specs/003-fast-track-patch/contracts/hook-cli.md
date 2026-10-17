@@ -101,8 +101,10 @@ In this order:
    `settings.json` beside the hook has `Bash(<the line>)` in `permissions.allow` (install.mjs writes it
    for `<n>` = 0), the allow rewrites the command to one line, `export GIT_CONFIG_COUNT=<n+7>` and the pairs `GIT_CONFIG_KEY_<n+i>` and
    `GIT_CONFIG_VALUE_<n+i>` for `protocol.allow=never`, `protocol.file.allow=user` and
-   `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then a newline and the
-   command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
+   `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then
+   `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login` (added for #123 on
+   2026-10-17: a config folder that does not exist, so `gh` and `glab` find no stored login), then a
+   newline and the command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
    integer. Every other `tool_input` field is kept. Otherwise: allow with no output. Claude Code
    checks each part of the rewritten command against the user's rules, so without that allow rule
    every allowed command would ask again outside `bypassPermissions` (2.1.296).
