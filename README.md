@@ -291,12 +291,12 @@ runs will word things differently. The three recordings that wait on agents are 
 ### The team in the `@` typeahead
 
 Typing `@` lists the agents Claude Code knows, each with its description, after the repo's
-folders. Claude Code 2.1.296 stops the list at 15 entries. In the recording below, made on
-2026-10-10 when the team had seven agents (security-reviewer came on 2026-10-15), it shows six of them
-among Claude Code's own five agents: test-writer, last in alphabetical order, is left out. Claude Code
-2.1.295 removed the `/agents` menu this section used to show.
+folders. Claude Code stops the list at 15 entries. In the recording below (Claude Code 2.1.302,
+2026-10-17) it shows six of the team's eight agents among Claude Code's own five: spec-gatekeeper and
+test-writer, last in alphabetical order, are left out. Claude Code 2.1.295 removed the `/agents` menu
+this section used to show.
 
-![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, patcher, product-owner, spec-auditor and spec-gatekeeper among Claude Code's own](docs/media/agents-list.gif)
+![Typing @ lists the repo's folders, then the agents with their descriptions: architect, implementer, patcher, product-owner, security-reviewer and spec-auditor among Claude Code's own](docs/media/agents-list.gif)
 
 ### A subagent at work
 
