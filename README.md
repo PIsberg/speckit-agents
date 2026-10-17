@@ -302,9 +302,12 @@ this section used to show.
 
 `@agent-spec-auditor` audits a feature inside the main session: the collapsed progress view, the
 full transcript with Ctrl+O, then the `VERDICT:` it hands back, which a hook records for the
-implementation gate.
+implementation gate. Recorded on 2026-10-17 (Claude Code 2.1.302) with `CLAUDE_CODE_FORK_SUBAGENT=0`
+and a prompt asking for `run_in_background false`: with fork subagents on, an interactive session's
+default, the agent runs in the background and reports as a message instead
+([Foreground launches](#foreground-launches)). On the demo feature it returns `VERDICT: FAIL`.
 
-![spec-auditor running inline, expanded with Ctrl+O, ending in a VERDICT line](docs/media/subagent-inline.gif)
+![spec-auditor running inline, expanded with Ctrl+O, then Done and the main session's summary of its VERDICT: FAIL findings](docs/media/subagent-inline.gif)
 
 ### A guardrail firing
 

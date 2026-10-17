@@ -29,7 +29,6 @@ function anchors(file) {
 // must go, so the list cannot hide a file that went missing later.
 const NOT_RECORDED = {
   'docs/media/pipeline.gif': '#99',
-  'docs/media/subagent-inline.gif': '#62',
 };
 
 test('every relative link in README.md, CLAUDE.md and docs/ names a file that exists, and a heading in it', () => {
