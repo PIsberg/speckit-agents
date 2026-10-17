@@ -17,9 +17,12 @@ output (`additionalContext`) arrives in the messages, never in `system`.
 
 Added 2026-10-17 (#133, step 1): the body block is the same on every launch of an agent type; the
 billing header ahead of it is not. Its `cc_version` suffix follows characters 4, 7 and 20 of the
-launch prompt (2.1.302 and 2.1.293, fake API, pinned in `test/e2e.test.mjs`). Whether the API counts
-that block in the cache key is not measured; docs/measurements.md, "What the prompt cache shares
-between agents", says what would.
+launch prompt (2.1.302 and 2.1.293, fake API, pinned in `test/e2e.test.mjs`). Measured the same day
+against the real API: the header is not in the cache key, and a relaunch reads back its tools and
+whole system prefix, body included. What it writes again is its first user message, Claude Code's
+context blocks followed by the launch prompt with no breakpoint between them (about 7,000 tokens for
+`patcher`); only Claude Code can move that breakpoint. docs/measurements.md, "What the prompt cache
+shares between agents", has the numbers.
 
 So the layering in FR-001, FR-004 and FR-006 to FR-012 cannot be built from here: there is no block
 ahead of the agent's body to put shared text in, and no way to place a breakpoint. The

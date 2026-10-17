@@ -1282,7 +1282,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 45 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 46 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1362,12 +1362,16 @@ need no login and cost nothing.
   `gh api` with a stored login for 127.0.0.1, and gh stops for lack of a login, because the same line
   hid its config folder; without the hook it tries to connect
   ([#123](https://github.com/PIsberg/speckit-agents/issues/123); skipped where `gh` is not on PATH).
+  In another, in `default` with the installer's allow rule, the script's `gh api` gets a token from
+  the environment, and gh stops for lack of one with no prompt, because the line empties the token
+  variables; without the hook it uses the token and tries to connect
+  ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
   does not fire lets the action through. With the installed hook replaced by one that only exits, all 34
-  fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 35
-  failures, none of the 33 passed). Setting
+  fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
+  failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  35 of the 44 tests fail (the 33 scripted ones and the two blocking no-model cases); the other nine
+  36 of the 46 tests fail (the 34 scripted ones and the two blocking no-model cases); the other ten
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1393,7 +1397,10 @@ need no login and cost nothing.
   A seventh pins that the body block is the same on every launch of an agent type, and that the
   billing header ahead of it follows characters 4, 7 and 20 of the launch prompt: prompts that differ
   only after the 21st character send the same system blocks, one that differs at character 7 does
-  not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)).
+  not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)); the real API does not count
+  that header in the cache key. An eighth pins what does cost a relaunch: Claude Code's context
+  blocks come ahead of the launch prompt in the first message with no cache breakpoint between them,
+  so a relaunch with another prompt writes them again.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
