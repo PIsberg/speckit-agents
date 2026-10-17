@@ -257,17 +257,26 @@ function withFork(current, want, added) {
 // if this installer wrote it: JSON has no room for the marker, so the manifest records it.
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
-const NO_NETWORK_RULE = `Bash(export GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')})`;
+// #123: the forge CLIs' config folders, which the line points where no stored login is. Twin:
+// NO_FORGE_LOGIN in the hook.
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login']];
+const GIT_PAIRS = `GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')}`;
+const NO_NETWORK_RULE = `Bash(export ${GIT_PAIRS} ${NO_FORGE_LOGIN.map(([k, v]) => `${k}=${v}`).join(' ')})`;
+// Rules earlier versions of this installer wrote, which the hook's line no longer matches: #122's.
+const OLD_NO_NETWORK_RULES = [`Bash(export ${GIT_PAIRS})`];
 function withNoNetworkRule(current, want, added) {
   const next = JSON.parse(JSON.stringify(current));
-  const allow = next.permissions?.allow ?? [];
+  const had = next.permissions?.allow ?? [];
+  const allow = added ? had.filter((a) => !OLD_NO_NETWORK_RULES.includes(a)) : had;
+  if (allow.length !== had.length) next.permissions.allow = allow;
   if (want) {
     if (allow.includes(NO_NETWORK_RULE)) return { next, added };
     next.permissions = { ...(next.permissions ?? {}), allow: [...allow, NO_NETWORK_RULE] };
     return { next, added: true };
   }
-  if (added && allow.includes(NO_NETWORK_RULE)) {
-    next.permissions.allow = allow.filter((a) => a !== NO_NETWORK_RULE);
+  const left = added ? allow.filter((a) => a !== NO_NETWORK_RULE) : had;
+  if (left.length !== had.length) {
+    next.permissions.allow = left;
     if (!next.permissions.allow.length) delete next.permissions.allow;
     if (!Object.keys(next.permissions).length) delete next.permissions;
   }

@@ -359,18 +359,34 @@ test('patch fails closed when the budget cannot be measured (research R9)', () =
   }
 });
 
-test('patch: input it cannot key a start record by gets no decision and a message (research R9)', () => {
+test('patch: input with no id to key a start record by gets no decision and a message (research R9)', () => {
   const { dir } = fresh();
-  for (const extra of [{ agent_id: undefined }, { agent_id: '../x' }]) {
-    const out = bash(dir, 'ls', extra);
-    assert.ok(!decided(out), JSON.stringify(extra));
-    assert.match(out?.systemMessage ?? '', /speckit-team: patch got unusable input/);
-  }
+  const out = bash(dir, 'ls', { agent_id: undefined });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /speckit-team: patch got unusable input/);
   const s = fresh();
   const key = { agent_id: undefined, session_id: 's1' };
   begin(s.dir, key, 's1');
   put(s.dir, 'src/a.js', nl(31, 'a'));
   assert.ok(denied(bash(s.dir, 'npm test', key)), 'a session_id keys the record');
+});
+
+// #136: an id that is not word characters used to get no decision, so that agent had no budget, no
+// protected paths and no history-command checks. It is hashed into the record's name, as in every other mode.
+test('patch: an agent_id that is not word characters keys a hashed start record and is held to the budget (#136)', () => {
+  for (const extra of [{ agent_id: '../../x' }, { agent_id: undefined, session_id: 'a b' }]) {
+    const { dir } = fresh();
+    const first = patchTool(dir, 'Read', { file_path: path.join(dir, 'src/main/App.java') }, extra);
+    assert.ok(!denied(first) && !first?.systemMessage, `first call: ${JSON.stringify(first)}`);
+    const records = fs.readdirSync(path.join(stateDir(dir), 'patch'));
+    assert.equal(records.length, 1, JSON.stringify(records));
+    assert.match(records[0], /^id-[0-9a-f]{32}\.json$/);
+    assert.ok(!fs.existsSync(path.join(dir, '.git', 'x.json')), 'nothing outside patch/');
+    put(dir, 'src/a.js', nl(31, 'a'));
+    const out = bash(dir, 'npm test', extra);
+    assert.ok(denied(out), JSON.stringify(extra));
+    assert.match(why(out), /31 changed production lines/);
+  }
 });
 
 test('patch reads committed test patterns while scope tests keeps the working tree (FR-009)', () => {
@@ -558,6 +574,37 @@ test('patch: in bypassPermissions a command it lets through runs with git networ
   assert.match(why(patchTool(dir, 'Bash', { command: 'git push' }, BYPASS)), /may not run git push/);
   assert.equal(patchTool(dir, 'Read', { file_path: path.join(dir, 'src/a.js') }, BYPASS), null);
   assert.equal(patchTool(dir, 'Bash', { command: 42 }, BYPASS), null, 'a non-string command is left alone');
+});
+
+// #123: a forge's API does not go through git, so the same line points gh and glab at a config folder
+// that does not exist: a script's `gh pr merge` or `gh api` finds no stored login. The folder is
+// relative, so the line, and the exact rule install.mjs writes for it, are the same on every machine.
+const noTokens = Object.fromEntries(Object.entries(process.env)
+  .filter(([k]) => !['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST'].includes(k.toUpperCase())));
+const noGh = spawnSync('gh', ['--version']).error ? 'gh is not on PATH' : false;
+const forgeEnv = (dir) => exported(patchTool(dir, 'Bash', { command: 'npm test' }, BYPASS).hookSpecificOutput.updatedInput.command.split('\n')[0]);
+
+test('patch: a command it lets through runs with the forge CLIs pointed at a relative config folder that does not exist (#123)', () => {
+  const { dir } = cmdRepo();
+  const env = forgeEnv(dir);
+  for (const k of ['GH_CONFIG_DIR', 'GLAB_CONFIG_DIR']) {
+    assert.ok(env[k] && !path.isAbsolute(env[k]) && !/\s/.test(env[k]), `${k}: ${env[k]}`);
+    assert.ok(!fs.existsSync(path.join(dir, env[k])), `${k} names no folder in the repo`);
+  }
+});
+
+test('patch: under the line, gh finds no stored login and refuses an API call before any request (#123)', { skip: noGh }, () => {
+  const { dir } = cmdRepo();
+  const stored = fs.mkdtempSync(path.join(os.tmpdir(), 'skpatch-gh-'));
+  fs.writeFileSync(path.join(stored, 'hosts.yml'), 'github.com:\n    oauth_token: gho_fake\n    user: someone\n    git_protocol: https\n');
+  const gh = (args, line = {}) => spawnSync('gh', args, { cwd: dir, encoding: 'utf8', env: { ...noTokens, GH_CONFIG_DIR: stored, ...line } });
+  assert.equal(gh(['config', 'get', '-h', 'github.com', 'user']).stdout.trim(), 'someone', 'without the line the stored login is found');
+  const line = forgeEnv(dir);
+  assert.equal(gh(['config', 'get', '-h', 'github.com', 'user'], line).stdout.trim(), '', 'under the line it is not');
+  const api = gh(['api', 'user'], line);
+  // Exit 4 is gh's "authentication required"; inside GitHub Actions it asks for GH_TOKEN instead.
+  assert.equal(api.status, 4, api.stderr + api.stdout);
+  assert.match(api.stderr + api.stdout, /gh auth login|set the GH_TOKEN environment variable/);
 });
 
 // #122: install.mjs allows the exact export line, so the rewritten command asks for nothing the command

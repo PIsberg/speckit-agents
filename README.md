@@ -662,8 +662,13 @@ and any other change is caught at the end.
   environment's config scope, which overrides every config file. So git refuses a push, fetch or
   clone over the network before it connects, whatever started it: a script, a package script, an
   alias, a string built at run time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
-  Claude Code checks each part of a rewritten command against your permission rules, and the export
-  line needs a rule of its own: without one, every command you allowed would ask again (with 2.1.296
+  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login`,
+  a config folder that does not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
+  stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
+  gh 2.89, glab not checked). The folder is relative, so the line is the same on every machine. A
+  script that needs `gh`'s login fails under `patcher` for the same reason. Claude Code checks each
+  part of a rewritten command against your permission rules, and the export line needs a rule of its
+  own: without one, every command you allowed would ask again (with 2.1.296
   an allowed `echo` asked "The following part requires approval: export GIT_CONFIG_COUNT=..."). So
   the installer adds an allow rule for that exact line to `settings.json`, never a prefix rule, which
   would let any export of git config through, such as `core.fsmonitor`, which runs a program. With
@@ -738,7 +743,9 @@ run.
   switched off, where git refused a push from a script `patcher` ran with
   `transport 'https' not allowed`, in `bypassPermissions` and, with the installer's allow rule, in
   `default` with no prompt (without the hook it tried to connect,
-  [#72](https://github.com/PIsberg/speckit-agents/issues/72), [#122](https://github.com/PIsberg/speckit-agents/issues/122)).
+  [#72](https://github.com/PIsberg/speckit-agents/issues/72), [#122](https://github.com/PIsberg/speckit-agents/issues/122));
+  and a `gh api` call from such a script, which stopped for lack of a login
+  ([#123](https://github.com/PIsberg/speckit-agents/issues/123)).
 - **Seen in an interactive session, against a fake API:** on 2026-10-12 a background `patcher`'s
   protected Write was denied, its production Write went through once accepted at the permission
   prompt, and its `DONE` report passed the end check, which wrote the accepted record
@@ -1249,18 +1256,18 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 328 tests:
+`npm test` runs 334 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 62 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 90 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 65 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 91 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 5 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/` |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 42 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 44 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 
@@ -1317,7 +1324,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 32
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 33
   tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
   every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1336,12 +1343,16 @@ need no login and cost nothing.
   connects, because the hook switched git's network transports off, once in `bypassPermissions`
   ([#72](https://github.com/PIsberg/speckit-agents/issues/72)) and once in `default` with the
   installer's allow rule and one for the script, where it ran with no prompt
-  ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that does not
-  fire lets the action through. With the installed hook replaced by one that only exits, all 32
-  fail, as do the two blocking cases above (measured again 2026-10-16, Claude Code 2.1.301: 34
-  failures, none of the 32 passed). Setting
+  ([#122](https://github.com/PIsberg/speckit-agents/issues/122)). In one more, the script calls
+  `gh api` with a stored login for 127.0.0.1, and gh stops for lack of a login, because the same line
+  hid its config folder; without the hook it tries to connect
+  ([#123](https://github.com/PIsberg/speckit-agents/issues/123); skipped where `gh` is not on PATH).
+  They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 33
+  fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 35
+  failures, none of the 33 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  34 of the 42 tests fail (the 32 scripted ones and the two blocking no-model cases); the other eight
+  35 of the 44 tests fail (the 33 scripted ones and the two blocking no-model cases); the other nine
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1364,6 +1375,10 @@ need no login and cost nothing.
   and its body as a system block of its own with a cache breakpoint. The one `tools:` line per
   capability that `test/prompt-caching.test.mjs` holds relies on it
   ([What the prompt cache shares between agents](docs/measurements.md#what-the-prompt-cache-shares-between-agents)).
+  A seventh pins that the body block is the same on every launch of an agent type, and that the
+  billing header ahead of it follows characters 4, 7 and 20 of the launch prompt: prompts that differ
+  only after the 21st character send the same system blocks, one that differs at character 7 does
+  not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)).
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -1528,7 +1543,9 @@ GIT_CONFIG_COUNT=...` at the top of each). A push or fetch was refused, as inten
 your test suite or build, such as a dependency fetched from a git URL or a submodule, run that step
 before `/speckit-patch`. To run `patcher`'s commands as typed outside `bypassPermissions`, remove the
 installer's `Bash(export GIT_CONFIG_COUNT=...)` rule from `permissions.allow` in `settings.json`; a
-rerun of the installer adds it back.
+rerun of the installer adds it back. The same line is why `gh` in `patcher`'s output says "To get
+started with GitHub CLI, please run: gh auth login": it hides `gh`'s and `glab`'s stored login
+([#123](https://github.com/PIsberg/speckit-agents/issues/123)).
 
 ### "fast track FAILED: installed agent team files changed during the run"
 
@@ -1648,9 +1665,12 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
     Claude config directory is not caught.
   - **network access:** git's network transports are off for `patcher`'s commands
     ([What the hooks stop](#what-the-hooks-stop)), so git refuses any push or fetch over the
-    network, a push straight to a URL included. Anything other than git is not limited: a forge's
-    API (`curl`, or a forge CLI a script calls with its stored login,
-    [#123](https://github.com/PIsberg/speckit-agents/issues/123)), `npm publish` from a script.
+    network, a push straight to a URL included. `gh` and `glab` find no stored login
+    ([#123](https://github.com/PIsberg/speckit-agents/issues/123)), but a token in the environment
+    (`GH_TOKEN`, `GITHUB_TOKEN`, `GITLAB_TOKEN`, as in CI) still works, and so does a script that
+    reads the keyring with `gh auth token` (gh 2.89), which is deliberate. Anything else is not
+    limited: `curl` with a token, `tea`, `npm publish` from a script
+    ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
     Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
     the history and remote commands named above are denied, a push or fetch through a named remote
     is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,

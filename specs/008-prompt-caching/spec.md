@@ -15,6 +15,12 @@ a fixed 62-character block with a cache breakpoint, and the agent's body plus Cl
 as one block with a breakpoint; then the messages, with a breakpoint on the last user turn. Hook
 output (`additionalContext`) arrives in the messages, never in `system`.
 
+Added 2026-10-17 (#133, step 1): the body block is the same on every launch of an agent type; the
+billing header ahead of it is not. Its `cc_version` suffix follows characters 4, 7 and 20 of the
+launch prompt (2.1.302 and 2.1.293, fake API, pinned in `test/e2e.test.mjs`). Whether the API counts
+that block in the cache key is not measured; docs/measurements.md, "What the prompt cache shares
+between agents", says what would.
+
 So the layering in FR-001, FR-004 and FR-006 to FR-012 cannot be built from here: there is no block
 ahead of the agent's body to put shared text in, and no way to place a breakpoint. The
 `tools/prompt-cache.mjs` module the first PR (#132) added built such payloads, but nothing called it, and it

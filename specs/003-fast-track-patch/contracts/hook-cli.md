@@ -51,7 +51,8 @@ unusable-input and wrong-event exits), removes the accepted record
 
 ### Key and start record
 
-- Key: `agent_id`, else `session_id`. Neither, or one not matching `^[\w-]{1,128}$`: no decision,
+- Key: `agent_id`, else `session_id`. One not matching `^[\w-]{1,128}$` is replaced by `id-` and the
+  first 32 hex digits of its SHA-256, as the other modes name per-agent state (#136). Neither: no decision,
   `speckit-team: patch got unusable input (no agent_id or session_id to keep the start record under); no decision made.`
 - First PreToolUse of a key writes `<git common dir>/speckit-team/patch/<key>.json`
   (data-model.md: `sha`, `dirty`, `team`, `at`). With no commit in the repo: deny,
@@ -100,8 +101,10 @@ In this order:
    `settings.json` beside the hook has `Bash(<the line>)` in `permissions.allow` (install.mjs writes it
    for `<n>` = 0), the allow rewrites the command to one line, `export GIT_CONFIG_COUNT=<n+7>` and the pairs `GIT_CONFIG_KEY_<n+i>` and
    `GIT_CONFIG_VALUE_<n+i>` for `protocol.allow=never`, `protocol.file.allow=user` and
-   `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then a newline and the
-   command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
+   `protocol.<name>.allow=never` for `git`, `ssh`, `http`, `https` and `ext`, then
+   `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login` (added for #123 on
+   2026-10-17: a config folder that does not exist, so `gh` and `glab` find no stored login), then a
+   newline and the command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive
    integer. Every other `tool_input` field is kept. Otherwise: allow with no output. Claude Code
    checks each part of the rewritten command against the user's rules, so without that allow rule
    every allowed command would ask again outside `bypassPermissions` (2.1.296).

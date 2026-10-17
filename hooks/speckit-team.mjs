@@ -119,11 +119,11 @@ const event = input.hook_event_name;
 // Fields used as paths must be strings; any other type is treated as absent.
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const agentId = str(input.agent_id);
-// The name of an agent's state files under agents/. An id that is not word characters is hashed, so a
-// path segment in it can never place a file outside the state directory.
+// The name of an agent's state files under agents/, and of patch's start record. An id that is not word
+// characters is hashed, so a path segment in it can never place a file outside the state directory.
 const AGENT_ID = /^[\w-]{1,128}$/;
-const agentKey = agentId && (AGENT_ID.test(agentId) ? agentId
-  : `id-${createHash('sha256').update(agentId).digest('hex').slice(0, 32)}`);
+const keyOf = (id) => id && (AGENT_ID.test(id) ? id : `id-${createHash('sha256').update(id).digest('hex').slice(0, 32)}`);
+const agentKey = keyOf(agentId);
 // Safety net under every specific check below: a hook must never exit with a crash, because Claude
 // Code then lets the action through and says nothing. Inside a Spec Kit repo any error that slips
 // through becomes no decision plus a visible message; outside one it stays silent.
@@ -1284,6 +1284,12 @@ function endCheck(start, viaHandback, key, acceptedFile) {
 // settings.json allows this exact line, which install.mjs writes (#122). Twin: NO_NETWORK in install.mjs.
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
+// #123: a forge's API does not go through git. gh and glab read their stored login through their
+// config folder; one that does not exist names no host, so a script's `gh pr merge` or `gh api` stops
+// for lack of a login before any request. Relative, so the line, and install.mjs's exact rule for it,
+// are the same on every machine. A token in the environment still works, and so does
+// `gh auth token`, which reads the keyring directly (gh 2.89). Twin: NO_FORGE_LOGIN in install.mjs.
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', '.speckit-no-forge-login']];
 const allowedExactly = (line) => {
   let s; try { s = JSON.parse(readOr(path.join(TEAM_DIR, 'settings.json'), 'null')); } catch { return false; }
   return Array.isArray(s?.permissions?.allow) && s.permissions.allow.includes(`Bash(${line})`);
@@ -1295,7 +1301,7 @@ function letThrough() {
   const n = Number(process.env.GIT_CONFIG_COUNT);
   const from = Number.isInteger(n) && n > 0 ? n : 0;
   const pairs = NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${from + i}=${k} GIT_CONFIG_VALUE_${from + i}=${v}`).join(' ');
-  const line = `export GIT_CONFIG_COUNT=${from + NO_NETWORK.length} ${pairs}`;
+  const line = `export GIT_CONFIG_COUNT=${from + NO_NETWORK.length} ${pairs} ${NO_FORGE_LOGIN.map(([k, v]) => `${k}=${v}`).join(' ')}`;
   if (input.permission_mode !== 'bypassPermissions' && !allowedExactly(line)) process.exit(0);
   emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...ti, command: `${line}\n${ti.command}` } } });
 }
@@ -1306,8 +1312,8 @@ if (mode === 'patch') {
   fs.rmSync(acceptedFile, { force: true });
   const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
   const isEnd = viaHandback || event !== 'PreToolUse';
-  const key = str(input.agent_id) ?? str(input.session_id);
-  if (!key || !/^[\w-]{1,128}$/.test(key)) noDecision('no agent_id or session_id to keep the start record under');
+  const key = keyOf(agentId ?? str(input.session_id));
+  if (!key) noDecision('no agent_id or session_id to keep the start record under');
   const f = patchFile(key);
   if (isEnd && !fs.existsSync(f)) process.exit(0);
   if (!fs.existsSync(f)) {

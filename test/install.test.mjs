@@ -687,6 +687,31 @@ test("install allows the patch hook's export line exactly and once, keeps the us
   assert.deepEqual(bytes(dir), before, 'uninstall restores settings.json byte for byte');
 });
 
+// #123 added the forge CLIs' config folders to the line, so the rule an earlier install wrote no longer
+// matches it. A reinstall replaces that rule where this installer wrote it, and leaves a user's copy.
+test('a reinstall replaces the export rule an earlier install wrote, and the line names no stored forge login (#123)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const [rule] = exportRules(dir);
+  assert.match(rule, / GH_CONFIG_DIR=\.speckit-no-forge-login GLAB_CONFIG_DIR=\.speckit-no-forge-login\)$/);
+  const old = rule.replace(/ GH_CONFIG_DIR=.*\)$/, ')');
+  const s = settingsOf(dir);
+  s.permissions.allow = s.permissions.allow.map((a) => (a === rule ? old : a));
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify(s, null, 2));
+  assert.equal(install(dir).status, 0);
+  assert.deepEqual(exportRules(dir), [rule], 'the old rule is gone, the new one is there once');
+  const gone = claudeDir({ model: 'opus' });
+  assert.equal(install(gone).status, 0);
+  const g = settingsOf(gone);
+  g.permissions.allow = [old];
+  fs.writeFileSync(path.join(gone, 'settings.json'), JSON.stringify(g, null, 2));
+  assert.equal(install(gone, '--uninstall').status, 0);
+  assert.deepEqual(settingsOf(gone), { model: 'opus' }, 'uninstall removes the old rule it wrote, too');
+  const user = claudeDir({ permissions: { allow: [old] } });
+  assert.equal(install(user).status, 0);
+  assert.deepEqual(exportRules(user), [old, rule], "a user's own copy of the old rule stays");
+});
+
 test("a user's own copy of the export rule stays after uninstall (#122)", () => {
   const ours = claudeDir();
   assert.equal(install(ours).status, 0);

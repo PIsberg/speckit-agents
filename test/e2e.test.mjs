@@ -361,6 +361,26 @@ test("Claude Code sends an agent's tools in frontmatter order and its body as it
   assert.deepEqual(body.cache_control, { type: 'ephemeral' });
 });
 
+// #133: two launches of one agent type get the same body block. What differs is the billing header,
+// the first system block, ahead of every cache breakpoint: its cc_version suffix follows characters of
+// the launch prompt (4, 7 and 20 on 2.1.302), so prompts that differ there send different system
+// prefixes. Whether the API counts that block in the cache key a fake API cannot show; the 53-agent run
+// read about 4k tokens, the tools, on most same-type relaunches. Needs no hook of the team.
+test("an agent's body block is the same on every launch, and the billing header ahead of it follows the launch prompt (#133)", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const [base, tail, at6] = ['e2e pfx 0123456789abcdef one', 'e2e pfx 0123456789abcdef two', 'e2e pfX 0123456789abcdef one'];
+  const [at4, at7, at20] = ['e2e Pfx 0123456789abcdef one', 'e2e pfx_0123456789abcdef one', 'e2e pfx 0123456789abXdef one'];
+  const keys = [base, tail, at6, at4, at7, at20];
+  const r = await session(s, { [MAIN]: keys.map((k) => agent('test-writer', k)), ...Object.fromEntries(keys.map((k) => [k, [say('RED')]])) });
+  const sys = Object.fromEntries(keys.map((k) => [k, r.requests[k][0]?.system]));
+  assert.ok(keys.every((k) => sys[k]?.length === 3), story(r));
+  assert.match(sys[base][0].text, /^x-anthropic-billing-header: cc_version=[^;]+;/, story(r));
+  for (const k of keys) assert.deepEqual(sys[k].slice(1), sys[base].slice(1), `${k}: the cached blocks are the same`);
+  assert.deepEqual(sys[tail], sys[base], 'a prompt that differs only after its 21st character sends the same system prefix');
+  assert.deepEqual(sys[at6], sys[base], 'and one that differs only at character 6');
+  for (const [k, at] of [[at4, 4], [at7, 7], [at20, 20]]) assert.notEqual(sys[k][0].text, sys[base][0].text, `one that differs at character ${at} sends another billing header`);
+});
+
 // #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
 // --plugin-dir: Claude Code starts it, it sets the status line and raises its startup toast, and its
 // commands answer with no model call (004 quickstart L1, L2). Needs no hook of the team.
@@ -719,6 +739,27 @@ test('in default mode with the installed allow rule, a push from a script patche
   }, { permissionMode: 'default' });
   assert.ok(r.requests['e2e patcher'].length >= 2, story(r));
   assert.match(lastResult(r.requests['e2e patcher'][1]), /transport 'https' not allowed/, story(r));
+});
+
+// #123: a forge's API does not go through git, so the same line points gh at a config folder that does
+// not exist. The stored login here is for 127.0.0.1, so with SPECKIT_E2E_NO_HOOK=1 gh uses it and tries
+// https://127.0.0.1:443 instead; under the line it stops for lack of a login before any request.
+const noGh = spawnSync('gh', ['--version']).error ? 'gh is not on PATH' : false;
+test('a gh api call from a script patcher runs finds no stored login (#123)', { skip: noClaude || noGh, timeout: 120_000 }, async () => {
+  const s = setup();
+  const stored = fs.mkdtempSync(path.join(os.tmpdir(), 'ske2e-gh-'));
+  fs.writeFileSync(path.join(stored, 'hosts.yml'), '127.0.0.1:\n    oauth_token: gho_fake\n    user: someone\n    git_protocol: https\n');
+  const r = await session(s, {
+    [MAIN]: [agent('patcher', 'e2e patcher')],
+    'e2e patcher': [
+      wfile(s, 'merge.sh', 'gh api --hostname 127.0.0.1 user\n'),
+      call('Bash', { command: 'sh merge.sh', description: 'Run the script' }),
+      say('Ran it.\nDONE'),
+    ],
+  }, { env: { GH_CONFIG_DIR: stored, GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '', GH_HOST: '' } });
+  assert.ok(r.requests['e2e patcher'].length >= 3, story(r));
+  // gh's "authentication required" exit; inside GitHub Actions it asks for GH_TOKEN instead.
+  assert.match(lastResult(r.requests['e2e patcher'][2]), /Exit code 4[\s\S]*(gh auth login|set the GH_TOKEN environment variable)/, story(r));
 });
 
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.
