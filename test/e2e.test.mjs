@@ -758,7 +758,8 @@ test('a gh api call from a script patcher runs finds no stored login (#123)', { 
     ],
   }, { env: { GH_CONFIG_DIR: stored, GH_TOKEN: '', GITHUB_TOKEN: '', GH_ENTERPRISE_TOKEN: '', GITHUB_ENTERPRISE_TOKEN: '', GH_HOST: '' } });
   assert.ok(r.requests['e2e patcher'].length >= 3, story(r));
-  assert.match(lastResult(r.requests['e2e patcher'][2]), /gh auth login/, story(r));
+  // gh's "authentication required" exit; inside GitHub Actions it asks for GH_TOKEN instead.
+  assert.match(lastResult(r.requests['e2e patcher'][2]), /Exit code 4[\s\S]*(gh auth login|set the GH_TOKEN environment variable)/, story(r));
 });
 
 // 006 (US3-1, US3-2, FR-007, FR-009): the Agent launch records the team, and the gate follows it.

@@ -602,8 +602,9 @@ test('patch: under the line, gh finds no stored login and refuses an API call be
   const line = forgeEnv(dir);
   assert.equal(gh(['config', 'get', '-h', 'github.com', 'user'], line).stdout.trim(), '', 'under the line it is not');
   const api = gh(['api', 'user'], line);
-  assert.notEqual(api.status, 0);
-  assert.match(api.stderr + api.stdout, /gh auth login/);
+  // Exit 4 is gh's "authentication required"; inside GitHub Actions it asks for GH_TOKEN instead.
+  assert.equal(api.status, 4, api.stderr + api.stdout);
+  assert.match(api.stderr + api.stdout, /gh auth login|set the GH_TOKEN environment variable/);
 });
 
 // #122: install.mjs allows the exact export line, so the rewritten command asks for nothing the command
