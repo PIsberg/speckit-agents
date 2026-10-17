@@ -359,18 +359,34 @@ test('patch fails closed when the budget cannot be measured (research R9)', () =
   }
 });
 
-test('patch: input it cannot key a start record by gets no decision and a message (research R9)', () => {
+test('patch: input with no id to key a start record by gets no decision and a message (research R9)', () => {
   const { dir } = fresh();
-  for (const extra of [{ agent_id: undefined }, { agent_id: '../x' }]) {
-    const out = bash(dir, 'ls', extra);
-    assert.ok(!decided(out), JSON.stringify(extra));
-    assert.match(out?.systemMessage ?? '', /speckit-team: patch got unusable input/);
-  }
+  const out = bash(dir, 'ls', { agent_id: undefined });
+  assert.ok(!decided(out));
+  assert.match(out?.systemMessage ?? '', /speckit-team: patch got unusable input/);
   const s = fresh();
   const key = { agent_id: undefined, session_id: 's1' };
   begin(s.dir, key, 's1');
   put(s.dir, 'src/a.js', nl(31, 'a'));
   assert.ok(denied(bash(s.dir, 'npm test', key)), 'a session_id keys the record');
+});
+
+// #136: an id that is not word characters used to get no decision, so that agent had no budget, no
+// protected paths and no history-command checks. It is hashed into the record's name, as in every other mode.
+test('patch: an agent_id that is not word characters keys a hashed start record and is held to the budget (#136)', () => {
+  for (const extra of [{ agent_id: '../../x' }, { agent_id: undefined, session_id: 'a b' }]) {
+    const { dir } = fresh();
+    const first = patchTool(dir, 'Read', { file_path: path.join(dir, 'src/main/App.java') }, extra);
+    assert.ok(!denied(first) && !first?.systemMessage, `first call: ${JSON.stringify(first)}`);
+    const records = fs.readdirSync(path.join(stateDir(dir), 'patch'));
+    assert.equal(records.length, 1, JSON.stringify(records));
+    assert.match(records[0], /^id-[0-9a-f]{32}\.json$/);
+    assert.ok(!fs.existsSync(path.join(dir, '.git', 'x.json')), 'nothing outside patch/');
+    put(dir, 'src/a.js', nl(31, 'a'));
+    const out = bash(dir, 'npm test', extra);
+    assert.ok(denied(out), JSON.stringify(extra));
+    assert.match(why(out), /31 changed production lines/);
+  }
 });
 
 test('patch reads committed test patterns while scope tests keeps the working tree (FR-009)', () => {

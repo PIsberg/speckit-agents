@@ -51,7 +51,8 @@ unusable-input and wrong-event exits), removes the accepted record
 
 ### Key and start record
 
-- Key: `agent_id`, else `session_id`. Neither, or one not matching `^[\w-]{1,128}$`: no decision,
+- Key: `agent_id`, else `session_id`. One not matching `^[\w-]{1,128}$` is replaced by `id-` and the
+  first 32 hex digits of its SHA-256, as the other modes name per-agent state (#136). Neither: no decision,
   `speckit-team: patch got unusable input (no agent_id or session_id to keep the start record under); no decision made.`
 - First PreToolUse of a key writes `<git common dir>/speckit-team/patch/<key>.json`
   (data-model.md: `sha`, `dirty`, `team`, `at`). With no commit in the repo: deny,

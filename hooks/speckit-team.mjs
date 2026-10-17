@@ -119,11 +119,11 @@ const event = input.hook_event_name;
 // Fields used as paths must be strings; any other type is treated as absent.
 const str = (v) => (typeof v === 'string' && v ? v : null);
 const agentId = str(input.agent_id);
-// The name of an agent's state files under agents/. An id that is not word characters is hashed, so a
-// path segment in it can never place a file outside the state directory.
+// The name of an agent's state files under agents/, and of patch's start record. An id that is not word
+// characters is hashed, so a path segment in it can never place a file outside the state directory.
 const AGENT_ID = /^[\w-]{1,128}$/;
-const agentKey = agentId && (AGENT_ID.test(agentId) ? agentId
-  : `id-${createHash('sha256').update(agentId).digest('hex').slice(0, 32)}`);
+const keyOf = (id) => id && (AGENT_ID.test(id) ? id : `id-${createHash('sha256').update(id).digest('hex').slice(0, 32)}`);
+const agentKey = keyOf(agentId);
 // Safety net under every specific check below: a hook must never exit with a crash, because Claude
 // Code then lets the action through and says nothing. Inside a Spec Kit repo any error that slips
 // through becomes no decision plus a visible message; outside one it stays silent.
@@ -1306,8 +1306,8 @@ if (mode === 'patch') {
   fs.rmSync(acceptedFile, { force: true });
   const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
   const isEnd = viaHandback || event !== 'PreToolUse';
-  const key = str(input.agent_id) ?? str(input.session_id);
-  if (!key || !/^[\w-]{1,128}$/.test(key)) noDecision('no agent_id or session_id to keep the start record under');
+  const key = keyOf(agentId ?? str(input.session_id));
+  if (!key) noDecision('no agent_id or session_id to keep the start record under');
   const f = patchFile(key);
   if (isEnd && !fs.existsSync(f)) process.exit(0);
   if (!fs.existsSync(f)) {

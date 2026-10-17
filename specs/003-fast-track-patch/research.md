@@ -280,7 +280,10 @@ R15 and R16 are new with it.
   has a `dirty` or `team` field of the wrong shape, an invalid line in `.specify/test-paths` as
   committed at the start commit, or a repo with no commit denies the tool and says what to do (delete
   the record, fix and commit the line, commit first). With no `agent_id` and no `session_id`, and for
-  every input the hook cannot use, it makes no decision and says so, like every other mode. At the
+  every input the hook cannot use, it makes no decision and says so, like every other mode. An id that
+  is not word characters is not unusable: it is hashed into the record's name, as the other modes name
+  their per-agent state (revised 2026-10-17 by the owner, #136; it first made no decision, which left
+  that agent with no budget, no protected paths and no history-command checks). At the
   end check, the same faults produce a `systemMessage`, no block and no accepted record, so the
   skill commits nothing (R15).
 - **Rationale**: an unmeasurable budget is no budget. The retry limit already fails closed on an
