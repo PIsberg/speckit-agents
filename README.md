@@ -1141,7 +1141,7 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     other. The word takes the glyph's color, except that `RED` is always red and `GREEN` always
     green, so a test-writer's `RED` reads `✓ RED` with a green tick and a red word. The latest six
     show, and the rest are counted;
-  - the buttons (`board`, `clear`, `hide`), and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
+  - the buttons (`refresh`, `all tasks`, `toggle band`, `clear`, `close`), and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
     A finished section, and one not started past the next task, folds to its title and count, and
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
     Code draws inline code.
@@ -1159,9 +1159,9 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 | Command | What it does |
 |---|---|
 | `/speckit-board` | opens the pane, as the band's `board` button does |
-| `/speckit-board refresh` | re-reads the files |
+| `/speckit-board refresh` | re-reads the files; after a clear it brings the board and the band back, as the pane's `refresh` button does |
 | `/speckit-board band` | hides or shows the band |
-| `/speckit-board clear` | removes the finished agents' rows and the band, as the `clear` button does; running agents keep their rows, and the next team agent brings the band back. It changes no file under `.git/speckit-team/`, no spec file, and not the status line |
+| `/speckit-board clear` | removes the finished agents' rows, as the `clear` button does. With no team agent running it also empties the pane (no phases, next step or tasks, only `refresh` and `close`) and removes the band; a running agent keeps its row, the pane and the band. The next team agent, or `refresh`, brings them back; the 4-second poll does not. It changes no file under `.git/speckit-team/`, no spec file, and not the status line |
 | `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well and the model reads |
 
 The command runs at once, also during a turn: with its agents in the foreground
@@ -1240,7 +1240,7 @@ installs can still remove it.
 
 ### Verified
 
-**Automated.** `claude plugin validate` and `claude plugin test` (129 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (132 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
@@ -1260,7 +1260,11 @@ headless on Windows on 2026-10-11 for the board-only install and the `clear` arg
 2026-10-12, in an interactive session on Windows that vhs drove against a fake API at no cost,
 `[ clear ]` in the band and in the pane cleared the agent rows and the band without changing a state
 file, and a new team agent brought both back within 4 s (feature 004's checks L3 to L6); a click on
-the band's `[ clear ]`, sent as the mouse report a terminal sends for one, did the same.
+the band's `[ clear ]`, sent as the mouse report a terminal sends for one, did the same. On
+2026-10-23 (Claude Code 2.1.309, Windows, both variants of `tools/live-board.mjs`) the clear also
+emptied the pane of its phases and tasks, leaving `cleared; refresh or the next team agent brings it
+back` and `[ refresh ] [ close ]` ([#150](https://github.com/PIsberg/speckit-agents/issues/150)); a
+first wording of both lines wrapped at 140 columns and failed L4.
 [`tools/live-board.mjs`](tools/live-board.mjs) repeats those checks, and CI runs it on Linux and macOS
 for every pull request ([CI](#ci)). The record is below. **Not seen live:** the status line updating
 within the 4-second poll without a command.
@@ -1278,7 +1282,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 67 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 92 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 129 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
 | [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |

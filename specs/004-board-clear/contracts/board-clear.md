@@ -42,17 +42,18 @@ refresh (FR-004, FR-012).
 
 ## The line (`clearText`)
 
-`clearText(rows: number, isBandCleared: boolean, running: number): string`
+`clearText(rows: number, isPaneCleared: boolean, isBandCleared: boolean, running: number): string`
+(`isPaneCleared` added 2026-10-23, #150: a board was shown and not already cleared, and no team agent runs)
 
-| rows | isBandCleared | running | Text |
-|---|---|---|---|
-| 3 | true | 0 | `cleared 3 agent rows and the band.` |
-| 1 | true | 0 | `cleared 1 agent row and the band.` |
-| 2 | false | 0 | `cleared 2 agent rows.` |
-| 0 | true | 0 | `cleared the band.` |
-| 0 | false | 0 | `nothing to clear.` |
-| 2 | false | 1 | `cleared 2 agent rows; 1 running agent kept.` |
-| 0 | false | 2 | `nothing to clear; 2 running agents kept.` |
+| rows | isPaneCleared | isBandCleared | running | Text |
+|---|---|---|---|---|
+| 3 | true | true | 0 | `cleared 3 agent rows, pane and band.` |
+| 1 | true | true | 0 | `cleared 1 agent row, pane and band.` |
+| 2 | true | false | 0 | `cleared 2 agent rows and the pane.` |
+| 0 | true | true | 0 | `cleared the pane and the band.` |
+| 0 | false | false | 0 | `nothing to clear.` |
+| 2 | false | false | 1 | `cleared 2 agent rows; 1 running agent kept.` |
+| 0 | false | false | 2 | `nothing to clear; 2 running agents kept.` |
 
 ## A failed clear
 
@@ -61,11 +62,17 @@ When a state write is refused, the command answers and a button toasts
 
 ## After a clear
 
-- The pane's team section, empty because of a clear, reads `cleared; no team agent has run since`
-  instead of `no team agent has run this session`.
-- `/speckit-board` opens the pane with the phases and the next step (FR-007); `refresh` and `status`
-  answer as before (US3-2).
+- With no team agent running (amended 2026-10-23, #150), the pane draws only its title, the line
+  `cleared; refresh or the next team agent brings it back`, and the `refresh` and `close`
+  buttons: no phase, next step, agent row or task. A running team agent is never hidden this way,
+  even when the write that ends the clear was refused.
+- `/speckit-board` opens that cleared pane, 5 rows tall (FR-007). `/speckit-board refresh` and the
+  pane's `refresh` end the cleared state and draw the board and the band again; the cleared pane's
+  `refresh` also reopens the pane at the board's height. The 4-second poll does not end it. A refused
+  write is toasted as `board could not end the clear: <message>` and the refresh goes on. `status`
+  answers as before (US3-2).
 - The next team agent's `classic.SubagentStart` ends the cleared state: its row and the band are drawn
   at that event (FR-006, SC-004).
 - `/speckit-board band` and the pane's `toggle band`, pressed while the band is hidden or cleared, show
-  it and end the cleared state: answer `band shown.`; otherwise they hide it: `band hidden.` (D4).
+  it and end the cleared state: answer `band shown.`; otherwise they hide it: `band hidden.` (D4). The
+  cleared pane has no `toggle band` (#150); its `refresh` ends the clear instead.

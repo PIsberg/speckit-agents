@@ -10,6 +10,7 @@ import {
 
 const PANE = 'speckit-board'
 const POLL_MS = 4000
+const CLEARED_PANE = 'cleared; refresh or the next team agent brings it back'
 // The pane's team rows: running agents, then the latest to finish. The state keeps 12.
 const TEAM_ROWS = 6
 
@@ -234,8 +235,10 @@ async function poll($: EngineInterface) {
 // it whole rather than the third of the terminal it gets unasked (the dock ignores it). It follows
 // the tree in the Pane hook row for row: the header, the phases, the team, the buttons and the task
 // sections, a blank row between each two.
-function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean): number {
+function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean, isClearedNow: boolean): number {
   if (!b) return 2
+  // The cleared pane: its title, its line and the buttons.
+  if (isClearedNow) return 5
   const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
   if (b.isStandalone) return 2 + b.phases.length + 1 + taskCount + 3
   const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
@@ -244,7 +247,7 @@ function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: 
 
 // Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
 async function openPane($: EngineInterface) {
-  const rows = paneRows(await read($, board), await read($, agents), await read($, isAllTasksShown))
+  const rows = paneRows(await read($, board), await read($, agents), await read($, isAllTasksShown), await read($, isCleared))
   return $.ui.open({ id: PANE, title: 'Spec Kit', rows })
 }
 
@@ -254,14 +257,16 @@ async function isBandDrawn($: EngineInterface): Promise<boolean> {
 }
 
 // Display only: plugin state, no file, store, process, status line or refresh. Throws on a refused write.
+// With no team agent running it also clears the pane's board and the band (#150); with one, they stay.
 async function clear($: EngineInterface): Promise<string> {
   const team = await read($, agents)
   const running = team.filter(a => a.isRunning).length
   const rows = team.length - running
+  const wasPaneShown = !!(await read($, board)) && !(await read($, isCleared))
   const wasDrawn = await isBandDrawn($)
   await update($, agents, list => list.filter(a => a.isRunning))
   if (running === 0) await update($, isCleared, () => true)
-  return clearText(rows, wasDrawn && running === 0, running)
+  return clearText(rows, wasPaneShown && running === 0, wasDrawn && running === 0, running)
 }
 
 // Without a clear this is the plain flip; with one, the band comes back (and `isCleared` ends).
@@ -270,6 +275,16 @@ async function toggleBand($: EngineInterface): Promise<boolean> {
   await update($, isBandHidden, () => hidden)
   if (!hidden) await update($, isCleared, () => false)
   return hidden
+}
+
+// The person's refresh, the pane's button or the argument: it ends a clear, which the poll's does not.
+async function refreshAsked($: EngineInterface) {
+  if (await read($, isCleared)) {
+    try { await update($, isCleared, () => false) } catch (err) {
+      $.ui.toast(`board could not end the clear: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  await refresh($)
 }
 
 async function pressClear($: EngineInterface): Promise<void> {
@@ -319,8 +334,11 @@ export const register: Register = on => {
     }
     // Any other argument opened the pane, so a typo looked as if it had worked.
     if (arg && arg !== 'refresh' && arg !== 'status') return { text: `unknown argument "${arg}": use status, refresh, band or clear.` }
+    if (arg === 'refresh') {
+      await refreshAsked($)
+      return { text: 'refreshed.' }
+    }
     await refresh($)
-    if (arg === 'refresh') return { text: 'refreshed.' }
     if (arg === 'status') {
       const b = await read($, board)
       const running = (await read($, agents)).filter(a => a.isRunning)
@@ -437,8 +455,23 @@ export const register: Register = on => {
       )
     }
 
+    // A clear leaves only this line and the buttons that bring the board back or close it (#150). A
+    // running team agent is never hidden, even when the write that ends the clear was refused.
     const team = await read($, agents)
-    const isClearedNow = await read($, isCleared)
+    if (await read($, isCleared) && !team.some(a => a.isRunning)) {
+      return (
+        <Box flexDirection="column" gap={1}>
+          <Text bold color="claude">SPEC KIT</Text>
+          <Text dimColor>{CLEARED_PANE}</Text>
+          <Box flexDirection="row" columnGap={1}>
+            {/* Asked again, the pane takes the board's rows: the cleared one opens 5 tall. */}
+            <Button key="refresh" label="refresh" hotkey="r" onPress={async () => { await refreshAsked($); await openPane($) }} />
+            <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
+          </Box>
+        </Box>
+      )
+    }
+
     const isAll = await read($, isAllTasksShown)
     const now = await $.clock.now()
     const head = current(b.phases)
@@ -499,7 +532,7 @@ export const register: Register = on => {
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         {!b.isStandalone && <Box flexDirection="column">
           <Text bold>Team</Text>
-          {team.length === 0 && <Text dimColor>{isClearedNow ? 'cleared; no team agent has run since' : 'no team agent has run this session'}</Text>}
+          {team.length === 0 && <Text dimColor>no team agent has run this session</Text>}
           {rows.slice(0, TEAM_ROWS).map(a => {
             const tone = toneOf(a.type, a.outcome)
             const color = a.isRunning ? 'claude' : TONE_COLOR[tone]
@@ -526,7 +559,7 @@ export const register: Register = on => {
         </Box>}
 
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-          <Button key="refresh" label="refresh" hotkey="r" onPress={() => refresh($)} />
+          <Button key="refresh" label="refresh" hotkey="r" onPress={() => refreshAsked($)} />
           <Button
             key="tasks" label={isAll ? 'fold tasks' : 'all tasks'} hotkey="a"
             onPress={async () => { await update($, isAllTasksShown, v => !v); await openPane($) }}
