@@ -105,7 +105,9 @@ In this order:
    `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login` (added for #123 on
    2026-10-17: a config folder that does not exist, so `gh` and `glab` find no stored login; since
    #140, 2026-10-23, `GLAB_CONFIG_DIR` names `.speckit-no-forge-login` padded with `-` to 256 characters, which no
-   OS can create, because glab created the shorter one in the repository), then
+   OS can create, because glab created the shorter one in the repository; since #155, 2026-10-23,
+   `GH_CONFIG_DIR` names `.speckit-no-forge-login/.git`, a path git refuses to track, because a
+   repository could commit a config at the plain name for gh to read), then
    `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`
    (added for #138 on 2026-10-17: empty, so neither CLI uses a token from the environment), then a
    newline and the command unchanged; `<n>` is the environment's `GIT_CONFIG_COUNT`, 0 when unset or not a positive

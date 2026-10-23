@@ -668,7 +668,7 @@ and any other change is caught at the end.
   environment's config scope, which overrides every config file. So git refuses a push, fetch or
   clone over the network before it connects, whatever started it: a script, a package script, an
   alias, a string built at run time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
-  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login---...`,
+  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login/.git GLAB_CONFIG_DIR=.speckit-no-forge-login---...`,
   config folders that do not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
   stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
   gh 2.89). The folders are relative, so the line is the same on every machine. glab makes its config
@@ -676,8 +676,14 @@ and any other change is caught at the end.
   ([#140](https://github.com/PIsberg/speckit-agents/issues/140)), so its name is padded with dashes to
   256 characters, one more than a path component may have on Linux, macOS or Windows: no tool can
   create it, and glab now stops with `failed to create config directory` before any request (glab
-  1.123.0, Windows). gh only reads its folder, and keeps the short name: with the long one gh 2.89 on
-  Linux does not start at all. Last come
+  1.123.0, Windows). With that name gh 2.89 on Linux does not start at all, so gh's folder ends in
+  `.git` instead: git refuses to track a path with a `.git` part at any depth, so a repository cannot
+  commit a config, a login in it, for gh to read there, as it could at the plain name
+  ([#155](https://github.com/PIsberg/speckit-agents/issues/155)). Checked with gh 2.89 on Windows and
+  Linux at the repository's root, in a folder and in a worktree, where `.git` is a file and a folder
+  under `.git/` would stop gh from starting on Linux. A repository that commits a file named
+  `.speckit-no-forge-login` stops gh from starting on Linux under `patcher`, which sends no request
+  either. Last come
   `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`:
   a token in the environment, as in CI, would skip the stored login, and gh and glab read an empty
   one as unset ([#138](https://github.com/PIsberg/speckit-agents/issues/138); checked with gh 2.89
@@ -1281,13 +1287,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 351 tests:
+`npm test` runs 354 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 69 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 93 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 94 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
