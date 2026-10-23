@@ -258,11 +258,11 @@ function withFork(current, want, added) {
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
 // #123: the forge CLIs' config folders, which the line points where no stored login is; #138: their
-// token variables, which it empties; #140: a folder name too long for any OS to create. Twin:
-// NO_FORGE_LOGIN in the hook.
-const NO_LOGIN_DIR = '.speckit-no-forge-login'.padEnd(256, '-');
+// token variables, which it empties; #140: for glab, a folder name too long for any OS to create.
+// Twin: NO_FORGE_LOGIN in the hook.
+const NO_GLAB_DIR = '.speckit-no-forge-login'.padEnd(256, '-');
 const TOKEN_VARS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'];
-const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', NO_LOGIN_DIR], ['GLAB_CONFIG_DIR', NO_LOGIN_DIR], ...TOKEN_VARS.map((k) => [k, ''])];
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', NO_GLAB_DIR], ...TOKEN_VARS.map((k) => [k, ''])];
 const GIT_PAIRS = `GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')}`;
 const NO_NETWORK_RULE = `Bash(export ${GIT_PAIRS} ${NO_FORGE_LOGIN.map(([k, v]) => `${k}=${v}`).join(' ')})`;
 // Rules earlier versions of this installer wrote, which the hook's line no longer matches: #122's,

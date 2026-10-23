@@ -668,14 +668,16 @@ and any other change is caught at the end.
   environment's config scope, which overrides every config file. So git refuses a push, fetch or
   clone over the network before it connects, whatever started it: a script, a package script, an
   alias, a string built at run time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
-  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login---... GLAB_CONFIG_DIR=.speckit-no-forge-login---...`,
-  a config folder that does not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
+  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login---...`,
+  config folders that do not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
   stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
-  gh 2.89). The folder is relative, so the line is the same on every machine, and its name is padded
-  with dashes to 256 characters, one more than a path component may have on Linux, macOS or Windows,
-  so no tool can create it: glab, which makes its config folder on its first run, left one in the
-  repository before ([#140](https://github.com/PIsberg/speckit-agents/issues/140)), and now stops
-  with `failed to create config directory` before any request (glab 1.123.0, Windows). Last come
+  gh 2.89). The folders are relative, so the line is the same on every machine. glab makes its config
+  folder on its first run, and left one in the repository
+  ([#140](https://github.com/PIsberg/speckit-agents/issues/140)), so its name is padded with dashes to
+  256 characters, one more than a path component may have on Linux, macOS or Windows: no tool can
+  create it, and glab now stops with `failed to create config directory` before any request (glab
+  1.123.0, Windows). gh only reads its folder, and keeps the short name: with the long one gh 2.89 on
+  Linux does not start at all. Last come
   `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`:
   a token in the environment, as in CI, would skip the stored login, and gh and glab read an empty
   one as unset ([#138](https://github.com/PIsberg/speckit-agents/issues/138); checked with gh 2.89

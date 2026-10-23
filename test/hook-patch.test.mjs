@@ -610,14 +610,14 @@ test('patch: under the line, gh finds no stored login and refuses an API call be
 
 // #140: glab creates its config folder on its first run, so a folder that only does not exist yet left
 // .speckit-no-forge-login/ in the user's repository. A name longer than the 255 bytes a path component
-// may have is one no tool can create, on Linux, macOS or Windows, from any working directory.
-test('patch: the forge CLIs\' config folder under the line is one that cannot be created (#140)', () => {
+// may have is one no tool can create, on Linux, macOS or Windows, from any working directory. gh only
+// reads its folder and keeps the short name: with the long one gh 2.89 on Linux does not start at all
+// ("failed to read configuration"), which the #123 and #138 tests above, run on Linux in CI, caught.
+test('patch: glab\'s config folder under the line is one that cannot be created (#140)', () => {
   const { dir } = cmdRepo();
   const env = forgeEnv(dir);
-  for (const k of ['GH_CONFIG_DIR', 'GLAB_CONFIG_DIR']) {
-    assert.throws(() => fs.mkdirSync(path.join(dir, env[k]), { recursive: true }), (e) => e.code !== undefined, `${k}: ${env[k].length} characters`);
-    assert.ok(!fs.existsSync(path.join(dir, env[k])), `${k} left no folder`);
-  }
+  assert.throws(() => fs.mkdirSync(path.join(dir, env.GLAB_CONFIG_DIR), { recursive: true }), (e) => e.code !== undefined, `${env.GLAB_CONFIG_DIR.length} characters`);
+  assert.ok(!fs.existsSync(path.join(dir, env.GLAB_CONFIG_DIR)), 'no folder left');
 });
 
 const noGlab = spawnSync('glab', ['--version']).error ? 'glab is not on PATH' : false;
