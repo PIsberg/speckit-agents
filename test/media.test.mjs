@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { identities, publish, sessionEnv } from '../docs/media/leaks.mjs';
+import { frameText, identities, publish, sessionEnv } from '../docs/media/leaks.mjs';
 
 function dirs() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-media-'));
@@ -21,7 +21,7 @@ function dirs() {
 
 test('a recording whose frames show none of the names is copied into docs/media', () => {
   const { out, media } = dirs();
-  const shown = publish({ dump: '> @\n  R:\\repo\\README.md\n', names: ['pat'], out, media });
+  const shown = publish({ dump: '> @\n  R:\\repo\\README.md\n', frames: 'clean\n', names: ['pat'], out, media });
   assert.deepEqual(shown, []);
   assert.deepEqual(fs.readdirSync(media).sort(), ['board.png', 'demo.gif']);
 });
@@ -29,7 +29,7 @@ test('a recording whose frames show none of the names is copied into docs/media'
 test('a recording whose frames show a name stays out of docs/media', () => {
   const { out, media } = dirs();
   const dump = '> @\n  C:\\Users\\Pat\\AppData\\Local\\Temp\\sk\\repo\\README.md\n────\n';
-  const shown = publish({ dump, names: ['pat'], out, media });
+  const shown = publish({ dump, frames: '', names: ['pat'], out, media });
   assert.deepEqual(shown, ['C:\\Users\\Pat\\AppData\\Local\\Temp\\sk\\repo\\README.md']);
   assert.deepEqual(fs.readdirSync(media), []);
 });
@@ -37,13 +37,13 @@ test('a recording whose frames show a name stays out of docs/media', () => {
 test('a name that a row break splits in two still counts', () => {
   const { out, media } = dirs();
   const dump = 'Bash(cd "C:/Users/patri\nck/AppData/Local/Temp/repo")\n';
-  assert.notDeepEqual(publish({ dump, names: ['patrick'], out, media }), []);
+  assert.notDeepEqual(publish({ dump, frames: '', names: ['patrick'], out, media }), []);
   assert.deepEqual(fs.readdirSync(media), []);
 });
 
 test('with no name to look for, nothing is published', () => {
   const { out, media } = dirs();
-  assert.notDeepEqual(publish({ dump: 'clean', names: [], out, media }), []);
+  assert.notDeepEqual(publish({ dump: 'clean', frames: 'clean', names: [], out, media }), []);
   assert.deepEqual(fs.readdirSync(media), []);
 });
 
@@ -57,4 +57,72 @@ test("the recorded session's temp folder is the drive letter's, where an agent's
 test("the names are the user name, the home folder's and its 8.3 short form", () => {
   assert.deepEqual(identities({ user: 'Pat', home: 'C:\\Users\\patrick.s', shortHome: 'C:\\Users\\PATRIC~1' }), ['pat', 'patrick.s', 'patric~1']);
   assert.deepEqual(identities({ user: 'pat', home: '/home/pat/', shortHome: undefined }), ['pat']);
+});
+
+// #143: vhs's dump holds the screen after each tape command only, so a name drawn during a Sleep or a
+// Wait passed. frameText() reads every distinct frame of the GIF, and every screenshot, through ffmpeg
+// and tesseract. These drive it with stand-ins for both tools: `tools` says what each one does.
+function fakeRun(tools) {
+  const calls = [];
+  const run = (cmd, args) => {
+    calls.push(cmd);
+    const tool = tools[cmd];
+    if (!tool) return { error: Object.assign(new Error(`spawnSync ${cmd} ENOENT`), { code: 'ENOENT' }), status: null, stdout: '', stderr: '' };
+    return tool(args);
+  };
+  return { run, calls };
+}
+// ffmpeg writes two distinct frames where its last argument says; tesseract answers per image.
+const ffmpeg = (frames = 2) => (args) => {
+  const pattern = args.at(-1);
+  for (let i = 1; i <= frames; i++) fs.writeFileSync(pattern.replace('%04d', String(i).padStart(4, '0')), 'PNG');
+  return { status: 0, stdout: '', stderr: '' };
+};
+const tesseract = (text) => (args) => ({ status: 0, stdout: typeof text === 'function' ? text(args[0]) : text, stderr: '' });
+
+test('every frame of a GIF and every screenshot is read, and the text comes back (#143)', () => {
+  const { out } = dirs();
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-frames-'));
+  const { run, calls } = fakeRun({ ffmpeg: ffmpeg(2), tesseract: tesseract((img) => `screen of ${path.basename(img)}\n`) });
+  const r = frameText({ out, work, run });
+  assert.equal(r.failure, undefined);
+  assert.match(r.text, /screen of board\.png/);
+  assert.match(r.text, /screen of demo-0001\.png/);
+  assert.match(r.text, /screen of demo-0002\.png/);
+  assert.deepEqual(calls, ['ffmpeg', 'tesseract', 'tesseract', 'tesseract']);
+});
+
+test('a name drawn in a frame the dump never held keeps the recording out of docs/media (#143)', () => {
+  const { out, media } = dirs();
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-frames-'));
+  const { run } = fakeRun({ ffmpeg: ffmpeg(2), tesseract: tesseract((img) => (img.endsWith('0002.png') ? 'Bash(ls C:/Users/Pat/AppData/Local/Temp)\n' : 'clean\n')) });
+  const { text } = frameText({ out, work, run });
+  const shown = publish({ dump: 'clean dump\n', frames: text, names: ['pat'], out, media });
+  assert.deepEqual(shown, ['Bash(ls C:/Users/Pat/AppData/Local/Temp)']);
+  assert.deepEqual(fs.readdirSync(media), []);
+});
+
+test('a frame check that cannot run fails the tape instead of passing it (#143)', () => {
+  const cases = [
+    ['ffmpeg is missing', { tesseract: tesseract('x') }, /ffmpeg/],
+    ['tesseract is missing', { ffmpeg: ffmpeg(2) }, /tesseract/],
+    ['ffmpeg fails', { ffmpeg: () => ({ status: 1, stdout: '', stderr: 'Invalid data' }), tesseract: tesseract('x') }, /ffmpeg.*Invalid data/],
+    ['ffmpeg writes no frame', { ffmpeg: ffmpeg(0), tesseract: tesseract('x') }, /no frame/],
+    // The first attempt by hand passed silently: tesseract without its language data.
+    ['tesseract fails', { ffmpeg: ffmpeg(2), tesseract: () => ({ status: 1, stdout: '', stderr: 'Error opening data file eng.traineddata' }) }, /tesseract.*traineddata/],
+    ['the OCR reads no text', { ffmpeg: ffmpeg(2), tesseract: tesseract('  \n\f') }, /no text/],
+  ];
+  for (const [what, tools, why] of cases) {
+    const { out } = dirs();
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-frames-'));
+    const r = frameText({ out, work, run: fakeRun(tools).run });
+    assert.equal(r.text, undefined, what);
+    assert.match(r.failure ?? '', why, what);
+  }
+});
+
+test('without the frames\' text nothing is published (#143)', () => {
+  const { out, media } = dirs();
+  assert.notDeepEqual(publish({ dump: 'clean', names: ['pat'], out, media }), []);
+  assert.deepEqual(fs.readdirSync(media), []);
 });

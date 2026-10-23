@@ -1281,7 +1281,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 347 tests:
+`npm test` runs 351 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1291,7 +1291,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
-| [`test/media.test.mjs`](test/media.test.mjs) | 6 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, and the temp folder the recorded session gets |
+| [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 46 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
@@ -1836,7 +1836,9 @@ result. `node tools/live-board.mjs pane` presses the pane's `[ clear ]` instead 
 
 The GIFs under [What it looks like](#what-it-looks-like) and the board's screenshot under
 [Board mod](#board-mod-experimental) come from the [vhs](https://github.com/charmbracelet/vhs)
-tapes in `docs/media/`. To record them again, with vhs, `specify`, `claude` and git on your PATH:
+tapes in `docs/media/`. To record them again, with vhs, `specify`, `claude`, git, ffmpeg and
+tesseract (with its English language data; `TESSDATA_PREFIX`, if set, must name a folder that holds
+`eng.traineddata`) on your PATH:
 
 ```sh
 node docs/media/record.mjs                 # all five; makes live Haiku calls
@@ -1864,15 +1866,20 @@ implementer for stand-ins that only report, so its agent rows cost two short Hai
 > such as `Haiku 5.5 · Claude Max`. No setting hides the plan, and the README's GIFs keep it
 > (owner decision, [#63](https://github.com/PIsberg/speckit-agents/issues/63)). Each tape records
 > into the demo folder and writes the screen as text to `<tape>.txt` there, after each tape
-> command. `record.mjs` copies a recording into `docs/media/` only if that text shows neither your
-> user name, your home folder's name nor, on Windows, its 8.3 short form, even split across two rows
+> command. That text misses every frame drawn during a `Sleep` or a `Wait`: on 2026-10-17 an
+> agent's Bash call printed its scratchpad path, user name included, in such frames
+> ([#62](https://github.com/PIsberg/speckit-agents/issues/62)). So `record.mjs` also reads every
+> distinct frame of the GIF (ffmpeg's `mpdecimate`) and every screenshot with tesseract, and writes
+> that text to `<tape>.frames.txt` in the demo folder
+> ([#143](https://github.com/PIsberg/speckit-agents/issues/143)). It copies a recording into
+> `docs/media/` only if neither text shows your user name, your home folder's name nor, on Windows,
+> its 8.3 short form, even split across two rows
 > ([#60](https://github.com/PIsberg/speckit-agents/issues/60)); otherwise the run exits 1 and the
-> files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing. On macOS and Linux
-> the repo's path contains your home directory, so a session that prints it fails the check. The
-> text misses every frame drawn during a `Sleep` or a `Wait`: on 2026-10-17 an agent's Bash call
-> printed its scratchpad path, user name included, in such frames, and the check passed
-> ([#62](https://github.com/PIsberg/speckit-agents/issues/62)). A passed check is not a clean
-> recording; step through the frames.
+> files stay in `out/<tape>/` in the demo folder. A failed tape copies nothing, and so does one
+> whose frame check cannot run: ffmpeg or tesseract missing or failing, no frame, or no text read
+> at all, which is what tesseract without its language data returns. On macOS and Linux the repo's
+> path contains your home directory, so a session that prints it fails the check. OCR can misread a
+> name, so a passed check is still not a clean recording; step through the frames.
 
 ### Measuring token usage
 

@@ -2,7 +2,8 @@
 // Records the agent-view GIFs and the board mod's screenshot in README.md. Each tape drives a real
 // Claude Code session (Haiku, main session and subagents: the scratch copies of the agents are set
 // to `model: haiku`) in a throwaway Spec Kit repo, so a run costs a little and the output differs
-// from run to run. Needs vhs, specify, claude and git on PATH.
+// from run to run. Needs vhs, specify, claude and git on PATH, and ffmpeg and tesseract (with its
+// English language data) for the check of every frame.
 //
 //   node docs/media/record.mjs                  all tapes
 //   node docs/media/record.mjs pipeline         only the named tapes
@@ -11,17 +12,18 @@
 // The team is installed into the scratch repo's own .claude/, and Claude Code is started with
 // --setting-sources project,local and --strict-mcp-config, so your user-level hooks, plugins,
 // statusline and MCP servers stay out of the recording. Each tape records into the demo folder, and
-// its GIF and screenshots are copied into docs/media only if its text dump shows neither your user
-// name nor your home folder's name (leaks.mjs). Still look at every frame of each GIF and screenshot
-// before committing it: the dump misses frames drawn during a Sleep or a Wait (#62), and the usage
-// line can show other account details.
+// its GIF and screenshots are copied into docs/media only if neither its text dump nor the text OCR
+// reads off every distinct frame shows your user name or your home folder's name (leaks.mjs; the dump
+// alone missed frames drawn during a Sleep or a Wait, #62, #143). Still look at every frame of each
+// GIF and screenshot before committing it: OCR can misread a name, and the usage line can show other
+// account details.
 // The startup logo names your plan; no setting hides it, and the README's GIFs keep it (#63).
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { identities, publish, sessionEnv } from './leaks.mjs';
+import { frameText, identities, publish, sessionEnv } from './leaks.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -168,7 +170,7 @@ const names = identities({
 });
 
 // vhs writes a tape's GIF and screenshots to out/<tape>/ in the demo folder; publish() copies them
-// into docs/media only if the dump shows none of the names.
+// into docs/media only if neither the dump nor the frames' text shows one of the names.
 function record(name) {
   const slash = (p) => p.replaceAll('\\', '/');
   const out = path.join(work, 'out', name);
@@ -188,9 +190,16 @@ function record(name) {
   if (r.status !== 0) return `FAILED (${r.error?.message ?? `exit ${r.status}`})`;
   const dump = path.join(work, `${name}.txt`);
   if (!fs.existsSync(dump)) return `FAILED (no ${dump} to check for your user name)`;
-  const shown = publish({ dump: fs.readFileSync(dump, 'utf8'), names, out, media: here });
+  const frames = path.join(work, 'frames', name);
+  fs.rmSync(frames, { recursive: true, force: true });
+  fs.mkdirSync(frames, { recursive: true });
+  const read = frameText({ out, work: frames, run: (cmd, a, o) => spawnSync(cmd, a, { encoding: 'utf8', maxBuffer: 1 << 26, ...o }) });
+  if (read.failure) return `FAILED (the check of every frame: ${read.failure}); the files are in ${out}`;
+  const ocr = path.join(work, `${name}.frames.txt`);
+  fs.writeFileSync(ocr, read.text);
+  const shown = publish({ dump: fs.readFileSync(dump, 'utf8'), frames: read.text, names, out, media: here });
   return shown.length
-    ? `NOT COPIED to docs/media: ${shown.length} lines of ${dump} show your user name; the files are in ${out}:\n  ${shown.slice(0, 5).join('\n  ')}`
+    ? `NOT COPIED to docs/media: ${shown.length} lines of ${dump} or ${ocr} show your user name; the files are in ${out}:\n  ${shown.slice(0, 5).join('\n  ')}`
     : 'recorded';
 }
 
