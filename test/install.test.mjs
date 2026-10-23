@@ -687,21 +687,24 @@ test("install allows the patch hook's export line exactly and once, keeps the us
   assert.deepEqual(bytes(dir), before, 'uninstall restores settings.json byte for byte');
 });
 
-// #123 added the forge CLIs' config folders to the line, #138 their token variables, and #140 gave the
-// folder a name too long to create, so the rules earlier installs wrote no longer match it. A reinstall
-// replaces each where this installer wrote it, and leaves a user's copy.
+// #123 added the forge CLIs' config folders to the line, #138 their token variables, #140 gave glab's
+// folder a name too long to create and #155 gh's a `.git` part, so the rules earlier installs wrote no
+// longer match it. A reinstall replaces each where this installer wrote it, and leaves a user's copy.
 const SHORT_DIR = '.speckit-no-forge-login';
 const NO_GLAB_DIR = SHORT_DIR.padEnd(256, '-');
+const NO_GH_DIR = `${SHORT_DIR}/.git`;
+const shortDirs = (rule) => rule.replaceAll(NO_GLAB_DIR, SHORT_DIR).replaceAll(NO_GH_DIR, SHORT_DIR);
 const EARLIER = [
   ['#122', (rule) => rule.replace(/ GH_CONFIG_DIR=.*\)$/, ')')],
-  ['#123', (rule) => rule.replace(/ GH_TOKEN=.*\)$/, ')').replaceAll(NO_GLAB_DIR, SHORT_DIR)],
-  ['#138', (rule) => rule.replaceAll(NO_GLAB_DIR, SHORT_DIR)],
+  ['#123', (rule) => shortDirs(rule.replace(/ GH_TOKEN=.*\)$/, ')'))],
+  ['#138', shortDirs],
+  ['#140', (rule) => rule.replaceAll(NO_GH_DIR, SHORT_DIR)],
 ];
-for (const [issue, earlier] of EARLIER) test(`a reinstall replaces the export rule an install of ${issue} wrote, and the line names no stored forge login or token (#123, #138, #140)`, () => {
+for (const [issue, earlier] of EARLIER) test(`a reinstall replaces the export rule an install of ${issue} wrote, and the line names no stored forge login or token (#123, #138, #140, #155)`, () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
   const [rule] = exportRules(dir);
-  assert.ok(rule.endsWith(` GH_CONFIG_DIR=${SHORT_DIR} GLAB_CONFIG_DIR=${NO_GLAB_DIR} GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=)`), rule);
+  assert.ok(rule.endsWith(` GH_CONFIG_DIR=${NO_GH_DIR} GLAB_CONFIG_DIR=${NO_GLAB_DIR} GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=)`), rule);
   const old = earlier(rule);
   assert.notEqual(old, rule);
   const s = settingsOf(dir);

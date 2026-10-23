@@ -610,14 +610,55 @@ test('patch: under the line, gh finds no stored login and refuses an API call be
 
 // #140: glab creates its config folder on its first run, so a folder that only does not exist yet left
 // .speckit-no-forge-login/ in the user's repository. A name longer than the 255 bytes a path component
-// may have is one no tool can create, on Linux, macOS or Windows, from any working directory. gh only
-// reads its folder and keeps the short name: with the long one gh 2.89 on Linux does not start at all
-// ("failed to read configuration"), which the #123 and #138 tests above, run on Linux in CI, caught.
+// may have is one no tool can create, on Linux, macOS or Windows, from any working directory. gh does
+// not get it: with the long name gh 2.89 on Linux does not start at all ("failed to read
+// configuration"), which the #123 and #138 tests above, run on Linux in CI, caught (#155 below).
 test('patch: glab\'s config folder under the line is one that cannot be created (#140)', () => {
   const { dir } = cmdRepo();
   const env = forgeEnv(dir);
   assert.throws(() => fs.mkdirSync(path.join(dir, env.GLAB_CONFIG_DIR), { recursive: true }), (e) => e.code !== undefined, `${env.GLAB_CONFIG_DIR.length} characters`);
   assert.ok(!fs.existsSync(path.join(dir, env.GLAB_CONFIG_DIR)), 'no folder left');
+});
+
+// #155: gh's folder is relative, so a repository that committed it handed gh a config, a login among
+// it, at whatever folder a script ran gh from. A path with a `.git` part is one git refuses to track at
+// any depth, so no checkout holds it. Its parent need not exist: in a worktree, where `.git` is a file,
+// gh 2.89 on Linux does not start at all under `.git/...` (seen in WSL, 2026-10-23).
+test('patch: gh\'s config folder under the line is one no commit can put in a checkout (#155)', () => {
+  const { dir } = cmdRepo();
+  const env = forgeEnv(dir);
+  assert.ok(env.GH_CONFIG_DIR.split('/').includes('.git'), env.GH_CONFIG_DIR);
+  assert.ok(!path.isAbsolute(env.GH_CONFIG_DIR) && !/\s/.test(env.GH_CONFIG_DIR), 'relative, one word: the same line on every machine (#122)');
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], { cwd: dir, input: 'github.com:\n    oauth_token: gho_planted\n', encoding: 'utf8' }).trim();
+  for (const at of ['', 'sub/']) {
+    const r = spawnSync('git', ['update-index', '--add', '--cacheinfo', `100644,${blob},${at}${env.GH_CONFIG_DIR}/hosts.yml`], { cwd: dir, encoding: 'utf8' });
+    assert.notEqual(r.status, 0, `git tracked ${at}${env.GH_CONFIG_DIR}/hosts.yml`);
+    assert.match(r.stderr, /[Ii]nvalid path/);
+  }
+});
+
+test('patch: under the line, gh reads no config a repository committed, at its root, in a folder or in a worktree (#155)', { skip: noGh }, () => {
+  const { dir } = cmdRepo();
+  const line = forgeEnv(dir);
+  // A repository that commits a config, a login in it, where the folder used to be named, at two depths.
+  const planted = fs.mkdtempSync(path.join(os.tmpdir(), 'skpatch-planted-'));
+  const g = (...a) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...a], { cwd: planted, stdio: 'ignore' });
+  g('init', '-q');
+  const hosts = 'github.com:\n    oauth_token: gho_planted\n    user: planted\n    git_protocol: https\n';
+  for (const at of ['', 'sub/']) {
+    fs.mkdirSync(path.join(planted, at, '.speckit-no-forge-login'), { recursive: true });
+    fs.writeFileSync(path.join(planted, at, '.speckit-no-forge-login', 'hosts.yml'), hosts);
+  }
+  g('add', '-A');
+  g('commit', '-qm', 'planted');
+  const wt = `${planted}-wt`;
+  g('worktree', 'add', '-q', wt);
+  for (const cwd of [planted, path.join(planted, 'sub'), wt]) {
+    const user = spawnSync('gh', ['config', 'get', '-h', 'github.com', 'user'], { cwd, encoding: 'utf8', env: { ...noTokens, ...line } });
+    assert.equal(user.stdout.trim(), '', `${cwd}: gh read the committed login`);
+    const api = spawnSync('gh', ['api', 'user'], { cwd, encoding: 'utf8', env: { ...noTokens, ...line } });
+    assert.equal(api.status, 4, `${cwd}: ${api.stderr}${api.stdout}`);
+  }
 });
 
 const noGlab = spawnSync('glab', ['--version']).error ? 'glab is not on PATH' : false;

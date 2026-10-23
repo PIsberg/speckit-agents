@@ -258,18 +258,20 @@ function withFork(current, want, added) {
 const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user'],
   ...['git', 'ssh', 'http', 'https', 'ext'].map((p) => [`protocol.${p}.allow`, 'never'])];
 // #123: the forge CLIs' config folders, which the line points where no stored login is; #138: their
-// token variables, which it empties; #140: for glab, a folder name too long for any OS to create.
-// Twin: NO_FORGE_LOGIN in the hook.
+// token variables, which it empties; #140: for glab, a folder name too long for any OS to create;
+// #155: for gh, a path ending in `.git`, which no checkout can hold. Twin: NO_FORGE_LOGIN in the hook.
 const NO_GLAB_DIR = '.speckit-no-forge-login'.padEnd(256, '-');
 const TOKEN_VARS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'];
-const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', NO_GLAB_DIR], ...TOKEN_VARS.map((k) => [k, ''])];
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login/.git'], ['GLAB_CONFIG_DIR', NO_GLAB_DIR], ...TOKEN_VARS.map((k) => [k, ''])];
 const GIT_PAIRS = `GIT_CONFIG_COUNT=${NO_NETWORK.length} ${NO_NETWORK.map(([k, v], i) => `GIT_CONFIG_KEY_${i}=${k} GIT_CONFIG_VALUE_${i}=${v}`).join(' ')}`;
 const NO_NETWORK_RULE = `Bash(export ${GIT_PAIRS} ${NO_FORGE_LOGIN.map(([k, v]) => `${k}=${v}`).join(' ')})`;
 // Rules earlier versions of this installer wrote, which the hook's line no longer matches: #122's,
-// #123's and #138's (the last two with the folder name #140 replaced).
+// #123's and #138's (the last two with the folder names #140 and #155 replaced), and #140's.
 const OLD_LOGIN = 'GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login';
+const EMPTY_TOKENS = TOKEN_VARS.map((k) => `${k}=`).join(' ');
 const OLD_NO_NETWORK_RULES = [`Bash(export ${GIT_PAIRS})`, `Bash(export ${GIT_PAIRS} ${OLD_LOGIN})`,
-  `Bash(export ${GIT_PAIRS} ${OLD_LOGIN} ${TOKEN_VARS.map((k) => `${k}=`).join(' ')})`];
+  `Bash(export ${GIT_PAIRS} ${OLD_LOGIN} ${EMPTY_TOKENS})`,
+  `Bash(export ${GIT_PAIRS} GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=${NO_GLAB_DIR} ${EMPTY_TOKENS})`];
 function withNoNetworkRule(current, want, added) {
   const next = JSON.parse(JSON.stringify(current));
   const had = next.permissions?.allow ?? [];

@@ -1293,11 +1293,13 @@ const NO_NETWORK = [['protocol.allow', 'never'], ['protocol.file.allow', 'user']
 // keyring directly (gh 2.89), still works. #140: glab creates its config folder on its first run, and
 // wrote one that only did not exist yet into the user's repository. Its folder is a name longer than
 // the 255 bytes a path component may have, which cannot be created on Linux, macOS or Windows, from any
-// working directory: glab 1.123.0 then stops before any request. gh only reads its folder, and keeps
-// the short one: gh 2.89 on Linux refuses to start at all with the long name. Twin: NO_FORGE_LOGIN in
-// install.mjs.
+// working directory: glab 1.123.0 then stops before any request. gh 2.89 on Linux refuses to start at
+// all with that name. #155: gh's folder, relative, was one a repository could commit, handing gh a
+// login. It ends in `.git`, a path part git refuses to track at any depth, so no checkout holds it; its
+// parent need not exist, so it also names nothing in a worktree, where `.git` is a file (under
+// `.git/...` gh 2.89 on Linux does not start there). Twin: NO_FORGE_LOGIN in install.mjs.
 const NO_GLAB_DIR = '.speckit-no-forge-login'.padEnd(256, '-');
-const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login'], ['GLAB_CONFIG_DIR', NO_GLAB_DIR],
+const NO_FORGE_LOGIN = [['GH_CONFIG_DIR', '.speckit-no-forge-login/.git'], ['GLAB_CONFIG_DIR', NO_GLAB_DIR],
   ...['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GITLAB_TOKEN', 'GITLAB_ACCESS_TOKEN', 'OAUTH_TOKEN'].map((k) => [k, ''])];
 const allowedExactly = (line) => {
   let s; try { s = JSON.parse(readOr(path.join(TEAM_DIR, 'settings.json'), 'null')); } catch { return false; }
