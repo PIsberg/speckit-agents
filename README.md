@@ -668,10 +668,16 @@ and any other change is caught at the end.
   environment's config scope, which overrides every config file. So git refuses a push, fetch or
   clone over the network before it connects, whatever started it: a script, a package script, an
   alias, a string built at run time ([#72](https://github.com/PIsberg/speckit-agents/issues/72)).
-  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login`,
-  a config folder that does not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
+  The same line ends with `GH_CONFIG_DIR=.speckit-no-forge-login GLAB_CONFIG_DIR=.speckit-no-forge-login---...`,
+  config folders that do not exist, so a script's `gh pr merge` or `gh api` finds no stored login and
   stops before any request ([#123](https://github.com/PIsberg/speckit-agents/issues/123); checked with
-  gh 2.89). The folder is relative, so the line is the same on every machine. Last come
+  gh 2.89). The folders are relative, so the line is the same on every machine. glab makes its config
+  folder on its first run, and left one in the repository
+  ([#140](https://github.com/PIsberg/speckit-agents/issues/140)), so its name is padded with dashes to
+  256 characters, one more than a path component may have on Linux, macOS or Windows: no tool can
+  create it, and glab now stops with `failed to create config directory` before any request (glab
+  1.123.0, Windows). gh only reads its folder, and keeps the short name: with the long one gh 2.89 on
+  Linux does not start at all. Last come
   `GH_TOKEN= GITHUB_TOKEN= GH_ENTERPRISE_TOKEN= GITHUB_ENTERPRISE_TOKEN= GITLAB_TOKEN= GITLAB_ACCESS_TOKEN= OAUTH_TOKEN=`:
   a token in the environment, as in CI, would skip the stored login, and gh and glab read an empty
   one as unset ([#138](https://github.com/PIsberg/speckit-agents/issues/138); checked with gh 2.89
@@ -1275,13 +1281,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 344 tests:
+`npm test` runs 347 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 67 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 92 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 69 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 93 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
@@ -1727,9 +1733,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
     ([#138](https://github.com/PIsberg/speckit-agents/issues/138)), but a script that reads the
     keyring with `gh auth token` (gh 2.89) still gets one, which is deliberate. Anything else is not
     limited: `curl` with a token, `tea`, `npm publish` from a script
-    ([#141](https://github.com/PIsberg/speckit-agents/issues/141)). glab also sends its request
-    without a token rather than stopping, and writes `.speckit-no-forge-login/` into the working
-    directory ([#140](https://github.com/PIsberg/speckit-agents/issues/140)).
+    ([#141](https://github.com/PIsberg/speckit-agents/issues/141)).
     Without the installer's allow rule, and outside `bypassPermissions`, the commands run as typed:
     the history and remote commands named above are denied, a push or fetch through a named remote
     is caught by the ref it moves, and a push straight to a URL, which moves no remote-tracking ref,

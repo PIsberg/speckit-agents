@@ -3,8 +3,9 @@
 // JSON on stdin, decision on stdout. A file of its own, so it runs beside hook.test.mjs.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { HOOK, repo, run, write, denied, decided, stateDir, commitAll, msg } from './hook-helpers.mjs';
@@ -605,6 +606,41 @@ test('patch: under the line, gh finds no stored login and refuses an API call be
   // Exit 4 is gh's "authentication required"; inside GitHub Actions it asks for GH_TOKEN instead.
   assert.equal(api.status, 4, api.stderr + api.stdout);
   assert.match(api.stderr + api.stdout, /gh auth login|set the GH_TOKEN environment variable/);
+});
+
+// #140: glab creates its config folder on its first run, so a folder that only does not exist yet left
+// .speckit-no-forge-login/ in the user's repository. A name longer than the 255 bytes a path component
+// may have is one no tool can create, on Linux, macOS or Windows, from any working directory. gh only
+// reads its folder and keeps the short name: with the long one gh 2.89 on Linux does not start at all
+// ("failed to read configuration"), which the #123 and #138 tests above, run on Linux in CI, caught.
+test('patch: glab\'s config folder under the line is one that cannot be created (#140)', () => {
+  const { dir } = cmdRepo();
+  const env = forgeEnv(dir);
+  assert.throws(() => fs.mkdirSync(path.join(dir, env.GLAB_CONFIG_DIR), { recursive: true }), (e) => e.code !== undefined, `${env.GLAB_CONFIG_DIR.length} characters`);
+  assert.ok(!fs.existsSync(path.join(dir, env.GLAB_CONFIG_DIR)), 'no folder left');
+});
+
+const noGlab = spawnSync('glab', ['--version']).error ? 'glab is not on PATH' : false;
+test('patch: under the line, glab writes nothing into the repository and sends no token (#140, #138)', { skip: noGlab }, async () => {
+  const { dir } = cmdRepo();
+  const status = () => execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: dir, encoding: 'utf8' });
+  const before = fs.readdirSync(dir).sort();
+  const statusBefore = status();
+  const seen = [];
+  const server = http.createServer((q, r) => { seen.push(q.headers['private-token'] ?? ''); r.setHeader('content-type', 'application/json'); r.end('{}'); });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const host = `127.0.0.1:${server.address().port}`;
+  // Asynchronous, so the listener answers a request glab might send.
+  const env = { ...noTokens, GITLAB_HOST: `http://${host}`, GITLAB_TOKEN: 'from-the-environment', ...forgeEnv(dir) };
+  const code = await new Promise((resolve) => {
+    const child = spawn('glab', ['api', '--hostname', host, 'projects'], { cwd: dir, env, stdio: 'ignore' });
+    const timer = setTimeout(() => child.kill(), 30_000);
+    child.on('exit', (c) => { clearTimeout(timer); resolve(c); });
+  });
+  server.close();
+  assert.deepEqual(fs.readdirSync(dir).sort(), before, `glab exit ${code}: no new file or folder in the repository`);
+  assert.equal(status(), statusBefore, 'git sees no new file');
+  assert.deepEqual(seen.filter(Boolean), [], 'no PRIVATE-TOKEN reached the listener');
 });
 
 // #138: a token in the environment, as in CI, skips the stored login, so the line also sets the forge
