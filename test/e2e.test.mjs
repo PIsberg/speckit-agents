@@ -440,7 +440,7 @@ test('the board mod in a headless session sets its status line and toast, and it
   const seen = (r) => `exit ${r.code}, ${r.modelRequests} model requests\nstdout: ${r.out.slice(-1500)}\nstderr: ${r.err.slice(0, 800)}`;
   for (const [arg, answer] of [
     ['status', /^speckit-board: 001-x · .+\n.*spec .*plan .*tasks .*build/],
-    ['clear', /^speckit-board: cleared the band\.$/],
+    ['clear', /^speckit-board: cleared the pane and the band\.$/],
     ['foo', /^speckit-board: unknown argument "foo": use status, refresh, band or clear\.$/],
   ]) {
     const r = await boardCommand(s, arg);

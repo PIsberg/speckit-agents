@@ -29,8 +29,9 @@ const COLUMNS = 140;
 const MARK = 'fourseconds';
 const BAND = /\[ board \] \[ clear \] \[ hide \]/;
 const PANE_CLEAR = /\[ clear \] \[ close \]/;
-const TOAST = /cleared 2 agent rows and the band\./;
-const CLEARED_PANE = /cleared; no team agent has run since/;
+const TOAST = /cleared 2 agent rows, pane and band\./;
+// The cleared pane's one line: no phase, task or agent row is left (#150).
+const CLEARED_PANE = /cleared; refresh or the next team agent brings it back/;
 const ROW = /spec-auditor\s+(running|PASS)/;
 const STATUS = /^\s*(⚠ speckit-board: .*?)\s*$/m;
 
@@ -58,8 +59,8 @@ export function verdicts(text, { before, after, variant = 'band' }) {
     },
     {
       id: 'L4', name: variant === 'band'
-        ? "pressing the band's [ clear ] toasts, empties the pane's agent rows, removes the band, keeps the status line"
-        : "pressing the pane's [ clear ] toasts, empties the pane's agent rows, keeps the status line (the band was hidden first)",
+        ? "pressing the band's [ clear ] toasts, empties the pane, removes the band, keeps the status line"
+        : "pressing the pane's [ clear ] toasts, empties the pane, keeps the status line (the band was hidden first)",
       ok: cleared >= 0 && CLEARED_PANE.test(all[cleared]) && between.length > 0 && between.every((s) => !BAND.test(s))
         && Boolean(status(all[cleared - 1])) && status(all[cleared - 1]) === status(all[cleared]),
       note: cleared < 0 ? 'no clear toast' : `status line: ${status(all[cleared]) ?? 'none'}`,

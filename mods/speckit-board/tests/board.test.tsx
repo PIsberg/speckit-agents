@@ -587,15 +587,30 @@ function denyState(on: On, key: string) {
   return gate
 }
 
-// FR-011, FR-002, FR-003, FR-012, US1-1, SC-001
-test('/speckit-board clear removes the finished rows and the band, and raises no toast or status', async ($, on) => {
+// What a cleared pane says in place of the board (FR-002, amended for #150).
+const CLEARED = 'cleared; refresh or the next team agent brings it back'
+
+// The pane draws nothing of the board: no next step, phase, agent row or task, only the line and two buttons.
+async function expectClearedPane(p: Awaited<ReturnType<typeof mountPane>>) {
+  expect(await p.find({ type: 'Text', text: CLEARED })).toBeDefined()
+  expect(await p.find({ type: 'Text', text: /^next / })).toBeUndefined()
+  for (const phase of ['spec', 'plan', 'audit', 'build', 'verify']) expect(await p.find({ type: 'Text', text: phase })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: /earlier/ })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: 'T002' })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: /Phase 1: Setup/ })).toBeUndefined()
+  expect((await p.findAll({ type: 'Button' })).map(x => x.key)).toEqual(['refresh', 'close'])
+}
+
+// FR-011, FR-002, FR-003, FR-012, US1-1, SC-001; #150: the pane's phases and tasks go too
+test('/speckit-board clear removes the finished rows, the pane and the band, and raises no toast or status', async ($, on) => {
   const seen = await world(on)
   const run = finish($, on, 3)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await run()
   const toasts = seen.toasts.length
   const status = seen.status.length
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows, pane and band.' })
   expect(seen.toasts).toHaveLength(toasts)
   expect(seen.status).toHaveLength(status)
   for (const surface of ['terminal', 'desktop'] as const) {
@@ -604,27 +619,83 @@ test('/speckit-board clear removes the finished rows and the band, and raises no
     expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeUndefined()
     await b.unmount()
     const p = await mountPane($, surface)
-    expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
-    expect(await p.find({ type: 'Text', text: /earlier/ })).toBeUndefined()
-    expect(await p.find({ type: 'Text', text: 'cleared; no team agent has run since' })).toBeDefined()
+    await expectClearedPane(p)
     await p.unmount()
   }
 })
 
-// FR-007, US2-2
-test('/speckit-board after a clear opens the pane with the phases and the next step', async ($, on) => {
+// FR-007 (amended for #150), US2-2: opening the pane does not undo the clear; refresh does
+test('/speckit-board after a clear opens the cleared pane, and its refresh brings the board and the band back', async ($, on) => {
   const seen = await world(on)
   const run = finish($, on, 3)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await run()
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows, pane and band.' })
   expect(await $.command.run({ command: 'speckit-board', args: '' } as never)).toMatchObject({ text: 'pane opened.' })
   expect(seen.opens.length).toBeGreaterThan(0)
   const p = await mountPane($)
+  await expectClearedPane(p)
+  await p.press({ key: 'refresh' })
   expect((await p.find({ type: 'Text', text: /^next / }))?.text).toBe('next T002 Test greet')
   expect((await around(p, 'audit')).after?.text).toBe('PASS')
   expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: 'no team agent has run this session' })).toBeDefined()
   await p.unmount()
+  const b = await mountBand($)
+  expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeDefined()
+  await b.unmount()
+})
+
+// FR-006 (amended for #150): `/speckit-board refresh` ends the clear as the pane's button does
+test('/speckit-board refresh after a clear brings the board and the band back', async ($, on) => {
+  await world(on)
+  const run = finish($, on, 2)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  expect(await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)).toMatchObject({ text: 'refreshed.' })
+  const p = await mountPane($)
+  expect((await p.find({ type: 'Text', text: /^next / }))?.text).toBe('next T002 Test greet')
+  expect(await p.find({ type: 'Text', text: CLEARED })).toBeUndefined()
+  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  await p.unmount()
+  const b = await mountBand($)
+  expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeDefined()
+  await b.unmount()
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the pane and the band.' })
+})
+
+// constitution III: a refused isCleared write is toasted, and the refresh answers all the same
+test('/speckit-board refresh after a clear toasts a refused isCleared write and still answers', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 1)
+  const deny = denyState(on, 'isCleared')
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  deny.isArmed = true
+  const toasts = seen.toasts.length
+  expect(await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)).toMatchObject({ text: 'refreshed.' })
+  expect(seen.toasts.slice(toasts).filter(t => /^board could not end the clear: /.test(t))).toHaveLength(1)
+})
+
+// The poll refreshes every 4 seconds; it must not end the clear the way the person's refresh does
+test('the poll after a clear keeps the pane and the band cleared', async ($, on) => {
+  const seen = await world(on)
+  const run = finish($, on, 1)
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  await run()
+  await clearCmd($)
+  // Two polls' worth of file reads, so the poll has run before the pane is looked at.
+  const reads = seen.runs.reads
+  await poll(seen.clock, 8000, () => seen.runs.reads >= reads + 2 * fingerprintFiles(FEATURE).length)
+  expect(seen.runs.reads).toBeGreaterThanOrEqual(reads + 2 * fingerprintFiles(FEATURE).length)
+  const p = await mountPane($)
+  await expectClearedPane(p)
+  await p.unmount()
+  const b = await mountBand($)
+  expect(await b.find({ type: 'Text', text: /◆ 001-x/ })).toBeUndefined()
+  await b.unmount()
 })
 
 // FR-005, D1 A
@@ -643,6 +714,10 @@ test('/speckit-board clear keeps a running agent, its row and the band', async (
     const p = await mountPane($, surface)
     expect((await around(p, 'test-writer')).after?.text).toBe('running')
     expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+    // #150: the pane is cleared only with the band, so live work keeps its phases and tasks
+    expect((await p.find({ type: 'Text', text: /^next / }))?.text).toBeDefined()
+    expect((await around(p, 'audit')).after?.text).toBe('PASS')
+    expect(await p.find({ type: 'Text', text: CLEARED })).toBeUndefined()
     await p.unmount()
     const b = await mountBand($, surface)
     expect(await b.find({ type: 'Text', text: '◐ build' })).toBeDefined()
@@ -661,13 +736,13 @@ test('/speckit-board clear with no feature and no agents says there is nothing t
 })
 
 // US1-3 by command, SC-005
-test('/speckit-board clear with the band already hidden clears the rows only, then has nothing to clear', async ($, on) => {
+test('/speckit-board clear with the band already hidden clears the rows and the pane, then has nothing to clear', async ($, on) => {
   await world(on)
   const run = finish($, on, 2)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await run()
   expect(await $.command.run({ command: 'speckit-board', args: 'band' } as never)).toMatchObject({ text: 'band hidden.' })
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared 2 agent rows.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 2 agent rows and the pane.' })
   for (const surface of ['terminal', 'desktop'] as const) {
     const b = await mountBand($, surface)
     expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
@@ -684,7 +759,7 @@ test('/speckit-board clear clears a band too narrow to carry the button', async 
   const b = await mountBand($, 'terminal', 45)
   expect(await b.find({ type: 'Button' })).toBeUndefined()
   expect(await b.find({ type: 'Text', text: '◐ build' })).toBeDefined()
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the pane and the band.' })
   expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
   await b.unmount()
 })
@@ -693,7 +768,7 @@ test('/speckit-board clear clears a band too narrow to carry the button', async 
 test('/speckit-board clear answers as text in a headless session', async ($, on) => {
   await world(on)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: false })
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the pane and the band.' })
 })
 
 // constitution III, research R5
@@ -730,7 +805,7 @@ for (const [name, files] of CLEAR_STATES) {
       const statusBefore = (await $.command.run({ command: 'speckit-board', args: 'status' } as never)) as { text: string }
     const runs = seen.runs.n
     const stores = { ...seen.storeWrites }
-    expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+    expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows, pane and band.' })
     expect(counts['fs.write']).toBe(0)
     expect(seen.runs.n).toBe(runs)
     // FR-004, #85: no store.set and no store.delete either
@@ -758,9 +833,9 @@ test('the pane\'s clear button clears with one toast and changes nothing else', 
   const runs = seen.runs.n
   const stores = { ...seen.storeWrites }
   await p.press({ key: 'clear' })
-  expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows.'])
+  expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows and the pane.'])
   expect(seen.status).toHaveLength(status)
-  expect(await p.find({ type: 'Text', text: 'implementer' })).toBeUndefined()
+  await expectClearedPane(p)
   expect(counts['fs.write']).toBe(0)
   expect(seen.runs.n).toBe(runs)
   expect(seen.storeWrites).toEqual(stores)
@@ -768,9 +843,9 @@ test('the pane\'s clear button clears with one toast and changes nothing else', 
   const b = await mountBand($)
   expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
   await b.unmount()
-  await p.press({ key: 'clear' })
-  expect(seen.toasts.slice(toasts)).toEqual(['cleared 3 agent rows.', 'nothing to clear.'])
+  // The cleared pane has no clear button; the argument says there is nothing left to clear.
   await p.unmount()
+  expect(await clearCmd($)).toMatchObject({ text: 'nothing to clear.' })
 })
 
 test('the pane\'s clear button toasts a refused write', async ($, on) => {
@@ -812,7 +887,7 @@ test('the band\'s clear button clears the rows and the band with one toast', asy
   const b = await mountBand($)
   const toasts = seen.toasts.length
   await b.press({ key: 'clear' })
-  expect(seen.toasts.slice(toasts)).toEqual(['cleared 2 agent rows and the band.'])
+  expect(seen.toasts.slice(toasts)).toEqual(['cleared 2 agent rows, pane and band.'])
   expect(await b.find({ type: 'Text', text: '◐ build' })).toBeUndefined()
   await b.unmount()
   const p = await mountPane($)
@@ -828,7 +903,7 @@ test('the next team agent after a clear brings its row and the band back at its 
   const run = finish($, on, 3)
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await run()
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows and the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared 3 agent rows, pane and band.' })
   await $.classic.SubagentStart({ agent_id: 'a9', agent_type: 'spec-auditor' } as never)
   for (const surface of ['terminal', 'desktop'] as const) {
     const b = await mountBand($, surface)
@@ -864,8 +939,9 @@ test('after a clear the band toggle first shows the band, then hides, then shows
   expect(await drawn()).toBe(true)
   await clearCmd($)
   expect(await drawn()).toBe(false)
+  // The cleared pane has no band toggle (#150): its refresh ends the clear and shows the band.
   const p = await mountPane($)
-  await p.press({ key: 'band' })
+  await p.press({ key: 'refresh' })
   await p.unmount()
   expect(await drawn()).toBe(true)
 })
@@ -1149,7 +1225,7 @@ test('005 FR-003 the standalone pane asks for the rows it draws, with no Team bl
 })
 
 // FR-015: clear in standalone
-test('005 FR-015 clear in standalone answers per clearText(0, true, 0), hides the band, and band brings it back', async ($, on) => {
+test('005 FR-015 clear in standalone clears the pane and the band, and band brings them back', async ($, on) => {
   await world(on, {}, NO_RECORDS)
   await start($)
   const drawn = async () => {
@@ -1159,7 +1235,7 @@ test('005 FR-015 clear in standalone answers per clearText(0, true, 0), hides th
     return found !== undefined
   }
   expect(await drawn()).toBe(true)
-  expect(await clearCmd($)).toMatchObject({ text: 'cleared the band.' })
+  expect(await clearCmd($)).toMatchObject({ text: 'cleared the pane and the band.' })
   expect(await drawn()).toBe(false)
   expect(await $.command.run({ command: 'speckit-board', args: 'band' } as never)).toMatchObject({ text: 'band shown.' })
   expect(await drawn()).toBe(true)

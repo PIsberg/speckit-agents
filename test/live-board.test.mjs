@@ -14,9 +14,9 @@ const SCREENS = [
   screen('❯ /speckit-board', STATUS),
   screen('  ⎿  speckit-board: pane opened.        │[ clear ] [ close ]', BAND, STATUS),
   screen('│✓ spec-auditor    PASS took 0s · 12s ago', BAND, STATUS),
-  screen(' │ cleared 2 agent rows and the band. │', '│cleared; no team agent has run since', STATUS),
-  screen('│cleared; no team agent has run since', STATUS),
-  screen('❯ board one more', '│cleared; no team agent has run since', STATUS),
+  screen(' │ cleared 2 agent rows, pane and band. │', '│cleared; refresh or the next team agent brings it back', STATUS),
+  screen('│cleared; refresh or the next team agent brings it back', STATUS),
+  screen('❯ board one more', '│cleared; refresh or the next team agent brings it back', STATUS),
   screen('│✓ spec-auditor    PASS took 0s · 2s ago', BAND, STATUS),
   screen('❯ fourseconds', '│✓ spec-auditor    PASS took 0s · 6s ago', BAND, STATUS),
 ];
@@ -34,6 +34,7 @@ test('each check fails on the screens that break it', () => {
   const cases = [
     ['L3', 'a narrower terminal', SCREENS.map((s) => s.replace('─'.repeat(140), '─'.repeat(114)))],
     ['L3', 'no [ clear ] in the pane', SCREENS.map((s) => s.replace('[ clear ] [ close ]', '[ close ]'))],
+    ['L4', 'the pane not cleared (#150)', SCREENS.map((s, i) => (i === 3 ? s.replace(/cleared; refresh.*back/, 'no team agent has run this session') : s))],
     ['L4', 'the band still drawn after the clear', SCREENS.map((s, i) => (i === 4 ? `${s}\n${BAND}` : s))],
     ['L4', 'the status line changed by the clear', SCREENS.map((s, i) => (i >= 3 ? s.replace('build (1/3)', 'build (2/3)') : s))],
     ['L5', 'the band not back by the mark typed 4 s later', SCREENS.map((s, i) => (i >= 6 ? s.replace(BAND, '') : s))],
@@ -42,7 +43,7 @@ test('each check fails on the screens that break it', () => {
   for (const [id, what, screens] of cases) {
     assert.ok(failed(verdicts(join(screens), { before: HASHES, after: HASHES })).includes(id), `${id} passed with ${what}`);
   }
-  const noToast = failed(verdicts(join(SCREENS.map((s) => s.replace('cleared 2 agent rows and the band.', ''))), { before: HASHES, after: HASHES }));
+  const noToast = failed(verdicts(join(SCREENS.map((s) => s.replace('cleared 2 agent rows, pane and band.', ''))), { before: HASHES, after: HASHES }));
   assert.deepEqual(noToast, ['L4', 'L5'], 'without the toast there is no clear, and L5 counts from it');
   assert.deepEqual(failed(verdicts(join(SCREENS), { before: HASHES, after: 'a1\nb9\nc3\n' })), ['L6']);
   assert.deepEqual(failed(verdicts(join(SCREENS), { before: '', after: '' })), ['L6'], 'no file hashed is not a pass');

@@ -439,9 +439,11 @@ export function bandLayout(
 const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 's'}`
 
 // The line a clear answers with, and a button toasts.
-export function clearText(rows: number, isBandCleared: boolean, running: number): string {
-  const what = [rows ? plural(rows, 'agent row') : '', isBandCleared ? 'the band' : ''].filter(Boolean)
-  const head = what.length ? `cleared ${what.join(' and ')}` : 'nothing to clear'
+export function clearText(rows: number, isPaneCleared: boolean, isBandCleared: boolean, running: number): string {
+  const what = [rows ? plural(rows, 'agent row') : '', isPaneCleared ? 'the pane' : '', isBandCleared ? 'the band' : ''].filter(Boolean)
+  // A toast wraps past about 39 columns: all three drop their `the` (#150).
+  const list = what.length === 3 ? `${what[0]}, pane and band` : what.join(' and ')
+  const head = list ? `cleared ${list}` : 'nothing to clear'
   return `${head}${running ? `; ${plural(running, 'running agent')} kept` : ''}.`
 }
 

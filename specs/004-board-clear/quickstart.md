@@ -19,10 +19,10 @@ mid-build), with the board loaded by `--plugin-dir <checkout>/mods/speckit-board
 
 | ID | Session | Steps | Expected |
 |---|---|---|---|
-| L1 | headless | `claude -p "/speckit-board clear"` | prints `cleared the band.` (a fresh headless session draws the band; amended 2026-10-11 after the live run, which the mod's headless test already pinned), exit 0, 0 turns |
+| L1 | headless | `claude -p "/speckit-board clear"` | prints `cleared the pane and the band.` (a fresh headless session draws the band; amended 2026-10-11 after the live run, which the mod's headless test already pinned; `the pane` added 2026-10-23, #150), exit 0, 0 turns |
 | L2 | headless | `claude -p "/speckit-board foo"` | prints `unknown argument "foo": use status, refresh, band or clear.` |
 | L3 | interactive | open the pane with `/speckit-board`, at 140 columns | the pane shows `[ clear ]`; the band shows `[ board ] [ clear ] [ hide ]` |
-| L4 | interactive | run two `@agent-spec-auditor` (Haiku stand-ins are enough), then press the pane's `[ clear ]` | toast `cleared 2 agent rows and the band.`; the pane lists no agent row; the band is gone; the status line unchanged |
+| L4 | interactive | run two `@agent-spec-auditor` (Haiku stand-ins are enough), then press the pane's `[ clear ]` | toast `cleared 2 agent rows, pane and band.`; the pane shows `cleared; refresh or the next team agent brings it back` and no phase, task or agent row (#150); the band is gone; the status line unchanged |
 | L5 | interactive | then start one more team agent | its row and the band are back within 4 s |
 | L6 | interactive | before and after L4, `sha256sum .git/speckit-team/*/*.json specs/*/spec.md specs/*/plan.md specs/*/tasks.md .specify/feature.json` | identical |
 

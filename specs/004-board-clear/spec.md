@@ -18,6 +18,10 @@
 - Q: How long does the cleared state last? -> A: Until the next team agent starts or the session ends; it is not stored.
 - Q: How does the user trigger clear? -> A: A [clear] button on the board (the user's own words). A `/speckit-board clear` argument is kept as a secondary route for headless sessions.
 
+### Session 2026-10-23 (#150)
+
+- Q: After a clear the pane still showed the phases, the next step and the tasks: is that intended? -> A: No (the owner, #150). With no team agent running, clear empties the whole pane: it shows one line and the `refresh` and `close` buttons until the next team agent starts, `refresh` is asked for, or the band is toggled.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Clear the board and the band in one action (Priority: P1)
@@ -30,7 +34,7 @@ After a pipeline has run, the board's pane lists the session's team agents with 
 
 **Acceptance Scenarios**:
 
-1. **Given** the pane lists finished agents and the band is shown, **When** the user presses [clear], **Then** the pane lists no agent rows and the band is no longer drawn.
+1. **Given** the pane lists finished agents and the band is shown, **When** the user presses [clear], **Then** the pane lists no agent rows, no phases, no next step and no tasks (amended 2026-10-23, #150), and the band is no longer drawn.
 2. **Given** the pane is closed and the band is shown, **When** the user presses [clear] on the band, **Then** the band is no longer drawn and, when the pane is next opened, it lists no agent rows from before the clear.
 3. **Given** the band was already hidden with `/speckit-board band` and the pane is open, **When** the user presses [clear] in the pane, **Then** the agent rows are cleared, no error is shown, and the band stays hidden.
 4. **Given** the board has nothing to clear (no agent rows, no feature), **When** the user presses [clear], **Then** it completes without error and says there was nothing to clear.
@@ -79,12 +83,12 @@ Clearing is about what is drawn. The pipeline's own records (verdicts, retry cou
 
 - **FR-001** (amended 2026-10-11 for D2 A, #86): The board MUST show a [clear] button, in the pane and in the band, that the user can press to clear the board and the band. On a short row (about 80 columns and below, and beside a docked pane) the band's button drops with its other buttons, in the order `hide`, `clear`, `board`; the pane's button and `/speckit-board clear` remain at every width.
 - **FR-011**: The board MUST also accept `/speckit-board clear` alongside the existing `refresh`, `band` and `status`, with the same effect as the button, so a session without a clickable board can clear.
-- **FR-002**: Running clear MUST remove every finished agent's row from the pane in one step, so the pane shows no agent row that existed before the clear.
+- **FR-002** (amended 2026-10-23, #150): Running clear MUST remove every finished agent's row from the pane in one step, so the pane shows no agent row that existed before the clear. Running clear while no team agent runs MUST also remove the phases, the next step and the tasks from the pane, which then shows one line saying it was cleared and how the board comes back, and the `refresh` and `close` buttons. While a team agent runs, the pane keeps them, as the band stays (FR-003).
 - **FR-003** (amended 2026-10-11 for D1 A, #86): Running clear while no team agent runs MUST remove the band from above the prompt in one step. While a team agent runs, clear removes the finished rows only and leaves the band, which stays after that agent finishes until another clear removes it.
 - **FR-004**: Clear MUST be display-only: it MUST NOT modify, delete or reset the verdict, retry, gatekeeper or other files under `.git/speckit-team/`, nor `spec.md`, `plan.md`, `tasks.md` or `.specify/feature.json`.
 - **FR-005**: Clear MUST NOT remove the row of an agent that is still running.
-- **FR-006** (amended 2026-10-11 for D4 A, #86): After a clear, the next team agent that starts MUST show its own row and bring the band back, without the user pressing or running anything. The cleared state ends at that point, and also at `/speckit-board band` or the pane's `toggle band`, which then show the band; rows cleared earlier stay gone.
-- **FR-007**: After a clear, `/speckit-board` MUST still open the pane, showing the phases and next step from the records and no pre-clear agent rows.
+- **FR-006** (amended 2026-10-11 for D4 A, #86; 2026-10-23, #150): After a clear, the next team agent that starts MUST show its own row and bring the band and the pane's board back, without the user pressing or running anything. The cleared state ends at that point, and also at `/speckit-board band`, which then shows the band, and at `/speckit-board refresh` or the pane's `refresh`, which show the band and the board; rows cleared earlier stay gone. The 4-second poll MUST NOT end it.
+- **FR-007** (amended 2026-10-23, #150): After a clear, `/speckit-board` MUST still open the pane, showing the cleared pane (FR-002) and no pre-clear agent rows; its `refresh` shows the phases and next step from the records.
 - **FR-008**: Clear MUST show one line saying what it cleared, or that there was nothing to clear, and MUST NOT error when there is nothing to clear, when the band is already hidden, or when run twice.
 - **FR-009**: The button MUST work in an interactive session; the `/speckit-board clear` argument MUST answer as text in a headless `claude -p` session.
 - **FR-012**: Clear MUST NOT reset or remove the status line or earlier toasts; a button press MAY add one toast with the FR-008 line.
@@ -94,7 +98,7 @@ Clearing is about what is drawn. The pipeline's own records (verdicts, retry cou
 
 - **Agent row**: one line of the pane for a team agent of this session, with its task, report word and times.
 - **Band**: the single row above the prompt with the feature, phases, progress and buttons, [clear] among them.
-- **Cleared state**: what the board remembers about being cleared, so earlier agents' rows stay out of the pane and the band stays away until new work starts. It ends when the next team agent starts or the session ends, and is not stored.
+- **Cleared state**: what the board remembers about being cleared, so earlier agents' rows stay out of the pane and the band stays away until new work starts. It ends when the next team agent starts, when the band is toggled or `refresh` is asked for (amended 2026-10-23, #150), or when the session ends, and is not stored.
 
 ## Success Criteria *(mandatory)*
 
