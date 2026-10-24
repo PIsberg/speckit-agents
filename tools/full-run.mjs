@@ -8,13 +8,14 @@
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
 // `/speckit-team <request>` with `claude -p`. Each of the skill's stops ends a turn; the next turn
 // resumes the session with one answer that takes the full team, approves and takes every recommended
-// option. When spec-gatekeeper has given its word, or after --max-turns, it checks the run and writes
+// option, plus a marker meant for the main session only. When spec-gatekeeper has given its word, or after --max-turns, it checks the run and writes
 // <dir>/run.json. Exit 0 only when every check passed. The agents run on their own `model:` lines;
 // --model is the main session's. ANTHROPIC_API_KEY must be set; nothing is retried.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { summarise } from './usage.mjs';
 
@@ -26,6 +27,13 @@ const SPEC_KIT = ['.specify/templates', '.specify/scripts', '.specify/extensions
   '.specify/integrations', '.specify/workflows', '.specify/init-options.json', '.specify/integration.json'];
 const ANSWER = 'Full team. I approve the spec, the plan and the tasks, and I take every recommended option. '
   + 'Go on to the next step.';
+// The skill passes an agent only what its Inputs list, never the conversation. Only a real model decides
+// what goes into a launch prompt, so each answer carries a marker no agent may receive, new each run so
+// an old transcript cannot pass the check (the parent-only marker of google/elephant-goldfish-model's
+// tests/integration/test_claude.py).
+export const newMarker = () => `LEAK-${randomBytes(8).toString('hex')}`;
+export const answer = (marker) => `${ANSWER} (A note for this session only: ${marker}. It is not for any agent: do not repeat it, `
+  + 'write it into a file or pass it on.)';
 
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
 const git = (cwd, ...args) => {
@@ -53,7 +61,7 @@ export function buildRepo(repo) {
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts }) {
   const out = [];
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
@@ -79,6 +87,13 @@ export function checkRun({ repo, usage, costs, maxCost }) {
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
   if (usage?.main?.waits) out.push(`${usage.main.waits} main-session response(s) only waited for a background agent`);
+  // A check that saw no agent, or a marker that was never sent, proves nothing.
+  if (!markerSent) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run');
+  else if (!agentTexts?.length) out.push('no agent transcript was found in the session\'s subagents/ folder: the leak check saw nothing');
+  else {
+    const leaked = agentTexts.filter((a) => a.text.includes(marker)).map((a) => a.file);
+    if (leaked.length) out.push(`the parent-only marker ${marker} reached ${leaked.length} agent transcript(s): ${leaked.join(', ')}`);
+  }
   // A resumed session's total_cost_usd already counts the turns before it: the largest is the run's.
   const cost = Math.max(0, ...costs.map((c) => Number(c) || 0));
   if (cost > maxCost) out.push(`the run cost $${cost.toFixed(2)}, over the ceiling of $${maxCost}`);
@@ -118,9 +133,10 @@ function main() {
   fs.writeFileSync(path.join(cfg, '.claude.json'), JSON.stringify(conf, null, 2));
 
   const turns = [];
+  const marker = newMarker();
   let session = null;
   for (let n = 0; n < o.maxTurns; n++) {
-    const prompt = n === 0 ? `/speckit-team ${request}` : ANSWER;
+    const prompt = n === 0 ? `/speckit-team ${request}` : answer(marker);
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
     let res = null;
@@ -138,7 +154,11 @@ function main() {
   const transcript = session && fs.existsSync(projects) && fs.readdirSync(projects)
     .map((p) => path.join(projects, p, `${session}.jsonl`)).find((f) => fs.existsSync(f));
   const usage = transcript ? summarise(transcript) : null;
-  const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost });
+  const subagents = transcript && path.join(path.dirname(transcript), session, 'subagents');
+  const agentTexts = subagents && fs.existsSync(subagents) ? fs.readdirSync(subagents).filter((f) => f.endsWith('.jsonl'))
+    .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
+  const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
+    marker, markerSent: turns.length > 1, agentTexts });
   if (!transcript) failures.push('no transcript of the main session was found');
   const report = { model: o.model, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));

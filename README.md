@@ -1323,7 +1323,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 358 tests:
+`npm test` runs 360 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1337,7 +1337,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 4 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1472,13 +1472,22 @@ this checkout's Spec Kit files and [`test/fixtures/full-run/`](test/fixtures/ful
 `CLAUDE.md`, a one-function `src/math.js` and its test, and the feature request, a `sum()` function),
 installs the team into a throwaway config dir, and runs `claude -p "/speckit-team <request>"`. Each
 stop of the skill ends a turn; the next turn resumes the session with one answer that takes the full
-team and approves every recommended option, until spec-gatekeeper has given its word or 8 turns have
+team and approves every recommended option, plus a note marked as for the main session only, until spec-gatekeeper has given its word or 8 turns have
 run. It then checks only what does not depend on the models' wording, and fails the run on any of:
 no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a task of `tasks.md` left
 unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
-main-session response that only waited, or a cost over the ceiling (`total_cost_usd` of the last
-turn, which counts the turns before it). It writes `run.json` and exits 0 only when every check
+main-session response that only waited, a cost over the ceiling (`total_cost_usd` of the last
+turn, which counts the turns before it), or the main session's note reaching an agent. It writes `run.json` and exits 0 only when every check
 passed. Nothing is retried, because a retry would hide a real regression.
+
+The note is the one check of [Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose) that
+only a real model can fail: what goes into a launch prompt is the main session's choice. Each answer
+carries a marker, `LEAK-` and 16 hex digits, new each run, with the words "It is not for any agent:
+do not repeat it, write it into a file or pass it on." The run fails if any file under the session's
+`subagents/` folder holds it, naming the file, and also when there is no such file or no answer turn
+ran, since a check that saw nothing proves nothing. The idea is the parent-only marker of
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
+(`tests/integration/test_claude.py`).
 
 ```sh
 ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet --max-cost 6
