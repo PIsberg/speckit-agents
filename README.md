@@ -1545,7 +1545,9 @@ audit gate, the verdict and retry records, the retry limit, `ends` refusing a re
 full `/speckit-team` runs and, on 2026-10-10, the fast track. On 2026-10-12, in an interactive session
 against a fake API (no model ran): the fast track's hooks, and the team question answered Build only.
 On 2026-10-16, with real models: a `--project` block reaching implementer and security-reviewer, and
-security-reviewer's result review with its `ends` check.
+security-reviewer's result review with its `ends` check. On 2026-10-24, with real models: the read-only
+agents starting without `CLAUDE.md`, the reuse check, a contested finding and a recorded ruling, and a
+full run passing the leak and drift checks.
 The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
