@@ -44,8 +44,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
+      # The version the test job pins: package.json's config.claudeCode.
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code@2.1.293
+        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
       # Spec Kit's scripts in this checkout are its PowerShell ones; ubuntu-latest has pwsh.
       - run: claude --version && pwsh --version
       - name: Run /speckit-team on the fixture

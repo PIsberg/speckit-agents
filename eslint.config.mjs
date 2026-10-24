@@ -1,8 +1,8 @@
 // ESLint's flat config for the repo's JavaScript: the hook, the installer, the tools, the media scripts
 // and the tests. pre-commit's eslint hook and CI's lint step run it (README.md, "CI").
 //
-// No imports: pre-commit installs eslint in an environment of its own, from which this file cannot
-// resolve @eslint/js, so the rules are listed here. They are @eslint/js 10.0.1's recommended set.
+// No imports: the rules are listed here rather than taken from @eslint/js, so the only lint package is
+// eslint itself, pinned once in package.json. They are @eslint/js 10.0.1's recommended set.
 const RECOMMENDED = `constructor-super for-direction getter-return no-async-promise-executor no-case-declarations
   no-class-assign no-compare-neg-zero no-cond-assign no-const-assign no-constant-binary-expression no-constant-condition
   no-control-regex no-debugger no-delete-var no-dupe-args no-dupe-class-members no-dupe-else-if no-dupe-keys

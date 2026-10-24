@@ -102,7 +102,7 @@ test('full run: the workflow runs only by hand, weekly or on the e2e label, on L
   assert.doesNotMatch(wf, /run:.*\$\{\{ inputs\./, 'an input never goes into a script\'s text');
   assert.match(wf, /if: failure\(\)\n\s+uses: actions\/upload-artifact@[0-9a-f]{40}/);
   assert.doesNotMatch(wf, /retry|continue-on-error/i, 'a retry would hide a real regression');
-  assert.match(wf, /@anthropic-ai\/claude-code@2\.1\.293/, 'the Claude Code version the test job pins');
+  assert.match(wf, /@anthropic-ai\/claude-code@\$\(node -p "require\('\.\/package\.json'\)\.config\.claudeCode"\)/, 'the Claude Code version the test job pins, from package.json');
 });
 
 // The skill passes an agent only what its Inputs list, never the conversation (README, "Handoffs are lossy

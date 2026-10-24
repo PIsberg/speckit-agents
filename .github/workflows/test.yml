@@ -25,10 +25,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
-      # The board mod's plugin API and `claude plugin test` start at 2.1.293. No login is needed:
-      # the tests only validate, test and install plugins in throwaway config dirs.
+      # The board mod's plugin API and `claude plugin test` start at the version package.json's
+      # config.claudeCode names, the oldest the team supports; Dependabot leaves it alone. No login is
+      # needed: the tests only validate, test and install plugins in throwaway config dirs.
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code@2.1.293
+        shell: bash
+        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
       # npm's Windows shim is claude.cmd, which the tests spawn without a shell. Put the binary
       # itself on PATH so they run instead of skipping.
       - name: Put the claude binary on PATH (Windows)
@@ -44,19 +46,24 @@ jobs:
       # it checks against (.claude-plugin/types, tsconfig.json) are laid only when a session loads it.
       # A headless session needs no login to load it: it exits 1 at the model call, after the types
       # are laid, so its status is not the gate; the tsconfig check after it is.
+      # eslint and typescript at the versions package.json pins, from the lockfile: Dependabot moves
+      # them there, and nowhere else names them.
+      - name: Install eslint and typescript (Linux)
+        if: runner.os == 'Linux'
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Type-check the board mod (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-types" claude --plugin-dir mods/speckit-board -p "/speckit-board refresh" > /dev/null || true
           test -f mods/speckit-board/tsconfig.json
-          npx -y -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
-      # The eslint .pre-commit-config.yaml runs, at its version, on the files it sees: the tracked
-      # JavaScript. A commit made without pre-commit installed is checked here.
+          npx --no-install tsc -p mods/speckit-board --noEmit
+      # The same eslint .pre-commit-config.yaml runs, on the files it sees: the tracked JavaScript. A
+      # commit made without pre-commit installed is checked here.
       - name: Lint (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: npx -y eslint@10.8.0 $(git ls-files '*.js' '*.mjs' '*.cjs')
+        run: npx --no-install eslint $(git ls-files '*.js' '*.mjs' '*.cjs')
 
   # The board's interactive checks, feature 004's L3 to L6: tools/live-board.mjs lets vhs drive a real
   # Claude Code session against a fake API (no login, no model, $0) and fails on a failed check. On
@@ -68,6 +75,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # vhs is a release binary, which Dependabot cannot see: its version and checksums move together here.
+    env:
+      VHS_VERSION: 0.11.0
+      VHS_SHA256_LINUX: 99cb634587eaae0473c1ea377db80c3a048c27f99fe0a7febb1a1e8cb7ee5009
+      VHS_SHA256_MACOS: eec91ee450ba50b6d4fce2800593b2ac5fdd88a73056367d2c3b870ee44de3f7
     steps:
       - name: Harden the runner (Audit all outbound calls)
         uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2 # v2.22.2
@@ -79,25 +91,25 @@ jobs:
         with:
           node-version: 22
       - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code@2.1.293
-      - name: Install vhs 0.11.0, ttyd and ffmpeg (Linux)
+        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
+      - name: Install vhs, ttyd and ffmpeg (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ttyd ffmpeg
-          curl -fsSL -o "$RUNNER_TEMP/vhs.tar.gz" https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Linux_x86_64.tar.gz
-          echo "99cb634587eaae0473c1ea377db80c3a048c27f99fe0a7febb1a1e8cb7ee5009  $RUNNER_TEMP/vhs.tar.gz" | sha256sum -c -
+          curl -fsSL -o "$RUNNER_TEMP/vhs.tar.gz" "https://github.com/charmbracelet/vhs/releases/download/v$VHS_VERSION/vhs_${VHS_VERSION}_Linux_x86_64.tar.gz"
+          echo "$VHS_SHA256_LINUX  $RUNNER_TEMP/vhs.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/vhs.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/vhs_0.11.0_Linux_x86_64" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/vhs_${VHS_VERSION}_Linux_x86_64" >> "$GITHUB_PATH"
       # macos-latest is Apple silicon.
-      - name: Install vhs 0.11.0, ttyd and ffmpeg (macOS)
+      - name: Install vhs, ttyd and ffmpeg (macOS)
         if: runner.os == 'macOS'
         run: |
           brew install ttyd ffmpeg
-          curl -fsSL -o "$RUNNER_TEMP/vhs.tar.gz" https://github.com/charmbracelet/vhs/releases/download/v0.11.0/vhs_0.11.0_Darwin_arm64.tar.gz
-          echo "eec91ee450ba50b6d4fce2800593b2ac5fdd88a73056367d2c3b870ee44de3f7  $RUNNER_TEMP/vhs.tar.gz" | shasum -a 256 -c -
+          curl -fsSL -o "$RUNNER_TEMP/vhs.tar.gz" "https://github.com/charmbracelet/vhs/releases/download/v$VHS_VERSION/vhs_${VHS_VERSION}_Darwin_arm64.tar.gz"
+          echo "$VHS_SHA256_MACOS  $RUNNER_TEMP/vhs.tar.gz" | shasum -a 256 -c -
           tar -xzf "$RUNNER_TEMP/vhs.tar.gz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/vhs_0.11.0_Darwin_arm64" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/vhs_${VHS_VERSION}_Darwin_arm64" >> "$GITHUB_PATH"
       - run: vhs --version && ttyd --version && claude --version
       - name: L3 to L6, pressing the band's [ clear ]
         run: node tools/live-board.mjs band "$RUNNER_TEMP/live-band"
