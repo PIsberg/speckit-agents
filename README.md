@@ -343,7 +343,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 24 to 102 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 104 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -462,6 +462,18 @@ re-recording or an extra live check, is an open decision too, and its recommende
 work out, so taking every recommendation keeps the run to what was asked
 ([#89](https://github.com/PIsberg/speckit-agents/issues/89)). Work `CLAUDE.md` asks for counts as
 required, so the architect never recommends against the repository's own instructions.
+
+Code the repository already has is not built twice. Before a task adds a function, type or module,
+the architect greps the source for one that does the job and, if it finds one, names it in the task
+as file and symbol. spec-auditor checks the same: for each new file, function and type the
+implementation tasks list, it greps the source by name and by job and reads only the matching lines,
+and a second implementation of existing behaviour is a HIGH finding for the architect, citing both
+places. It is grep, not a reading of the codebase, so it finds a duplicate whose name or job words
+match and misses one that shares neither. A duplicate caught here costs one architect revision;
+caught later it costs a test-writer and an implementer for code that should not exist. The idea is
+the reuse check of the Zoom Out reviewer in
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
+(`agents/zoom_out.md`), which must search the code before it accepts a new utility.
 
 When your answers, or an audit's findings, fully determine the edits (a value, a list entry, a
 wording), the skill sends a *dictated* revision: each exact edit and where it goes, which the
@@ -1311,13 +1323,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 357 tests:
+`npm test` runs 358 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 95 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 96 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

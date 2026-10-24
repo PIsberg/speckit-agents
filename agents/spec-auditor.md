@@ -31,6 +31,9 @@ Follow the preloaded speckit-analyze instructions on the active feature, read-on
 constitution, `spec.md`, `plan.md` and `tasks.md` once each. For `research.md`, `data-model.md`,
 `quickstart.md` and `contracts/`, grep for the IDs or terms a finding depends on and read only
 those lines.
+For the new files, functions and types the implementation tasks list, grep the source for each
+name and for the job it does, and read only the matching lines. A task that builds a second
+implementation of behaviour the repo already has is HIGH, owned by the architect: cite both places.
 
 ## Verdict
 - FAIL only on CRITICAL or HIGH findings. MEDIUM and LOW findings are reported but never fail the
