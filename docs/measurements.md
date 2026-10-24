@@ -286,3 +286,36 @@ it carries. This repository cannot move that breakpoint: the context and its ord
 A breakpoint on the last context block, before the prompt, would let every relaunch read it back;
 that is a Claude Code change (#133). The shape is pinned in
 [`test/e2e.test.mjs`](../test/e2e.test.mjs), which fails if Claude Code moves the breakpoint.
+
+## CLAUDE.md in the read-only agents
+
+Measured 2026-10-24 on Claude Code 2.1.310, Windows, against the e2e fake API, with the case in
+[`test/e2e.test.mjs`](../test/e2e.test.mjs) that launches test-writer, spec-auditor, spec-gatekeeper
+and security-reviewer in one session. Characters of each agent's first user message:
+
+| Agent | Without `omitClaudeMd` | With it |
+|---|--:|--:|
+| test-writer (writes, keeps the files) | 18,546 | 18,546 |
+| spec-auditor | 18,545 | 1,194 |
+| spec-gatekeeper | 18,550 | 1,199 |
+| security-reviewer | 18,548 | 1,197 |
+
+What the 17,351 characters were: a one-line user `CLAUDE.md` and a one-line project `CLAUDE.md` (the
+test's markers), and a 17,438-byte `~/.claude/CLAUDE.md`, which Claude Code also read as an ancestor
+project file because the temp folder lies under the home folder. So the saving is the size of
+whatever `CLAUDE.md` files your session loads, plus Claude Code's wrapper text; in a repository with
+a project `CLAUDE.md` of its own it adds that file's size. About 4,300 tokens here at 4 characters a
+token, an estimate: no tokens were counted.
+
+Why it is worth it: that context sits in the first user message, ahead of the launch prompt with no
+cache breakpoint between them ([What the prompt cache shares between agents](#what-the-prompt-cache-shares-between-agents)),
+so every launch writes it to the cache again, and every later request of the agent reads it back
+(32 to 73 requests per spec-auditor run in [One fresh agent per phase](#one-fresh-agent-per-phase)).
+The dollar figure was not measured on a real run.
+
+What it led to: the three agents that cannot write declare `omitClaudeMd: true`, held by
+[`test/prompt-caching.test.mjs`](../test/prompt-caching.test.mjs) for exactly those agents and by the
+e2e case for Claude Code honouring it. The writers keep both files. The idea is the Goldfish reviewer
+of [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
+(`docs/claude.md`, "Reviewer isolation"), whose reviewers declare the same field and get only the
+task, the target and the paths they read.

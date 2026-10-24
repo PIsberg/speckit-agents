@@ -36,7 +36,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 354 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 356 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
@@ -55,6 +55,10 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - A new hook command goes in an agent's frontmatter or `SETTINGS_GATES` in `install.mjs`, and in the
   README's guardrail table.
 - Hooks fail open when they crash. Any change that can make the script throw needs a test.
+- An agent declares `omitClaudeMd: true` exactly when it cannot write (`disallowedTools` has `Write`), so
+  it starts without the user's and project's `CLAUDE.md`. Held by `test/prompt-caching.test.mjs`; that
+  Claude Code leaves them out, by `test/e2e.test.mjs`. A rule such an agent must check goes in the
+  constitution.
 - Twins, each held by `test/board-mod.test.mjs`: `fingerprint()` in the hook and in
   `mods/speckit-board/hooks/model.ts` (also pinned in the mod's `model.test.ts`); the mod's
   `ROLE_COLOR` and each `agents/*.md` `color:` line; its `MAX_RED` and the hook's; its `WORDS` and the
