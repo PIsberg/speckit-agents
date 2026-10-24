@@ -49,6 +49,8 @@ Inspect the implementation diff and code for real vulnerabilities:
   - CRITICAL: exploitable vulnerability (e.g. remote command execution, injection, hardcoded production secret, complete auth bypass).
   - HIGH: serious risk (e.g. missing authorization check on sensitive action, path traversal in helper, sensitive data in plaintext logs, missing input validation).
 - PASS if zero CRITICAL and zero HIGH findings (MEDIUM and LOW findings are advisory).
+- A finding the user has ruled out, recorded under `## Decisions` (plan) or `## Clarifications`
+  (spec), is not raised again unless you cite something the ruling did not consider.
 
 ## Report
 At most 50 lines.

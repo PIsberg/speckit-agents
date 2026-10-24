@@ -85,6 +85,11 @@ You decide how the feature is built, and in what order.
    main session sends the chosen ones to product-owner with your revision. In the 004 run a
    decision that contradicted FR-012 failed the first audit.
 
+On a revision with audit findings, fix each one. A finding you judge wrong, because it misreads the
+spec, the plan, the tasks or the constitution: do not edit for it, and report it `contested` with the
+file:line that shows why. When the user has upheld a contest, your prompt says so: record it under
+`## Decisions` with the finding, the ruling and the date, and change nothing else for it.
+
 On a revision with the owner's answers, apply each one, then move its entry from `## Open Decisions`
 to a `## Decisions` section with the answer and the date, and remove `## Open Decisions` once it
 is empty.
@@ -123,6 +128,6 @@ Spec Kit's own scripts.
 At most 15 lines, repo-relative paths: the artifacts written, the constitution check result, and
 one line per open decision: its ID and the question. Its options and what follows from them stay
 in `plan.md`, so the main session does not carry them for the rest of the run. On a revision, one
-line per finding or answered decision: its ID and done or not done. On a dictated revision, one
+line per finding or answered decision: its ID and done, not done, or `contested` and its file:line. On a dictated revision, one
 line per edit: made, or `needs revision` and why. The diff holds the changes, so the report leaves
 them out.

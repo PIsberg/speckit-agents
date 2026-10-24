@@ -343,7 +343,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 22 to 98 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 24 to 102 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -476,6 +476,18 @@ context than an architect's ([Feature 003](docs/measurements.md#feature-003-inte
 On a FAIL it routes each CRITICAL and HIGH finding to the agent that owns it; MEDIUM and LOW
 findings are accepted and listed once at hand-over. On a REJECTED it routes each reason the same
 way. After two failed audits it hands the findings to you.
+
+An owner that finds a finding wrong does not have to obey it. product-owner and architect may report
+it `contested`, with the file:line that shows the auditor misread the spec, plan, tasks or
+constitution, and edit nothing for it. The skill does not judge the contest: it asks you, with the
+finding and the evidence, whether to fix it or uphold the contest. An upheld contest is recorded,
+under `## Decisions` in `plan.md` or `## Clarifications` in `spec.md`, and spec-auditor and
+security-reviewer do not raise a recorded ruling again unless they cite something it did not
+consider. Without this, a wrong finding costs a revision and a re-audit, and after two FAILs it
+reaches you anyway. The idea is the CONTEST path of
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
+(`skills/egm_resolve/SKILL.md`), where the human decides each contested finding. `test/install.test.mjs`
+holds the skill, both owners and both reviewers to the same words.
 
 #### Building in slices
 
@@ -1299,13 +1311,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 356 tests:
+`npm test` runs 357 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 94 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 95 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
