@@ -1,11 +1,26 @@
 version: 2
 updates:
+  # Each pinned action is one place per use; Dependabot bumps every copy of it in one pull request.
+  # codeql-action's init, autobuild, analyze and upload-sarif must share a version (each bumped alone
+  # failed CodeQL: #146, #147, #149), so they come as one group.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: daily
+    groups:
+      codeql-action:
+        patterns:
+          - 'github/codeql-action*'
 
+  # package.json's devDependencies: eslint and typescript, which CI and the pre-commit eslint hook run
+  # from node_modules. Its config.claudeCode is the oldest Claude Code the team supports, moved by hand.
   - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: daily
+
+  # The remaining pre-commit hooks' revs (gitleaks, shellcheck, pre-commit-hooks).
+  - package-ecosystem: pre-commit
     directory: /
     schedule:
       interval: daily

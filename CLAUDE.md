@@ -37,15 +37,19 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 368 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 374 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
-- CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
-  (those tests fail instead of skipping), then type-checks the board mod on Linux:
-  `npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit`, after a
-  `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with eslint 10.8.0
-  (`eslint.config.mjs`, the version `.pre-commit-config.yaml` pins). A `live-board` job runs
-  `tools/live-board.mjs` on Linux and macOS (vhs from its release, checksum pinned).
+- CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
+  the oldest supported, moved by hand) and `SPECKIT_REQUIRE_CLAUDE=1` (those tests fail instead of
+  skipping), then on Linux `npm ci` and type-checks the board mod:
+  `npx --no-install tsc -p mods/speckit-board --noEmit`, after a
+  `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with
+  `npx --no-install eslint` (`eslint.config.mjs`; pre-commit's eslint hook runs the same one). A
+  `live-board` job runs `tools/live-board.mjs` on Linux and macOS (vhs from its release, version and
+  checksums in the job's `env:`).
+- Every version is pinned in one place (README.md, "Where each version is pinned"), held by
+  `test/versions.test.mjs`: never write a tool's version into a workflow, a hook config or these docs.
 - Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does. A new hook entry gets a case
   there that fails with the installed hook replaced by `process.exit(0)` (`SPECKIT_E2E_NO_HOOK=1`).
   After changing a hook's command, event or matcher, also run README.md's "Live check".

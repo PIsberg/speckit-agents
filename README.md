@@ -1323,7 +1323,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 368 tests:
+`npm test` runs 374 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1337,6 +1337,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 8 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples and SC IDs skipped, the exit codes, and its test patterns against the hook's |
+| [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
@@ -1356,26 +1357,40 @@ by one): 149 s became 43 s on Windows (2026-10-11).
 [`.github/workflows/test.yml`](.github/workflows/test.yml) runs `npm test` on Linux, macOS and
 Windows for every pull request and every push to main, with Claude Code 2.1.293 from npm and
 `SPECKIT_REQUIRE_CLAUDE=1`, which makes the tests that need `claude` fail instead of skip when it
-is missing. On Linux it then type-checks the mod. To do it locally, load the mod once
-(`claude --plugin-dir mods/speckit-board` lays `.claude-plugin/types/` and `tsconfig.json`), then
-run:
+is missing. On Linux it then type-checks the mod. To do it locally, install the pinned tools once and
+load the mod once (`claude --plugin-dir mods/speckit-board` lays `.claude-plugin/types/` and
+`tsconfig.json`), then run:
 
 ```sh
-npx -p typescript@5.6.3 tsc -p mods/speckit-board --noEmit
+npm ci
+npx --no-install tsc -p mods/speckit-board --noEmit
 ```
 
-Last on Linux it lints the tracked JavaScript with the same eslint 10.8.0 that
+Last on Linux it lints the tracked JavaScript with the same eslint that
 [`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs at each commit, configured by
-[`eslint.config.mjs`](eslint.config.mjs) with `@eslint/js`'s recommended rules written out, since
-pre-commit's own environment cannot import them. Locally:
+[`eslint.config.mjs`](eslint.config.mjs) with `@eslint/js`'s recommended rules written out, so
+eslint is the only lint package. Locally, after `npm ci`:
 
 ```sh
-npx -y eslint@10.8.0 $(git ls-files '*.js' '*.mjs' '*.cjs')
+npx --no-install eslint $(git ls-files '*.js' '*.mjs' '*.cjs')
 ```
+
+#### Where each version is pinned
+
+Each version is written in one place, so a Dependabot pull request changes it everywhere at once
+and is never red because a second copy lags behind; `test/versions.test.mjs` holds it.
+
+| Version | Pinned in | Moved by |
+|---|---|---|
+| eslint, typescript | `package.json` `devDependencies` and `package-lock.json`; CI and the pre-commit eslint hook run them from `node_modules` | Dependabot (npm) |
+| Claude Code in CI | `package.json` `config.claudeCode`, read by `test.yml` and `full-run.yml`: the oldest version the team supports | by hand, on purpose; Dependabot does not see it |
+| each GitHub Action | its `uses:` lines, a commit SHA; Dependabot bumps every copy in one pull request, and `github/codeql-action`'s steps as one group, since they must share a version (#146, #147 and #149 each failed alone) | Dependabot (github-actions) |
+| gitleaks, shellcheck, pre-commit-hooks | `.pre-commit-config.yaml` | Dependabot (pre-commit) |
+| vhs and its two checksums | the `live-board` job's `env:` in `test.yml` | by hand: a release binary Dependabot cannot see |
 
 A second job, `live-board`, runs the board's interactive checks on Linux and macOS
-([#116](https://github.com/PIsberg/speckit-agents/issues/116)): it installs vhs 0.11.0 from its
-release, the checksum pinned, and ttyd and ffmpeg from apt or Homebrew, then runs
+([#116](https://github.com/PIsberg/speckit-agents/issues/116)): it installs vhs from its
+release at the version and checksum the job's `env:` pins, and ttyd and ffmpeg from apt or Homebrew, then runs
 `node tools/live-board.mjs` and `node tools/live-board.mjs pane`, a real interactive Claude Code
 session against the fake API ([Board mod](#board-mod-experimental)). A failed check fails the job and
 keeps the screens vhs wrote as an artifact.

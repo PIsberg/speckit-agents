@@ -7,10 +7,14 @@ repos:
   rev: 3.0.0
   hooks:
   - id: shellcheck
-- repo: https://github.com/pre-commit/mirrors-eslint
-  rev: v10.8.0
+# The eslint package.json pins, from node_modules (`npm ci` once): Dependabot moves it in one place.
+- repo: local
   hooks:
   - id: eslint
+    name: eslint (the version package.json pins)
+    entry: npx --no-install eslint
+    language: system
+    files: .(js|mjs|cjs)$
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v6.0.0
   hooks:
