@@ -29,6 +29,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `tools/usage.mjs`: a session's input tokens from its transcript; measure a skill or agent change
   before and after. `tools/live-board.mjs`: the board's interactive checks, vhs driving a real session
   against a fake API at $0; run it after changing what the board draws or its buttons do.
+  `tools/drift.mjs`: finished features' test tasks against the tests as they are now, no model.
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key).
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
@@ -36,7 +37,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 360 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 368 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 and `SPECKIT_REQUIRE_CLAUDE=1`
@@ -62,7 +63,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Twins, each held by `test/board-mod.test.mjs`: `fingerprint()` in the hook and in
   `mods/speckit-board/hooks/model.ts` (also pinned in the mod's `model.test.ts`); the mod's
   `ROLE_COLOR` and each `agents/*.md` `color:` line; its `MAX_RED` and the hook's; its `WORDS` and the
-  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
+  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `TEST_PATTERNS` in the hook and in `tools/drift.mjs`, held by `test/drift.test.mjs`. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
   in the hook and in `install.mjs`, which writes the exact allow rule for the hook's export line (#122,
   #123), held by `test/hook-patch.test.mjs`. A change to the line adds the old rule to
   `OLD_NO_NETWORK_RULES` in `install.mjs`, so a reinstall replaces it.
