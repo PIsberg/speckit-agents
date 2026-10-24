@@ -4,6 +4,7 @@ name: spec-gatekeeper
 description: Spec Kit final gate before a PR. Read-only check that every requirement and acceptance scenario in spec.md has a test that would fail if it broke, that all tasks are done, and that the repo's real gates pass. Returns APPROVED or REJECTED with file:line evidence. Use after implementer.
 tools: Bash, Read
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
+omitClaudeMd: true
 model: sonnet
 color: red
 hooks:

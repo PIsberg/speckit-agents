@@ -4,6 +4,7 @@ name: security-reviewer
 description: Opt-in security review agent. Reviews feature specs for threat modeling, security requirements, and data exposure, and reviews implementation results (diffs, dependencies, vulnerabilities, and secrets) before handover.
 tools: Bash, Read
 disallowedTools: Write, Edit, MultiEdit, NotebookEdit
+omitClaudeMd: true
 model: sonnet
 color: magenta
 hooks:

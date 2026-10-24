@@ -29,6 +29,19 @@ test('agents with one capability declare one tools line, so they share its prefi
   }
 });
 
+// An agent that cannot write takes everything from its launch prompt and the files its Inputs name, so
+// it starts without CLAUDE.md (omitClaudeMd, the Goldfish reviewers of google/elephant-goldfish-model):
+// that block is written again on every launch. One that writes keeps it, for the repo's build commands
+// and conventions. test/e2e.test.mjs shows Claude Code leaving the files out.
+test('an agent declares omitClaudeMd: true exactly when it cannot write', () => {
+  for (const name of AGENT_FILES) {
+    const content = fs.readFileSync(path.join(AGENTS_DIR, `${name}.md`), 'utf8');
+    const front = content.split(/^---$/m)[1];
+    const readOnly = /^disallowedTools:.*\bWrite\b/m.test(front);
+    assert.equal(/^omitClaudeMd: true$/m.test(front), readOnly, `${name}.md: omitClaudeMd: true ${readOnly ? 'missing' : 'on an agent that writes'}`);
+  }
+});
+
 test('read-only agents retain disallowedTools for write/edit operations', () => {
   const readOnlyAgents = ['spec-auditor', 'spec-gatekeeper', 'security-reviewer'];
   for (const name of readOnlyAgents) {

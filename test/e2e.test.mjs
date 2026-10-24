@@ -400,6 +400,32 @@ test("an agent's first message puts Claude Code's context ahead of the launch pr
   assert.ok(blocks.slice(at + 1).some((b) => b.cache_control), 'the first breakpoint comes after the prompt');
 });
 
+// The agents that cannot write declare omitClaudeMd: true, so their first message carries no CLAUDE.md:
+// they take everything from the launch prompt and the files their Inputs name, as the Goldfish reviewers
+// of google/elephant-goldfish-model do. That context block is written again on every launch (#133), so
+// each of these launches skips it. test-writer, which can write, keeps both files as the control.
+test("the agents that cannot write start without the user's and the project's CLAUDE.md", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  s.write('CLAUDE.md', 'E2E PROJECT CLAUDE MD\n');
+  fs.writeFileSync(path.join(s.cfg, 'CLAUDE.md'), 'E2E USER CLAUDE MD\n');
+  const r = await session(s, {
+    [MAIN]: [agent('test-writer', 'e2e writer'), agent('spec-auditor', 'e2e auditor'), agent('spec-gatekeeper', 'e2e gatekeeper'), agent('security-reviewer', 'e2e security')],
+    'e2e writer': [say('RED')],
+    'e2e auditor': [say('No findings.\nVERDICT: PASS')],
+    'e2e gatekeeper': [say('APPROVED')],
+    'e2e security': [say('No findings.\nVERDICT: PASS')],
+  });
+  // The whole first request, system blocks included, so the file cannot move somewhere unchecked.
+  const context = (k) => strings(r.requests[k][0] ?? []).join('\n');
+  assert.match(context('e2e writer'), /E2E PROJECT CLAUDE MD/, `test-writer keeps the project CLAUDE.md: ${story(r)}`);
+  assert.match(context('e2e writer'), /E2E USER CLAUDE MD/, `test-writer keeps the user CLAUDE.md: ${story(r)}`);
+  for (const k of ['e2e auditor', 'e2e gatekeeper', 'e2e security']) {
+    assert.ok(r.requests[k][0], `${k} was launched: ${story(r)}`);
+    assert.doesNotMatch(context(k), /E2E (PROJECT|USER) CLAUDE MD/, `${k} starts without CLAUDE.md`);
+    assert.match(context(k), new RegExp(`${k}: go`), `${k} still gets its launch prompt`);
+  }
+});
+
 // #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
 // --plugin-dir: Claude Code starts it, it sets the status line and raises its startup toast, and its
 // commands answer with no model call (004 quickstart L1, L2). Needs no hook of the team.

@@ -103,7 +103,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 
 | Tool | Why | Check |
 |---|---|---|
-| [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291) | `claude --version` |
+| [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291); the `omitClaudeMd` agent field for the read-only agents to start without your `CLAUDE.md` (verified on 2.1.293 and 2.1.310) | `claude --version` |
 | [Node](https://nodejs.org) 18+ | every hook is a Node script | `node --version` |
 | [git](https://git-scm.com) | the hooks use it to find the repo and diff an agent's work | `git --version` |
 | [Spec Kit](https://github.com/github/spec-kit) (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11 and 1.1.2) |
@@ -546,6 +546,17 @@ implementer gets the slice's task IDs and test-writer's report for them, and its
 it to read `tasks.md`, the failing tests and the code they touch, not `spec.md`, `plan.md`,
 `research.md` or `data-model.md`. The tests are its spec.
 
+The three agents that cannot write, spec-auditor, spec-gatekeeper and security-reviewer, also start
+without your `CLAUDE.md` files, the user's and the project's (`omitClaudeMd: true` in their
+frontmatter). What they check is in the files their Inputs name, and a rule they must hold belongs in
+the constitution, which all three read. spec-gatekeeper still opens the project's `CLAUDE.md` as a
+file when the CI workflow does not name the gates. The idea is the Goldfish reviewer of
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model), which reads only
+the target and the sources it is pointed at. Claude Code writes that context again on every launch,
+so each of these launches skips it: 17,351 characters less in the first message on the machine
+measured ([CLAUDE.md in the read-only agents](docs/measurements.md#claudemd-in-the-read-only-agents)).
+The agents that write keep both files, for the repo's build commands and conventions.
+
 What the architect found is handed on in `tasks.md`: every task names the file and symbol of each
 function, type, test helper and API member it uses, so test-writer and implementer go straight to
 it. In the 004 run the plugin API's types were explored by the architect, then by implementer and
@@ -972,7 +983,8 @@ the repo, which lets parallel implementers in worktrees pass the same gate.
 
 ### Context budget
 
-Every agent starts from nothing, 11k to 14k tokens before it reads a file, and the main session
+Every agent starts from nothing, 11k to 14k tokens before it reads a file, your `CLAUDE.md` files
+included except in the three that cannot write, and the main session
 re-reads its whole context with every response. So the skill launches a fresh agent for every
 phase, passes each only what its Inputs section lists, caps every report, launches in the
 foreground and asks for a fresh session; the architect reads each file once and writes each fact
@@ -1287,7 +1299,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 354 tests:
+`npm test` runs 356 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1296,9 +1308,9 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/install.test.mjs`](test/install.test.mjs) | 94 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
-| [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 2 | the agents' `tools:` lines, one per capability, and the read-only agents' `disallowedTools` |
+| [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 46 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 4 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
@@ -1388,7 +1400,7 @@ need no login and cost nothing.
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
-  36 of the 46 tests fail (the 34 scripted ones and the two blocking no-model cases); the other ten
+  36 of the 47 tests fail (the 34 scripted ones and the two blocking no-model cases); the other eleven
   do not depend on a hook.
 - **The board mod.** One test loads `mods/speckit-board` with `--plugin-dir` in a headless session and
   checks its status line, its startup toast, and that `/speckit-board status`, `clear` and an unknown
@@ -1417,7 +1429,10 @@ need no login and cost nothing.
   not ([#133](https://github.com/PIsberg/speckit-agents/issues/133)); the real API does not count
   that header in the cache key. An eighth pins what does cost a relaunch: Claude Code's context
   blocks come ahead of the launch prompt in the first message with no cache breakpoint between them,
-  so a relaunch with another prompt writes them again.
+  so a relaunch with another prompt writes them again. A ninth pins what `omitClaudeMd: true` leaves
+  out: with a marker in the project's `CLAUDE.md` and in the user's, test-writer's first request
+  carries both, and spec-auditor's, spec-gatekeeper's and security-reviewer's carry neither, but
+  still their launch prompt. Without the field on those three it fails.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -1694,6 +1709,11 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   needs Claude Code to send the typed `/speckit-team` to the `UserPromptExpansion` hook (seen on
   2.1.293 in CI and 2.1.296); without that, a second request in the same session keeps the first
   one's team if it had spec-auditor, and a new session starts afresh.
+- **A rule only in `CLAUDE.md` does not reach the read-only agents.** spec-auditor, spec-gatekeeper
+  and security-reviewer start without the user's and the project's `CLAUDE.md`
+  ([Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose)). A rule they must check goes in
+  the constitution. A Claude Code older than the `omitClaudeMd` field gives them the files as
+  before; which versions lack it was not checked.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
