@@ -1391,7 +1391,8 @@ and is never red because a second copy lags behind; `test/versions.test.mjs` hol
 A clone needs `npm ci` once before a commit that touches JavaScript: pre-commit's eslint hook runs
 `node node_modules/eslint/bin/eslint.js` and fails with `Cannot find module` until the pinned eslint
 is installed. It calls the file rather than `npx --no-install eslint` because, with no
-`node_modules`, npx ran eslint 10.13.0 from its own cache and the hook passed (2026-10-24).
+`node_modules`, npx ran another eslint from its own cache (10.13.0, not the pinned one) and the hook passed
+(2026-10-24).
 
 A second job, `live-board`, runs the board's interactive checks on Linux and macOS
 ([#116](https://github.com/PIsberg/speckit-agents/issues/116)): it installs vhs from its
