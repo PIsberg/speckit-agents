@@ -96,6 +96,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - [Known limits](#known-limits)
 - [Uninstall](#uninstall)
 - [Developing](#developing)
+- [Publications](#publications)
 
 ## Getting started
 
@@ -1908,6 +1909,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
+| [`docs/spec-kit-and-speckit-agents.html`](docs/spec-kit-and-speckit-agents.html) | the presentation on Spec Kit and this team, one self-contained HTML file ([Publications](#publications)) |
 | [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 008 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
@@ -2019,3 +2021,12 @@ stale. One is a false positive: feature 007's FR-014 is a documentation requirem
 task that names test files. The idea is the drift report of
 [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
 (`docs/designs/drift_report.md`), which compares checked-in specs with the code.
+
+## Publications
+
+- [Spec Kit & speckit-agents: presentation](docs/spec-kit-and-speckit-agents.html): the slides on
+  Spec Kit and this agent team. It is one self-contained HTML file: download it and open it in a
+  browser. GitHub shows the file's source rather than the slides.
+- Video: [Spec Kit & speckit-agents on YouTube](https://www.youtube.com/watch?v=q6-1iJ9OndI)
+
+  [![Watch the video on YouTube](https://img.youtube.com/vi/q6-1iJ9OndI/hqdefault.jpg)](https://www.youtube.com/watch?v=q6-1iJ9OndI)
