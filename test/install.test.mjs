@@ -215,6 +215,21 @@ test('installed skill, owners and reviewers agree on contesting a finding and re
   }
 });
 
+// A plan that builds what the repo already has costs every later phase: a test-writer and an implementer
+// for code that should not exist. The architect greps before it adds a function, type or module, and
+// spec-auditor checks the tasks' new names the same way and fails a second implementation (the reuse
+// check of google/elephant-goldfish-model's agents/zoom_out.md). The auditor's half is bounded to the
+// names the tasks list, so it reads matching lines, not the codebase.
+test('installed architect and spec-auditor check the plan for code the repo already has', () => {
+  const architect = installedAgent('architect');
+  const auditor = installedAgent('spec-auditor');
+  assert.match(architect, /grep the source for one that already does the job/, 'architect looks before it adds');
+  assert.match(architect, /reuse it[^.]*file and symbol/, 'and names what it reuses in the task');
+  assert.match(auditor, /new (files?, )?functions?[^.]*grep the source/i, 'spec-auditor greps for each new name the tasks list');
+  assert.match(auditor, /second implementation[^.]*HIGH[^.]*architect/, 'a duplicate is HIGH and the architect owns it');
+  assert.match(auditor, /read only the (matching|lines)/i, 'the check reads matching lines only');
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call

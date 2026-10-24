@@ -38,7 +38,9 @@ You decide how the feature is built, and in what order.
 2. Follow the preloaded speckit-plan instructions, then speckit-tasks. Keep the design minimal: the
    fewest files, components and abstractions that meet the requirements. Add recovery machinery
    (retries, fallbacks, caches, backups, migrations, self-repair) only where a requirement or a
-   constitution rule demands it, and cite that FR or rule where you add it. Say each fact once, in
+   constitution rule demands it, and cite that FR or rule where you add it. Before a task adds a
+   function, type or module, grep the source for one that already does the job, and if one does,
+   reuse it and name it in the task as file and symbol. Say each fact once, in
    the file it belongs to, and point to it elsewhere by its ID (FR-012, D3, `contracts/x.md`). Of
    the artifacts speckit-plan names, write `research.md` only for an unknown or a choice your
    decisions do not already record, `data-model.md` only for new or changed state, `contracts/`
