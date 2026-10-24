@@ -3,6 +3,34 @@
 Checks run in a real Claude Code session, by date, newest first; what a check did not see is
 said where it was run. The README's [Live results](../README.md#live-results) is the summary.
 
+## Lessons from elephant-goldfish-model
+
+<details>
+<summary><b>2026-10-24</b>: Claude Code 2.1.310, Windows 11, real models on the owner's subscription (#160, #162 to #165)</summary>
+
+Setup: scratch repos built by `buildRepo` from `tools/full-run.mjs` (the full-run fixture), the
+branch's team installed into a folder of its own and copied into each repo's `.claude/`, so the
+project agents overrode the installed ones, which lacked `omitClaudeMd`; folder trust added for the
+run and removed after. Headless `claude -p` under the owner's login, no API key, so not through
+`tools/full-run.mjs`'s own `main()`: a scratch driver ran the same turns and judged them with the
+branch's `checkRun`, `answer` and `newMarker`. `~/.claude/CLAUDE.md` (17 KB) loaded in every
+session. Six sessions, $2.18 in all.
+
+| Check | Result |
+|---|---|
+| #160, `omitClaudeMd` ($0.13 and $0.02) | Seen. A random marker in the project's `CLAUDE.md`; each agent asked to repeat any marker in its context or say `UNKNOWN`. spec-auditor, spec-gatekeeper and security-reviewer answered `UNKNOWN`, product-owner the exact marker; their transcripts agree. |
+| #163, reuse check ($0.12) | Seen. A plan whose T002 builds `plus(a, b)` beside `add(a, b)` in `src/math.js`: spec-auditor reported `D1 (HIGH). Owner: architect.` citing both places, and the hook recorded `VERDICT: FAIL`. |
+| #162, a recorded ruling ($0.13) | Seen. The same feature with the user's ruling under `## Decisions`: spec-auditor listed the duplicate under "Reviewed and not raised", citing the ruling, and recorded `VERDICT: PASS`. It raised one MEDIUM the ruling did not cover (no test file for the new module). |
+| #162, a contested finding ($0.14) | Seen. The architect, sent a wrong finding (FR-002 "has no task"; T001 and T003 cite it), reported `H1 (contested)` with `tasks.md:5`, `tasks.md:7` and `spec.md:15`, and changed no file. |
+| #164 and #165, a full `/speckit-team` run ($1.64, 2 turns) | Passed every check of `checkRun`: audit PASS, `APPROVED`, every task ticked, the repo's `npm test` green, 11 foreground launches, no wait. The marker was in the main session's transcript and in none of the 11 agent transcripts. spec-auditor's transcript held no `CLAUDE.md`; spec-gatekeeper's held it only as a tool result, from reading the file for gates (no CI workflow in the fixture). `tools/drift.mjs` on the result: 2 test tasks checked, no drift, so test-writer did put the FR IDs in its tests. |
+
+Not seen: the skill's half of a contest (asking the user, then the dictated revision that records the
+ruling): the full run's first audit passed, so no finding was routed. security-reviewer in a full run
+(it is opt-in). The answer turn approved the spec, plan and tasks in advance, so the run went from
+the team question to the hand-over in one turn and the spec and plan stops were not exercised.
+
+</details>
+
 ## Project knowledge
 
 <details>

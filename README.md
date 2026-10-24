@@ -1323,7 +1323,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 360 tests:
+`npm test` runs 368 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1336,6 +1336,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 8 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples and SC IDs skipped, the exit codes, and its test patterns against the hook's |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
@@ -1544,7 +1545,9 @@ audit gate, the verdict and retry records, the retry limit, `ends` refusing a re
 full `/speckit-team` runs and, on 2026-10-10, the fast track. On 2026-10-12, in an interactive session
 against a fake API (no model ran): the fast track's hooks, and the team question answered Build only.
 On 2026-10-16, with real models: a `--project` block reaching implementer and security-reviewer, and
-security-reviewer's result review with its `ends` check.
+security-reviewer's result review with its `ends` check. On 2026-10-24, with real models: the read-only
+agents starting without `CLAUDE.md`, the reuse check, a contested finding and a recorded ruling, and a
+full run passing the leak and drift checks.
 The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
@@ -1747,6 +1750,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   ([Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose)). A rule they must check goes in
   the constitution. A Claude Code older than the `omitClaudeMd` field gives them the files as
   before; which versions lack it was not checked.
+- **The drift check matches IDs as text.** `tools/drift.mjs` cannot tell feature 003's FR-014 from
+  feature 007's: the same ID of another feature in the same test file hides drift, so no problems
+  reported is not proof that every requirement is still tested. A task that names test files but is
+  not a test task (a docs task) can be reported too.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -1875,6 +1882,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
+| [`tools/drift.mjs`](tools/drift.mjs) | finished features' test tasks against the tests as they are now, with no model ([Checking old features for drift](#checking-old-features-for-drift)) |
 | [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
@@ -1964,3 +1972,29 @@ first launch is never listed, since an agent's body is a system block of its own
 written fresh. On the 53-agent run of 2026-10-09 and 10 it lists none. There, 52 first requests read 0 to
 4,366 tokens back (writer agents about 3,000 from each other's launches: their shared `tools:`
 line), and one test-writer, relaunched 3 minutes after the last, read its whole 13,984.
+
+### Checking old features for drift
+
+spec-gatekeeper checks a feature once, before its PR. Later changes can drop or move the tests it
+traced, and nothing looks again. `tools/drift.mjs` does, for every feature under `specs/`, with no
+model and no tokens:
+
+```sh
+node tools/drift.mjs <repo>
+```
+
+For each ticked task in a `tasks.md` that names a test file and cites FR IDs, it reports the file if
+it is gone, and each cited FR ID that none of the task's test files holds any more (test-writer puts
+the ID in each test's name or a comment). One line per problem, then a count; exit 1 with drift, 0
+without, 2 when the repo has no `specs/`. A file counts as test code by the hook's own patterns and
+`.specify/test-paths`. In a git repo a path git never tracked is skipped, since tasks also name
+example inputs and paths inside a subproject. Success criteria (SC-) are not looked for: test-writer
+does not promise to cite them.
+
+Run on this repository on 2026-10-24, it checked 32 test tasks in 7 features and reported 11
+problems. Ten are feature 003's, whose tests moved from `test/hook.test.mjs` to
+`test/hook-patch.test.mjs` after its tasks were written: the coverage is there, the references are
+stale. One is a false positive: feature 007's FR-014 is a documentation requirement, cited by a docs
+task that names test files. The idea is the drift report of
+[google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
+(`docs/designs/drift_report.md`), which compares checked-in specs with the code.
