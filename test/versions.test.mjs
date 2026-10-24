@@ -53,7 +53,9 @@ test('versions: vhs and its checksums are one env block, used through it', () =>
 test('versions: the pre-commit eslint hook runs the eslint package.json pins', () => {
   const pc = read('.pre-commit-config.yaml');
   assert.doesNotMatch(pc, /mirrors-eslint/, 'no second eslint pin in pre-commit');
-  assert.match(pc, /- id: eslint\n\s+name: [^\n]+\n\s+entry: npx --no-install eslint\n\s+language: system/);
+  // Not npx: without node_modules, `npx --no-install eslint` ran eslint 10.13.0 from npx's cache and
+  // passed (2026-10-24). The file itself is only the pinned eslint, and without `npm ci` the hook fails.
+  assert.match(pc, /- id: eslint\n\s+name: [^\n]*npm ci[^\n]*\n\s+entry: node node_modules\/eslint\/bin\/eslint\.js\n\s+language: system/);
 });
 
 test('versions: Dependabot bumps codeql-action as one group, and watches npm and pre-commit too', () => {

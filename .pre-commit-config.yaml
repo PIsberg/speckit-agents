@@ -8,13 +8,14 @@ repos:
   hooks:
   - id: shellcheck
 # The eslint package.json pins, from node_modules (`npm ci` once): Dependabot moves it in one place.
+# The file itself, not npx: without node_modules, npx ran another eslint from its cache and passed.
 - repo: local
   hooks:
   - id: eslint
-    name: eslint (the version package.json pins)
-    entry: npx --no-install eslint
+    name: eslint (the version package.json pins; run npm ci once)
+    entry: node node_modules/eslint/bin/eslint.js
     language: system
-    files: .(js|mjs|cjs)$
+    files: \.(js|mjs|cjs)$
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v6.0.0
   hooks:

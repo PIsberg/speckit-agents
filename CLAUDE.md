@@ -45,7 +45,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   skipping), then on Linux `npm ci` and type-checks the board mod:
   `npx --no-install tsc -p mods/speckit-board --noEmit`, after a
   `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with
-  `npx --no-install eslint` (`eslint.config.mjs`; pre-commit's eslint hook runs the same one). A
+  `npx --no-install eslint` (`eslint.config.mjs`; pre-commit's eslint hook runs the same one, from
+  `node_modules`, so a clone needs `npm ci` once before it can commit JavaScript). A
   `live-board` job runs `tools/live-board.mjs` on Linux and macOS (vhs from its release, version and
   checksums in the job's `env:`).
 - Every version is pinned in one place (README.md, "Where each version is pinned"), held by
