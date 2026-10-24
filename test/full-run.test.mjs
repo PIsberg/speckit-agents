@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildRepo, checkRun } from '../tools/full-run.mjs';
+import { answer, buildRepo, checkRun, newMarker } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -50,7 +50,10 @@ function state({ verdict = 'PASS', word = 'APPROVED', tasks = '- [x] T001 Write 
   return { repo, usage: { main: { launches, waits } } };
 }
 // A resumed session's total_cost_usd counts every turn so far, so a run costs its last turn's figure.
-const failures = (s, costs = [0.5, 1.5], maxCost = 6) => checkRun({ repo: s.repo, usage: s.usage, costs, maxCost });
+// The leak check's inputs default to a clean run: the marker was sent, and one agent transcript lacks it.
+const MARKER = 'LEAK-0123456789abcdef';
+const failures = (s, costs = [0.5, 1.5], maxCost = 6, leak = {}) => checkRun({ repo: s.repo, usage: s.usage, costs, maxCost,
+  marker: MARKER, markerSent: true, agentTexts: [{ file: 'agent-a.jsonl', text: '{"prompt":"T001: go"}' }], ...leak });
 
 test('full run: a run that passed every check reports no failure (#46)', () => {
   assert.deepEqual(failures(state()), []);
@@ -100,4 +103,32 @@ test('full run: the workflow runs only by hand, weekly or on the e2e label, on L
   assert.match(wf, /if: failure\(\)\n\s+uses: actions\/upload-artifact@[0-9a-f]{40}/);
   assert.doesNotMatch(wf, /retry|continue-on-error/i, 'a retry would hide a real regression');
   assert.match(wf, /@anthropic-ai\/claude-code@2\.1\.293/, 'the Claude Code version the test job pins');
+});
+
+// The skill passes an agent only what its Inputs list, never the conversation (README, "Handoffs are lossy
+// on purpose"). Only a real model decides what goes into a launch prompt, so the full run sends a marker
+// in its answers marked as not for any agent, and fails if an agent's transcript holds it (the
+// parent-only marker of google/elephant-goldfish-model's tests/integration/test_claude.py).
+test('full run: the answers carry a parent-only marker, new each run, that no agent may receive', () => {
+  const [a, b] = [newMarker(), newMarker()];
+  assert.match(a, /^LEAK-[0-9a-f]{16}$/);
+  assert.notEqual(a, b, 'a new marker each run, so an old transcript cannot satisfy the check');
+  const text = answer(a);
+  assert.ok(text.includes(a), 'the answer carries the marker');
+  assert.match(text, /not for any agent/, 'and says it is not for any agent');
+  assert.match(text, /^Full team. I approve the spec, the plan and the tasks, and I take every recommended option./, 'the answer itself is unchanged');
+});
+
+test('full run: the leak check fails on the marker in an agent transcript, and never passes on nothing', () => {
+  const leaked = failures(state(), undefined, undefined, { agentTexts: [{ file: 'agent-a.jsonl', text: 'x' }, { file: 'agent-b.jsonl', text: `T001: go. ${MARKER}` }] });
+  assert.equal(leaked.length, 1, JSON.stringify(leaked));
+  assert.match(leaked[0], /marker/);
+  assert.match(leaked[0], /agent-b.jsonl/, 'names the transcript it reached');
+  assert.doesNotMatch(leaked[0], /agent-a/);
+  const none = failures(state(), undefined, undefined, { agentTexts: [] });
+  assert.equal(none.length, 1, JSON.stringify(none));
+  assert.match(none[0], /no agent transcript/);
+  const unsent = failures(state(), undefined, undefined, { markerSent: false });
+  assert.equal(unsent.length, 1, JSON.stringify(unsent));
+  assert.match(unsent[0], /never sent/);
 });
