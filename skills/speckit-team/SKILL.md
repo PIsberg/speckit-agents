@@ -217,7 +217,7 @@ Then make sure the work is on a feature branch. Spec Kit's git extension creates
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory
 (`git switch -c <its basename>`); uncommitted work moves with it.
-If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), then relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to the spec review stop.
+If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), a contested finding as in step 3, then relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to the spec review stop.
 **Stop:** the user reviews `spec.md`. Once they approve, commit it, and the constitution if step 0b
 wrote it, on that branch, in the message that launches the architect: Claude Code runs the calls of
 one message in order, so the commit lands before the architect starts and needs no request of its
@@ -251,6 +251,13 @@ Only when spec-auditor is in the team; without it, skip this step.
 Commit the approved spec, plan and tasks in the message that launches it (see step 1). On FAIL,
 send each CRITICAL and HIGH finding to its owner (product-owner or architect), then re-audit.
 An owner not in the team (absent, unchosen) cannot take a finding: hand it to the user.
+An owner may report a finding `contested` with the file:line that shows it wrong, and edits nothing
+for it. Before the re-audit, hand each contested finding to the user with AskUserQuestion: the
+finding, the owner's evidence, and two options, fix it or uphold the contest. Do not judge it
+yourself. A fix goes back to the owner as above. An upheld contest goes to the owner as a `dictated:`
+revision that records the ruling (architect under `## Decisions`, product-owner under
+`## Clarifications`), so the next audit does not raise it again; send it in the message that carries
+the other fixes.
 MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
 After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
 or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made

@@ -39,6 +39,8 @@ those lines.
   with no requirement.
 - Rate a finding by what breaks if it ships. Severity measures impact, not confidence, and not how
   much you want it fixed.
+- A finding the user has ruled out, recorded under `## Decisions` (plan) or `## Clarifications`
+  (spec), is not raised again unless you cite something the ruling did not consider.
 
 ## Report
 At most 60 lines; the main session reads it in full. Each CRITICAL or HIGH finding: its ID, its

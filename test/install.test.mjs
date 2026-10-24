@@ -186,6 +186,35 @@ test('installed speckit-team skill and architect agree on the decisions section 
   assert.match(skill, /at most 4 questions/);
 });
 
+// An owner may contest a finding with file:line evidence instead of editing for it (the CONTEST path of
+// google/elephant-goldfish-model's skills/egm_resolve/SKILL.md). The skill hands the contest to the user,
+// the owner records an upheld one, and the reviewers do not raise a recorded ruling again. Each half is
+// in another file: an owner that may not contest makes every wrong finding a revision and a re-audit.
+test('installed skill, owners and reviewers agree on contesting a finding and recording the ruling', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const read = (...p) => flat(fs.readFileSync(path.join(dir, ...p), 'utf8'));
+  const audit = flat(skillSection(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'), '## 3. Audit: spec-auditor'));
+  for (const owner of ['architect', 'product-owner']) {
+    const text = read('agents', `${owner}.md`);
+    assert.match(text, /`contested`/, `${owner} may report a finding contested`);
+    assert.match(text, /contested[^.]*file:line/, `${owner} cites file:line evidence for a contest`);
+    assert.match(text, /do not edit for it/i, `${owner} leaves a contested finding unedited`);
+  }
+  assert.match(read('agents', 'architect.md'), /upheld[^.]*`## Decisions`/, 'architect records an upheld contest under ## Decisions');
+  assert.match(read('agents', 'product-owner.md'), /upheld[^.]*`## Clarifications`/, 'product-owner records an upheld contest under ## Clarifications');
+  assert.match(audit, /`contested`/, 'step 3 handles a contested finding');
+  assert.match(audit, /contested[^.]*user/i, 'step 3 hands a contest to the user');
+  assert.match(audit, /AskUserQuestion/, 'step 3 asks the user about it');
+  assert.match(audit, /upheld[^.]*`dictated:`/, 'an upheld contest goes to its owner as a dictated revision');
+  const spec = flat(skillSection(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'), '## 1. Spec: product-owner'));
+  assert.match(spec, /security-reviewer[\s\S]*contested finding as in step 3/i, 'the spec-phase security review takes contests the same way');
+  for (const reviewer of ['spec-auditor', 'security-reviewer']) {
+    const text = read('agents', `${reviewer}.md`);
+    assert.match(text, /`## Decisions`[^.]*`## Clarifications`[^.]*not (a finding|raised) again/, `${reviewer} does not raise a recorded ruling again`);
+  }
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call

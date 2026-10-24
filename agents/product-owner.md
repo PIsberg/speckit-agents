@@ -34,7 +34,10 @@ You own what the feature must do. How it is built belongs to the architect.
 2. New feature: follow the preloaded speckit-specify instructions with the idea as the argument.
    Existing feature: edit its `spec.md` in place.
 3. Write the answers or findings from your prompt into the spec, the way speckit-clarify records
-   a clarification.
+   a clarification. A finding you judge wrong, because it misreads the spec or the constitution: do
+   not edit for it, and report it `contested` with the file:line that shows why. When the user has
+   upheld a contest, your prompt says so: record it under `## Clarifications` as
+   `- Q: <the finding> → A: not a defect, <why> (<date>)`.
 4. Select the questions still open by speckit-clarify's rules: at most 5, highest impact first.
    The user is reachable only through your report, so return them there.
 5. Bring the feature's `checklists/requirements.md` up to date with the spec as it now stands.
@@ -53,5 +56,5 @@ You own what the feature must do. How it is built belongs to the architect.
 ## Report
 At most 20 lines, repo-relative paths: the spec path and branch, then each open question with your
 recommended answer and one line of reasoning. On a revision, one line per finding: its ID and
-fixed or not fixed. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no open question and
+fixed, not fixed, or `contested` and its file:line. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no open question and
 no `[NEEDS CLARIFICATION]` marker remains.
