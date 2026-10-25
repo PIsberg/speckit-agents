@@ -147,15 +147,14 @@ role's lane check and report then do not run).`
 
 The skill does not repeat it; it adds its one-line team notice as in `## Team`.
 
-## 8. When a role ends (plan D8)
+## 8. When a role ends (plan D8, D11)
 
-A role record is live from its Skill call to the end of that turn. It has ended once its `transcript`
-holds, after `offset`, a user prompt row: `type: 'user'`, not `isMeta`, not `isCompactSummary`, not
-`isSidechain`, `origin.kind` not `task-notification`, and `message.content` a string or a list with
-no `tool_result` block. A typed prompt, an interrupt (`[Request interrupted by user]`) and the prompt
-after a turn that an API error ended (StopFailure, no Stop) are such rows; an AskUserQuestion answer
-(a tool result), a Skill's body (`isMeta`) and a compact summary are not. A transcript that cannot be
-read leaves the record live.
+A role record is live from its Skill call to the end of that turn. It has ended once the hook input
+being handled carries a `prompt_id` (a non-empty string) other than the record's `prompt_id`. Claude
+Code gives every prompt a new one: a typed prompt, the prompt after an interrupt or after a turn an API
+error ended (StopFailure, no Stop); an AskUserQuestion answer (a tool result) and a Skill's body keep
+the turn's (research R5). A record or an input without a string `prompt_id` leaves the record live.
+The transcript is not read for this.
 
 An ended record is removed where it is read (section 4 step 3, section 5, section 6 at Stop), never
 closed, with the system message `speckit-team: the <role> role ended with its turn and no Stop ran;

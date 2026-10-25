@@ -112,14 +112,15 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   where its `disallowedTools` has `Write`. Ended record (contract section 8, plan D8, H1): the test writes
   the record's `transcript` as JSONL with rows after `offset`, one case per row kind section 8 names as
   ending or keeping the role; an ended record of each lane kind denies nothing, gives section 8's message
-  once and is removed; an unreadable transcript keeps the role's denials.
+  once and is removed; an unreadable transcript keeps the role's denials. Ended-record cases: T030
+  replaces them (plan D11).
 - [X] T011 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008, then
   `recordPass(s)`; the main script calls the Skill `speckit-role-architect`, then `wfile` to `src/x.js`
   (denied with architect's lane text), then the Skill `speckit-role-spec-auditor`, then `wfile` to
   `specs/001-x/spec.md` (denied as read-only), which shows the Skill's own rows keep the role live on
   the Claude Code under test. After the session, `run(dir, ['scope', 'role'], …)` on a role record over
   that session's real transcript with `offset: 0` (the typed prompt's row lies after it) decides nothing
-  (contract section 8). Fails with `SPECKIT_E2E_NO_HOOK=1`.
+  (contract section 8). Fails with `SPECKIT_E2E_NO_HOOK=1`. The second half: T031 replaces it (plan D11).
 - [X] T012 [US3] Implement in `hooks/speckit-team.mjs`, scope mode: `const ROLE_LANES` (contract
   section 5), rule `role` resolved from the session's role record to its rule and prefixes, rule `none`
   denying every path, denial texts naming the role; reuse `readState`, `roleFile`, `inLane`,
@@ -129,7 +130,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   (`false` for an unreadable transcript) and `function dropRole(rec: object): string` (removes the record,
   returns section 8's message; the caller sends it as `systemMessage` with its own outcome, through
   `emit` at the end, so a Skill call still reaches its gate and new record), called before the lane rule
-  is resolved.
+  is resolved. `promptRow` and `roleEnded`'s transcript rule: T032 replaces them (plan D11).
 - [X] T013 [US3] Test in `test/hook.test.mjs` (contract section 6 steps 1 and 3, FR-008, US3-6): role
   record written by a Skill call payload; files created on disk as Bash would, committed or not. Open
   cases: outside the lane, the next role's Skill call is denied naming the file and the start sha's 12
@@ -142,6 +143,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   (M3) gets its lane back: a write outside it is denied, and its Stop checks only what changed since
   that call; no record decides nothing; an unreadable
   record, a non-hex sha (`--output=x`) or a sha that is no commit says the lane check could not run.
+  The ended-record and M3 cases: T030 replaces their transcripts (plan D11).
 - [X] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
   `recordPass(s)`; the main script calls the Skill `speckit-role-implementer`, writes a test file through
   Bash as the existing case "implementer may not change tests, and its lane check catches a test written
@@ -276,11 +278,50 @@ PreToolUse. Two slices, disjoint files.
   call's `args` did not start with the VERDICT line), and the "Test suite" counts. `CLAUDE.md`: the
   Rules line of T028 and the `npm test` count. Counts from `npm test` once T025, T026 and T028 exist.
 
+## Phase 8: User Story 3, a role's end from `prompt_id` (Round 7, plan D11)
+
+Research R5: Claude Code writes the transcript every 100 ms, the turn's prompt row included, so T012's
+rule ended a role at its own start on CI (T017's session 2, macOS). One slice.
+
+- [ ] T030 [P] [US3] Test in `test/hook.test.mjs` (contract section 8, data-model role record, FR-008,
+  US3-6, plan D8, D11): rewrite the cases plan D11 A names, beside them, with `putRole(dir, role,
+  extra)`, `roleWrite(dir, file, extra)`, `skillCall(dir, name, extra)`, `stopRole(dir, extra)`,
+  `skillAgentsTeam`, `roleRec`, `hasRole`, `putFile`, `msg`, `denied`, `decided`, `ENDED_MSG`; drop
+  `ENDING`, `KEEPING` and `roleWithTranscript` (`userRow` and `transcriptIn` stay, T016 uses them).
+  Open cases: the Skill call's `prompt_id` is stored in the record, `null` when absent, empty, a number
+  or an array; an input `prompt_id` other than the record's ends the role at a write, at the next
+  role's Skill call (let through, a new record with that call's id, the M3 lane from that call) and at
+  Stop, with `stop_hook_active` either way; the same id keeps it; absent on either side, or a
+  non-string on the input, keeps it and never crashes; a record whose `transcript` holds a prompt row
+  after `offset`, with the input's `prompt_id`, stays live.
+- [ ] T031 [P] [US3] Test in `test/e2e.test.mjs` (contract section 8, plan D11, research R5):
+  `session(s, script, { prompt, args })` gains `args`, extra CLI arguments after `--permission-mode`.
+  In `009 T011 ...` replace the second half (the hook run over the real transcript; drop
+  `transcriptOf`, which nothing else calls): write `role/<id>.json` for `sessionId(r)` with `role:
+  'architect'`, `sha: head(s)`, `dirty: []`, `transcript: null`, `offset: 0`, `feature: 'specs/001-x'`,
+  `fingerprint: null`, `prompt_id: 'an earlier prompt'`, `at`, and `s.write('src/x.js', …)`, outside
+  architect's lane, so a record read as live denies with the lane check; then `r2 = await session(s, { [MAIN]:
+  [roleSkill('product-owner')] }, { prompt: MAIN, args: ['--resume', id] })`: the call is let through
+  (`lastResultIsError(r2.requests[MAIN][1])` false) and the architect record is gone afterwards (with
+  no hook it stays). The resumed requests' first user message is
+  session 1's, so the script stays keyed by `MAIN`; session 1's team record still holds `skillAgents`;
+  no frontmatter hook of session 1 runs there, so the `gate` entry's Skill call reads the record. Fails
+  with `SPECKIT_E2E_NO_HOOK=1`, and against T012's rule (no transcript: live).
+- [ ] T032 [US3] Implement in `hooks/speckit-team.mjs` (contract section 8, data-model): the gate mode's
+  Skill branch adds `prompt_id: str(input.prompt_id)` to the role record it writes; `function
+  roleEnded(rec: object): boolean` is true only when `rec.prompt_id` is a non-empty string and
+  `str(input.prompt_id)` is another; remove `promptRow`, its only caller being `roleEnded`; keep
+  `linesAfter` for `roleTexts`; fix their comments. Reuse `str`, `dropRole`. `README.md`, "What was
+  verified how": the role's end with its turn is read from Claude Code's `prompt_id` and covered end to
+  end (T031). README's "Test suite" and `CLAUDE.md`'s `npm test` counts only if `npm test`'s count
+  changed.
+
 ## Dependencies
 
 Round 1 before Round 2: T008, T011, T014 need T002's installed role skills and T004's typed record.
 T015 builds on T009 and T012, T018 on T015. T024 needs T001 to T021; T023 needs T024's records. Within a round,
-one test-writer then one implementer. T027 builds on T018; T029 on T023's docs and counts.
+one test-writer then one implementer. T027 builds on T018; T029 on T023's docs and counts. T032 builds
+on T012 and T027.
 
 ## Rounds
 
@@ -290,3 +331,4 @@ one test-writer then one implementer. T027 builds on T018; T029 on T023's docs a
 - Round 4: green T024
 - Round 5: red T022; green T023
 - Round 6: red T025, T026, T028; green T027, T029 [P]
+- Round 7: red T030, T031; green T032

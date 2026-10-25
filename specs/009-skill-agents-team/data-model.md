@@ -27,14 +27,15 @@ The role acting in the main session of a skill-agents request. At most one per s
 | `dirty` | string[] | `changedSince('HEAD')` when the role started; excluded from its lane check |
 | `transcript` | string or null | `transcript_path` of the Skill call |
 | `offset` | number | that file's size in bytes then; the role's text starts there |
+| `prompt_id` | string or null, new (plan D11) | `prompt_id` of the Skill call's hook input when a non-empty string |
 | `feature` | string or null | `feature()` then |
 | `fingerprint` | string or null | `fingerprint(feature)` then, only for spec-auditor (the #77 rule) |
 | `at` | ISO string | |
 
 Lifecycle: written at the PreToolUse of a `speckit-role-<role>` Skill call that is let through;
 closed (contract section 6) and replaced at the next such call; closed and removed at the main
-session's Stop (`lane role`); removed by a typed `/speckit-team`. Ended at the first user prompt row
-after `offset` (contract section 8): removed where it is next read, never closed. Unreadable or incomplete: the
+session's Stop (`lane role`); removed by a typed `/speckit-team`. Ended once a hook input carries another
+`prompt_id` (contract section 8): removed where it is next read, never closed. Unreadable or incomplete: the
 lane check says it could not run, and `scope role` denies writes until a typed `/speckit-team`.
 
 ## Verdict and ends records (changed, additive)
