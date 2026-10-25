@@ -80,7 +80,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
 Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id>.json` as
 `data-model.md` gives it, since the source hook's `TEAM_DIR` has no role skills.
 
-- [ ] T007 [US3] Test in `test/hook.test.mjs` (contract section 4, FR-005, FR-006, FR-008, US3-5 first
+- [X] T007 [US3] Test in `test/hook.test.mjs` (contract section 4, FR-005, FR-006, FR-008, US3-5 first
   half): PreToolUse `Skill` payloads with `tool_input.skill`. Open cases: no record, a `noagents` record
   and a plain team record all deny; product-owner is let through and writes the role record with the
   data-model fields; test-writer, implementer and spec-gatekeeper are denied before `pass(dir)`, let
@@ -90,7 +90,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   `speckit-role-spec-auditor`, not `@agent-spec-auditor`); a call with `agent_id` decides nothing; `speckit-role-patcher` and
   `speckit-role-x` decide nothing; `plugin:speckit-role-architect` counts; a missing or malformed
   `session_id` or `tool_input` never crashes.
-- [ ] T008 [US3] Test in `test/e2e.test.mjs` (contract sections 3 and 4, research R3): `session` with
+- [X] T008 [US3] Test in `test/e2e.test.mjs` (contract sections 3 and 4, research R3): `session` with
   `prompt: '/speckit-team --team skill-agents ' + MAIN`; the main script's Skill call to
   `speckit-role-test-writer` gets the `Implementation gate` result naming `speckit-role-spec-auditor` and
   not `@agent-spec-auditor` (contract section 4 step 4), then one to `speckit-role-architect`
@@ -104,7 +104,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   `@agent-spec-auditor` in gate mode's `Implementation gate:` reason, the one denial text of both branches; reuse `teamOf`, `auditProblem`, `deny`, `git(root, 'rev-parse', 'HEAD')`, `changedSince('HEAD')`,
   `feature`, `fingerprint`, `writeJson`, `roleFile`; the transcript's size by `fs.statSync`, 0 when it
   cannot be read.
-- [ ] T010 [US3] Test in `test/hook.test.mjs` (contract section 5, FR-008, SC-006, US3-6, Installation
+- [X] T010 [US3] Test in `test/hook.test.mjs` (contract section 5, FR-008, SC-006, US3-6, Installation
   Constraints): `write(dir, ['scope', 'role'], file, { session_id })` with a role record per row of the
   contract's table; no record, or `agent_id` set, decides nothing; an unreadable record denies; a repo
   from `repo({ speckit: false })` decides nothing; the git directory is denied. Twin: `ROLE_LANES` read
@@ -113,7 +113,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   the record's `transcript` as JSONL with rows after `offset`, one case per row kind section 8 names as
   ending or keeping the role; an ended record of each lane kind denies nothing, gives section 8's message
   once and is removed; an unreadable transcript keeps the role's denials.
-- [ ] T011 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008, then
+- [X] T011 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008, then
   `recordPass(s)`; the main script calls the Skill `speckit-role-architect`, then `wfile` to `src/x.js`
   (denied with architect's lane text), then the Skill `speckit-role-spec-auditor`, then `wfile` to
   `specs/001-x/spec.md` (denied as read-only), which shows the Skill's own rows keep the role live on
@@ -130,7 +130,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   returns section 8's message; the caller sends it as `systemMessage` with its own outcome, through
   `emit` at the end, so a Skill call still reaches its gate and new record), called before the lane rule
   is resolved.
-- [ ] T013 [US3] Test in `test/hook.test.mjs` (contract section 6 steps 1 and 3, FR-008, US3-6): role
+- [X] T013 [US3] Test in `test/hook.test.mjs` (contract section 6 steps 1 and 3, FR-008, US3-6): role
   record written by a Skill call payload; files created on disk as Bash would, committed or not. Open
   cases: outside the lane, the next role's Skill call is denied naming the file and the start sha's 12
   characters; `run(dir, ['lane', 'role'], { hook_event_name: 'Stop', session_id })` blocks, and with
@@ -142,7 +142,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   (M3) gets its lane back: a write outside it is denied, and its Stop checks only what changed since
   that call; no record decides nothing; an unreadable
   record, a non-hex sha (`--output=x`) or a sha that is no commit says the lane check could not run.
-- [ ] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
+- [X] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
   `recordPass(s)`; the main script calls the Skill `speckit-role-implementer`, writes a test file through
   Bash as the existing case "implementer may not change tests, and its lane check catches a test written
   through Bash" does, then ends with `say`; the Stop is blocked with the lane check's text. Fails with

@@ -1030,6 +1030,72 @@ test("security-reviewer's report must end in VERDICT: PASS or VERDICT: FAIL", { 
   assert.match(lastResult(r.requests[MAIN][1]), /^\s*VERDICT: PASS$/m, story(r));
 });
 
+// ---- 009 skill-agents: role skills in the session (T008, T011, T014) ----
+// Typed /speckit-team --team skill-agents: the hook records skillAgents at UserPromptExpansion, and each
+// role is a Skill call of the main session. With SPECKIT_E2E_NO_HOOK=1 none of these can pass.
+const SA_PROMPT = `/speckit-team --team skill-agents ${MAIN}`;
+const roleSkill = (role) => call('Skill', { skill: `speckit-role-${role}` });
+
+test('009 T008 contract 3 and 4: a typed --team skill-agents gates the role skills, and a let-through call records the role', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, { [MAIN]: [roleSkill('test-writer'), roleSkill('architect')] }, { prompt: SA_PROMPT });
+  const denial = lastResult(r.requests[MAIN][1]);
+  assert.match(denial, /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+  assert.match(denial, /speckit-role-spec-auditor/, story(r));
+  assert.doesNotMatch(denial, /@agent-spec-auditor/, story(r));
+  assert.ok(r.requests[MAIN].length >= 3, `the architect call was answered:\n${story(r)}`);
+  const id = sessionId(r);
+  assert.equal(state(s, 'team', `${id}.json`).skillAgents, true, story(r));
+  const files = fs.readdirSync(path.join(s.repo, '.git', 'speckit-team', 'role'));
+  assert.deepEqual(files, [`${id}.json`], story(r));
+  assert.equal(state(s, 'role', `${id}.json`).role, 'architect', story(r));
+});
+
+// The Skill's own rows (its body is an isMeta user row) must not end the role in the transcript Claude
+// Code writes, or every lane below would lapse at its own Skill call (contract section 8, research R2).
+function transcriptOf(s, id) {
+  const hit = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = path.join(dir, e.name);
+    return e.isDirectory() ? hit(p) : e.name === `${id}.jsonl` ? [p] : [];
+  });
+  return hit(path.join(s.cfg, 'projects'))[0];
+}
+
+test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the session, and the typed prompt ends the role afterwards", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [roleSkill('architect'), wfile(s, 'src/x.js', 'export const x = 1;\n'), roleSkill('spec-auditor'), wfile(s, 'specs/001-x/spec.md', '# changed\n')],
+  }, { prompt: SA_PROMPT });
+  assert.ok(lastResultIsError(r.requests[MAIN][2]), story(r));
+  assert.match(lastResult(r.requests[MAIN][2]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
+  assert.match(lastResult(r.requests[MAIN][4]), /spec-auditor is a read-only role and writes no files/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
+  // The real transcript: the typed prompt's row lies after offset 0, so a role record over it has ended.
+  const id = sessionId(r);
+  const transcript = transcriptOf(s, id);
+  assert.ok(transcript, `no transcript for ${id} under ${s.cfg}`);
+  const rec = { session_id: id, role: 'architect', sha: head(s), dirty: [], transcript, offset: 0, feature: 'specs/001-x', fingerprint: null, at: new Date().toISOString() };
+  fs.mkdirSync(path.join(s.repo, '.git', 'speckit-team', 'role'), { recursive: true });
+  fs.writeFileSync(path.join(s.repo, '.git', 'speckit-team', 'role', `${id}.json`), JSON.stringify(rec));
+  const out = execFileSync(process.execPath, [s.hook, 'scope', 'role'], {
+    cwd: s.repo, encoding: 'utf8',
+    input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: s.repo, session_id: id, tool_name: 'Write', tool_input: { file_path: path.join(s.repo, 'src', 'x.js') } }),
+  });
+  assert.doesNotMatch(out, /permissionDecision/, `an ended role denies nothing:\n${out}`);
+  assert.match(out, /role ended with its turn and no Stop ran/, out);
+});
+
+test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the implementer skill blocks the Stop with the lane check", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [roleSkill('implementer'), call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a file' }), say('implemented')],
+  }, { prompt: SA_PROMPT });
+  assert.ok(fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call never ran:\n${story(r)}`);
+  assert.match(shown(r.requests[MAIN][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => { for (const args of queued) nodeTest(...args); });
 
