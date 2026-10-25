@@ -509,19 +509,10 @@ function linesAfter(file, offset) {
     return lines(buf.subarray(Number.isInteger(offset) && offset > 0 ? offset : 0).toString('utf8'));
   } catch { return null; }
 }
-// A row that starts a turn: a prompt the user typed, not a tool result, a skill body or a summary.
-function promptRow(line) {
-  try {
-    const r = JSON.parse(line);
-    if (r?.type !== 'user' || r.isMeta || r.isCompactSummary || r.isSidechain || r.origin?.kind === 'task-notification') return false;
-    const c = r.message?.content;
-    return typeof c === 'string' || (Array.isArray(c) && !c.some((b) => b?.type === 'tool_result'));
-  } catch { return false; }
-}
-// An unreadable transcript leaves the role live.
+// The role ended when the record holds a prompt_id and this call carries another: a new prompt is a new turn.
+// A record or input without a string prompt_id leaves the role live.
 function roleEnded(rec) {
-  const rows = linesAfter(rec?.transcript, rec?.offset);
-  return rows !== null && rows.some(promptRow);
+  return typeof rec?.prompt_id === 'string' && rec.prompt_id !== '' && str(input.prompt_id) !== null && str(input.prompt_id) !== rec.prompt_id;
 }
 function dropRole(rec) {
   const id = str(input.session_id);
@@ -817,7 +808,7 @@ if (mode === 'gate') {
         try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: offset 0 */ }
         const feat = feature();
         writeJson(roleFile(id), {
-          session_id: id, role: roleSkill, sha, dirty: changedSince('HEAD'), transcript: transcript ?? null, offset,
+          session_id: id, role: roleSkill, sha, dirty: changedSince('HEAD'), transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
           feature: feat, fingerprint: roleSkill === 'spec-auditor' && feat ? fingerprint(feat) : null, at: new Date().toISOString(),
         });
       }

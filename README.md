@@ -476,7 +476,7 @@ denied ([Live results](docs/live-results.md), "Skill-agents"). Measured: the sam
 built once as the default team and once with `--team skill-agents`, 31% more input tokens and 58%
 less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
-close and its end with the turn, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
+close, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
 end-to-end tests fire the role skills' hook entries against the real Claude Code.
 
 **Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
