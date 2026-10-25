@@ -1711,3 +1711,28 @@ test('009 T022 FR-010: CLAUDE.md "Rules" names the ROLE_LANES twin', () => {
   assert.ok(rules, 'CLAUDE.md has a Rules section');
   assert.match(rules, /ROLE_LANES/);
 });
+
+// 009 T028 FR-008 FR-010, plan D10, Constitution VIII: the report's last line travels in the next Skill call's args.
+test("009 T028 FR-008 plan D10: the installed ## Skill agents says the Skill call after spec-auditor's or spec-gatekeeper's report starts its args with that report's last line", () => {
+  const sec = flat(skillSection(teamSkill(), '## Skill agents'));
+  assert.match(sec, /spec-auditor/);
+  assert.match(sec, /spec-gatekeeper/);
+  assert.match(sec, /starts? its `?args`? with .{0,60}last line/i, 'args starts with the report last line');
+});
+
+test('009 T028 FR-008 FR-010 plan D10: README skill-agents section says the verdict and word are also read from the args line and the Stop last message', () => {
+  const readme = repoText('README.md');
+  const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);
+  assert.ok(m, 'README.md has a heading that names skill-agents');
+  const sec = flat(mdSection(readme, m[0]));
+  assert.match(sec, /`?args`? line/i, 'names the args line');
+  assert.match(sec, /Stop.{0,80}last (assistant )?message|last (assistant )?message.{0,80}Stop/i, "names the Stop's last message");
+  assert.match(sec, /verdict.{0,200}\bword\b.{0,200}\bargs\b|\bargs\b.{0,200}verdict.{0,100}\bword\b/i, 'verdict and word are read from args');
+});
+
+test('009 T028 FR-010 plan D10: CLAUDE.md "Rules" names the args report line as a skill half and a hook half', () => {
+  const rules = flat(mdSection(repoText('CLAUDE.md'), '## Rules'));
+  assert.ok(rules, 'CLAUDE.md has a Rules section');
+  assert.match(rules, /`args`.{0,200}(report|last) line|(report|last) line.{0,200}`args`/i, 'the args report line');
+  assert.match(rules, /`args`.{0,300}(skill|Skill)[^.]{0,80}hook|(skill|Skill)[^.]{0,80}hook.{0,300}`args`/i, 'a skill half and a hook half');
+});

@@ -234,7 +234,7 @@ what was seen.
 Research R1 failed on CI: the response holding a tool call can reach the transcript after that call's
 PreToolUse. Two slices, disjoint files.
 
-- [ ] T025 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2 and its closing
+- [X] T025 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2 and its closing
   paragraph, FR-008, US3-5, plan D10), beside the T016 cases, with their helpers (`auditorRole`, `say`,
   `skillCall`, `stopRole`, `verdictRec`, `endsRec`, `roleRec`, `hasRole`, `msg`, `denied`, `decided`,
   `reasonOf`, `transcriptIn`, `assistantRow`); a Skill call with `args` passes
@@ -249,7 +249,7 @@ PreToolUse. Two slices, disjoint files.
   `APPROVED` the same way; a spec-gatekeeper role's `APPROVED` as the first `args` line of the
   `speckit-role-security-reviewer` call is recorded; an unreadable transcript with the verdict in the
   last text records it with no transcript message; `last_assistant_message` a number never crashes.
-- [ ] T026 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, plan D10, research R1): rewrite T017's
+- [X] T026 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, plan D10, research R1): rewrite T017's
   session 1 (`009 T017 ...`): the step after `roleSkill('spec-auditor')` is
   `{ text: 'No findings.', ...call('Skill', { skill: 'speckit-role-test-writer', args: 'VERDICT: PASS\n<inputs>' }) }`,
   so only `args` carries the verdict and the case fails against T018's transcript-only close on every
@@ -263,7 +263,7 @@ PreToolUse. Two slices, disjoint files.
   `args` sentence. `closeRole` passes `str(input.tool_input?.args)?.split('\n')[0] ?? null` at
   `'skill'` and `str(input.last_assistant_message)` at `'stop'`. Reuse `str`, `roleTexts`, `verdictIn`,
   `lastWord`, `verdictFile`, `endsFile`, `writeJson`, `addNote`, `auditorRef`.
-- [ ] T028 [P] [US1] Test in `test/install.test.mjs` (FR-008, FR-010, plan D10, Constitution VIII), beside
+- [X] T028 [P] [US1] Test in `test/install.test.mjs` (FR-008, FR-010, plan D10, Constitution VIII), beside
   the T005 and T022 cases, with `teamSkill`, `flat`, `skillSection`, `repoText`, `mdSection`: the
   installed skill's `## Skill agents` says the Skill call after spec-auditor's or spec-gatekeeper's
   report starts its `args` with that report's last line; README's skill-agents section says the

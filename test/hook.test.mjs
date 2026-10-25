@@ -2197,3 +2197,140 @@ test('009 T016 contract 6: a missing transcript says so and never crashes', () =
   assert.ok(!denied(next), JSON.stringify(next));
   assert.match(msg(next), /transcript/i);
 });
+
+// ---- 009 Round 6: a role's last message from the hook input (T025, plan D10) ----
+const callWithArgs = (dir, name, t, args) => skillCall(dir, name, { transcript_path: t, tool_input: { skill_name: name, args } });
+
+test('009 T025 FR-008 US3-5 contract 6 step 2 plan D10: the race, a transcript without the VERDICT and args starting VERDICT: PASS, is recorded and let through', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.');
+  const out = callWithArgs(dir, 'speckit-role-test-writer', t, 'VERDICT: PASS\n<inputs>');
+  assert.ok(!decided(out), JSON.stringify(out));
+  const v = verdictRec(dir);
+  assert.equal(v?.verdict, 'PASS');
+  assert.equal(v.role, 'spec-auditor');
+  assert.equal(v.agent_id, null);
+  assert.equal(roleRec(dir).role, 'test-writer');
+});
+
+test('009 T025 contract 6 step 2: args VERDICT: FAIL after a transcript PASS records FAIL', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'Looks good.\nVERDICT: PASS');
+  const out = callWithArgs(dir, 'speckit-role-test-writer', t, 'VERDICT: FAIL\n<inputs>');
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.equal(verdictRec(dir)?.verdict, 'FAIL');
+});
+
+test('009 T025 contract 6 step 2: a VERDICT on the second args line counts for nothing', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.');
+  callWithArgs(dir, 'speckit-role-architect', t, '<inputs>\nVERDICT: PASS');
+  assert.equal(verdictRec(dir), null);
+  const b = auditorRole();
+  say(b.t, 'No findings.');
+  callWithArgs(b.dir, 'speckit-role-architect', b.t, 'VERDICT: FAIL\nVERDICT: PASS');
+  assert.equal(verdictRec(b.dir)?.verdict, 'FAIL', 'the first line is the one read');
+});
+
+test('009 T025 contract 6: args a number or an array never crashes and records nothing', () => {
+  for (const args of [5, ['VERDICT: PASS'], { a: 1 }]) {
+    const { dir, t } = auditorRole();
+    say(t, 'No findings.');
+    const out = callWithArgs(dir, 'speckit-role-architect', t, args);
+    assert.ok(!denied(out), JSON.stringify(out));
+    assert.equal(verdictRec(dir), null, JSON.stringify(args));
+  }
+  const c = auditorRole();
+  say(c.t, 'No findings.');
+  callWithArgs(c.dir, 'speckit-role-architect', c.t, 'VERDICT: PASS');
+  assert.equal(verdictRec(c.dir)?.verdict, 'PASS', 'a string args line is read');
+});
+
+test('009 T025 contract 6 step 2: a call denied for want of a VERDICT leaves the role live, and the same call made again with the line is let through', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.');
+  const first = callWithArgs(dir, 'speckit-role-test-writer', t, '<inputs>');
+  assert.ok(denied(first), JSON.stringify(first));
+  assert.equal(roleRec(dir).role, 'spec-auditor', 'the spec-auditor record is left');
+  assert.equal(verdictRec(dir), null);
+  const again = callWithArgs(dir, 'speckit-role-test-writer', t, 'VERDICT: PASS\n<inputs>');
+  assert.ok(!decided(again), JSON.stringify(again));
+  assert.equal(verdictRec(dir)?.verdict, 'PASS');
+  assert.equal(roleRec(dir).role, 'test-writer');
+});
+
+test('009 T025 contract 6 step 2: the none-found message at a Skill call names args and the role skill; at Stop it is the T016 one', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.');
+  const out = callWithArgs(dir, 'speckit-role-architect', t, '<inputs>');
+  assert.match(msg(out), /args/);
+  assert.match(msg(out), /speckit-role-spec-auditor/);
+  assert.doesNotMatch(msg(out), /@agent-spec-auditor/);
+  const b = auditorRole();
+  say(b.t, 'No findings.');
+  const stop = stopRole(b.dir, { last_assistant_message: 'nothing to see' });
+  assert.match(msg(stop), /speckit-role-spec-auditor/);
+  assert.doesNotMatch(msg(stop), /\bargs\b/);
+  assert.equal(verdictRec(b.dir), null);
+});
+
+test('009 T025 FR-008 contract 6 step 2: at Stop a last_assistant_message ending VERDICT: PASS over a transcript without it is recorded', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.');
+  stopRole(dir, { last_assistant_message: 'All covered.\n\nVERDICT: PASS' });
+  const v = verdictRec(dir);
+  assert.equal(v?.verdict, 'PASS');
+  assert.equal(v.role, 'spec-auditor');
+  assert.ok(!hasRole(dir));
+});
+
+test('009 T025 FR-008 contract 6 step 2: the spec-gatekeeper role APPROVED is recorded from last_assistant_message at Stop', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.');
+  stopRole(dir, { last_assistant_message: 'Every task is ticked.\n\nAPPROVED' });
+  const e = endsRec(dir);
+  assert.equal(e?.word, 'APPROVED');
+  assert.equal(e.role, 'spec-gatekeeper');
+  assert.equal(e.agent_id, null);
+});
+
+test('009 T025 FR-008 contract 6 step 2: a spec-gatekeeper APPROVED as the first args line of the security-reviewer call is recorded', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.');
+  callWithArgs(dir, 'speckit-role-security-reviewer', t, 'APPROVED\n<inputs>');
+  const e = endsRec(dir);
+  assert.equal(e?.word, 'APPROVED');
+  assert.equal(e.role, 'spec-gatekeeper');
+});
+
+test('009 T025 contract 6: an unreadable transcript with the verdict in the last text records it and gives no transcript message', () => {
+  const { dir, t } = auditorRole();
+  fs.rmSync(t);
+  const out = stopRole(dir, { last_assistant_message: 'Done.\nVERDICT: PASS' });
+  assert.equal(verdictRec(dir)?.verdict, 'PASS');
+  assert.doesNotMatch(msg(out) ?? '', /transcript/i);
+  const b = auditorRole();
+  fs.rmSync(b.t);
+  const next = callWithArgs(b.dir, 'speckit-role-architect', b.t, 'VERDICT: PASS');
+  assert.equal(verdictRec(b.dir)?.verdict, 'PASS');
+  assert.doesNotMatch(msg(next) ?? '', /transcript/i);
+});
+
+test('009 T025 contract 6: last_assistant_message a number never crashes', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.\nVERDICT: PASS');
+  const out = stopRole(dir, { last_assistant_message: 7 });
+  assert.equal(verdictRec(dir)?.verdict, 'PASS', 'the transcript still counts');
+  const b = auditorRole();
+  say(b.t, 'No findings.');
+  stopRole(b.dir, { last_assistant_message: 'VERDICT: PASS' });
+  assert.equal(verdictRec(b.dir)?.verdict, 'PASS', 'a string last message is read');
+});

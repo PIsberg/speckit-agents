@@ -1104,11 +1104,11 @@ test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the im
   assert.match(shown(r.requests[MAIN][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
 });
 
-test("009 T017 FR-008 US3-5 research R1: the auditor role's VERDICT is recorded at the next role's Skill call, and at Stop", { skip: noClaude, timeout: 240_000 }, async () => {
-  // 1. Text ending the verdict and the next Skill call in one response: closing comes before the gate.
+test("009 T017 T026 FR-008 US3-5 plan D10 research R1: the auditor role's VERDICT is recorded at the next role's Skill call, and at Stop", { skip: noClaude, timeout: 240_000 }, async () => {
+  // 1. The verdict only in the next Skill call's args (the response holding the call may not be in the transcript yet, plan D10): closing comes before the gate.
   const s = setup();
   const r = await session(s, {
-    [MAIN]: [roleSkill('spec-auditor'), { text: 'No findings.\n\nVERDICT: PASS', ...roleSkill('test-writer') }],
+    [MAIN]: [roleSkill('spec-auditor'), { text: 'No findings.', ...call('Skill', { skill: 'speckit-role-test-writer', args: 'VERDICT: PASS\n<inputs>' }) }],
   }, { prompt: SA_PROMPT });
   const id = sessionId(r);
   assert.equal(state(s, 'verdicts', '001-x.json').verdict, 'PASS', story(r));
