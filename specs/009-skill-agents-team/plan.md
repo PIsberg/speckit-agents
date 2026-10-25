@@ -53,7 +53,7 @@ skills' frontmatter applies the acting role's lane to every write. No agent file
 | Install: validate before writing | T001, T002 | every role skill rendered before the first write; a bad agent file writes nothing |
 | Install: nothing in repos without `.specify/` | T010 | no settings entry added; `scope role` exits there (`notSpecKit`) |
 | Install: `--uninstall` removes what it added | T001 | |
-| Gate: live check for hook wiring | T024 | README "Live check" with skill-agents, result in `docs/live-results.md` |
+| Gate: live check for hook wiring | T024, T023 | T024 runs it and records it in `docs/live-results.md`; T023, a round later, writes the steps and what was seen into README |
 
 Not applicable: III (no observer changes; the board reads the same records), IV plugin rules (no
 plugin code changes), the amendment rules (no new dependency), V event schema version (no event
@@ -95,6 +95,14 @@ skills are build output of the installer, not sources, so FR-013 holds by constr
 - P3. Side by side is never offered in this mode: there are no worktree agents (FR-012).
 - P4. Lane rules are a twin: `ROLE_LANES` in the hook and the `scope` line in each agent's frontmatter,
   held by T010's test, listed in CLAUDE.md "Rules" by T023.
+- P5. One role at a time: a role's lane runs from its Skill call to the next (P1), so two role Skill
+  calls in one response would leave the second role's lane on the first role's work. Every launch the
+  skill sends side by side in one message (`skills/speckit-team/SKILL.md`, `## Handoffs`, and the
+  answers paragraph's architect revision with product-owner's `Spec:` lines) becomes one role call
+  after the other, in the order the step names them (T005, T006).
+- P6. No hook text in this mode sends the main session to an agent: the gate's reason and closing's
+  verdict messages name the Skill `speckit-role-spec-auditor` (contract sections 4 and 6, T007 to T009,
+  T016, T018), since an agent launch breaks FR-001 and ends the mode (D3).
 
 ## Complexity Tracking
 
@@ -195,3 +203,24 @@ denied. In this mode the gate runs at a role skill call only, and implementer's 
   starting until the audit passes, and the verification outcome MUST be enforced as in a default run;
   an edit to the spec, plan or tasks made while either acts is not re-checked, and this MUST be named
   to the user at the start of the run as not enforced.
+
+### D7. Does closing a read-only role check its Bash writes?
+
+Answer (2026-10-25): A, as recommended
+
+In a default run spec-auditor, spec-gatekeeper and security-reviewer have `disallowedTools: Write, Edit,
+MultiEdit, NotebookEdit` and no `lane` hook (`agents/spec-gatekeeper.md`), so a file a Bash command
+leaves behind (a test run's coverage or cache output) blocks nothing. SC-006 asks for "the same cases a
+default run blocks" (audit finding M2).
+
+- **A (recommended): no; `scope role` only.** Contract section 5 denies the role's Write and Edit calls,
+  as `disallowedTools` does; section 6 step 1 skips the lane check for a `none` role. Same outcome as a
+  default run; spec-gatekeeper's `npm test` never blocks its own close. T013 asserts it, T015 skips it.
+  SC-006 and FR-008 as written.
+- B: yes; every file a read-only role changes counts, Bash included. Stricter than a default run: a
+  spec-gatekeeper test run that leaves an untracked file blocks the next role or the Stop, and the skill
+  must restore it before going on. T013 asserts any change counts, T015's `laneOutside` puts every file
+  outside for `none`, and README names the difference.
+  Spec: SC-006: In a skill-agents run, 100% of attempted writes outside a role's lane are blocked, and
+  every file a read-only role changes, through any tool, blocks its close; 0 guardrails are dropped
+  without being named at run start.

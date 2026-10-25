@@ -74,8 +74,12 @@ For a skill name (`skill_name`, `skill` or `name`, as the gate reads `speckit-im
 2. The session's team record lacks `skillAgents`: deny, `speckit-role-<role> runs only in a request
    typed as /speckit-team --team skill-agents <request>.`
 3. A role record exists: close it (section 6). A lane violation denies this call.
-4. `<role>` is `test-writer`, `implementer` or `spec-gatekeeper`: the audit gate, `auditProblem()`, with
-   the reason text of the existing `Implementation gate:` denial. Checking it again before
+4. `<role>` is `test-writer`, `implementer` or `spec-gatekeeper`: the audit gate, `auditProblem()`,
+   denying with `Implementation gate: <problem>. Run the Skill speckit-role-spec-auditor (an agent
+   launch ends skill-agents mode) and get VERDICT: PASS first.` In a session whose team record has
+   `skillAgents`, every gate denial (the main session's `speckit-implement` Skill call too) gives this
+   text in place of `Run @agent-spec-auditor ...`: following that one launches a subagent, against
+   FR-001, and the launch overwrites the team record, which ends the mode (plan D3). Checking it again before
    spec-gatekeeper means an edit to the spec, plan, tasks or constitution made inside test-writer or
    implementer (implementer's lane allows `specs/`) never reaches verification unaudited (FR-008, plan D6).
 5. Write the role record; no decision.
@@ -99,7 +103,9 @@ applies. No role record, or a subagent: no decision.
 
 ## 6. Closing a role (at section 4 step 3, and `lane role` at Stop)
 
-1. Lane: `changedSince(sha)` minus `dirty`, outside the role's rule (`none`: every file). At a Skill
+1. Lane, for a role whose rule is not `none`: `changedSince(sha)` minus `dirty`, outside the role's
+   rule. A read-only role gets no lane check at close, as its agent has no `lane` hook in a default run
+   (SC-006, plan D7); section 5 denies its Write and Edit calls as the agent's `disallowedTools` do. At a Skill
    call: deny, `Lane check: <role> changed files outside its lane: <files>. Restore them (git checkout
    <sha 12> -- <file>, or delete new files), then go on.` At Stop: `block` with the same text, unless
    `stop_hook_active`, then a `WARNING` system message as the agents' lane check gives.
@@ -107,7 +113,8 @@ applies. No role record, or a subagent: no decision.
    - spec-auditor: the last `VERDICT: PASS|FAIL` line of those texts, matched as the `verdict` mode
      matches it. Recorded to `verdicts/<feature>.json` unless the fingerprint recorded at the role's
      start differs from now (then a system message as the `verdict` mode gives). None found: a system
-     message, nothing recorded.
+     message, nothing recorded. Both messages name the Skill `speckit-role-spec-auditor` as step 4 of
+     section 4 does, never `@agent-spec-auditor`.
    - spec-gatekeeper: the last of those texts whose last line, normalised as the `ends` mode does it, is
      `APPROVED` or `REJECTED`, recorded to `ends/<feature>.json`.
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5).

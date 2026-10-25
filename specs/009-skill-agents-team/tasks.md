@@ -60,13 +60,17 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   refusals and says the question does not offer it; the question's four options do not mention it; a
   `## Skill agents` section says: no Agent call; each step's role is a Skill call to
   `speckit-role-<role>` with that role's Inputs (`## Handoffs` bullets) as its `args`; one line naming the
-  role before each call; the stops of steps 1 to 6 hold; the side-by-side question is not asked; with
+  role before each call; one role at a time (plan P5): one role Skill call per response, never two in
+  one message, and the launches the steps send side by side (`## Handoffs`, "in one message as several
+  Agent calls"; the answers paragraph's architect revision with product-owner's `Spec:` lines) become
+  one role call after the other, the next after the previous role's work is done; the stops of steps 1 to 6 hold; the side-by-side question is not asked; with
   `--project` the block is read from `node "{{HOOK}}" project` output and followed by every role, as
   `## No agents` step 1; security-reviewer at both points of steps 1 and 6; the skill counts 3
   `RESULT: RED` in a row itself; the hook's start message is not repeated.
 - [ ] T006 [US1] Implement in `skills/speckit-team/SKILL.md`: the `argument-hint`, a `## Team` paragraph
   and refusals (contract section 1), and a `## Skill agents` section after `## No agents` that maps each
-  step's launch to its Skill call and points to the steps instead of restating them. At most 3,000
+  step's launch to its Skill call, says the one-at-a-time rule (plan P5) where it replaces the
+  side-by-side launches, and points to the steps instead of restating them. At most 3,000
   characters added in all: every `/speckit-team` run reads the skill.
 
 ## Phase 4: User Story 3, guardrails in the session (Rounds 2 and 3)
@@ -79,18 +83,23 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   and a plain team record all deny; product-owner is let through and writes the role record with the
   data-model fields; test-writer, implementer and spec-gatekeeper are denied before `pass(dir)`, let
   through after it, and denied again after a spec edit (spec-gatekeeper also after an edit made while
-  the implementer role acted, plan D6); a call with `agent_id` decides nothing; `speckit-role-patcher` and
+  the implementer role acted, plan D6); with a skill-agents record every such denial, and a main-session
+  `speckit-implement` Skill call's, carries contract section 4 step 4's reason (names
+  `speckit-role-spec-auditor`, not `@agent-spec-auditor`); a call with `agent_id` decides nothing; `speckit-role-patcher` and
   `speckit-role-x` decide nothing; `plugin:speckit-role-architect` counts; a missing or malformed
   `session_id` or `tool_input` never crashes.
 - [ ] T008 [US3] Test in `test/e2e.test.mjs` (contract sections 3 and 4, research R3): `session` with
   `prompt: '/speckit-team --team skill-agents ' + MAIN`; the main script's Skill call to
-  `speckit-role-test-writer` gets the `Implementation gate` result, then one to `speckit-role-architect`
+  `speckit-role-test-writer` gets the `Implementation gate` result naming `speckit-role-spec-auditor` and
+  not `@agent-spec-auditor` (contract section 4 step 4), then one to `speckit-role-architect`
   goes through and the only file under `.git/speckit-team/role/` names architect. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
 - [ ] T009 [US3] Implement in `hooks/speckit-team.mjs`, gate mode's PreToolUse `Skill` branch, contract
   section 4 steps 1, 2, 4, 5: `const ROLE_SKILL = /(^|:)speckit-role-([a-z-]+)$/` over the name the branch
-  reads for `speckit-implement` (`ti.skill_name || ti.skill || ti.name`); reuse `teamOf`, `auditProblem`
-  and its `Implementation gate:` reason, `deny`, `git(root, 'rev-parse', 'HEAD')`, `changedSince('HEAD')`,
+  reads for `speckit-implement` (`ti.skill_name || ti.skill || ti.name`); add
+  `function auditorRef(): string` (`the Skill speckit-role-spec-auditor (an agent launch ends
+  skill-agents mode)` when `teamOf()?.skillAgents`, else `@agent-spec-auditor`), used in place of
+  `@agent-spec-auditor` in gate mode's `Implementation gate:` reason, the one denial text of both branches; reuse `teamOf`, `auditProblem`, `deny`, `git(root, 'rev-parse', 'HEAD')`, `changedSince('HEAD')`,
   `feature`, `fingerprint`, `writeJson`, `roleFile`; the transcript's size by `fs.statSync`, 0 when it
   cannot be read.
 - [ ] T010 [US3] Test in `test/hook.test.mjs` (contract section 5, FR-008, SC-006, US3-6, Installation
@@ -112,7 +121,8 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   cases: outside the lane, the next role's Skill call is denied naming the file and the start sha's 12
   characters; `run(dir, ['lane', 'role'], { hook_event_name: 'Stop', session_id })` blocks, and with
   `stop_hook_active` gives the `WARNING` message and removes the record; a file dirty at the role's start
-  is not counted; any change under a read-only role counts; no record decides nothing; an unreadable
+  is not counted; a file written through Bash under a read-only role is not counted, its Stop and the
+  next Skill call decide nothing (plan D7); no record decides nothing; an unreadable
   record, a non-hex sha (`--output=x`) or a sha that is no commit says the lane check could not run.
 - [ ] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
   `recordPass(s)`; the main script calls the Skill `speckit-role-implementer`, writes a test file through
@@ -125,8 +135,8 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   the unreadable and incomplete start record, the hex-sha test that keeps options out of git's
   arguments, `testPaths.bad`, `git cat-file -e`, then `changedSince` minus `dirty` outside the rule) out
   into `function laneOutside(base: object | null, rule: string, prefixes: string[], who: string): { problem: string } | { outside: string[] }`
-  (`problem` is the existing `lane check could not run for <who>: ...` text; rule `none` puts every file
-  outside; `testPaths.bad` counts for `tests` and `no-tests` only). Lane mode calls it with its `who` and
+  (`problem` is the existing `lane check could not run for <who>: ...` text; `testPaths.bad` counts for
+  `tests` and `no-tests` only). `closeRole` skips the lane check for a role whose rule is `none` (plan D7). Lane mode calls it with its `who` and
   rule and keeps its messages, so its existing `test/hook.test.mjs` lane cases hold the change; `closeRole`
   calls it with the role record and `ROLE_LANES[role]`. Also reuse `block`, `deny`, `emit`.
 - [ ] T016 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2, FR-008, US3-5, research R1):
@@ -135,7 +145,8 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   Open cases: a PASS from the spec-auditor role is recorded at the test-writer Skill call, which is then
   let through (closing comes before the gate); FAIL is recorded and test-writer denied; no VERDICT line
   records nothing and says so; a PASS above the offset is ignored; a spec edit after the role started
-  records nothing and says so; the spec-gatekeeper role's last line `APPROVED` is recorded at Stop; both
+  records nothing and says so; both of those messages name `speckit-role-spec-auditor` and not
+  `@agent-spec-auditor` (contract section 6 step 2); the spec-gatekeeper role's last line `APPROVED` is recorded at Stop; both
   records carry `role` and `agent_id: null`; a missing transcript says so and never crashes.
 - [ ] T017 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, research R1): extend `reply` so a step
   with both `text` and `name` sends a text block then the tool call in one response. Session 1: typed as
@@ -150,7 +161,8 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   calls with `false`; `function verdictIn(text: string): 'PASS' | 'FAIL' | null` and
   `function lastWord(text: string): string` taken out of the `verdict` and `ends` modes and used by them
   too, so their existing cases hold all three extractions; records via `verdictFile`, `endsFile`,
-  `writeJson`, with `role` (data-model).
+  `writeJson`, with `role` (data-model); the stale and none-found messages name the auditor through
+  T009's `auditorRef`.
 
 ## Phase 5: User Story 1, the full run in this mode (Round 3)
 
@@ -169,35 +181,45 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   used by `main`; `checkRun` option `skillAgents = false`; `--login` also excludes
   `/.claude/skills/speckit-role-*/`; the header's usage line.
 
-## Phase 6: Polish (Round 4)
+## Phase 6: Polish (Rounds 4 and 5)
 
-- [ ] T022 [P] Test in `test/install.test.mjs` (FR-010, Constitution VIII, plan P4): README.md has a section on
+T024 runs in Round 4, before T022 and T023, so the README's verified-live statement (FR-010) reports
+what was seen.
+
+- [ ] T022 Test in `test/install.test.mjs` (FR-010, Constitution VIII, plan P4): README.md has a section on
   `--team skill-agents` that names the enforced and the not-enforced guardrails of contract section 7
   and says what was verified live and what by test; its guardrail table has `scope role` and `lane role`
-  rows; CLAUDE.md "Rules" names the `ROLE_LANES` twin. Pattern: the existing "README has a "Choosing the
+  rows; the Claude Code row of "Requirements" names skill frontmatter `hooks:` and `user-invocable`;
+  CLAUDE.md "Rules" names the `ROLE_LANES` twin. Pattern: the existing "README has a "Choosing the
   team" section" test.
-- [ ] T023 [P] Implement docs: `README.md` (Contents; "What gets installed"; "Choosing the team"; the
-  guardrail table's `scope role`, `lane role` and `gate` rows; "Live check" steps for this mode;
+- [ ] T023 Implement docs: `README.md` (Contents; "Requirements": the Claude Code row adds skill
+  frontmatter `hooks:` and a model-invoked `user-invocable: false` skill for `--team skill-agents`,
+  research R2 and R3, verified on the version T024 recorded; "What gets installed"; "Choosing the
+  team", whose verified-live statement reports T024's `docs/live-results.md` entry; the guardrail
+  table's `scope role`, `lane role` and `gate` rows; "Live check" steps for this mode as T024 ran them;
   Troubleshooting for the deny of section 4 step 2; known limits: each role on the session's model, with
   `CLAUDE.md`, seeing the conversation; the test count from `npm test`), `CLAUDE.md` (Layout: generated
   role skills; Rules: the `ROLE_LANES` twin and role-skill frontmatter as a place for a hook command; the
   test count), `docs/architecture.md` (the inline mode in the pipeline overview).
-- [ ] T024 [P] Measure (FR-014, SC-001, SC-004, SC-005, plan D4, Constitution II live check): run
+- [ ] T024 Measure (FR-014, SC-001, SC-004, SC-005, plan D4, Constitution II live check): run
   `node tools/full-run.mjs --out <dir> --login` and `--login --skill-agents` on the same day, read each
   transcript with `node tools/usage.mjs`, and write to `docs/measurements.md` a section with both runs'
-  input tokens, cache reads, cost, models, date and check results; run README's "Live check" for this
-  mode and record what was seen in `docs/live-results.md`. A run that cannot start from an agent's
-  shell goes to the user.
+  input tokens, cache reads, cost, models, date and check results. Live check: README.md "Live check"'s
+  procedure typed as `/speckit-team --team skill-agents <request>`, seeing the start message (contract
+  section 7), a `speckit-role-test-writer` call before an audit denied with contract section 4 step 4's
+  text, and a Write outside architect's lane denied; record what was seen and `claude --version` in
+  `docs/live-results.md`. A run that cannot start from an agent's shell goes to the user.
 
 ## Dependencies
 
 Round 1 before Round 2: T008, T011, T014 need T002's installed role skills and T004's typed record.
-T015 builds on T009, T018 on T015. T024 needs every earlier task. Within a round, one test-writer then
-one implementer.
+T015 builds on T009, T018 on T015. T024 needs T001 to T021; T023 needs T024's records. Within a round,
+one test-writer then one implementer.
 
 ## Rounds
 
 - Round 1: red T001, T003, T005; green T002, T004, T006
 - Round 2: red T007, T008, T010, T011, T013, T014; green T009, T012, T015
 - Round 3: stub T021; red T016, T017, T019, T020; green T018, T021 [P]
-- Round 4: red T022; green T023, T024 [P]
+- Round 4: green T024
+- Round 5: red T022; green T023
