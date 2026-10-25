@@ -98,7 +98,8 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {
     out.push('no implementers went out side by side: none shared a response with another, each in a worktree');
   }
-  const together = launches.filter((l) => l.together > 1);
+  // Only the build: step 2 sends an architect and a product-owner together on any run.
+  const together = launches.filter((l) => l.together > 1 && ['test-writer', 'implementer'].includes(l.type));
   if (twoSlices && !sideBySide && together.length) {
     out.push(`${together.length} agent(s) went out side by side although the answer was one at a time: ${together.map((l) => l.type).join(', ')}`);
   }

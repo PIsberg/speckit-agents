@@ -252,4 +252,8 @@ test('full run: --two-slices sends the two-file request with the one-at-a-time a
   const f = one([{ type: 'test-writer', background: false, worktree: false, together: 2 }, { type: 'test-writer', background: false, worktree: false, together: 2 }]);
   assert.equal(f.length, 1, JSON.stringify(f));
   assert.match(f[0], /one at a time/, 'the answer was one at a time, so agents going out together fail the run');
+  // The plan stop sends an architect revision and product-owner's Spec: lines in one message (step 2):
+  // that is not a build going side by side. The one-at-a-time run of 2026-10-25 failed on it.
+  const revision = [{ type: 'product-owner', background: false, worktree: false, together: 2 }, { type: 'architect', background: false, worktree: false, together: 2 }];
+  assert.deepEqual(one(revision), [], 'only test-writers and implementers count');
 });
