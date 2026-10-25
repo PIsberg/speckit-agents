@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -10,7 +10,10 @@
 // resumes the session with one answer that takes the full team, approves and takes every recommended
 // option, plus a marker meant for the main session only. When spec-gatekeeper has given its word, or after --max-turns, it checks the run and writes
 // <dir>/run.json. Exit 0 only when every check passed. The agents run on their own `model:` lines;
-// --model is the main session's. ANTHROPIC_API_KEY must be set; nothing is retried.
+// --model is the main session's. ANTHROPIC_API_KEY must be set, unless --login: then the run uses your
+// own Claude Code login and config, the team goes into <dir>/repo/.claude (project agents override the
+// ones you installed) and the repo is trusted in your .claude.json for the run only. Your own
+// CLAUDE.md, settings and hooks then load too, as in your sessions. Nothing is retried.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -100,37 +103,61 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   return out;
 }
 
-function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8 };
+// Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
+// (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
+// Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
+export function trustFolder(confFile, repo) {
+  const key = repo.split(path.sep).join('/');
+  const conf = readJson(confFile) ?? {};
+  if (conf.projects?.[key]?.hasTrustDialogAccepted) return () => {};
+  conf.hasCompletedOnboarding = true;
+  (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
+  fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
+  return () => {
+    const now = readJson(confFile);
+    if (!now?.projects?.[key]) return;
+    delete now.projects[key];
+    fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
+  };
+}
+
+export function args(argv) {
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
-    if (k === '--out') o.out = path.resolve(v);
+    if (k === '--login') { o.login = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login]');
   return o;
 }
 
 function main() {
   const o = args(process.argv.slice(2));
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set');
+  if (!o.login && !process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set (or pass --login to use your own Claude Code login)');
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
-  const cfg = path.join(o.out, 'cfg');
   const { request } = buildRepo(repo);
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
-  Object.assign(env, { CLAUDE_CONFIG_DIR: cfg, MSYS_NO_PATHCONV: '1' });
-  const install = run(process.execPath, [path.join(ROOT, 'install.mjs')], { env });
+  env.MSYS_NO_PATHCONV = '1';
+  // Without --login a throwaway config dir; with it the user's own, whose .claude.json sits in the home
+  // folder when CLAUDE_CONFIG_DIR is unset.
+  const cfg = o.login ? (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) : path.join(o.out, 'cfg');
+  const confFile = o.login && !process.env.CLAUDE_CONFIG_DIR ? path.join(os.homedir(), '.claude.json') : path.join(cfg, '.claude.json');
+  if (!o.login) env.CLAUDE_CONFIG_DIR = cfg;
+  const target = o.login ? ['--claude-dir', path.join(repo, '.claude')] : [];
+  const install = run(process.execPath, [path.join(ROOT, 'install.mjs'), ...target], { env });
   if (install.status !== 0) throw new Error(`install.mjs failed: ${install.stdout}${install.stderr}`);
-  // Folder trust, or Claude Code skips the agents' frontmatter hooks (README, "Troubleshooting").
-  const conf = readJson(path.join(cfg, '.claude.json')) ?? {};
-  conf.hasCompletedOnboarding = true;
-  (conf.projects ??= {})[repo.replaceAll('\\', '/')] = { hasTrustDialogAccepted: true };
-  fs.writeFileSync(path.join(cfg, '.claude.json'), JSON.stringify(conf, null, 2));
+  // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
+  if (o.login) {
+    fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), ['agents/', 'hooks/', 'settings.json', 'settings.json.*',
+      'skills/speckit-team/', 'skills/speckit-patch/', 'skills/speckit-triage/'].map((p) => `/.claude/${p}\n`).join(''));
+  }
+  const untrust = trustFolder(confFile, repo);
 
   const turns = [];
   const marker = newMarker();
@@ -150,6 +177,7 @@ function main() {
     if (fs.existsSync(ends) && fs.readdirSync(ends).length) break;
   }
 
+  untrust();
   const projects = path.join(cfg, 'projects');
   const transcript = session && fs.existsSync(projects) && fs.readdirSync(projects)
     .map((p) => path.join(projects, p, `${session}.jsonl`)).find((f) => fs.existsSync(f));
@@ -160,7 +188,7 @@ function main() {
   const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts });
   if (!transcript) failures.push('no transcript of the main session was found');
-  const report = { model: o.model, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
+  const report = { model: o.model, login: o.login, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(failures.length ? 1 : 0);

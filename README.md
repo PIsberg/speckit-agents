@@ -1324,7 +1324,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 376 tests:
+`npm test` runs 379 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1340,7 +1340,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 9 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1515,6 +1515,13 @@ ran, since a check that saw nothing proves nothing. The idea is the parent-only 
 ```sh
 ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet --max-cost 6
 ```
+
+With `--login` instead of the key, the run uses your own Claude Code login (a subscription works):
+the team is installed into the scratch repo's `.claude/`, where it overrides the agents you installed
+and stays out of the feature's commits (`.git/info/exclude`), and the repo is trusted in your
+`.claude.json` for the run only, the one entry removed again after the last turn. Your own
+`CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
+the settings gates of a team you installed fire beside the scratch repo's.
 
 The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
 $4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, buildRepo, checkRun, newMarker } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, newMarker, trustFolder } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -131,4 +131,46 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
   const unsent = failures(state(), undefined, undefined, { markerSent: false });
   assert.equal(unsent.length, 1, JSON.stringify(unsent));
   assert.match(unsent[0], /never sent/);
+});
+
+// --login runs on the owner's own Claude Code login instead of an API key: the team goes into the
+// scratch repo's .claude/ (project agents override installed ones) and the repo gets folder trust in
+// the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
+// "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
+test('full run: --login is a flag without a value, and --out is still required', () => {
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, out: path.resolve('x') });
+  assert.equal(args(['--out', 'x']).login, false);
+  assert.throws(() => args(['--login']), /usage/);
+  assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
+});
+
+test('full run: folder trust is added for the run, and its undo removes only that entry, keeping what changed meanwhile', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'scratch', 'repo');
+  const key = repo.split(path.sep).join('/');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: { 'C:/other': { hasTrustDialogAccepted: true } } }));
+  const undo = trustFolder(conf, repo);
+  const during = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.deepEqual(during.projects[key], { hasTrustDialogAccepted: true });
+  assert.equal(during.numStartups, 4);
+  // Claude Code rewrites the file while the run goes on; the undo must not put the old copy back.
+  fs.writeFileSync(conf, JSON.stringify({ ...during, numStartups: 9 }));
+  undo();
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.equal(after.numStartups, 9, 'a change made during the run survives the undo');
+  assert.deepEqual(after.projects, { 'C:/other': { hasTrustDialogAccepted: true } }, 'only the run\'s entry is gone');
+  // A folder already trusted stays trusted.
+  fs.writeFileSync(conf, JSON.stringify({ projects: { [key]: { hasTrustDialogAccepted: true, x: 1 } } }));
+  trustFolder(conf, repo)();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
+});
+
+test('full run: without an API key it stops before writing anything and names --login', () => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-nokey-')), 'run');
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'));
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'full-run.mjs'), '--out', out], { env, encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /ANTHROPIC_API_KEY is not set.*--login/);
+  assert.ok(!fs.existsSync(out), 'nothing written');
 });
