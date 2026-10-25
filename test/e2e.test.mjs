@@ -60,6 +60,9 @@ function setup() {
   return { repo, cfg, hook: path.join(cfg, 'hooks', 'speckit-team.mjs'), write };
 }
 
+// The verdict recorded for 001-x, or 'none recorded'.
+const verdict = (x) => (fs.existsSync(path.join(x.repo, '.git', 'speckit-team', 'verdicts', '001-x.json')) ? state(x, 'verdicts', '001-x.json').verdict : 'none recorded');
+
 // Records a PASS for the files as they are now, through the installed verdict hook itself.
 function recordPass({ repo, hook }) {
   execFileSync(process.execPath, [hook, 'verdict'], {
@@ -601,7 +604,6 @@ test("spec-auditor's report through SubagentHandback is refused once without a V
   }, { permissionMode: 'auto' });
   assert.ok(lastResultIsError(r.requests['e2e auditor'][1]), story(r));
   assert.match(lastResult(r.requests['e2e auditor'][1]), /`VERDICT: PASS` or `VERDICT: FAIL`\. Add it and send the report again/, story(r));
-  const verdict = (x) => (fs.existsSync(path.join(x.repo, '.git', 'speckit-team', 'verdicts', '001-x.json')) ? state(x, 'verdicts', '001-x.json').verdict : 'none recorded');
   assert.equal(verdict(s), 'PASS', story(r));
   // A handed-back report reaches the main session as a message of its own, not as the tool result.
   assert.match(shown(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
