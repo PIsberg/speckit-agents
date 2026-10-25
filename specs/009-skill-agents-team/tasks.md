@@ -211,7 +211,7 @@ what was seen.
   rows; the Claude Code row of "Requirements" names skill frontmatter `hooks:` and `user-invocable`;
   CLAUDE.md "Rules" names the `ROLE_LANES` twin. Pattern: the existing "README has a "Choosing the
   team" section" test.
-- [ ] T023 Implement docs: `README.md` (Contents; "Requirements": the Claude Code row adds skill
+- [X] T023 Implement docs: `README.md` (Contents; "Requirements": the Claude Code row adds skill
   frontmatter `hooks:` and a model-invoked `user-invocable: false` skill for `--team skill-agents`,
   research R2 and R3, verified on the version T024 recorded; "What gets installed"; "Choosing the
   team", whose verified-live statement reports T024's `docs/live-results.md` entry; the guardrail

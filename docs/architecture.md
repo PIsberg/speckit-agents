@@ -19,6 +19,16 @@ The pipeline coordinates autonomous subagents around GitHub Spec Kit. Each agent
 | [`security-reviewer`](../agents/security-reviewer.md) | magenta | sonnet | Opt-in security review (spec & result phases) |
 | [`patcher`](../agents/patcher.md) | cyan | sonnet | Fast track for small fixes (at most 30 lines) |
 
+### Inline mode: `--team skill-agents`
+
+Typed as `/speckit-team --team skill-agents <request>`, the same seven roles run in the main session
+as installed skills (`speckit-role-<role>`, generated from the agents) and no agent is launched. The
+hook keeps a role record from the role's Skill call to its Stop: `scope role` limits its writes,
+`lane role` checks its changes and records spec-auditor's verdict and spec-gatekeeper's word, and the
+Skill call passes the audit gate before test-writer, implementer and spec-gatekeeper. Not enforced:
+the retry limit, the report's last line, each role's own context and tool list. See the README's
+"Running the roles as skills".
+
 ## Security Reviewer Dual-Gate Lifecycle
 
 The `security-reviewer` agent is an opt-in reviewer (`/speckit-team --security` or `--team ...,security-reviewer`) executing in two inspection gates:
