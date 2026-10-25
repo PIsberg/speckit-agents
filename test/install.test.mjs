@@ -155,14 +155,16 @@ test('installed patcher checks the tree once more before reporting, so an over-b
 });
 
 // Speed: each slice built on its own cost up to three agent launches in a row (stubs, red, green),
-// each with a fresh start. The skill builds a phase of tasks.md as one round of at most 4 slices.
-test('installed speckit-team skill builds a tasks.md phase per round, at most 4 slices, never the whole feature', () => {
+// each with a fresh start. The skill builds up to 4 slices per round; in the full run of 2026-10-24 a
+// 3-slice feature in two phases took two rounds, one test-writer and one implementer more than one.
+test('installed speckit-team skill builds up to 4 slices per round, across phases, never the whole feature', () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
   const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
-  const section = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.'));
-  assert.match(section, /a round is the slices of one phase of `tasks\.md`/i);
+  const section = flat(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.')));
+  assert.doesNotMatch(section, /a round is the slices of one phase/i, 'a phase is no longer a round of its own');
   assert.match(section, /at most 4 slices/);
+  assert.match(section, /phases of `tasks\.md` \([^)]*\) that fit in 4 slices together share a round/, 'small phases share a round');
   assert.match(section, /one stub pass, one test-writer and one implementer per round/i);
   assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
 });
@@ -255,6 +257,24 @@ test('installed skill, architect and product-owner settle the plan decisions and
     assert.match(text, /every mention/, `${name}: a dropped ID is one edit for every mention`);
   }
   assert.match(architect, /`cut`/);
+});
+
+// In the full run of 2026-10-24 the answer took the recommended option, and an architect and a
+// product-owner were launched for one Edit each (0.16M tokens). The architect writes the plan and the
+// tasks as its recommendations make them, so taking them changes only the record, which the main
+// session writes itself. Each half is in another file.
+test('installed skill records answers that take every recommendation itself, which the architect plans for', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const stop = skill.slice(skill.indexOf('## 2.'), skill.indexOf('## 3.'));
+  assert.match(flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8')), /`plan\.md` and `tasks\.md` as your recommended options make them/);
+  assert.match(stop, /every answer is the option the architect recommended[^.]*launch no one/i);
+  assert.ok(stop.includes('`Answer (<date>): <option>, as recommended`'), 'the record line');
+  assert.ok(stop.includes('rename `## Open Decisions` to `## Decisions`'));
+  assert.match(stop, /each chosen `Spec:` line[^.]*`spec\.md`/i, 'the main session applies the chosen spec lines');
+  assert.match(stop, /offset and a limit/, 'reading only the line it edits');
+  assert.match(stop, /Otherwise send all the answers to one architect revision/);
 });
 
 // specs/004-board-clear/findings.md, 4: past the Bash tool's default 2 minutes Claude Code moves a

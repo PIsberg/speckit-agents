@@ -243,8 +243,8 @@ and asks you to approve it, a further stop, then writes it with `speckit-constit
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself
 beforehand.
 
-After that it audits, then builds the feature a phase of `tasks.md` at a time, in rounds of up to 4
-slices (stubs, failing tests, code), verifies and opens a PR, which it does not merge.
+After that it audits, then builds the feature in rounds of up to 4 slices (stubs, failing tests,
+code), small phases of `tasks.md` sharing one, verifies and opens a PR, which it does not merge.
 
 #### 3. A small change: the fast track
 
@@ -344,7 +344,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 104 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 106 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -452,9 +452,14 @@ the spec wrong carries that line's new wording on a `Spec:` line. Its report nam
 decision IDs, so the reasoning is not carried in the main session for the rest of the run. At the
 plan stop the skill reads the section in one command and asks you about every open decision at
 once; with more than 4, its first question takes every recommended option in one answer, in which
-you can also name exceptions (`D5: B`). One architect revision then applies all the answers,
-moving each entry to a `## Decisions` section with the answer and the date, and product-owner,
-launched in the same message, rewords the spec lines the chosen options carry. The spec and the
+you can also name exceptions (`D5: B`). The architect writes the plan and the tasks as its
+recommendations make them, so when every answer is the recommended option the main session launches
+no one: it adds `Answer (<date>): <option>, as recommended` under each decision, renames the section
+`## Decisions` and puts the chosen `Spec:` lines into the spec itself (in the full run of 2026-10-24
+that was an architect and a product-owner for one edit each, 0.16M tokens). Otherwise one architect
+revision applies all the answers, moving each entry to a `## Decisions` section with the answer and
+the date, and product-owner, launched in the same message, rewords the spec lines the chosen options
+carry. The spec and the
 plan then agree before the first audit; in the 004 run a decision that contradicted FR-012 failed
 it ([Feature 004](docs/measurements.md#feature-004-interactive)).
 
@@ -506,8 +511,10 @@ holds the skill, both owners and both reviewers to the same words.
 
 After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. A round is the slices of one phase of `tasks.md` (Setup, Foundational, one user
-story), at most 4 of them, and gets one stub pass, one test-writer and one implementer. Until
+those slices. A round is at most 4 slices in task order, and gets one stub pass, one test-writer and
+one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
+together share a round, since in the full run of 2026-10-24 a 3-slice feature in two phases cost a
+test-writer and an implementer more as two rounds. Until
 2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
 implementation task, each starting from nothing (11k to 14k tokens, see
 [Context budget](#context-budget)) and reading the code again; that was most of why a run felt
@@ -1324,13 +1331,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 379 tests:
+`npm test` runs 380 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 96 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 97 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

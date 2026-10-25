@@ -77,14 +77,16 @@ You decide how the feature is built, and in what order.
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
    end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation
    first, and under each option what follows from it: edge cases, counts, side effects, and the
-   FRs and tasks it changes. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
+   FRs and tasks it changes. Write `plan.md` and `tasks.md` as your recommended options make them:
+   an answer that takes every recommendation then changes only the record, which the main session
+   writes without launching you again. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
    and no `CLAUDE.md` instruction requires (a re-recording, an extra live check, a refactor beside
    the feature) is such a decision too, and its recommended option leaves the work out: the owner
    adds it in one answer. Work the consequences out now. In the 003 run a side effect of the
    rename rule came out only in the second revision, and that cost a whole extra round. Where an
    option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
    that line's new wording under the option, on a line that starts with `Spec:` and its ID: the
-   main session sends the chosen ones to product-owner with your revision. In the 004 run a
+   main session applies the chosen ones, or sends them to product-owner with your revision. In the 004 run a
    decision that contradicted FR-012 failed the first audit.
 
 On a revision with audit findings, fix each one. A finding you judge wrong, because it misreads the

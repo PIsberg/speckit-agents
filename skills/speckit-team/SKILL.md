@@ -234,7 +234,15 @@ stop with AskUserQuestion, recommended option first, each option's description s
 follows from it. With more than 4, ask first one question that lists every decision with its
 options: take every recommended option (recommended), or decide one by one. The user can also
 answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recommended option.
-Then send all the answers to one architect revision (dictated where they fully determine the
+When every answer is the option the architect recommended, its plan and tasks already follow it,
+so launch no one: record the answers yourself, in one message, before the audit. Under each
+decision's `###` heading in `plan.md` add the line `Answer (<date>): <option>, as recommended`, then
+rename `## Open Decisions` to `## Decisions` (if `plan.md` has a `## Decisions` section already,
+move the entries under it instead). Put each chosen `Spec:` line's wording into `spec.md` in place
+of the line it names: grep for that line, Read it alone with an offset and a limit, and Edit it. In
+the full run of 2026-10-24 an architect and a product-owner were launched for one such Edit each,
+0.16M tokens and two agent starts.
+Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
 the two write different files, and the first audit then reads a spec that agrees with the plan.
 In the 004 run a decision that contradicted FR-012 failed the first audit, and the fix cost a
@@ -273,9 +281,10 @@ ask implementer for a test file, since its lane check makes it delete one at its
 of its brief, and the hand-over lists the tests the request named as not written.
 
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
-that cover it, as the architect wrote them. A round is the slices of one phase of `tasks.md` (Setup,
-Foundational, one user story), at most 4 slices: split a longer phase into rounds in task order.
-Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
+that cover it, as the architect wrote them. A round is at most 4 slices, in task order: phases of
+`tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
+longer phase is split into rounds. In the full run of 2026-10-24 a 3-slice feature in two phases
+took two rounds, one test-writer and one implementer more than one round would have. Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
 finish it before starting the next. Every launch starts from nothing (11k to 14k tokens before it
 reads a file) and reads the code again, so up to three launches per slice made the build the
 longest part of a run. Never hand the whole feature to one test-writer or one implementer.
