@@ -1550,3 +1550,97 @@ test('an agent_id that is not an id never puts state outside .git/speckit-team/a
   assert.ok(kept.length >= 4, `the state is kept under agents/: ${kept}`);
 });
 
+
+// 009 T003 (FR-002, FR-006, FR-008, FR-011, US3-1..3, contract sections 3 and 7): the typed
+// /speckit-team --team skill-agents. The hook finds the role skills from its own folder (TEAM_DIR), so a
+// copy of it sits beside a skills/ folder in a temp dir.
+const SKILL_ROLES = [...ALL_ROLES, 'security-reviewer'];
+function skillHook(missing = []) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-'));
+  fs.mkdirSync(path.join(root, 'hooks'));
+  fs.copyFileSync(HOOK, path.join(root, 'hooks', 'speckit-team.mjs'));
+  for (const role of SKILL_ROLES.filter((r) => !missing.includes(r))) {
+    fs.mkdirSync(path.join(root, 'skills', `speckit-role-${role}`), { recursive: true });
+    fs.writeFileSync(path.join(root, 'skills', `speckit-role-${role}`, 'SKILL.md'), `---\nname: speckit-role-${role}\n---\n`);
+  }
+  return path.join(root, 'hooks', 'speckit-team.mjs');
+}
+const typedWith = (dir, hook, args, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'UserPromptExpansion', expansion_type: 'slash_command', command_name: 'speckit-team',
+  command_args: args, prompt: `/speckit-team ${args}`, session_id: 's1', ...extra,
+}, hook);
+const roleFile = (dir, id = 's1') => path.join(stateDir(dir), 'role', `${id}.json`);
+const blockReason = (out) => out?.reason ?? out?.hookSpecificOutput?.permissionDecisionReason ?? '';
+
+test('009 T003 FR-002 FR-006 US3-1 contract 3 and 7: a typed --team skill-agents records skillAgents and answers with the start message', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team skill-agents add a flag');
+  assert.ok(!denied(out) && out?.decision === undefined, 'no decision');
+  assert.match(msg(out), /^speckit-team: skill-agents for this request: the roles run as skills in this session\./);
+  assert.match(msg(out), /Not enforced: the audit gate on each tool call inside test-writer and implementer/);
+  const rec = teamRecord(dir);
+  assert.equal(rec.skillAgents, true);
+  assert.deepEqual(rec.roles, SKILL_ROLES);
+  assert.ok(!JSON.stringify(rec).includes('add a flag'), 'no request text in the record');
+});
+
+test('009 T003 FR-002 US3-1 US3-2 US3-3: which typed forms count', () => {
+  const cases = [
+    ['--team skill-agents add', true], ['--team Skill-Agents add', true], ['--team SKILL-AGENTS', true],
+    ['--security --team skill-agents add', true], ['--project x --team skill-agents add', true],
+    ['--security --project x --team skill-agents add', true],
+    ['--team skill-agents,implementer add', false], ['--team skill-agents, implementer add', false],
+    ['--team implementer, skill-agents add', false], ['--team skill-agents noagents add', false],
+    ['--team skill-agent add', false], ['--team skill-agents-x add', false], ['skill-agents add', false],
+    ['add a flag --team skill-agents', false], ['add --team skill-agents', false], ['--team noagents add', false], ['', false],
+  ];
+  const hook = skillHook();
+  for (const [args, counts] of cases) {
+    const { dir } = repo();
+    typedWith(dir, hook, args);
+    const rec = fs.existsSync(teamFile(dir)) ? teamRecord(dir) : {};
+    assert.equal(rec.skillAgents === true, counts, JSON.stringify(args));
+  }
+});
+
+test('009 T003 FR-011 contract 3: a missing role skill blocks the typed command and names it', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(['architect']), '--team skill-agents add a flag');
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(blockReason(out), /speckit-role-architect/);
+  assert.doesNotMatch(blockReason(out), /speckit-role-implementer/);
+  assert.match(blockReason(out), /node install\.mjs/);
+  assert.ok(noTeamFiles(dir), 'no team record');
+  const two = typedWith(repo().dir, skillHook(['implementer', 'spec-auditor']), '--team skill-agents x');
+  assert.match(blockReason(two), /speckit-role-implementer/);
+  assert.match(blockReason(two), /speckit-role-spec-auditor/);
+});
+
+test('009 T003 contract 3: every typed /speckit-team removes the role record and, without skill-agents, the team record', () => {
+  const { dir } = repo();
+  const hook = skillHook();
+  typedWith(dir, hook, '--team skill-agents add');
+  const rec = {
+    session_id: 's1', role: 'architect', sha: 'a'.repeat(40), dirty: [], transcript: null, offset: 0,
+    feature: FEAT, fingerprint: null, at: new Date().toISOString(),
+  };
+  fs.mkdirSync(path.dirname(roleFile(dir)), { recursive: true });
+  fs.writeFileSync(roleFile(dir), JSON.stringify(rec));
+  typedWith(dir, hook, 'the next request');
+  assert.ok(!fs.existsSync(roleFile(dir)), 'the role record is removed');
+  assert.ok(!fs.existsSync(teamFile(dir)), 'the team record is removed');
+  fs.writeFileSync(roleFile(dir), JSON.stringify(rec));
+  typedWith(dir, hook, '--team skill-agents again');
+  assert.ok(!fs.existsSync(roleFile(dir)), 'skill-agents typed again also clears a role record');
+  assert.equal(teamRecord(dir).skillAgents, true);
+});
+
+test('009 T003 US2: the noagents record and message are unchanged', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team noagents add a file');
+  assert.match(msg(out), /speckit-team: no agents for this request: \/speckit-implement in this session skips the audit gate until the next \/speckit-team or team agent launch/);
+  const rec = teamRecord(dir);
+  assert.equal(rec.noagents, true);
+  assert.deepEqual(rec.roles, []);
+  assert.equal(rec.skillAgents, undefined);
+});

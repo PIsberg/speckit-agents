@@ -14,7 +14,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
 
 ## Phase 1: Foundational, role skills installed (Round 1)
 
-- [ ] T001 Test in `test/install.test.mjs` (FR-009, FR-012, FR-013, SC-007, contract section 2, Edge
+- [X] T001 Test in `test/install.test.mjs` (FR-009, FR-012, FR-013, SC-007, contract section 2, Edge
   "installer is run again or uninstalled"): an install writes `skills/speckit-role-<role>/SKILL.md` for
   each of `TEAM_ORDER` and none for patcher; frontmatter as contract section 2 with the installed hook's
   quoted absolute forward-slash path, and none of `context:`, `agent:`, `model:`, `allowed-tools:`; the
@@ -36,7 +36,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
 
 ## Phase 2: User Story 3, the typed mode in the hook (Round 1)
 
-- [ ] T003 [P] [US3] Test in `test/hook.test.mjs` (FR-002, FR-006, FR-008, FR-011, US3-1, US3-2, US3-3, Edge
+- [X] T003 [P] [US3] Test in `test/hook.test.mjs` (FR-002, FR-006, FR-008, FR-011, US3-1, US3-2, US3-3, Edge
   "role skill missing", contract sections 3 and 7): copy `hooks/speckit-team.mjs` into `<tmp>/hooks/`
   beside `<tmp>/skills/speckit-role-<role>/SKILL.md` for the seven roles and pass that copy as `run`'s
   `hook`, since the hook finds the skills from its own folder (`TEAM_DIR`). Payload as the existing
@@ -54,7 +54,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
 
 ## Phase 3: User Story 1, the skill runs the roles as skills (Round 1)
 
-- [ ] T005 [US1] Test in `test/install.test.mjs` on the installed `skills/speckit-team/SKILL.md` (FR-001,
+- [X] T005 [US1] Test in `test/install.test.mjs` on the installed `skills/speckit-team/SKILL.md` (FR-001,
   FR-002, FR-003, FR-004, FR-006, FR-007, FR-012, US1-1 to US1-3, US3-1 to US3-4, US4-1, US4-2, contract
   section 1, plan D2 and P3): `argument-hint` names `skill-agents`; `## Team` gives the contract's
   refusals and says the question does not offer it; the question's four options do not mention it; a
