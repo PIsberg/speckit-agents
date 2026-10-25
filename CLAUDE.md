@@ -106,5 +106,5 @@ planned last. Read that plan only when you work on that feature.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/008-prompt-caching/plan.md`
+`specs/009-skill-agents-team/plan.md`
 <!-- SPECKIT END -->
