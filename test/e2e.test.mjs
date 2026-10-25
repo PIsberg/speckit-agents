@@ -205,7 +205,7 @@ function reply(res, stream, step, id) {
 // Runs `claude -p MAIN` with the script as the model. Returns every request each sender made, the
 // stream-json events and the exit code. bypassPermissions by default: a guardrail that does not fire
 // then lets the action through, instead of a permission check stopping it in the hook's place.
-async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN } = {}) {
+async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [] } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
   // When each sender's requests arrived, in ms: shows whether two agents ran at the same time.
@@ -237,7 +237,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
     return await new Promise((resolve, reject) => {
       let out = '';
       let err = '';
-      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode],
+      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...args],
         { cwd: repo, env: fakeEnv(cfg, server.address().port, env), stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout.on('data', (d) => { out += d; });
       child.stderr.on('data', (d) => { err += d; });
@@ -1059,17 +1059,7 @@ test('009 T008 contract 3 and 4: a typed --team skill-agents gates the role skil
   assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
 });
 
-// The Skill's own rows (its body is an isMeta user row) must not end the role in the transcript Claude
-// Code writes, or every lane below would lapse at its own Skill call (contract section 8, research R2).
-function transcriptOf(s, id) {
-  const hit = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    return e.isDirectory() ? hit(p) : e.name === `${id}.jsonl` ? [p] : [];
-  });
-  return hit(path.join(s.cfg, 'projects'))[0];
-}
-
-test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the session, and the typed prompt ends the role afterwards", { skip: noClaude, timeout: 240_000 }, async () => {
+test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the session, and a resumed prompt ends the role afterwards", { skip: noClaude, timeout: 240_000 }, async () => {
   const s = setup();
   recordPass(s);
   const r = await session(s, {
@@ -1079,19 +1069,19 @@ test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the s
   assert.match(lastResult(r.requests[MAIN][2]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
   assert.match(lastResult(r.requests[MAIN][4]), /spec-auditor is a read-only role and writes no files/, story(r));
   assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
-  // The real transcript: the typed prompt's row lies after offset 0, so a role record over it has ended.
+  // Contract section 8, plan D11, research R5: a resumed prompt has another prompt_id, which ends a record
+  // of the earlier one. The record below is outside architect's lane (src/x.js), so a record read as live
+  // denies the next role's Skill call with the lane check.
   const id = sessionId(r);
-  const transcript = transcriptOf(s, id);
-  assert.ok(transcript, `no transcript for ${id} under ${s.cfg}`);
-  const rec = { session_id: id, role: 'architect', sha: head(s), dirty: [], transcript, offset: 0, feature: 'specs/001-x', fingerprint: null, at: new Date().toISOString() };
+  const rec = { session_id: id, role: 'architect', sha: head(s), dirty: [], transcript: null, offset: 0, feature: 'specs/001-x', fingerprint: null, prompt_id: 'an earlier prompt', at: new Date().toISOString() };
   fs.mkdirSync(path.join(s.repo, '.git', 'speckit-team', 'role'), { recursive: true });
-  fs.writeFileSync(path.join(s.repo, '.git', 'speckit-team', 'role', `${id}.json`), JSON.stringify(rec));
-  const out = execFileSync(process.execPath, [s.hook, 'scope', 'role'], {
-    cwd: s.repo, encoding: 'utf8',
-    input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: s.repo, session_id: id, tool_name: 'Write', tool_input: { file_path: path.join(s.repo, 'src', 'x.js') } }),
-  });
-  assert.doesNotMatch(out, /permissionDecision/, `an ended role denies nothing:\n${out}`);
-  assert.match(out, /role ended with its turn and no Stop ran/, out);
+  const recFile = path.join(s.repo, '.git', 'speckit-team', 'role', `${id}.json`);
+  fs.writeFileSync(recFile, JSON.stringify(rec));
+  s.write('src/x.js', 'export const x = 1;\n');
+  const r2 = await session(s, { [MAIN]: [roleSkill('product-owner')] }, { prompt: MAIN, args: ['--resume', id] });
+  assert.ok(r2.requests[MAIN].length >= 2, `the resumed session answered the Skill call:\n${story(r2)}`);
+  assert.ok(!lastResultIsError(r2.requests[MAIN][1]), `the product-owner call was let through:\n${story(r2)}`);
+  assert.ok(!fs.existsSync(recFile) || JSON.parse(fs.readFileSync(recFile, 'utf8')).role !== 'architect', 'the ended architect record is gone');
 });
 
 test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the implementer skill blocks the Stop with the lane check", { skip: noClaude, timeout: 240_000 }, async () => {

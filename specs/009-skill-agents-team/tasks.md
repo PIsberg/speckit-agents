@@ -283,7 +283,7 @@ PreToolUse. Two slices, disjoint files.
 Research R5: Claude Code writes the transcript every 100 ms, the turn's prompt row included, so T012's
 rule ended a role at its own start on CI (T017's session 2, macOS). One slice.
 
-- [ ] T030 [P] [US3] Test in `test/hook.test.mjs` (contract section 8, data-model role record, FR-008,
+- [X] T030 [P] [US3] Test in `test/hook.test.mjs` (contract section 8, data-model role record, FR-008,
   US3-6, plan D8, D11): rewrite the cases plan D11 A names, beside them, with `putRole(dir, role,
   extra)`, `roleWrite(dir, file, extra)`, `skillCall(dir, name, extra)`, `stopRole(dir, extra)`,
   `skillAgentsTeam`, `roleRec`, `hasRole`, `putFile`, `msg`, `denied`, `decided`, `ENDED_MSG`; drop
@@ -294,7 +294,7 @@ rule ended a role at its own start on CI (T017's session 2, macOS). One slice.
   Stop, with `stop_hook_active` either way; the same id keeps it; absent on either side, or a
   non-string on the input, keeps it and never crashes; a record whose `transcript` holds a prompt row
   after `offset`, with the input's `prompt_id`, stays live.
-- [ ] T031 [P] [US3] Test in `test/e2e.test.mjs` (contract section 8, plan D11, research R5):
+- [X] T031 [P] [US3] Test in `test/e2e.test.mjs` (contract section 8, plan D11, research R5):
   `session(s, script, { prompt, args })` gains `args`, extra CLI arguments after `--permission-mode`.
   In `009 T011 ...` replace the second half (the hook run over the real transcript; drop
   `transcriptOf`, which nothing else calls): write `role/<id>.json` for `sessionId(r)` with `role:

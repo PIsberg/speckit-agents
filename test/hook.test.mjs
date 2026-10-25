@@ -1883,67 +1883,72 @@ test('009 T010 twin: ROLE_LANES equals the scope arguments in agents/<role>.md',
   }
 });
 
-// Contract section 8, plan D8: a role record has ended once its transcript holds a user prompt row after offset.
-const ENDING = {
-  'a typed prompt (string)': userRow('please continue'),
-  'a typed prompt (text blocks)': userRow([{ type: 'text', text: 'please continue' }]),
-  'an interrupt': userRow([{ type: 'text', text: '[Request interrupted by user]' }]),
-  'a prompt with origin.kind human': userRow('again', { origin: { kind: 'human' } }),
-};
-const KEEPING = {
-  'an AskUserQuestion answer (a tool result)': userRow([{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }]),
-  'a Skill body (isMeta)': userRow('Base directory for this skill', { isMeta: true }),
-  'a compact summary': userRow('summary', { isCompactSummary: true }),
-  'a sidechain row': userRow('sidechain', { isSidechain: true }),
-  'a task notification': userRow('done', { origin: { kind: 'task-notification' } }),
-  'an assistant row': assistantRow('working'),
-  'a mixed text and tool_result list': userRow([{ type: 'text', text: 'a' }, { type: 'tool_result', tool_use_id: 't', content: 'b' }]),
-};
-const ENDED_MSG = (role) => new RegExp(`speckit-team: the ${role} role ended with its turn and no Stop ran; its lane check and report did not run\\. Call the Skill speckit-role-${role} again to continue it\\.`);
-function roleWithTranscript(dir, role, before, after) {
-  const t = transcriptIn(dir, before);
-  putRole(dir, role, { transcript: t, offset: fs.statSync(t).size });
-  fs.appendFileSync(t, after.map((r) => JSON.stringify(r) + '\n').join(''));
-  return t;
-}
+// Contract section 8, plan D11: a role record has ended once the hook input carries a prompt_id other than
+// the record's. A record or an input without a string prompt_id stays live.
+const ENDED_MSG = (role) => new RegExp(`speckit-team: the ${role} role ended with its turn and no Stop ran; its lane check and report did not run\. Call the Skill speckit-role-${role} again to continue it\.`);
 
-test('009 T010 contract 8 plan D8: which rows end a role and which keep it', () => {
+test('009 T030 contract 8 plan D11: the Skill call stores its prompt_id, null when it is no non-empty string', () => {
   const { dir } = repo();
-  for (const [what, row] of Object.entries(ENDING)) {
-    roleWithTranscript(dir, 'test-writer', [userRow('old prompt')], [assistantRow('x'), row]);
-    const out = roleWrite(dir, 'src/main/App.java');
-    assert.ok(!denied(out), `${what} ends the role`);
-    assert.match(msg(out), ENDED_MSG('test-writer'), what);
-    assert.ok(!hasRole(dir), `${what}: record removed`);
+  const cases = [['p1', 'p1'], [undefined, null], ['', null], [7, null], [['p1'], null], [null, null]];
+  for (const [given, stored] of cases) {
+    skillAgentsTeam(dir);
+    const out = skillCall(dir, 'speckit-role-product-owner', { prompt_id: given });
+    assert.ok(!decided(out), `${JSON.stringify(given)}: ${JSON.stringify(out)}`);
+    assert.equal(roleRec(dir).prompt_id, stored, `prompt_id ${JSON.stringify(given)}`);
+    fs.rmSync(roleFile(dir, 's1'), { force: true });
   }
-  for (const [what, row] of Object.entries(KEEPING)) {
-    roleWithTranscript(dir, 'test-writer', [userRow('old prompt')], [row]);
-    assert.ok(denied(roleWrite(dir, 'src/main/App.java')), `${what} keeps the role`);
-    assert.ok(hasRole(dir), `${what}: record kept`);
-  }
-  // A prompt row before offset is the turn that started the role.
-  roleWithTranscript(dir, 'test-writer', [userRow('the typed request')], [assistantRow('x')]);
-  assert.ok(denied(roleWrite(dir, 'src/main/App.java')), 'rows before offset do not count');
-  // An unreadable transcript leaves the record live.
-  putRole(dir, 'test-writer', { transcript: path.join(dir, 'no-such-transcript.jsonl'), offset: 0 });
-  assert.ok(denied(roleWrite(dir, 'src/main/App.java')), 'unreadable transcript');
-  assert.ok(hasRole(dir));
-  putRole(dir, 'test-writer', { transcript: null, offset: 0 });
-  assert.ok(denied(roleWrite(dir, 'src/main/App.java')), 'no transcript recorded');
 });
 
-test('009 T010 contract 8: an ended record of each lane kind denies nothing, says so once and is removed', () => {
+test('009 T030 FR-008 contract 8 plan D11: another prompt_id ends a role of each lane kind, once, with the message', () => {
   const { dir } = repo();
   const cases = [['product-owner', 'src/main/App.java'], ['test-writer', 'src/main/App.java'], ['implementer', 'src/test/java/AppTest.java'],
     ['spec-auditor', `${FEAT}/spec.md`], ['spec-gatekeeper', 'src/main/App.java']];
   for (const [role, file] of cases) {
-    roleWithTranscript(dir, role, [], [userRow('a new prompt')]);
-    const first = roleWrite(dir, file);
+    putRole(dir, role, { prompt_id: 'p1' });
+    assert.ok(denied(roleWrite(dir, file, { prompt_id: 'p1' })), `${role}: control, the same id keeps the lane`);
+    const first = roleWrite(dir, file, { prompt_id: 'p2' });
     assert.ok(!decided(first), `${role}: ${JSON.stringify(first)}`);
     assert.match(msg(first), ENDED_MSG(role));
     assert.ok(!hasRole(dir), `${role}: removed`);
-    assert.equal(roleWrite(dir, file), null, `${role}: said once`);
+    assert.equal(roleWrite(dir, file, { prompt_id: 'p2' }), null, `${role}: said once`);
   }
+});
+
+test('009 T030 contract 8 plan D11: the same id keeps the role; an absent or non-string id on either side keeps it and never crashes', () => {
+  const { dir } = repo();
+  const file = 'src/main/App.java';
+  putRole(dir, 'test-writer', { prompt_id: 'p1' });
+  assert.match(msg(roleWrite(dir, file, { prompt_id: 'p2' })) ?? '', /ended with its turn/, 'control: another string id ends it');
+  const keeps = [
+    ['same id', { prompt_id: 'p1' }, { prompt_id: 'p1' }],
+    ['no id in the record', {}, { prompt_id: 'p2' }],
+    ['a null id in the record', { prompt_id: null }, { prompt_id: 'p2' }],
+    ['an empty id in the record', { prompt_id: '' }, { prompt_id: 'p2' }],
+    ['a number in the record', { prompt_id: 7 }, { prompt_id: 'p2' }],
+    ['no id on the input', { prompt_id: 'p1' }, {}],
+    ['an empty id on the input', { prompt_id: 'p1' }, { prompt_id: '' }],
+    ['a number on the input', { prompt_id: 'p1' }, { prompt_id: 7 }],
+    ['an array on the input', { prompt_id: 'p1' }, { prompt_id: ['p2'] }],
+    ['an object on the input', { prompt_id: 'p1' }, { prompt_id: { id: 'p2' } }],
+    ['a null id on the input', { prompt_id: 'p1' }, { prompt_id: null }],
+  ];
+  for (const [what, rec, input] of keeps) {
+    putRole(dir, 'test-writer', rec);
+    const out = roleWrite(dir, file, input);
+    assert.ok(denied(out), `${what}: ${JSON.stringify(out)}`);
+    assert.doesNotMatch(msg(out) ?? '', /ended with its turn/, what);
+    assert.ok(hasRole(dir), `${what}: record kept`);
+  }
+});
+
+test('009 T030 contract 8 plan D11: a prompt row in the transcript after offset does not end a role', () => {
+  const { dir } = repo();
+  const t = transcriptIn(dir, [userRow('typed')]);
+  putRole(dir, 'test-writer', { prompt_id: 'p1', transcript: t, offset: fs.statSync(t).size });
+  fs.appendFileSync(t, JSON.stringify(userRow('written ahead of the turn')) + '\n');
+  const out = roleWrite(dir, 'src/main/App.java', { prompt_id: 'p1' });
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.ok(hasRole(dir));
 });
 
 // ---- T013: closing a role (lane check at the next Skill call and at Stop) ----
@@ -2011,48 +2016,52 @@ test('009 T013 plan D7 contract 6: a read-only role gets no lane check at close'
   assert.equal(roleRec(dir).role, 'architect');
 });
 
-test('009 T013 contract 8 plan D8: an ended record is removed with the message, nothing closed', () => {
+test('009 T030 contract 8 plan D11: another prompt_id at Stop removes the record with the message, nothing closed', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
-  const t = transcriptIn(dir, [userRow('typed')]);
-  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner', { transcript_path: t })));
-  fs.appendFileSync(t, JSON.stringify(userRow('a new prompt')) + '\n');
+  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner', { prompt_id: 'p1' })));
   putFile(dir, 'src/x.js');
   for (const active of [false, true]) {
-    if (active) { putRole(dir, 'product-owner', { sha: roleRec(dir).sha, transcript: t, offset: roleRec(dir).offset }); }
-    const stop = stopRole(dir, { stop_hook_active: active });
+    const stop = stopRole(dir, { stop_hook_active: active, prompt_id: 'p2' });
     assert.ok(!decided(stop), `stop_hook_active ${active}: ${JSON.stringify(stop)}`);
     assert.match(msg(stop), ENDED_MSG('product-owner'));
     assert.doesNotMatch(msg(stop), /WARNING/);
     assert.ok(!hasRole(dir));
-    if (!active) putRole(dir, 'product-owner', { transcript: t, offset: 0 });
+    if (!active) putRole(dir, 'product-owner', { prompt_id: 'p1' });
   }
-  // The next role's Skill call: let through, a new record.
-  const t2 = transcriptIn(dir, [userRow('typed')]);
-  skillCall(dir, 'speckit-role-product-owner', { transcript_path: t2 });
-  fs.appendFileSync(t2, JSON.stringify(userRow('a new prompt')) + '\n');
-  const out = skillCall(dir, 'speckit-role-architect', { transcript_path: t2 });
-  assert.ok(!denied(out), JSON.stringify(out));
-  assert.match(msg(out), ENDED_MSG('product-owner'));
-  assert.equal(roleRec(dir).role, 'architect');
-  assert.ok(roleRec(dir).dirty.includes('src/x.js'), 'the new record starts from the files as they are');
+  // The same id still gets the lane check.
+  putRole(dir, 'product-owner', { prompt_id: 'p1' });
+  const same = stopRole(dir, { prompt_id: 'p1' });
+  assert.equal(same?.decision, 'block', JSON.stringify(same));
 });
 
-test('009 T013 contract 8 plan D8 (M3): the same role called again in the next turn gets its lane back, from that call', () => {
+test('009 T030 contract 8 plan D11: the next role\'s Skill call after another prompt_id is let through with a new record', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
-  const t = transcriptIn(dir, [userRow('typed')]);
-  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner', { transcript_path: t })));
+  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner', { prompt_id: 'p1' })));
+  putFile(dir, 'src/x.js');
+  const out = skillCall(dir, 'speckit-role-architect', { prompt_id: 'p2' });
+  assert.ok(!denied(out), JSON.stringify(out));
+  assert.match(msg(out), ENDED_MSG('product-owner'));
+  const rec = roleRec(dir);
+  assert.equal(rec.role, 'architect');
+  assert.equal(rec.prompt_id, 'p2');
+  assert.ok(rec.dirty.includes('src/x.js'), 'the new record starts from the files as they are');
+});
+
+test('009 T030 contract 8 plan D11 (M3): the same role called again in the next prompt gets its lane back, from that call', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner', { prompt_id: 'p1' })));
   putFile(dir, 'src/first-turn.js');
-  fs.appendFileSync(t, JSON.stringify(userRow('answer in a new turn')) + '\n');
-  const again = skillCall(dir, 'speckit-role-product-owner', { transcript_path: t });
+  const again = skillCall(dir, 'speckit-role-product-owner', { prompt_id: 'p2' });
   assert.ok(!decided(again), JSON.stringify(again));
   assert.match(msg(again), ENDED_MSG('product-owner'));
-  assert.equal(roleRec(dir).offset, fs.statSync(t).size, 'a new record from this call');
-  assert.ok(denied(roleWrite(dir, 'src/main/App.java')), 'its lane is back');
-  assert.equal(roleWrite(dir, `${FEAT}/spec.md`), null);
+  assert.equal(roleRec(dir).prompt_id, 'p2', 'a new record from this call');
+  assert.ok(denied(roleWrite(dir, 'src/main/App.java', { prompt_id: 'p2' })), 'its lane is back');
+  assert.equal(roleWrite(dir, `${FEAT}/spec.md`, { prompt_id: 'p2' }), null);
   putFile(dir, 'src/second-turn.js');
-  const stop = stopRole(dir);
+  const stop = stopRole(dir, { prompt_id: 'p2' });
   assert.equal(stop?.decision, 'block', JSON.stringify(stop));
   assert.match(stop.reason, /src\/second-turn\.js/);
   assert.doesNotMatch(stop.reason, /first-turn/);
