@@ -54,15 +54,21 @@ export function responses(rows, { sidechain = false } = {}) {
 }
 
 // Agent launches and how each came back: a background launch returns a receipt, a foreground one
-// returns the agent's report.
+// returns the agent's report. `together` counts the Agent calls of the response that made it, so
+// slices built side by side show as more than one (#114).
 export function launches(rows) {
-  const calls = new Map(); const out = [];
+  const calls = new Map(); const perResponse = new Map(); const out = [];
   for (const r of rows) {
     if (r.isSidechain) continue;
     for (const p of Array.isArray(r.message?.content) ? r.message.content : []) {
-      if (p?.type === 'tool_use' && (p.name === 'Agent' || p.name === 'Task')) calls.set(p.id, p.input?.subagent_type ?? 'general-purpose');
+      if (p?.type === 'tool_use' && (p.name === 'Agent' || p.name === 'Task')) {
+        const key = r.message.id ?? p.id;
+        perResponse.set(key, (perResponse.get(key) ?? 0) + 1);
+        calls.set(p.id, { type: p.input?.subagent_type ?? 'general-purpose', worktree: p.input?.isolation === 'worktree', key });
+      }
       if (p?.type === 'tool_result' && calls.has(p.tool_use_id)) {
-        out.push({ type: calls.get(p.tool_use_id), background: BACKGROUND.test(textOf(p.content)) });
+        const { type, worktree, key } = calls.get(p.tool_use_id);
+        out.push({ type, background: BACKGROUND.test(textOf(p.content)), worktree, together: perResponse.get(key) });
       }
     }
   }
@@ -131,6 +137,11 @@ export function format({ main, agents, models, warnings = [] }) {
     `main session: ${main.responses} responses, input ${M(main.input)} (cache read ${M(main.cacheRead)}, cache write ${M(main.cacheWrite)}), first ${k(main.first)}, peak ${k(main.peak)}, ${main.models.join(', ')}`,
     `agent launches: ${main.launches.length} (${main.launches.length - bg} foreground, ${bg} background); responses that only waited for a background agent: ${main.waits}, input ${M(main.waitInput)} (${pct(main.waitInput, main.input)} of the main session)`,
   ];
+  const together = main.launches.filter((l) => l.together > 1);
+  if (together.length) {
+    const responses = together.reduce((n, l) => n + 1 / l.together, 0);
+    out.push(`side by side: ${Math.round(responses)} responses launched more than one agent (${together.length} agents), ${main.launches.filter((l) => l.worktree).length} agents in a worktree`);
+  }
   if (agents.length) {
     out.push(`agents: ${agents.length}, input ${M(sum(agents, 'input'))}`);
     for (const a of agents) {

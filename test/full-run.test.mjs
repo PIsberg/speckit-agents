@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -173,4 +173,57 @@ test('full run: without an API key it stops before writing anything and names --
   assert.equal(r.status, 2, r.stdout + r.stderr);
   assert.match(r.stderr, /ANTHROPIC_API_KEY is not set.*--login/);
   assert.ok(!fs.existsSync(out), 'nothing written');
+});
+
+// #114: the only run that can show a real main session building [P] slices side by side. The fixture's
+// one-function request has a single slice, so --side-by-side asks for two functions in two files and
+// answers the plan stop's question with side by side; the run then fails unless implementers went out
+// together in worktrees and every worktree and its branch is gone at the end.
+test('full run: --side-by-side asks for two slices in disjoint files and answers side by side (#114)', () => {
+  assert.equal(args(['--side-by-side', '--out', 'x']).sideBySide, true);
+  assert.equal(args(['--out', 'x']).sideBySide, false);
+  const plain = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-p-')), 'repo')).request;
+  const { request } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-sbs-')), 'repo'), { sideBySide: true });
+  assert.notEqual(request, plain);
+  assert.match(request, /src\/math\.js/);
+  assert.match(request, /src\/text\.js/, 'the second slice is in a file of its own');
+  const text = answer(MARKER, { sideBySide: true });
+  assert.match(text, /side by side/);
+  assert.ok(text.includes(MARKER), 'still carries the marker');
+  assert.doesNotMatch(answer(MARKER), /side by side/, 'the plain run keeps the recommended one at a time');
+});
+
+test('full run: a side-by-side run fails unless implementers went out together in worktrees (#114)', () => {
+  const together = [{ type: 'implementer', background: false, worktree: true, together: 2 }, { type: 'implementer', background: false, worktree: true, together: 2 }];
+  const sbs = (s) => failures(s, undefined, undefined, { sideBySide: true });
+  assert.deepEqual(sbs(state({ launches: together })), []);
+  for (const launches of [
+    [{ type: 'implementer', background: false, worktree: false, together: 1 }],
+    [{ type: 'implementer', background: false, worktree: true, together: 1 }],
+    [{ type: 'implementer', background: false, worktree: false, together: 2 }, { type: 'implementer', background: false, worktree: false, together: 2 }],
+  ]) {
+    const f = sbs(state({ launches }));
+    assert.equal(f.length, 1, JSON.stringify(f));
+    assert.match(f[0], /side by side/);
+  }
+  assert.deepEqual(failures(state({ launches: [{ type: 'implementer', background: false, worktree: false, together: 1 }] })), [], 'one at a time is fine without the flag');
+});
+
+test('full run: a worktree or worktree branch left behind fails the run (#114)', () => {
+  const s = state();
+  fs.writeFileSync(path.join(s.repo, 'f.txt'), 'x');
+  git(s.repo, 'add', '-A');
+  git(s.repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'x');
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-wt-')), 'agent-1');
+  assert.equal(git(s.repo, 'worktree', 'add', '-q', '-b', 'worktree-agent-1', wt).status, 0);
+  const f = failures(s);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0], /worktree/);
+  assert.match(f[0], /agent-1/);
+  git(s.repo, 'worktree', 'remove', wt);
+  const branch = failures(s);
+  assert.equal(branch.length, 1, JSON.stringify(branch));
+  assert.match(branch[0], /worktree-agent-1/, 'the branch is left after the worktree went');
+  git(s.repo, 'branch', '-D', 'worktree-agent-1');
+  assert.deepEqual(failures(s), []);
 });

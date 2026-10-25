@@ -1331,7 +1331,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 380 tests:
+`npm test` runs 384 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1339,7 +1339,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 97 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
-| [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
+| [`test/usage.test.mjs`](test/usage.test.mjs) | 8 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
@@ -1347,7 +1347,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 9 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 12 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--side-by-side` and the worktree checks, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1506,7 +1506,7 @@ team and approves every recommended option, plus a note marked as for the main s
 run. It then checks only what does not depend on the models' wording, and fails the run on any of:
 no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a task of `tasks.md` left
 unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
-main-session response that only waited, a cost over the ceiling (`total_cost_usd` of the last
+main-session response that only waited, a worktree or `worktree-*` branch left behind, a cost over the ceiling (`total_cost_usd` of the last
 turn, which counts the turns before it), or the main session's note reaching an agent. It writes `run.json` and exits 0 only when every check
 passed. Nothing is retried, because a retry would hide a real regression.
 
@@ -1529,6 +1529,14 @@ and stays out of the feature's commits (`.git/info/exclude`), and the repo is tr
 `.claude.json` for the run only, the one entry removed again after the last turn. Your own
 `CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
 the settings gates of a team you installed fire beside the scratch repo's.
+
+With `--side-by-side` the request is two functions in two files (`sum()` in `src/math.js`,
+`capitalize()` in a new `src/text.js`, from `request-side-by-side.txt`), and the answer takes every
+recommended option except one at a time: the `[P]` slices are built side by side
+([#114](https://github.com/PIsberg/speckit-agents/issues/114)). The run then also fails unless two
+implementers went out in one response, each with `isolation: "worktree"`. `tools/usage.mjs` prints
+the same from any transcript: how many responses launched more than one agent, and how many agents
+ran in a worktree.
 
 The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
 $4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand

@@ -60,10 +60,33 @@ test('usage counts each API response once, however many lines it was written as'
 
 test('usage tells background launches from foreground ones and finds the response that only waited', () => {
   const { main } = summarise(transcript());
-  assert.deepEqual(main.launches, [{ type: 'product-owner', background: true }, { type: 'architect', background: false }]);
+  assert.deepEqual(main.launches, [{ type: 'product-owner', background: true, worktree: false, together: 1 }, { type: 'architect', background: false, worktree: false, together: 1 }]);
   // m2 followed the launch receipt and called nothing. m3, after the hand-back, did work.
   assert.equal(main.waits, 1);
   assert.equal(main.waitInput, 1201);
+});
+
+// #114: slices built side by side go out as several Agent calls in one response, each implementer in a
+// worktree. The response may be written over several lines, as m1 is above.
+test('usage tells which launches went out together and which ran in a worktree (#114)', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skusage-sbs-')), 'sess.jsonl');
+  const wt = (id) => ({ type: 'tool_use', id, name: 'Agent', input: { subagent_type: 'implementer', isolation: 'worktree' } });
+  fs.writeFileSync(file, [
+    hear('/speckit-team add sum() and capitalize()'),
+    say('m1', usage(1000), [agent('t1', 'test-writer'), agent('t2', 'test-writer')]),
+    result('t1', 'RED'), result('t2', 'RED'),
+    say('m2', usage(1000), [wt('t3')]),
+    say('m2', usage(1000), [wt('t4')]),
+    result('t3', 'RESULT: GREEN'), result('t4', 'RESULT: GREEN'),
+    say('m3', usage(1000), [agent('t5', 'spec-gatekeeper')]),
+    result('t5', 'APPROVED'),
+  ].map((l) => JSON.stringify(l)).join('\n'));
+  const { main } = summarise(file);
+  assert.deepEqual(main.launches.map((l) => [l.type, l.together, l.worktree]), [
+    ['test-writer', 2, false], ['test-writer', 2, false], ['implementer', 2, true], ['implementer', 2, true], ['spec-gatekeeper', 1, false],
+  ]);
+  const out = spawnSync(process.execPath, [TOOL, file], { encoding: 'utf8' });
+  assert.match(out.stdout, /side by side: 2 responses launched more than one agent \(4 agents\), 2 agents in a worktree/);
 });
 
 test('usage totals input per model in the fields claude -p reports', () => {
