@@ -73,7 +73,8 @@ For a skill name (`skill_name`, `skill` or `name`, as the gate reads `speckit-im
 1. From a subagent (`agent_id` set): no decision.
 2. The session's team record lacks `skillAgents`: deny, `speckit-role-<role> runs only in a request
    typed as /speckit-team --team skill-agents <request>.`
-3. A role record exists: close it (section 6). A lane violation denies this call.
+3. A live role record exists: close it (section 6). A lane violation denies this call. An ended one
+   (section 8): removed with section 8's message, nothing closed.
 4. `<role>` is `test-writer`, `implementer` or `spec-gatekeeper`: the audit gate, `auditProblem()`,
    denying with `Implementation gate: <problem>. Run the Skill speckit-role-spec-auditor (an agent
    launch ends skill-agents mode) and get VERDICT: PASS first.` In a session whose team record has
@@ -99,7 +100,8 @@ From the main session with a role record, the acting role's rule from `ROLE_LANE
 | spec-auditor, spec-gatekeeper, security-reviewer | `none`: every write denied; `<role> is a read-only role and writes no files. Report what should change instead.` |
 
 Denials name the role where the agent's name stands today. The git-directory rule of every `scope` rule
-applies. No role record, or a subagent: no decision.
+applies. No role record, or a subagent: no decision. An ended record (section 8): removed with section
+8's message, no decision.
 
 ## 6. Closing a role (at section 4 step 3, and `lane role` at Stop)
 
@@ -117,7 +119,8 @@ applies. No role record, or a subagent: no decision.
      section 4 does, never `@agent-spec-auditor`.
    - spec-gatekeeper: the last of those texts whose last line, normalised as the `ends` mode does it, is
      `APPROVED` or `REJECTED`, recorded to `ends/<feature>.json`.
-3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5).
+3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
+   record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash.
 
@@ -128,6 +131,25 @@ hook: each role's lane, the audit gate before test-writer, implementer and spec-
 spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call
 inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or
 spec-gatekeeper starts), the retry limit (the skill counts), the check that a report ends in its word,
-and each role's own context (every role sees this conversation).`
+each role's own context (every role sees this conversation), each agent's tool list (a role may use
+every tool of this session, MCP tools included, and a read-only role's write through one is not
+checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the
+role's lane check and report then do not run).`
 
 The skill does not repeat it; it adds its one-line team notice as in `## Team`.
+
+## 8. When a role ends (plan D8)
+
+A role record is live from its Skill call to the end of that turn. It has ended once its `transcript`
+holds, after `offset`, a user prompt row: `type: 'user'`, not `isMeta`, not `isCompactSummary`, not
+`isSidechain`, `origin.kind` not `task-notification`, and `message.content` a string or a list with
+no `tool_result` block. A typed prompt, an interrupt (`[Request interrupted by user]`) and the prompt
+after a turn that an API error ended (StopFailure, no Stop) are such rows; an AskUserQuestion answer
+(a tool result), a Skill's body (`isMeta`) and a compact summary are not. A transcript that cannot be
+read leaves the record live.
+
+An ended record is removed where it is read (section 4 step 3, section 5, section 6 at Stop), never
+closed, with the system message `speckit-team: the <role> role ended with its turn and no Stop ran;
+its lane check and report did not run. Call the Skill speckit-role-<role> again to continue it.` A role
+that goes on in a later turn is called again (section 1's skill, `## Skill agents`); its lane then
+runs from that call.

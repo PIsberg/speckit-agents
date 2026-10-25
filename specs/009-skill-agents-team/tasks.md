@@ -36,7 +36,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
 
 ## Phase 2: User Story 3, the typed mode in the hook (Round 1)
 
-- [ ] T003 [P] [US3] Test in `test/hook.test.mjs` (FR-002, FR-006, FR-011, US3-1, US3-2, US3-3, Edge
+- [ ] T003 [P] [US3] Test in `test/hook.test.mjs` (FR-002, FR-006, FR-008, FR-011, US3-1, US3-2, US3-3, Edge
   "role skill missing", contract sections 3 and 7): copy `hooks/speckit-team.mjs` into `<tmp>/hooks/`
   beside `<tmp>/skills/speckit-role-<role>/SKILL.md` for the seven roles and pass that copy as `run`'s
   `hook`, since the hook finds the skills from its own folder (`TEAM_DIR`). Payload as the existing
@@ -63,14 +63,16 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   role before each call; one role at a time (plan P5): one role Skill call per response, never two in
   one message, and the launches the steps send side by side (`## Handoffs`, "in one message as several
   Agent calls"; the answers paragraph's architect revision with product-owner's `Spec:` lines) become
-  one role call after the other, the next after the previous role's work is done; the stops of steps 1 to 6 hold; the side-by-side question is not asked; with
+  one role call after the other, the next after the previous role's work is done; a role that goes on
+  after the user answers in a new message is called again before it writes (plan D8); the stops of steps 1 to 6 hold; the side-by-side question is not asked; with
   `--project` the block is read from `node "{{HOOK}}" project` output and followed by every role, as
   `## No agents` step 1; security-reviewer at both points of steps 1 and 6; the skill counts 3
   `RESULT: RED` in a row itself; the hook's start message is not repeated.
 - [ ] T006 [US1] Implement in `skills/speckit-team/SKILL.md`: the `argument-hint`, a `## Team` paragraph
   and refusals (contract section 1), and a `## Skill agents` section after `## No agents` that maps each
   step's launch to its Skill call, says the one-at-a-time rule (plan P5) where it replaces the
-  side-by-side launches, and points to the steps instead of restating them. At most 3,000
+  side-by-side launches, says a role continued in a later turn is called again (contract section 8), and
+  points to the steps instead of restating them. At most 3,000
   characters added in all: every `/speckit-team` run reads the skill.
 
 ## Phase 4: User Story 3, guardrails in the session (Rounds 2 and 3)
@@ -107,22 +109,38 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   contract's table; no record, or `agent_id` set, decides nothing; an unreadable record denies; a repo
   from `repo({ speckit: false })` decides nothing; the git directory is denied. Twin: `ROLE_LANES` read
   from the hook's source equals, per role, the `scope` arguments in `agents/<role>.md`, or `['none']`
-  where its `disallowedTools` has `Write`.
+  where its `disallowedTools` has `Write`. Ended record (contract section 8, plan D8, H1): the test writes
+  the record's `transcript` as JSONL with rows after `offset`, one case per row kind section 8 names as
+  ending or keeping the role; an ended record of each lane kind denies nothing, gives section 8's message
+  once and is removed; an unreadable transcript keeps the role's denials.
 - [ ] T011 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008, then
   `recordPass(s)`; the main script calls the Skill `speckit-role-architect`, then `wfile` to `src/x.js`
   (denied with architect's lane text), then the Skill `speckit-role-spec-auditor`, then `wfile` to
-  `specs/001-x/spec.md` (denied as read-only). Fails with `SPECKIT_E2E_NO_HOOK=1`.
+  `specs/001-x/spec.md` (denied as read-only), which shows the Skill's own rows keep the role live on
+  the Claude Code under test. After the session, `run(dir, ['scope', 'role'], …)` on a role record over
+  that session's real transcript with `offset: 0` (the typed prompt's row lies after it) decides nothing
+  (contract section 8). Fails with `SPECKIT_E2E_NO_HOOK=1`.
 - [ ] T012 [US3] Implement in `hooks/speckit-team.mjs`, scope mode: `const ROLE_LANES` (contract
   section 5), rule `role` resolved from the session's role record to its rule and prefixes, rule `none`
   denying every path, denial texts naming the role; reuse `readState`, `roleFile`, `inLane`,
-  `inPrefixes`, `inGitDir`, `repoRel`, `deny`.
+  `inPrefixes`, `inGitDir`, `repoRel`, `deny`. Contract section 8: `function linesAfter(file: string,
+  offset: number): string[] | null` (the JSONL lines from byte `offset`, `null` when unreadable; reuse
+  `lines`), `function promptRow(line: string): boolean`, `function roleEnded(rec: object): boolean`
+  (`false` for an unreadable transcript) and `function dropRole(rec: object): string` (removes the record,
+  returns section 8's message; the caller sends it as `systemMessage` with its own outcome, through
+  `emit` at the end, so a Skill call still reaches its gate and new record), called before the lane rule
+  is resolved.
 - [ ] T013 [US3] Test in `test/hook.test.mjs` (contract section 6 steps 1 and 3, FR-008, US3-6): role
   record written by a Skill call payload; files created on disk as Bash would, committed or not. Open
   cases: outside the lane, the next role's Skill call is denied naming the file and the start sha's 12
   characters; `run(dir, ['lane', 'role'], { hook_event_name: 'Stop', session_id })` blocks, and with
   `stop_hook_active` gives the `WARNING` message and removes the record; a file dirty at the role's start
   is not counted; a file written through Bash under a read-only role is not counted, its Stop and the
-  next Skill call decide nothing (plan D7); no record decides nothing; an unreadable
+  next Skill call decide nothing (plan D7); an ended record (contract section 8, plan D8) with a file
+  outside its lane: the Stop neither blocks nor warns and removes it with section 8's message, and the
+  next role's Skill call is let through with a new record; the same role called again in the next turn
+  (M3) gets its lane back: a write outside it is denied, and its Stop checks only what changed since
+  that call; no record decides nothing; an unreadable
   record, a non-hex sha (`--output=x`) or a sha that is no commit says the lane check could not run.
 - [ ] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
   `recordPass(s)`; the main script calls the Skill `speckit-role-implementer`, writes a test file through
@@ -136,7 +154,8 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   arguments, `testPaths.bad`, `git cat-file -e`, then `changedSince` minus `dirty` outside the rule) out
   into `function laneOutside(base: object | null, rule: string, prefixes: string[], who: string): { problem: string } | { outside: string[] }`
   (`problem` is the existing `lane check could not run for <who>: ...` text; `testPaths.bad` counts for
-  `tests` and `no-tests` only). `closeRole` skips the lane check for a role whose rule is `none` (plan D7). Lane mode calls it with its `who` and
+  `tests` and `no-tests` only). `closeRole` first hands an ended record (T012's `roleEnded`) to T012's
+  `dropRole`, closes nothing and passes its message on to the caller's output (contract section 8). `closeRole` skips the lane check for a role whose rule is `none` (plan D7). Lane mode calls it with its `who` and
   rule and keeps its messages, so its existing `test/hook.test.mjs` lane cases hold the change; `closeRole`
   calls it with the role record and `ROLE_LANES[role]`. Also reuse `block`, `deny`, `emit`.
 - [ ] T016 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2, FR-008, US3-5, research R1):
@@ -155,7 +174,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   PASS. Session 2: the auditor role, then `say` ending `VERDICT: PASS`: the Stop records it. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
 - [ ] T018 [P] [US3] Implement in `hooks/speckit-team.mjs`, `closeRole` step 2: `function roleTexts(file: string, offset: number): string[]`
-  built on `function assistantText(line: string, mainOnly: boolean): string`, the row parsing taken out
+  reading through T012's `linesAfter`, built on `function assistantText(line: string, mainOnly: boolean): string`, the row parsing taken out
   of `lastAssistantText` (`hooks/speckit-team.mjs`; one JSONL row to its assistant text, `''` for a
   malformed or non-assistant row and, with `mainOnly`, a sidechain row), which `lastAssistantText` then
   calls with `false`; `function verdictIn(text: string): 'PASS' | 'FAIL' | null` and
@@ -213,7 +232,7 @@ what was seen.
 ## Dependencies
 
 Round 1 before Round 2: T008, T011, T014 need T002's installed role skills and T004's typed record.
-T015 builds on T009, T018 on T015. T024 needs T001 to T021; T023 needs T024's records. Within a round,
+T015 builds on T009 and T012, T018 on T015. T024 needs T001 to T021; T023 needs T024's records. Within a round,
 one test-writer then one implementer.
 
 ## Rounds

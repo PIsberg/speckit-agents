@@ -86,8 +86,9 @@ skills are build output of the installer, not sources, so FR-013 holds by constr
 
 ## Design notes
 
-- P1. Role lifecycle: a role starts at its Skill call and ends at the next role's Skill call or at the
-  main session's Stop. While the orchestrating skill waits at a stop inside a turn (AskUserQuestion),
+- P1. Role lifecycle: a role starts at its Skill call and ends at the next role's Skill call, at the
+  main session's Stop, or at the first user prompt after it, which covers a turn that ends with no Stop
+  (D8, contract section 8). A role that goes on in a later turn is called again. While the orchestrating skill waits at a stop inside a turn (AskUserQuestion),
   the role stays; the writes the skill makes there (answers into `plan.md` and `spec.md`, ticks) are in
   the acting role's lane, and commits change no file.
 - P2. The role skills are denied outside a typed skill-agents request (contract section 4), so a model
@@ -224,3 +225,61 @@ default run blocks" (audit finding M2).
   Spec: SC-006: In a skill-agents run, 100% of attempted writes outside a role's lane are blocked, and
   every file a read-only role changes, through any tool, blocks its close; 0 guardrails are dropped
   without being named at run start.
+
+### D8. When does a role's lane end if its turn ends with no Stop?
+
+Answer (2026-10-25): A, as recommended
+
+Claude Code runs no Stop when the user interrupts a turn, and an API error ends a turn with StopFailure
+(third audit, H1). A record that lives until the next Stop or typed `/speckit-team` then holds later,
+unrelated work to the last role's lane (every Write denied under a read-only role), and the next Stop
+asks the model to `git checkout` the user's own files. Removing the record at Stop also drops the lane
+of a role that goes on in the next turn (M3). Seen in this machine's transcripts (read, 2026-10-25):
+typed prompts are `user` rows with string content (`origin.kind: 'human'` where the version writes it),
+interrupts are `user` rows with a text block, a Skill's body is `isMeta`, a background task's notice has
+`origin.kind: 'task-notification'`, tool results hold only `tool_result` blocks.
+
+- **A (recommended): a role ends with its turn, read from the transcript.** Contract section 8: the
+  first user prompt row after the record's `offset` ends it; an ended record is removed where it is
+  next read, never closed, with a message that says its lane check and report did not run; a role that
+  goes on in a later turn is called again, and its lane runs from that call. No new hook entry: the
+  record already names the transcript (data-model). Follows: an interrupted role's Bash writes outside
+  its lane and its report go unchecked, and the start message names it (contract section 7, FR-008);
+  a `VERDICT: PASS` from an interrupted spec-auditor is not recorded, so the gate stays shut until the
+  role runs again; AskUserQuestion stops keep the role (their answers are tool results), as plan P1
+  needs. The row rule depends on Claude Code's transcript format, so T011 pins both halves on the
+  Claude Code under test (CI's oldest supported). Changes T005, T006, T010, T011, T012, T013, T015,
+  T018, contract sections 4, 5, 6, 7 and 8, data-model's lifecycle, plan P1.
+  Spec: Edge Cases: The user interrupts a skill-agents run partway, or an API error ends its turn: the files written so far remain, the acting role's lane ends with that turn (its lane check and report do not run, and the user is told so), and the user can restart with the same command.
+- B: the same rule, but an ended record is still closed (lane check and report) where it is next read.
+  The lane check then counts every file changed since the role's start, the user's own later work
+  included, so the H1 revert prompt comes back for any file outside the lane the user touched; a
+  verdict written before an interrupt is recorded. T010, T013 and T015 assert closing in place of
+  dropping; same Spec line without "its lane check and report do not run".
+- C: a new `UserPromptSubmit` entry in `SETTINGS_GATES` removes the record at every typed prompt; no
+  transcript reading. A new hook entry: a README guardrail table row, a `test/e2e.test.mjs` case that
+  fails with `SPECKIT_E2E_NO_HOOK=1` (the harness has no second prompt in a session today, so `session`
+  gains `--resume`), the README live check, and a Node start on every prompt of every session where the
+  team is installed (it exits at once without `.specify/`). Adds a task pair to Round 2 (4 slices).
+  Same Spec line as A.
+
+### D9. Are the agents' tool lists enforced for a role run as a skill?
+
+Answer (2026-10-25): A, as recommended
+
+`agents/*.md` give each agent a `tools:` list (Bash, Read, Edit, Write and similar; no WebFetch,
+WebSearch, Agent or MCP tools). A role run as a skill has every tool of the main session, and `scope
+role`'s matcher (`Write|Edit|MultiEdit|NotebookEdit`) does not see an MCP tool that writes (third audit,
+M2).
+
+- **A (recommended): name it in the start message.** Contract section 7 lists it among what is not
+  enforced, as FR-008 asks of any guardrail the mode cannot keep. No code beyond T004's message; T003
+  holds the text through section 7. A role's write into the repository through an MCP tool is still
+  caught by its lane check at close for every role but the read-only ones (D7).
+- B: close it: `scope role`'s frontmatter matcher becomes every tool, and a role is denied any tool
+  outside its agent's `tools:` list plus the ones the orchestrating skill needs while a role acts
+  (Skill, AskUserQuestion, TodoWrite). A new twin (`ROLE_TOOLS` and each agent's `tools:` line) and its
+  test, a frontmatter matcher change (the live check of Constitution II), a hook start on every tool
+  call during a run, a tool list to keep in step with Claude Code's tool names, and a `--project` whose
+  instructions name an MCP tool stops working in this mode. Changes T010, T011, T012, contract
+  sections 5 and 7, and drops the item from section 7.

@@ -92,7 +92,7 @@ A user adds `--security` or `--project <name>` to a skill-agents run and gets th
 
 - The working tree is not clean, or `.specify/` is missing: the same preconditions and refusals apply as in a default run.
 - A role skill is missing at run time (not installed): the run refuses before any work and names the missing skill.
-- The user interrupts a skill-agents run partway: the files written so far remain, and the user can restart with the same command.
+- The user interrupts a skill-agents run partway, or an API error ends its turn: the files written so far remain, the acting role's lane ends with that turn (its lane check and report do not run, and the user is told so), and the user can restart with the same command.
 - A skill-agents run in a repository where the default team is installed too: both modes coexist, and choosing one never changes the other's files.
 - The installer is run again or the tool is uninstalled: role skills are installed and removed with the same marker rule as the team's other files.
 
