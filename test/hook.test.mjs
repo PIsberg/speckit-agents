@@ -2077,3 +2077,123 @@ test('009 T013 contract 6: no record decides nothing; an unreadable or incomplet
   }
   assert.ok(!fs.existsSync(path.join(dir, '--output=x')), 'no option reached git');
 });
+
+// ---- 009 Round 3: closing a role records its report (T016) ----
+const verdictRec = (dir) => { const f = path.join(stateDir(dir), 'verdicts', '001-demo.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
+const endsRec = (dir) => { const f = path.join(stateDir(dir), 'ends', '001-demo.json'); return fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : null; };
+const say = (t, text) => fs.appendFileSync(t, JSON.stringify(assistantRow(text)) + '\n');
+// An auditor role started on a transcript that already holds `before`.
+function auditorRole(before = []) {
+  const { dir, write: w } = repo();
+  skillAgentsTeam(dir);
+  const t = transcriptIn(dir, [userRow('typed'), ...before]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t })));
+  return { dir, t, w };
+}
+
+test('009 T016 FR-008 US3-5 contract 6 step 2: a PASS from the auditor role is recorded at the test-writer Skill call, which is let through', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'Reading the spec.');
+  say(t, 'All FRs covered.\n\nVERDICT: PASS');
+  const out = skillCall(dir, 'speckit-role-test-writer', { transcript_path: t });
+  assert.ok(!decided(out), `closing comes before the gate: ${JSON.stringify(out)}`);
+  const v = verdictRec(dir);
+  assert.equal(v?.verdict, 'PASS');
+  assert.equal(v.feature, FEAT);
+  assert.equal(v.role, 'spec-auditor');
+  assert.equal(v.agent_id, null);
+  assert.equal(roleRec(dir).role, 'test-writer', 'the record is replaced');
+});
+
+test('009 T016 FR-008 contract 6 step 2: a FAIL is recorded and test-writer is denied; the last VERDICT line wins', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'First look.\nVERDICT: PASS');
+  say(t, 'On second thought.\n\nVERDICT: FAIL');
+  const out = skillCall(dir, 'speckit-role-test-writer', { transcript_path: t });
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(reasonOf(out), /Implementation gate: /);
+  const v = verdictRec(dir);
+  assert.equal(v?.verdict, 'FAIL');
+  assert.equal(v.role, 'spec-auditor');
+  assert.equal(v.agent_id, null);
+});
+
+test('009 T016 contract 6 step 2: no VERDICT line records nothing and says so, naming the role skill', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'I looked at everything and it seems fine.');
+  const out = stopRole(dir);
+  assert.equal(verdictRec(dir), null);
+  assert.match(msg(out), /speckit-role-spec-auditor/);
+  assert.doesNotMatch(msg(out), /@agent-spec-auditor/);
+  assert.ok(!hasRole(dir), 'the record is removed at Stop');
+});
+
+test('009 T016 contract 6 step 2: a PASS above the offset is ignored', () => {
+  const { dir } = auditorRole([assistantRow('earlier turn\nVERDICT: PASS')]);
+  const out = stopRole(dir);
+  assert.equal(verdictRec(dir), null);
+  assert.match(msg(out), /speckit-role-spec-auditor/);
+});
+
+test('009 T016 FR-008 contract 6 step 2: a spec edit after the role started records nothing and says so, naming the role skill', () => {
+  const { dir, t, w } = auditorRole();
+  say(t, 'Done.\nVERDICT: PASS');
+  w(`${FEAT}/spec.md`, '# Spec\nFR-002 edited during the audit.\n');
+  const out = stopRole(dir);
+  assert.equal(verdictRec(dir), null, 'a verdict on files that are gone is not recorded');
+  assert.match(msg(out), /changed after it started/);
+  assert.match(msg(out), /speckit-role-spec-auditor/);
+  assert.doesNotMatch(msg(out), /@agent-spec-auditor/);
+});
+
+test('009 T016 FR-008 contract 6 step 2: the spec-gatekeeper role word is recorded at Stop', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.\n\n**APPROVED**');
+  say(t, 'Anything else? (chatter, not a word)');
+  const out = stopRole(dir);
+  assert.ok(!decided(out), JSON.stringify(out));
+  const e = endsRec(dir);
+  assert.equal(e?.word, 'APPROVED');
+  assert.equal(e.feature, FEAT);
+  assert.equal(e.role, 'spec-gatekeeper');
+  assert.equal(e.agent_id, null);
+  assert.ok(!hasRole(dir));
+});
+
+test('009 T016 contract 6 step 2: REJECTED is recorded too, and a report without a word records nothing', () => {
+  const a = repo();
+  skillAgentsTeam(a.dir);
+  pass(a.dir);
+  const t = transcriptIn(a.dir, [userRow('typed')]);
+  skillCall(a.dir, 'speckit-role-spec-gatekeeper', { transcript_path: t });
+  say(t, 'T003 is open.\nREJECTED');
+  stopRole(a.dir);
+  assert.equal(endsRec(a.dir)?.word, 'REJECTED');
+  const b = repo();
+  skillAgentsTeam(b.dir);
+  pass(b.dir);
+  const t2 = transcriptIn(b.dir, [userRow('typed')]);
+  skillCall(b.dir, 'speckit-role-spec-gatekeeper', { transcript_path: t2 });
+  say(t2, 'I think it is fine.');
+  stopRole(b.dir);
+  assert.equal(endsRec(b.dir), null);
+});
+
+test('009 T016 contract 6: a missing transcript says so and never crashes', () => {
+  const { dir, t } = auditorRole();
+  fs.rmSync(t);
+  const out = stopRole(dir);
+  assert.match(msg(out), /transcript/i);
+  assert.equal(verdictRec(dir), null);
+  assert.ok(!hasRole(dir));
+  // The same at a Skill call.
+  const b = auditorRole();
+  fs.rmSync(b.t);
+  const next = skillCall(b.dir, 'speckit-role-architect', { transcript_path: b.t });
+  assert.ok(!denied(next), JSON.stringify(next));
+  assert.match(msg(next), /transcript/i);
+});

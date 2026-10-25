@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, newMarker, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -256,4 +256,39 @@ test('full run: --two-slices sends the two-file request with the one-at-a-time a
   // that is not a build going side by side. The one-at-a-time run of 2026-10-25 failed on it.
   const revision = [{ type: 'product-owner', background: false, worktree: false, together: 2 }, { type: 'architect', background: false, worktree: false, together: 2 }];
   assert.deepEqual(one(revision), [], 'only test-writers and implementers count');
+});
+
+// 009 T019: the full run in skill-agents mode (SC-001, SC-004, FR-014).
+const CORE = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+const roleSkills = (roles = CORE) => roles.map((r) => `speckit-role-${r}`);
+
+test('full run: --skill-agents is a flag without a value, off by default (SC-001)', () => {
+  assert.equal(args(['--skill-agents', '--out', 'x']).skillAgents, true);
+  assert.equal(args(['--out', 'x']).skillAgents, false);
+  assert.equal(args(['--skill-agents', '--out', 'x', '--max-cost', '3']).maxCost, 3, 'the flag takes no value');
+});
+
+test('full run: the first prompt names the team only in skill-agents mode (SC-001)', () => {
+  assert.equal(firstPrompt('add sum()', { skillAgents: true }), '/speckit-team --team skill-agents add sum()');
+  assert.equal(firstPrompt('add sum()'), '/speckit-team add sum()');
+  assert.equal(firstPrompt('add sum()', { skillAgents: false }), '/speckit-team add sum()');
+});
+
+test('full run: skill-agents mode fails on any launch and on a core role skill never called (SC-001, SC-004, FR-014)', () => {
+  const run = (main) => checkRun({ repo: state().repo, usage: { main }, costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true,
+    agentTexts: [], skillAgents: true });
+  const ok = run({ launches: [], waits: 0, skills: roleSkills() });
+  assert.deepEqual(ok, [], 'no launch, no agent transcript and all six skills: nothing fails');
+  const launched = run({ launches: [{ type: 'architect', background: false }], waits: 0, skills: roleSkills() });
+  assert.equal(launched.length, 1, JSON.stringify(launched));
+  assert.match(launched[0], /launch/i);
+  for (const missing of CORE) {
+    const f = run({ launches: [], waits: 0, skills: roleSkills(CORE.filter((r) => r !== missing)) });
+    assert.equal(f.length, 1, `${missing}: ${JSON.stringify(f)}`);
+    assert.match(f[0], new RegExp(`speckit-role-${missing}`));
+  }
+});
+
+test('full run: without the option a run with no launch still fails as before (T019)', () => {
+  assert.match(failures(state({ launches: [] }))[0], /no agent/i);
 });

@@ -173,8 +173,11 @@ const lastResultIsError = (req) => lastToolResult(req)?.is_error === true;
 // A scripted reply is one block ({ text } or { name, input }) or an array of them, sent as one
 // response in that order: several tool calls in one message, as a model makes them.
 function reply(res, stream, step, id) {
-  const blocks = (Array.isArray(step) ? step : [step]).map(({ text, name, input }, i) => (name
-    ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text }));
+  // A step with both `text` and `name` is a text block, then the tool call, in the one response.
+  const blocks = (Array.isArray(step) ? step : [step]).flatMap(({ text, name, input }, i) => [
+    ...(text !== undefined && name ? [{ type: 'text', text }] : []),
+    name ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text },
+  ]);
   const stop = blocks.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
   const message = { id: `msg_${id}`, type: 'message', role: 'assistant', model: 'claude-fake', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
   if (!stream) {
@@ -598,7 +601,8 @@ test("spec-auditor's report through SubagentHandback is refused once without a V
   }, { permissionMode: 'auto' });
   assert.ok(lastResultIsError(r.requests['e2e auditor'][1]), story(r));
   assert.match(lastResult(r.requests['e2e auditor'][1]), /`VERDICT: PASS` or `VERDICT: FAIL`\. Add it and send the report again/, story(r));
-  assert.equal(state(s, 'verdicts', '001-x.json').verdict, 'PASS', story(r));
+  const verdict = (x) => (fs.existsSync(path.join(x.repo, '.git', 'speckit-team', 'verdicts', '001-x.json')) ? state(x, 'verdicts', '001-x.json').verdict : 'none recorded');
+  assert.equal(verdict(s), 'PASS', story(r));
   // A handed-back report reaches the main session as a message of its own, not as the tool result.
   assert.match(shown(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
 });
@@ -1096,6 +1100,22 @@ test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the im
   }, { prompt: SA_PROMPT });
   assert.ok(fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests[MAIN][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
+});
+
+test("009 T017 FR-008 US3-5 research R1: the auditor role's VERDICT is recorded at the next role's Skill call, and at Stop", { skip: noClaude, timeout: 240_000 }, async () => {
+  // 1. Text ending the verdict and the next Skill call in one response: closing comes before the gate.
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('spec-auditor'), { text: 'No findings.\n\nVERDICT: PASS', ...roleSkill('test-writer') }],
+  }, { prompt: SA_PROMPT });
+  const id = sessionId(r);
+  assert.equal(state(s, 'verdicts', '001-x.json').verdict, 'PASS', story(r));
+  assert.ok(!lastResultIsError(r.requests[MAIN][2]), `the test-writer call was let through:\n${story(r)}`);
+  assert.equal(state(s, 'team', `${id}.json`).skillAgents, true, story(r));
+  // 2. The Stop after the auditor role's last message records it.
+  const s2 = setup();
+  const r2 = await session(s2, { [MAIN]: [roleSkill('spec-auditor'), say('No findings.\n\nVERDICT: PASS')] }, { prompt: SA_PROMPT });
+  assert.equal(verdict(s2), 'PASS', story(r2));
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.

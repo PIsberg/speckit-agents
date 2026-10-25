@@ -158,7 +158,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   `dropRole`, closes nothing and passes its message on to the caller's output (contract section 8). `closeRole` skips the lane check for a role whose rule is `none` (plan D7). Lane mode calls it with its `who` and
   rule and keeps its messages, so its existing `test/hook.test.mjs` lane cases hold the change; `closeRole`
   calls it with the role record and `ROLE_LANES[role]`. Also reuse `block`, `deny`, `emit`.
-- [ ] T016 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2, FR-008, US3-5, research R1):
+- [X] T016 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2, FR-008, US3-5, research R1):
   the test writes a transcript JSONL of rows `{ type: 'assistant', message: { role: 'assistant', content:
   [{ type: 'text', text }] } }` and passes it as `transcript_path` of the Skill call that starts the role.
   Open cases: a PASS from the spec-auditor role is recorded at the test-writer Skill call, which is then
@@ -167,7 +167,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   records nothing and says so; both of those messages name `speckit-role-spec-auditor` and not
   `@agent-spec-auditor` (contract section 6 step 2); the spec-gatekeeper role's last line `APPROVED` is recorded at Stop; both
   records carry `role` and `agent_id: null`; a missing transcript says so and never crashes.
-- [ ] T017 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, research R1): extend `reply` so a step
+- [X] T017 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, research R1): extend `reply` so a step
   with both `text` and `name` sends a text block then the tool call in one response. Session 1: typed as
   in T008; the Skill `speckit-role-spec-auditor`, then one step with text ending `VERDICT: PASS` and the
   Skill `speckit-role-test-writer`: the call goes through and `state(s, 'verdicts', '001-x.json')` is
@@ -185,13 +185,13 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
 
 ## Phase 5: User Story 1, the full run in this mode (Round 3)
 
-- [ ] T019 [P] [US1] Test in `test/full-run.test.mjs` (SC-001, SC-004, FR-014): `args` takes
+- [X] T019 [P] [US1] Test in `test/full-run.test.mjs` (SC-001, SC-004, FR-014): `args` takes
   `--skill-agents` as a flag without a value; `firstPrompt(request, { skillAgents: true })` is
   `/speckit-team --team skill-agents <request>` and without it `/speckit-team <request>`;
   `checkRun({ ..., skillAgents: true })` fails on any entry in `usage.main.launches` and on any of the six
   core `speckit-role-<role>` names missing from `usage.main.skills`, and does not fail for no launch or no
   agent transcript; the existing passing-run case still passes without the option.
-- [ ] T020 [P] [US1] Test in `test/usage.test.mjs` (SC-001): `skills(rows)` lists the main session's Skill
+- [X] T020 [P] [US1] Test in `test/usage.test.mjs` (SC-001): `skills(rows)` lists the main session's Skill
   tool calls by `input.skill` (or `skill_name`) in order, skipping sidechain rows; `summarise(file).main.skills`
   holds the same list. Row builders: the ones at the top of the file.
 - [ ] T021 [P] [US1] Implement in `tools/usage.mjs`: `export function skills(rows: object[]): string[]`
