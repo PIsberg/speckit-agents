@@ -393,6 +393,13 @@ const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer',
 const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
+// 009: the role acting in a skill-agents request's main session (data-model.md).
+const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
+// The role skills a typed `--team skill-agents` needs, found from this script's own folder.
+function missingRoleSkills() {
+  return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
+}
+const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
 // The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
 const projectFile = (sessionId) => path.join(stateDir, 'project', `${sessionId}.json`);
 const parseProject = (prompt) => /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})[ \t]*$/m.exec(prompt)?.[1] ?? null;
@@ -440,7 +447,7 @@ function teamOf() {
   if (!id || !SESSION_ID.test(id)) return null;
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
-  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0 };
+  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -557,7 +564,17 @@ if (mode === 'gate') {
     if (!id || !SESSION_ID.test(id)) process.exit(0);
     fs.rmSync(teamFile(id), { force: true });
     fs.rmSync(projectFile(id), { force: true });
+    fs.rmSync(roleFile(id), { force: true });
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
+    // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
+    const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
+    const nextWord = (afterTeam[afterTeam.indexOf('--team') + 2] ?? '').toLowerCase();
+    if (roles?.length === 1 && roles[0] === 'skill-agents' && nextWord !== 'noagents') {
+      const missing = missingRoleSkills();
+      if (missing.length) block(`speckit-team: --team skill-agents needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
+      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, at: new Date().toISOString() });
+      emit({ systemMessage: SKILL_AGENTS_START });
+    }
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
     writeJson(teamFile(id), { session_id: id, roles: [], noagents: true, at: new Date().toISOString() });
     emit({ systemMessage: 'speckit-team: no agents for this request: /speckit-implement in this session skips the audit gate until the next /speckit-team or team agent launch' });

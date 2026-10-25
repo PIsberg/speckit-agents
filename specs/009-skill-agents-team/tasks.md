@@ -26,7 +26,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   `skills`, copied as the test "--board from another checkout points the board at that checkout" does)
   whose `agents/architect.md` has no frontmatter, installed into an empty `claudeDir()`, exits nonzero
   and leaves that directory empty.
-- [ ] T002 Implement in `install.mjs`: `const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher')`,
+- [X] T002 Implement in `install.mjs`: `const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher')`,
   `const ROLE_PREAMBLE` (contract section 2), `function roleSkill(role: string, agentText: string): string`
   (throws on an agent file without its frontmatter); `files()` gains
   `{ src: 'agents/<role>.md', dst: <claudeDir>/skills/speckit-role-<role>/SKILL.md, role }`. Render
@@ -46,7 +46,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   `skill-agent` and the word after the request text record no `skillAgents`; one skill missing blocks
   and names it; a later typed `/speckit-team` without it removes the team and role records (a role
   record written by hand per `data-model.md`); the `noagents` record and message are unchanged.
-- [ ] T004 [P] [US3] Implement in `hooks/speckit-team.mjs`, gate mode's typed `speckit-team` branch
+- [X] T004 [P] [US3] Implement in `hooks/speckit-team.mjs`, gate mode's typed `speckit-team` branch
   (contract section 3): reuse `typedRoles`, `teamFile`, `writeJson`, `TEAM_DIR`, `TEAM_ROLES`, `block`;
   add `const roleFile = (sessionId: string): string` (`role/<id>.json` under `stateDir`),
   `function missingRoleSkills(): string[]`, the start message (contract section 7) as a constant;
@@ -68,7 +68,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   `--project` the block is read from `node "{{HOOK}}" project` output and followed by every role, as
   `## No agents` step 1; security-reviewer at both points of steps 1 and 6; the skill counts 3
   `RESULT: RED` in a row itself; the hook's start message is not repeated.
-- [ ] T006 [US1] Implement in `skills/speckit-team/SKILL.md`: the `argument-hint`, a `## Team` paragraph
+- [X] T006 [US1] Implement in `skills/speckit-team/SKILL.md`: the `argument-hint`, a `## Team` paragraph
   and refusals (contract section 1), and a `## Skill agents` section after `## No agents` that maps each
   step's launch to its Skill call, says the one-at-a-time rule (plan P5) where it replaces the
   side-by-side launches, says a role continued in a later turn is called again (contract section 8), and
