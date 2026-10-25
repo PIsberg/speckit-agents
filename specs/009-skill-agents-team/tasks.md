@@ -172,7 +172,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   in T008; the Skill `speckit-role-spec-auditor`, then one step with text ending `VERDICT: PASS` and the
   Skill `speckit-role-test-writer`: the call goes through and `state(s, 'verdicts', '001-x.json')` is
   PASS. Session 2: the auditor role, then `say` ending `VERDICT: PASS`: the Stop records it. Fails with
-  `SPECKIT_E2E_NO_HOOK=1`.
+  `SPECKIT_E2E_NO_HOOK=1`. Session 1 failed on CI (research R1); T026 rewrites it.
 - [X] T018 [P] [US3] Implement in `hooks/speckit-team.mjs`, `closeRole` step 2: `function roleTexts(file: string, offset: number): string[]`
   reading through T012's `linesAfter`, built on `function assistantText(line: string, mainOnly: boolean): string`, the row parsing taken out
   of `lastAssistantText` (`hooks/speckit-team.mjs`; one JSONL row to its assistant text, `''` for a
@@ -181,7 +181,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   `function lastWord(text: string): string` taken out of the `verdict` and `ends` modes and used by them
   too, so their existing cases hold all three extractions; records via `verdictFile`, `endsFile`,
   `writeJson`, with `role` (data-model); the stale and none-found messages name the auditor through
-  T009's `auditorRef`.
+  T009's `auditorRef`. The last text from the hook input: T027.
 
 ## Phase 5: User Story 1, the full run in this mode (Round 3)
 
@@ -229,11 +229,58 @@ what was seen.
   text, and a Write outside architect's lane denied; record what was seen and `claude --version` in
   `docs/live-results.md`. A run that cannot start from an agent's shell goes to the user.
 
+## Phase 7: User Story 3, a role's last message from the hook input (Round 6, plan D10)
+
+Research R1 failed on CI: the response holding a tool call can reach the transcript after that call's
+PreToolUse. Two slices, disjoint files.
+
+- [ ] T025 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2 and its closing
+  paragraph, FR-008, US3-5, plan D10), beside the T016 cases, with their helpers (`auditorRole`, `say`,
+  `skillCall`, `stopRole`, `verdictRec`, `endsRec`, `roleRec`, `hasRole`, `msg`, `denied`, `decided`,
+  `reasonOf`, `transcriptIn`, `assistantRow`); a Skill call with `args` passes
+  `{ transcript_path: t, tool_input: { skill_name: name, args } }` as `skillCall`'s `extra`. Open
+  cases: the auditor role's transcript holds no VERDICT (the race) and `args` starts `VERDICT: PASS`:
+  recorded, test-writer let through; `args` `VERDICT: FAIL` after a transcript PASS records FAIL; a
+  VERDICT on the second `args` line counts for nothing; `args` a number or an array never crashes and
+  records nothing; a call denied for want of a VERDICT leaves the spec-auditor record, and the same call
+  made again with the line is let through; the none-found message at a Skill call names `args` and
+  `speckit-role-spec-auditor`, at Stop it is T016's; at Stop a `last_assistant_message` ending
+  `VERDICT: PASS` over a transcript with no VERDICT is recorded, and the spec-gatekeeper role's
+  `APPROVED` the same way; a spec-gatekeeper role's `APPROVED` as the first `args` line of the
+  `speckit-role-security-reviewer` call is recorded; an unreadable transcript with the verdict in the
+  last text records it with no transcript message; `last_assistant_message` a number never crashes.
+- [ ] T026 [P] [US3] Test in `test/e2e.test.mjs` (FR-008, US3-5, plan D10, research R1): rewrite T017's
+  session 1 (`009 T017 ...`): the step after `roleSkill('spec-auditor')` is
+  `{ text: 'No findings.', ...call('Skill', { skill: 'speckit-role-test-writer', args: 'VERDICT: PASS\n<inputs>' }) }`,
+  so only `args` carries the verdict and the case fails against T018's transcript-only close on every
+  platform; its assertions stay (`state(s, 'verdicts', '001-x.json')`, `lastResultIsError`,
+  `skillAgents`). Session 2 stays and now runs on CI past session 1. Fails with
+  `SPECKIT_E2E_NO_HOOK=1`.
+- [ ] T027 [P] [US3] Implement in `hooks/speckit-team.mjs`: `recordReport(rec: object, last: string | null): void`
+  reads `roleTexts(rec.transcript, rec.offset)`, then `last` as one more text (contract section 6
+  step 2); a `null` transcript reads `last` alone, and its "transcript could not be read" note is given
+  only when no verdict or word is found; the spec-auditor none-found note at a Skill call adds the
+  `args` sentence. `closeRole` passes `str(input.tool_input?.args)?.split('\n')[0] ?? null` at
+  `'skill'` and `str(input.last_assistant_message)` at `'stop'`. Reuse `str`, `roleTexts`, `verdictIn`,
+  `lastWord`, `verdictFile`, `endsFile`, `writeJson`, `addNote`, `auditorRef`.
+- [ ] T028 [P] [US1] Test in `test/install.test.mjs` (FR-008, FR-010, plan D10, Constitution VIII), beside
+  the T005 and T022 cases, with `teamSkill`, `flat`, `skillSection`, `repoText`, `mdSection`: the
+  installed skill's `## Skill agents` says the Skill call after spec-auditor's or spec-gatekeeper's
+  report starts its `args` with that report's last line; README's skill-agents section says the
+  verdict and word are also read from that `args` line and from the Stop's last message; CLAUDE.md
+  "Rules" names the `args` report line as a skill half and a hook half.
+- [ ] T029 [P] [US1] Implement: `skills/speckit-team/SKILL.md` `## Skill agents`, one sentence (within
+  T006's 3,000 characters). `README.md`: the skill-agents table's Verdict row, the `lane role`
+  guardrail row, "What was verified how" (the `args` and Stop paths covered by test only), the
+  troubleshooting entry "Run the Skill speckit-role-spec-auditor" (a PASS not recorded when the next
+  call's `args` did not start with the VERDICT line), and the "Test suite" counts. `CLAUDE.md`: the
+  Rules line of T028 and the `npm test` count. Counts from `npm test` once T025, T026 and T028 exist.
+
 ## Dependencies
 
 Round 1 before Round 2: T008, T011, T014 need T002's installed role skills and T004's typed record.
 T015 builds on T009 and T012, T018 on T015. T024 needs T001 to T021; T023 needs T024's records. Within a round,
-one test-writer then one implementer.
+one test-writer then one implementer. T027 builds on T018; T029 on T023's docs and counts.
 
 ## Rounds
 
@@ -242,3 +289,4 @@ one test-writer then one implementer.
 - Round 3: stub T021; red T016, T017, T019, T020; green T018, T021 [P]
 - Round 4: green T024
 - Round 5: red T022; green T023
+- Round 6: red T025, T026, T028; green T027, T029 [P]

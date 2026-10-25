@@ -10,7 +10,7 @@
 session. `install.mjs` generates one skill per role from `agents/<role>.md` (FR-013). The hook's
 existing Skill gate sees each role skill call: it records the acting role, closes the previous one
 (its lane check of the whole diff, and spec-auditor's or spec-gatekeeper's word read from the session
-transcript) and holds test-writer and implementer to the audit gate. A `scope role` rule in the role
+transcript and, for its last message, from the hook input: D10) and holds test-writer and implementer to the audit gate. A `scope role` rule in the role
 skills' frontmatter applies the acting role's lane to every write. No agent file changes.
 
 ## Technical Context
@@ -37,23 +37,23 @@ skills' frontmatter applies the acting role's lane to every write. No agent file
 
 | Rule | Tasks | How |
 |---|---|---|
-| I. Every behaviour change has a test under `npm test` | T001, T003, T005, T007, T010, T013, T016, T019, T020, T022 | each slice's tests come first |
-| I. Test seen failing first | the red step of every round | the stub step only for T021's `skills` |
-| I. Tests assert what a caller observes | T001, T003, T007, T010, T013, T016 | installed files, decision JSON, state files |
-| I. No test passes on code that never ran | T008, T011, T014, T017 | e2e cases fail with `SPECKIT_E2E_NO_HOOK=1` |
-| II. Hook handles all input without throwing; throw paths tested | T007, T010, T013, T016 | malformed fields, unreadable records and transcript |
+| I. Every behaviour change has a test under `npm test` | T001, T003, T005, T007, T010, T013, T016, T019, T020, T022, T025, T026, T028 | each slice's tests come first |
+| I. Test seen failing first | the red step of every round | the stub step only for T021's `skills`; T026 fails against T018's transcript-only close by carrying the verdict in `args` alone |
+| I. Tests assert what a caller observes | T001, T003, T007, T010, T013, T016, T025 | installed files, decision JSON, state files |
+| I. No test passes on code that never ran | T008, T011, T014, T017, T026 | e2e cases fail with `SPECKIT_E2E_NO_HOOK=1` |
+| II. Hook handles all input without throwing; throw paths tested | T007, T010, T013, T016, T025 | malformed fields, unreadable records and transcript, non-string `args` and `last_assistant_message` |
 | II. Wiring change verified live, PR says what was seen | T008, T011, T014, T017, T024 | e2e on real Claude Code in CI's three OSes; the full runs |
 | II. Quoted, absolute, forward-slash hook path | T001, T002 | the role skills get `{{HOOK}}` replaced as the agents do |
 | IV. Standard library only | T002, T004, T009, T012, T015, T018, T021 | |
-| V. Public contracts additive and listed in README | T002, T018, T023 | `contracts/skill-agents.md`; `role` field added to two records |
+| V. Public contracts additive and listed in README | T002, T018, T023, T029 | `contracts/skill-agents.md`; `role` field added to two records; the `args` report line (D10) |
 | VI. Metadata only | T009, T018 | the role record holds paths, a sha and an offset; only the verdict word is kept from the transcript |
 | VII. Every platform, forward slashes | T008, T011, T014, T017, T009 | e2e runs in CI on all three; paths through `repoRel` |
-| VIII. README, CLAUDE.md, installer help; verified live vs by test; prose | T002, T023, T024 | |
+| VIII. README, CLAUDE.md, installer help; verified live vs by test; prose | T002, T023, T024, T029 | T029: the D10 path as verified by test only, and the test counts |
 | Install: idempotent, marker, no overwrite without `--force` | T001, T002 | |
 | Install: validate before writing | T001, T002 | every role skill rendered before the first write; a bad agent file writes nothing |
 | Install: nothing in repos without `.specify/` | T010 | no settings entry added; `scope role` exits there (`notSpecKit`) |
 | Install: `--uninstall` removes what it added | T001 | |
-| Gate: live check for hook wiring | T024, T023 | T024 runs it and records it in `docs/live-results.md`; T023, a round later, writes the steps and what was seen into README |
+| Gate: live check for hook wiring | T024, T023 | T024 runs it and records it in `docs/live-results.md`; T023, a round later, writes the steps and what was seen into README; D10 changes no command, event, matcher or frontmatter, so no new live check |
 
 Not applicable: III (no observer changes; the board reads the same records), IV plugin rules (no
 plugin code changes), the amendment rules (no new dependency), V event schema version (no event
@@ -104,6 +104,10 @@ skills are build output of the installer, not sources, so FR-013 holds by constr
 - P6. No hook text in this mode sends the main session to an agent: the gate's reason and closing's
   verdict messages name the Skill `speckit-role-spec-auditor` (contract sections 4 and 6, T007 to T009,
   T016, T018), since an agent launch breaks FR-001 and ends the mode (D3).
+- P7. A closing role's last message never comes from the transcript alone: the response holding the
+  next tool call can reach it after that call's PreToolUse (research R1, CI run 40223102740). The
+  next role's Skill call carries it in its `args`, and Stop in `last_assistant_message` (D10,
+  contract section 6 step 2; T025 to T029).
 
 ## Complexity Tracking
 
@@ -283,3 +287,39 @@ M2).
   call during a run, a tool list to keep in step with Claude Code's tool names, and a `--project` whose
   instructions name an MCP tool stops working in this mode. Changes T010, T011, T012, contract
   sections 5 and 7, and drops the item from section 7.
+
+### D10. How does a closing role's last message reach the hook, now that research R1 failed?
+
+Answer (2026-10-25): A, as recommended
+
+CI run 40223102740 (PR #183, Claude Code 2.1.293): the response holding spec-auditor's `VERDICT: PASS`
+and the `speckit-role-test-writer` Skill call was not in the transcript at that call's PreToolUse on
+ubuntu and macOS, so nothing was recorded and test-writer was denied; the turn's Stop found it. The
+same race reaches spec-gatekeeper's word, and a Stop right after the role's last message. The lane
+check (git) and `roleEnded` (prompt rows, written before the response) do not read that response.
+
+- **A (recommended): from the hook input.** Closing reads the transcript after `offset` as now, then
+  one last text: at a Skill call the first line of `tool_input.args`, at Stop `last_assistant_message`
+  (contract section 6 step 2). The skill's `## Skill agents` gains one sentence: the Skill call after
+  spec-auditor's or spec-gatekeeper's report starts its `args` with that report's last line. No wait,
+  no new hook entry, no timing assumption at a Skill call. Follows: a forgotten line while the race
+  hits records nothing and denies test-writer (fails closed); the denial leaves the auditor role live,
+  so the call made again with the line records it; a `VERDICT: FAIL` in `args` after a PASS in the
+  transcript records FAIL (the last line wins); only the first `args` line counts, so findings quoted
+  further down never do; the next role gets one more input line. Trust is unchanged: the role and the
+  orchestrator are one model, so the transcript's line and the `args` line have one author, and the
+  fingerprint check stands. Tasks T025 to T029 (Round 6); T017's session 1 is rewritten by T026. No
+  spec line changes.
+- B: the hook waits for the call's own row. At a Skill call that closes spec-auditor or
+  spec-gatekeeper, poll the transcript (every 50 ms, up to 2 s) for the row holding this call's
+  `tool_use_id`, then read as now. No skill change. Unknown first: whether 2.1.293 gives PreToolUse a
+  `tool_use_id`, and whether Claude Code writes the row while its hooks run; if it writes after them,
+  every such close waits 2 s and still finds nothing. Adds a research spike on CI's three OSes (a
+  round before the slice), up to 2 s per audit close, and recovery machinery that narrows a timing
+  window without closing it; T016 gains a timeout case, T017 is unchanged, the skill is unchanged.
+- C: deny and ask for the call again. At a Skill call whose closing spec-auditor role yields no
+  VERDICT, deny with "call this Skill again" and keep the role live; the retry is a new response, by
+  which the earlier one is usually written. No skill change; one model response more each time the race
+  hits (every audit in CI on ubuntu and macOS); still timing dependent, and without B's `tool_use_id`
+  "not written yet" and "no VERDICT" look the same, so a report that lacks its VERDICT is asked for
+  again until the model calls spec-auditor. T016 and T017 assert the second call goes through.

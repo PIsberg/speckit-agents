@@ -111,18 +111,27 @@ applies. No role record, or a subagent: no decision. An ended record (section 8)
    call: deny, `Lane check: <role> changed files outside its lane: <files>. Restore them (git checkout
    <sha 12> -- <file>, or delete new files), then go on.` At Stop: `block` with the same text, unless
    `stop_hook_active`, then a `WARNING` system message as the agents' lane check gives.
-2. Report: the assistant text blocks of `transcript` after `offset`, in order.
+2. Report: the assistant text blocks of `transcript` after `offset`, in order, then one last text
+   from the hook input, when it is a string: at a Skill call, the first line of that call's
+   `tool_input.args`; at Stop, `last_assistant_message`. The response that holds a tool call can reach
+   the transcript after that call's PreToolUse (research R1), so the closing role's last message
+   arrives through that last text. The skill's half (`## Skill agents`): the Skill call after
+   spec-auditor's or spec-gatekeeper's report starts its `args` with that report's last line,
+   unchanged, on a line of its own (plan D10).
    - spec-auditor: the last `VERDICT: PASS|FAIL` line of those texts, matched as the `verdict` mode
      matches it. Recorded to `verdicts/<feature>.json` unless the fingerprint recorded at the role's
      start differs from now (then a system message as the `verdict` mode gives). None found: a system
-     message, nothing recorded. Both messages name the Skill `speckit-role-spec-auditor` as step 4 of
-     section 4 does, never `@agent-spec-auditor`.
+     message, nothing recorded; at a Skill call it also says to call that Skill again with `args`
+     starting with the role's VERDICT line. Both messages name the Skill `speckit-role-spec-auditor`
+     as step 4 of section 4 does, never `@agent-spec-auditor`. A denied call leaves the role live
+     (section 4 step 5 does not run), so the call made again closes the same role.
    - spec-gatekeeper: the last of those texts whose last line, normalised as the `ends` mode does it, is
      `APPROVED` or `REJECTED`, recorded to `ends/<feature>.json`.
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
-could not run; never a crash.
+could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
+says so only when that holds no verdict or word.
 
 ## 7. The start message
 
