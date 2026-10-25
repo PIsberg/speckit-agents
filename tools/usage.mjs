@@ -75,6 +75,11 @@ export function launches(rows) {
   return out;
 }
 
+// The main session's Skill calls by name, in order (stub).
+export function skills(rows) {
+  throw new Error('not implemented');
+}
+
 const sum = (list, k) => list.reduce((s, x) => s + x[k], 0);
 
 export function summarise(file) {

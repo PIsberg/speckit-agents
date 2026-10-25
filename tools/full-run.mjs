@@ -131,6 +131,11 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 // Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
 // overload) is the infrastructure's failure: resuming with the next answer would reply to a question
 // never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
+// The first prompt of the run (stub).
+export function firstPrompt(request, { skillAgents = false } = {}) {
+  throw new Error('not implemented');
+}
+
 export function turnError(res, status) {
   if (!res) return `claude printed no result (exit ${status})`;
   const text = String(res.result ?? '');
