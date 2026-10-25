@@ -133,7 +133,7 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 // never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
 // The first prompt of the run (stub).
 export function firstPrompt(request, { skillAgents = false } = {}) {
-  throw new Error('not implemented');
+  throw new Error(`not implemented (${request}, ${skillAgents})`);
 }
 
 export function turnError(res, status) {
