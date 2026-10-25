@@ -256,7 +256,7 @@ PreToolUse. Two slices, disjoint files.
   platform; its assertions stay (`state(s, 'verdicts', '001-x.json')`, `lastResultIsError`,
   `skillAgents`). Session 2 stays and now runs on CI past session 1. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T027 [P] [US3] Implement in `hooks/speckit-team.mjs`: `recordReport(rec: object, last: string | null): void`
+- [X] T027 [P] [US3] Implement in `hooks/speckit-team.mjs`: `recordReport(rec: object, last: string | null): void`
   reads `roleTexts(rec.transcript, rec.offset)`, then `last` as one more text (contract section 6
   step 2); a `null` transcript reads `last` alone, and its "transcript could not be read" note is given
   only when no verdict or word is found; the spec-auditor none-found note at a Skill call adds the
@@ -269,7 +269,7 @@ PreToolUse. Two slices, disjoint files.
   report starts its `args` with that report's last line; README's skill-agents section says the
   verdict and word are also read from that `args` line and from the Stop's last message; CLAUDE.md
   "Rules" names the `args` report line as a skill half and a hook half.
-- [ ] T029 [P] [US1] Implement: `skills/speckit-team/SKILL.md` `## Skill agents`, one sentence (within
+- [X] T029 [P] [US1] Implement: `skills/speckit-team/SKILL.md` `## Skill agents`, one sentence (within
   T006's 3,000 characters). `README.md`: the skill-agents table's Verdict row, the `lane role`
   guardrail row, "What was verified how" (the `args` and Stop paths covered by test only), the
   troubleshooting entry "Run the Skill speckit-role-spec-auditor" (a PASS not recorded when the next

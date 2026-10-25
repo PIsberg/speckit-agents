@@ -41,7 +41,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 439 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 453 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
@@ -95,6 +95,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   gate. Held by `test/install.test.mjs` and `test/hook.test.mjs`; the typed path by `test/e2e.test.mjs`.
 - product-owner's and architect's `lane only` prefixes at Stop equal their `scope only` prefixes; the
   `start` entry in `SETTINGS_GATES` records where they start. Held by `test/install.test.mjs`.
+- In `--team skill-agents` the report's last line (`VERDICT: PASS`, `APPROVED`) is read from the next Skill call's `args` first line: the skill writes it, the hook reads it with the Stop's last message beside the transcript; both halves are held by `test/install.test.mjs` and `test/hook.test.mjs`.
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`; change both, and
   `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the

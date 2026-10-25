@@ -465,7 +465,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 |---|---|---|
 | Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run |
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
-| Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages and recorded | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
+| Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Retry limit | nothing | the skill counts 3 `RESULT: RED` in a row itself; the hook does not |
 | Context | nothing | every role sees this conversation, with the session's `CLAUDE.md`, on the session's model; read-only roles lose the `omitClaudeMd` isolation |
 | Tool list | a read-only role's Write and Edit are denied | each agent's tool list: a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked |
@@ -476,7 +476,7 @@ denied ([Live results](docs/live-results.md), "Skill-agents"). Measured: the sam
 built once as the default team and once with `--team skill-agents`, 31% more input tokens and 58%
 less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
-close and its end with the turn, the verdict and word records, and the rest of the table; the
+close and its end with the turn, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
 end-to-end tests fire the role skills' hook entries against the real Claude Code.
 
 **Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
@@ -976,7 +976,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
 | every `scope` rule | all five writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `scope role` | `--team skill-agents`: each role skill's frontmatter, PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | the acting role writing outside its lane (the same rule as its agent's `scope`, a twin of `ROLE_LANES`), or any write by a read-only role |
-| `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; records spec-auditor's verdict and spec-gatekeeper's word from its messages |
+| `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; records spec-auditor's verdict and spec-gatekeeper's word from its messages, the next Skill call's first `args` line and the Stop's last message |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
@@ -1413,13 +1413,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 439 tests:
+`npm test` runs 453 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 136 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 146 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 109 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 112 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -1748,6 +1748,7 @@ installed `UserPromptExpansion` entry predates it (rerun the installer, which wi
 In a `--team skill-agents` run the audit gate denied a role skill (test-writer, implementer or
 spec-gatekeeper) or `speckit-implement`. Call the Skill `speckit-role-spec-auditor` and get
 `VERDICT: PASS` first; do not launch `@agent-spec-auditor`, because any agent launch ends the mode.
+If the PASS was not recorded, the next call's `args` did not start with the `VERDICT: PASS` line: call the role skill again with it.
 A `speckit-role-<role> runs only in a request typed as /speckit-team --team skill-agents` denial
 means the request was not typed that way.
 

@@ -548,20 +548,21 @@ function roleTexts(file, offset) {
   return rows === null ? null : rows.map((l) => assistantText(l, true)).filter(Boolean);
 }
 // Record what the closing role reported (contract section 6, step 2): the auditor's VERDICT or the gatekeeper's word.
-function recordReport(rec) {
+// `last` is one more text after the transcript's: the first `args` line of the next Skill call, or the Stop's last message.
+function recordReport(rec, last = null, where = 'stop') {
   if (rec.role !== 'spec-auditor' && rec.role !== 'spec-gatekeeper') return;
-  const texts = roleTexts(rec.transcript, rec.offset);
-  if (texts === null) {
-    addNote(`speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
-    return;
-  }
+  const read = roleTexts(rec.transcript, rec.offset);
+  const texts = [...(read ?? []), ...(last ? [last] : [])];
+  const unread = () => addNote(`speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
   const feat = feature() ?? rec.feature;
   const at = new Date().toISOString();
   if (rec.role === 'spec-auditor') {
     const verdict = verdictIn(texts.join('\n'));
     if (!verdict) {
+      if (read === null) return unread();
       addNote('speckit-team: no VERDICT line was found in the spec-auditor role\'s turn, so nothing was recorded. '
-        + 'Call the Skill speckit-role-spec-auditor again and end its report with `VERDICT: PASS` or `VERDICT: FAIL`.');
+        + 'Call the Skill speckit-role-spec-auditor again and end its report with `VERDICT: PASS` or `VERDICT: FAIL`'
+        + (where === 'skill' ? ', and start the `args` of the next Skill call with that line.' : '.'));
       return;
     }
     if (!feat) { addNote(`speckit-team: the spec-auditor role's VERDICT: ${verdict} was not recorded: no active feature.`); return; }
@@ -577,6 +578,7 @@ function recordReport(rec) {
   }
   const word = [...texts].reverse().map(lastWord).find((w) => w === 'APPROVED' || w === 'REJECTED');
   if (!word) {
+    if (read === null) return unread();
     addNote('speckit-team: the spec-gatekeeper role ended without a final APPROVED or REJECTED line, so no word was recorded.');
     return;
   }
@@ -597,7 +599,7 @@ function closeRole(rec, at, gate = null) {
     return done();
   }
   if (roleEnded(rec)) { addNote(dropRole(rec)); return at === 'stop' ? finish() : undefined; }
-  recordReport(rec);
+  recordReport(rec, at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] ?? null : str(input.last_assistant_message), at);
   if (gate) gate();
   const [rule, ...prefixes] = ROLE_LANES[rec.role];
   if (rule !== 'none') {
