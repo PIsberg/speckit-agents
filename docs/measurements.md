@@ -319,3 +319,38 @@ e2e case for Claude Code honouring it. The writers keep both files. The idea is 
 of [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
 (`docs/claude.md`, "Reviewer isolation"), whose reviewers declare the same field and get only the
 task, the target and the paths they read.
+
+## The skill's conditional sections
+
+Whether to move the sections of `skills/speckit-team/SKILL.md` that only some runs need into a
+reference the main session reads when it needs them (#159). Worked out on 2026-10-25 from the
+transcripts of two runs with `tools/usage.mjs`; the section sizes are bytes of the file, the tokens
+are an estimate at 4 bytes a token, not counted.
+
+| Section | Bytes | Needed when |
+|---|--:|---|
+| `## No agents` | 2,636 | `--team noagents` |
+| `## Project` | 1,470 | `--project <name>` |
+| `## 0b. Constitution` | 1,117 | the constitution is still Spec Kit's template |
+| together | 5,223 | about 1,300 tokens |
+
+Every main-session response reads the skill back from the cache, so carrying the three sections
+costs about 1,300 cache-read tokens a response:
+
+| Run | Main-session responses | Carried | Share of the run's input | One extra response |
+|---|--:|--:|--:|--:|
+| full run of 2026-10-24 (`sum()`, headless) | 16 | 21k | 1.1% of 1.89M | 48k to 63k |
+| feature 003, interactive | 223 | 0.29M | 0.3% of 100.6M | 60k to 444k |
+
+A cache read is billed at a tenth of an uncached input token, so in dollars the carried text is
+about a tenth of those shares. Moving a section out saves its tokens only in runs that skip it, and
+costs a run that takes it one more main-session response (a `Read` of the reference), which reads the
+whole context back: more than twice what a whole full run spends carrying all three sections. It
+pays only if fewer than about 1 run in 4 takes a section, and then saves at most about 1% of the
+input tokens. Against that, the move splits rules `test/install.test.mjs` holds together and makes
+the installer install, mark and uninstall one more file.
+
+What it led to: nothing moves. The skill stays one file, over the 24,000-byte limit
+google/elephant-goldfish-model holds its skills to. Fewer launches is where the tokens are: the same
+full run spent 0.16M on an architect and a product-owner that each made one edit, and two rounds
+where one would do (README.md, "Settling decisions" and "Building in slices").
