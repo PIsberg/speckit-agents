@@ -1038,7 +1038,7 @@ const roleSkill = (role) => call('Skill', { skill: `speckit-role-${role}` });
 
 test('009 T008 contract 3 and 4: a typed --team skill-agents gates the role skills, and a let-through call records the role', { skip: noClaude, timeout: 240_000 }, async () => {
   const s = setup();
-  const r = await session(s, { [MAIN]: [roleSkill('test-writer'), roleSkill('architect')] }, { prompt: SA_PROMPT });
+  const r = await session(s, { [MAIN]: [roleSkill('test-writer'), roleSkill('architect'), wfile(s, 'src/x.js', 'export const x = 1;\n')] }, { prompt: SA_PROMPT });
   const denial = lastResult(r.requests[MAIN][1]);
   assert.match(denial, /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
   assert.match(denial, /speckit-role-spec-auditor/, story(r));
@@ -1046,9 +1046,11 @@ test('009 T008 contract 3 and 4: a typed --team skill-agents gates the role skil
   assert.ok(r.requests[MAIN].length >= 3, `the architect call was answered:\n${story(r)}`);
   const id = sessionId(r);
   assert.equal(state(s, 'team', `${id}.json`).skillAgents, true, story(r));
-  const files = fs.readdirSync(path.join(s.repo, '.git', 'speckit-team', 'role'));
-  assert.deepEqual(files, [`${id}.json`], story(r));
-  assert.equal(state(s, 'role', `${id}.json`).role, 'architect', story(r));
+  // The role record existed after the architect's Skill call: the next call is held to the architect's lane.
+  // The main session's Stop removes the record at the end of the turn (contract 6 step 3; hook.test.mjs).
+  assert.ok(lastResultIsError(r.requests[MAIN][3]), story(r));
+  assert.match(lastResult(r.requests[MAIN][3]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
 });
 
 // The Skill's own rows (its body is an isMeta user row) must not end the role in the transcript Claude
