@@ -220,7 +220,7 @@ what was seen.
   `CLAUDE.md`, seeing the conversation; the test count from `npm test`), `CLAUDE.md` (Layout: generated
   role skills; Rules: the `ROLE_LANES` twin and role-skill frontmatter as a place for a hook command; the
   test count), `docs/architecture.md` (the inline mode in the pipeline overview).
-- [ ] T024 Measure (FR-014, SC-001, SC-004, SC-005, plan D4, Constitution II live check): run
+- [X] T024 Measure (FR-014, SC-001, SC-004, SC-005, plan D4, Constitution II live check): run
   `node tools/full-run.mjs --out <dir> --login` and `--login --skill-agents` on the same day, read each
   transcript with `node tools/usage.mjs`, and write to `docs/measurements.md` a section with both runs'
   input tokens, cache reads, cost, models, date and check results. Live check: README.md "Live check"'s

@@ -391,3 +391,41 @@ What it led to: the plan stop still recommends one at a time, now with these num
 "no run has built slices side by side"; the stub pass stays one implementer without a worktree; and
 the worktrees and their branches are removed before the tick commit (`8385810`). Side by side can pay
 off only for slices that each take minutes to build, which no run has measured.
+
+## Roles as skills against roles as agents
+
+The same fixture request built twice on 2026-10-25 with real models (plan D4, FR-014): once with the
+default team and once with `--team skill-agents`, through [`tools/full-run.mjs`](../tools/full-run.mjs)
+`--login` and `--login --skill-agents`, Claude Code 2.1.310, Windows 11, main session `--model sonnet`.
+Both passed the run's checks. Numbers from each run's `run.json` (`tools/usage.mjs` summarise).
+
+| | Default | `--skill-agents` |
+|---|--:|--:|
+| Cost | $1.86 | $0.78 |
+| Wall-clock | about 15 min | 5 min 17 s |
+| Main-session responses | 22 | 38 |
+| Main-session input | 1,313,264 | 3,161,078 |
+| Main-session cache reads | 1,241,062 | 3,070,932 |
+| Main-session cache writes | 72,156 | 90,060 |
+| Main-session peak context | 72,160 | 104,884 |
+| Agent launches | 10 | 0 |
+| Agents' input | 1,100,724 | 0 |
+| Total input | about 2.41M | 3.16M (+31%) |
+| Models | sonnet; architect and spec-auditor on opus (opus cache reads 299,041, cache creation 78,362) | sonnet only |
+
+The default run launched product-owner x3, architect x2, spec-auditor, test-writer, implementer x2
+and spec-gatekeeper. The skill-agents run called all six core role skills in the main session.
+
+What it says: skill-agents read 31% more input tokens, because every role's reading stays in one
+growing context (peak 104,884 against 72,160), but cost 58% less and took a third of the time, as 97%
+of its input was cache reads and no step ran on opus.
+
+Caveats:
+- One sample each, not a distribution.
+- The model mix is unequal (plan D4): the default run put two roles on opus, the other none. Part of
+  the cost gap is that, not the mode.
+- The default run used the `speckit-team` skill of the owner's personal install from main, because a
+  personal skill shadows the project copy in `--login` runs. A first skill-agents run failed that way:
+  it loaded main's skill, launched 10 agents, cost $1.98 and measured nothing. For the second
+  skill-agents run this branch was installed personally.
+- Whether `cost` includes subagent spend was not checked.
