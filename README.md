@@ -1333,7 +1333,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 384 tests:
+`npm test` runs 385 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1349,7 +1349,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 12 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--side-by-side` and the worktree checks, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 13 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1510,7 +1510,10 @@ no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a ta
 unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
 main-session response that only waited, a worktree or `worktree-*` branch left behind, a cost over the ceiling (`total_cost_usd` of the last
 turn, which counts the turns before it), or the main session's note reaching an agent. It writes `run.json` and exits 0 only when every check
-passed. Nothing is retried, because a retry would hide a real regression.
+passed. Nothing is retried, because a retry would hide a real regression. A turn that ends on an API
+error (a refused connection, an overload) stops the run with a first failure line that names the
+infrastructure, not the team, rather than resuming the session with an answer to a question it never
+asked.
 
 The note is the one check of [Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose) that
 only a real model can fail: what goes into a launch prompt is the main session's choice. Each answer

@@ -122,6 +122,16 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 // Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
 // (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
 // Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
+// Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
+// overload) is the infrastructure's failure: resuming with the next answer would reply to a question
+// never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
+export function turnError(res, status) {
+  if (!res) return `claude printed no result (exit ${status})`;
+  const text = String(res.result ?? '');
+  if (res.is_error || /^API Error/.test(text)) return `infrastructure, not the team: ${text.slice(0, 300) || `exit ${status}`}; run it again`;
+  return null;
+}
+
 export function trustFolder(confFile, repo) {
   const key = repo.split(path.sep).join('/');
   const conf = readJson(confFile) ?? {};
@@ -178,6 +188,7 @@ function main() {
   const turns = [];
   const marker = newMarker();
   let session = null;
+  let stopped = null;
   for (let n = 0; n < o.maxTurns; n++) {
     const prompt = n === 0 ? `/speckit-team ${request}` : answer(marker, { sideBySide: o.sideBySide });
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
@@ -187,8 +198,9 @@ function main() {
     turns.push({ prompt: prompt.slice(0, 80), status: r.status, cost: res?.total_cost_usd ?? null, turns: res?.num_turns ?? null,
       session: res?.session_id ?? null, result: String(res?.result ?? r.stderr ?? '').slice(-600) });
     console.log(`turn ${n + 1}: exit ${r.status}, $${(res?.total_cost_usd ?? 0).toFixed(2)}, ${res?.num_turns ?? '?'} model turns`);
-    if (!res?.session_id) break;
-    session = res.session_id;
+    if (res?.session_id) session = res.session_id;
+    const err = turnError(res, r.status) ?? (session ? null : 'claude returned no session to resume');
+    if (err) { stopped = `turn ${n + 1}: ${err}`; break; }
     const ends = path.join(repo, '.git', 'speckit-team', 'ends');
     if (fs.existsSync(ends) && fs.readdirSync(ends).length) break;
   }
@@ -204,6 +216,7 @@ function main() {
   const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide });
   if (!transcript) failures.push('no transcript of the main session was found');
+  if (stopped) failures.unshift(stopped);
   const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);

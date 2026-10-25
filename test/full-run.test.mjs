@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, newMarker, trustFolder } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, newMarker, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -226,4 +226,16 @@ test('full run: a worktree or worktree branch left behind fails the run (#114)',
   assert.match(branch[0], /worktree-agent-1/, 'the branch is left after the worktree went');
   git(s.repo, 'branch', '-D', 'worktree-agent-1');
   assert.deepEqual(failures(s), []);
+});
+
+// In the --login run of 2026-10-25 turns 1 to 4 ended on "API Error: Connection refused", and the
+// loop still resumed the session with the approval answer, a reply to a question never asked, using
+// up 4 of the 8 turns. A turn that ends on an API error now stops the run, which is reported as the
+// infrastructure's failure, not the team's; nothing is retried.
+test('full run: a turn that ends on an API error stops the run and says it was the infrastructure', () => {
+  const refused = { is_error: true, result: 'API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)', session_id: 's' };
+  assert.match(turnError(refused, 1), /^infrastructure, not the team: API Error: Connection refused/);
+  assert.match(turnError({ is_error: false, result: 'API Error: Overloaded', session_id: 's' }, 1), /API Error: Overloaded/, 'the text alone is enough');
+  assert.match(turnError(null, 1), /claude printed no result \(exit 1\)/);
+  assert.equal(turnError({ is_error: false, result: 'Which roles take part?', session_id: 's' }, 0), null, 'a stop of the skill is no error');
 });
