@@ -454,6 +454,13 @@ test('installed skill and implementer agree on building [P] slices side by side 
   for (const term of ['`isolation: "worktree"`', '`worktree` in its prompt', 'in the message that launches the implementers', 'After each implementer step, in one Bash call', '`worktreeBranch`', 'in task order', '`git worktree remove`', '`git branch -d`']) {
     assert.ok(side.includes(term), term);
   }
+  // The side-by-side run of 2026-10-25 (#114): the tick commit's git add -A ran while both worktrees
+  // were still in .claude/worktrees/ and committed them, and the stub pass went out as two
+  // implementers in worktrees and a merge where one implementer does it in seconds.
+  const removed = side.indexOf('`git worktree remove`');
+  const ticked = side.indexOf('tick the tasks each report names as done and commit');
+  assert.ok(ticked > removed && removed >= 0, 'the worktrees and their branches go before the tick commit');
+  assert.match(side, /stub pass stays one implementer, without a worktree/);
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
   assert.match(ask, /one at a time \(recommended: it costs less, and no run with real models has built slices side by side yet\)/);
 });

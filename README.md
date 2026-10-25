@@ -571,8 +571,11 @@ The same check shaped the rules for worktrees. A worktree starts from the last c
 uncommitted work, so the main session commits the round's tests in the message that launches the
 implementers. An implementer there ticks nothing in `tasks.md`, because ticks on adjacent lines in
 two branches conflict when merged; after each implementer step the main session merges the branches,
-ticks the tasks the reports name, and removes each worktree and its branch, which `git add -A` would
-otherwise commit as an embedded repository.
+removes each worktree and its branch, and only then ticks the tasks the reports name and commits.
+The worktrees sit in the repository's `.claude/worktrees/`, so a `git add -A` before the removal
+commits them as embedded repositories, as the first side-by-side run with real models did
+(2026-10-25). The round's stub pass stays one implementer without a worktree: stubs take seconds,
+and two of them in worktrees cost that run a launch and a merge more.
 
 #### Handoffs are lossy on purpose
 

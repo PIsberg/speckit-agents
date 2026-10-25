@@ -325,15 +325,18 @@ For each round:
    resets the count), or hand the decision to the user.
 
 Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
-touch disjoint files run side by side instead: one loop per slice, each step's agents launched
-together in one message, each implementer with `isolation: "worktree"` and `worktree` in its prompt,
-so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
+touch disjoint files run side by side instead. The round's stub pass stays one implementer, without a
+worktree: stubs take seconds, and in the side-by-side run of 2026-10-25 two stub implementers and their
+merge cost a launch and a main-session response more. Then one loop per slice, each step's agents
+launched together in one message, each implementer with `isolation: "worktree"` and `worktree` in its
+prompt, so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
 A worktree starts from the last commit, without uncommitted work: commit the round's tests and
 ticks in the message that launches the implementers. After each implementer step, in one Bash
 call chained with `&&`: merge the branches the results name (`worktreeBranch`) into the feature
-branch in task order, tick the tasks each report names as done and commit, then
-`git worktree remove` each `worktreePath` and `git branch -d` its branch, since `git add -A` would
-commit a worktree left in place.
+branch in task order, `git worktree remove` each `worktreePath` and `git branch -d` its branch, and
+only then tick the tasks each report names as done and commit. The worktrees sit inside the repository
+(`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
+the 2026-10-25 run committed both and spent a commit taking them out.
 
 ## 6. Verify: spec-gatekeeper
 Only when spec-gatekeeper is in the team; without it, skip this step. Start it as soon as the last
