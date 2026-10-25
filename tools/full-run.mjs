@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--side-by-side]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--two-slices | --side-by-side]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -13,9 +13,10 @@
 // --model is the main session's. ANTHROPIC_API_KEY must be set, unless --login: then the run uses your
 // own Claude Code login and config, the team goes into <dir>/repo/.claude (project agents override the
 // ones you installed) and the repo is trusted in your .claude.json for the run only. Your own
-// CLAUDE.md, settings and hooks then load too, as in your sessions. --side-by-side asks for two functions
-// in two files and answers the plan stop's question with side by side (#114): the run then also fails
-// unless implementers went out together in worktrees. Nothing is retried.
+// CLAUDE.md, settings and hooks then load too, as in your sessions. --two-slices asks for two functions
+// in two files and keeps the recommended one at a time: the run then fails if agents went out together.
+// --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
+// then fails unless implementers went out together in worktrees. Nothing is retried.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -50,7 +51,7 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo, { sideBySide = false } = {}) {
+export function buildRepo(repo, { twoSlices = false } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
@@ -63,13 +64,13 @@ export function buildRepo(repo, { sideBySide = false } = {}) {
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'mathlib, before the feature');
-  return { request: fs.readFileSync(path.join(FIXTURE, sideBySide ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim() };
+  return { request: fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim() };
 }
 
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide }) {
   const out = [];
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
@@ -96,6 +97,10 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
   if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {
     out.push('no implementers went out side by side: none shared a response with another, each in a worktree');
+  }
+  const together = launches.filter((l) => l.together > 1);
+  if (twoSlices && !sideBySide && together.length) {
+    out.push(`${together.length} agent(s) went out side by side although the answer was one at a time: ${together.map((l) => l.type).join(', ')}`);
   }
   // The skill removes each worktree and its branch after merging it; one left behind gets committed by
   // the next git add -A as an embedded repository.
@@ -148,16 +153,16 @@ export function trustFolder(confFile, repo) {
 }
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
-    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; i--; } else if (k === '--out') o.out = path.resolve(v);
+    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--side-by-side]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--two-slices | --side-by-side]');
   return o;
 }
 
@@ -166,7 +171,7 @@ function main() {
   if (!o.login && !process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set (or pass --login to use your own Claude Code login)');
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
-  const { request } = buildRepo(repo, { sideBySide: o.sideBySide });
+  const { request } = buildRepo(repo, { twoSlices: o.twoSlices });
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
   env.MSYS_NO_PATHCONV = '1';
@@ -214,10 +219,10 @@ function main() {
   const agentTexts = subagents && fs.existsSync(subagents) ? fs.readdirSync(subagents).filter((f) => f.endsWith('.jsonl'))
     .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
   const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices });
   if (!transcript) failures.push('no transcript of the main session was found');
   if (stopped) failures.unshift(stopped);
-  const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
+  const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(failures.length ? 1 : 0);

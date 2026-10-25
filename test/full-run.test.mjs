@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -183,7 +183,7 @@ test('full run: --side-by-side asks for two slices in disjoint files and answers
   assert.equal(args(['--side-by-side', '--out', 'x']).sideBySide, true);
   assert.equal(args(['--out', 'x']).sideBySide, false);
   const plain = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-p-')), 'repo')).request;
-  const { request } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-sbs-')), 'repo'), { sideBySide: true });
+  const { request } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-sbs-')), 'repo'), { twoSlices: true });
   assert.notEqual(request, plain);
   assert.match(request, /src\/math\.js/);
   assert.match(request, /src\/text\.js/, 'the second slice is in a file of its own');
@@ -238,4 +238,18 @@ test('full run: a turn that ends on an API error stops the run and says it was t
   assert.match(turnError({ is_error: false, result: 'API Error: Overloaded', session_id: 's' }, 1), /API Error: Overloaded/, 'the text alone is enough');
   assert.match(turnError(null, 1), /claude printed no result \(exit 1\)/);
   assert.equal(turnError({ is_error: false, result: 'Which roles take part?', session_id: 's' }, 0), null, 'a stop of the skill is no error');
+});
+
+// #114 asks for the same feature built one at a time, to set against side by side in tokens and
+// wall-clock time. --two-slices sends the two-file request with the plain answer; --side-by-side
+// implies it.
+test('full run: --two-slices sends the two-file request with the one-at-a-time answer, and --side-by-side implies it (#114)', () => {
+  assert.deepEqual([args(['--two-slices', '--out', 'x']).twoSlices, args(['--two-slices', '--out', 'x']).sideBySide], [true, false]);
+  assert.deepEqual([args(['--side-by-side', '--out', 'x']).twoSlices, args(['--side-by-side', '--out', 'x']).sideBySide], [true, true]);
+  assert.equal(args(['--out', 'x']).twoSlices, false);
+  const one = (launches) => failures(state({ launches }), undefined, undefined, { twoSlices: true });
+  assert.deepEqual(one([{ type: 'implementer', background: false, worktree: false, together: 1 }]), []);
+  const f = one([{ type: 'test-writer', background: false, worktree: false, together: 2 }, { type: 'test-writer', background: false, worktree: false, together: 2 }]);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0], /one at a time/, 'the answer was one at a time, so agents going out together fail the run');
 });
