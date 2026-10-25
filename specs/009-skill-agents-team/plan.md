@@ -50,7 +50,7 @@ skills' frontmatter applies the acting role's lane to every write. No agent file
 | VII. Every platform, forward slashes | T008, T011, T014, T017, T009 | e2e runs in CI on all three; paths through `repoRel` |
 | VIII. README, CLAUDE.md, installer help; verified live vs by test; prose | T002, T023, T024 | |
 | Install: idempotent, marker, no overwrite without `--force` | T001, T002 | |
-| Install: validate before writing | T002 | every role skill rendered before the first write |
+| Install: validate before writing | T001, T002 | every role skill rendered before the first write; a bad agent file writes nothing |
 | Install: nothing in repos without `.specify/` | T010 | no settings entry added; `scope role` exits there (`notSpecKit`) |
 | Install: `--uninstall` removes what it added | T001 | |
 | Gate: live check for hook wiring | T024 | README "Live check" with skill-agents, result in `docs/live-results.md` |
@@ -164,3 +164,34 @@ Answer (2026-10-25): A, as recommended
   T003 and T004, and README.
   Spec: FR-009: Installing with `--skill-agents` MUST add the role skills, a later install keeps them
   until `--no-skill-agents`, and uninstalling MUST remove them; files the user wrote MUST be left alone.
+
+### D6. How is a spec edit made inside test-writer or implementer caught?
+
+Answer (2026-10-25): A, as recommended
+
+In a default run, `agents/test-writer.md` and `agents/implementer.md` run `gate` on every tool call
+(matcher `.*`), so after an edit to the spec, plan, tasks or constitution the agent's next call is
+denied. In this mode the gate runs at a role skill call only, and implementer's `no-tests` lane allows
+`specs/` (audit finding H3, FR-008).
+
+- **A (recommended): gate spec-gatekeeper's start too, and name the per-call difference.** Contract
+  section 4 step 4 adds `spec-gatekeeper`; the start message (section 7) names that the gate is not
+  checked on each tool call inside test-writer and implementer. Outcome: work after such an edit can
+  go on until the role ends, but neither the next build role nor verification starts until
+  spec-auditor passes again. One word in the hook's role list and one clause of message; T007 gets the
+  spec-gatekeeper cases, T009 and T004 carry it. Stricter than a default run, where nothing gates
+  spec-gatekeeper's launch; in this mode the team is always all seven, so an audit always exists.
+- B: the same per-call gate as the agents. Every role skill's frontmatter (contract section 2) gains a
+  PreToolUse `.*` entry `gate role`; gate mode, from the main session with a role record of test-writer
+  or implementer, denies any tool call but a role Skill call while `auditProblem()` is set. Same outcome
+  as a default run; a hook process on every main-session tool call for the rest of the session after
+  the first role skill (research R2: frontmatter hooks stay), a new hook entry with its own
+  `test/e2e.test.mjs` case (one more e2e session, in T008's slice), a README guardrail-table row, and
+  T001's frontmatter assertion changes. The start message keeps its current enforced list.
+- C: name it only. The start message says the gate is not checked inside test-writer and implementer
+  and is not checked before spec-gatekeeper; no hook change. A spec edit during implementer reaches
+  verification unaudited unless the skill re-runs spec-auditor.
+  Spec: FR-008, first sentence: In this mode the audit gate MUST stop test-writer and implementer from
+  starting until the audit passes, and the verification outcome MUST be enforced as in a default run;
+  an edit to the spec, plan or tasks made while either acts is not re-checked, and this MUST be named
+  to the user at the start of the run as not enforced.

@@ -74,8 +74,10 @@ For a skill name (`skill_name`, `skill` or `name`, as the gate reads `speckit-im
 2. The session's team record lacks `skillAgents`: deny, `speckit-role-<role> runs only in a request
    typed as /speckit-team --team skill-agents <request>.`
 3. A role record exists: close it (section 6). A lane violation denies this call.
-4. `<role>` is `test-writer` or `implementer`: the audit gate, `auditProblem()`, with the reason text of
-   the existing `Implementation gate:` denial.
+4. `<role>` is `test-writer`, `implementer` or `spec-gatekeeper`: the audit gate, `auditProblem()`, with
+   the reason text of the existing `Implementation gate:` denial. Checking it again before
+   spec-gatekeeper means an edit to the spec, plan, tasks or constitution made inside test-writer or
+   implementer (implementer's lane allows `specs/`) never reaches verification unaudited (FR-008, plan D6).
 5. Write the role record; no decision.
 Any other skill name: as before.
 
@@ -115,8 +117,10 @@ could not run; never a crash.
 ## 7. The start message
 
 `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the
-hook: each role's lane, the audit gate before test-writer and implementer, spec-auditor's verdict and
-spec-gatekeeper's word. Not enforced: the retry limit (the skill counts), the check that a report ends
-in its word, and each role's own context (every role sees this conversation).`
+hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper,
+spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call
+inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or
+spec-gatekeeper starts), the retry limit (the skill counts), the check that a report ends in its word,
+and each role's own context (every role sees this conversation).`
 
 The skill does not repeat it; it adds its one-line team notice as in `## Team`.

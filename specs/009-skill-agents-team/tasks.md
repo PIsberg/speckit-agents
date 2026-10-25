@@ -22,6 +22,10 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   the test fails when the two differ; a rerun logs `unchanged` for each; `--uninstall` removes the seven
   folders (`roundTrip`); a user's own `skills/speckit-role-architect/SKILL.md` without the marker makes
   install refuse, and `--force` backs it up; `--help` names `/speckit-team --team skill-agents`.
+  Validate before writing (Installation Constraints): a copied tree (`install.mjs`, `agents`, `hooks`,
+  `skills`, copied as the test "--board from another checkout points the board at that checkout" does)
+  whose `agents/architect.md` has no frontmatter, installed into an empty `claudeDir()`, exits nonzero
+  and leaves that directory empty.
 - [ ] T002 Implement in `install.mjs`: `const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher')`,
   `const ROLE_PREAMBLE` (contract section 2), `function roleSkill(role: string, agentText: string): string`
   (throws on an agent file without its frontmatter); `files()` gains
@@ -73,8 +77,9 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
 - [ ] T007 [US3] Test in `test/hook.test.mjs` (contract section 4, FR-005, FR-006, FR-008, US3-5 first
   half): PreToolUse `Skill` payloads with `tool_input.skill`. Open cases: no record, a `noagents` record
   and a plain team record all deny; product-owner is let through and writes the role record with the
-  data-model fields; test-writer and implementer are denied before `pass(dir)`, let through after it, and
-  denied again after a spec edit; a call with `agent_id` decides nothing; `speckit-role-patcher` and
+  data-model fields; test-writer, implementer and spec-gatekeeper are denied before `pass(dir)`, let
+  through after it, and denied again after a spec edit (spec-gatekeeper also after an edit made while
+  the implementer role acted, plan D6); a call with `agent_id` decides nothing; `speckit-role-patcher` and
   `speckit-role-x` decide nothing; `plugin:speckit-role-architect` counts; a missing or malformed
   `session_id` or `tool_input` never crashes.
 - [ ] T008 [US3] Test in `test/e2e.test.mjs` (contract sections 3 and 4, research R3): `session` with
@@ -108,7 +113,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   characters; `run(dir, ['lane', 'role'], { hook_event_name: 'Stop', session_id })` blocks, and with
   `stop_hook_active` gives the `WARNING` message and removes the record; a file dirty at the role's start
   is not counted; any change under a read-only role counts; no record decides nothing; an unreadable
-  record or a sha that is no commit says the lane check could not run.
+  record, a non-hex sha (`--output=x`) or a sha that is no commit says the lane check could not run.
 - [ ] T014 [US3] Test in `test/e2e.test.mjs` (FR-008, US3-6, research R2): typed as in T008,
   `recordPass(s)`; the main script calls the Skill `speckit-role-implementer`, writes a test file through
   Bash as the existing case "implementer may not change tests, and its lane check catches a test written
@@ -116,8 +121,14 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   `SPECKIT_E2E_NO_HOOK=1`.
 - [ ] T015 [US3] Implement in `hooks/speckit-team.mjs`: `function closeRole(rec: object, at: 'skill' | 'stop'): void`
   (contract section 6 steps 1 and 3; denies at a Skill call, blocks at Stop), called from T009's step 3
-  and from lane mode's `role` rule; reuse lane mode's start-record checks and messages, `changedSince`,
-  `ROLE_LANES`, `inLane`, `inPrefixes`, `block`, `deny`, `emit`.
+  and from lane mode's `role` rule. Take lane mode's check (`hooks/speckit-team.mjs`, `mode === 'lane'`:
+  the unreadable and incomplete start record, the hex-sha test that keeps options out of git's
+  arguments, `testPaths.bad`, `git cat-file -e`, then `changedSince` minus `dirty` outside the rule) out
+  into `function laneOutside(base: object | null, rule: string, prefixes: string[], who: string): { problem: string } | { outside: string[] }`
+  (`problem` is the existing `lane check could not run for <who>: ...` text; rule `none` puts every file
+  outside; `testPaths.bad` counts for `tests` and `no-tests` only). Lane mode calls it with its `who` and
+  rule and keeps its messages, so its existing `test/hook.test.mjs` lane cases hold the change; `closeRole`
+  calls it with the role record and `ROLE_LANES[role]`. Also reuse `block`, `deny`, `emit`.
 - [ ] T016 [P] [US3] Test in `test/hook.test.mjs` (contract section 6 step 2, FR-008, US3-5, research R1):
   the test writes a transcript JSONL of rows `{ type: 'assistant', message: { role: 'assistant', content:
   [{ type: 'text', text }] } }` and passes it as `transcript_path` of the Skill call that starts the role.
@@ -133,9 +144,12 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   PASS. Session 2: the auditor role, then `say` ending `VERDICT: PASS`: the Stop records it. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
 - [ ] T018 [P] [US3] Implement in `hooks/speckit-team.mjs`, `closeRole` step 2: `function roleTexts(file: string, offset: number): string[]`
-  (the row parsing of `lastAssistantText`, sidechain rows skipped),
-  `function verdictIn(text: string): 'PASS' | 'FAIL' | null` and `function lastWord(text: string): string`
-  taken out of the `verdict` and `ends` modes and used by them too; records via `verdictFile`, `endsFile`,
+  built on `function assistantText(line: string, mainOnly: boolean): string`, the row parsing taken out
+  of `lastAssistantText` (`hooks/speckit-team.mjs`; one JSONL row to its assistant text, `''` for a
+  malformed or non-assistant row and, with `mainOnly`, a sidechain row), which `lastAssistantText` then
+  calls with `false`; `function verdictIn(text: string): 'PASS' | 'FAIL' | null` and
+  `function lastWord(text: string): string` taken out of the `verdict` and `ends` modes and used by them
+  too, so their existing cases hold all three extractions; records via `verdictFile`, `endsFile`,
   `writeJson`, with `role` (data-model).
 
 ## Phase 5: User Story 1, the full run in this mode (Round 3)
