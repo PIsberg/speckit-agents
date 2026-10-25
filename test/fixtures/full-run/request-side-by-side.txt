@@ -1,0 +1,1 @@
+Add two independent functions, each with its own tests: sum(numbers) in src/math.js, which returns the sum of an array of numbers and 0 for an empty array, and capitalize(text) in a new module src/text.js, which returns the text with its first character in upper case and '' for ''.

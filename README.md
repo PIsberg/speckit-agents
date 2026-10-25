@@ -243,8 +243,8 @@ and asks you to approve it, a further stop, then writes it with `speckit-constit
 it on the feature branch, not on main. You can still run `/speckit-constitution` yourself
 beforehand.
 
-After that it audits, then builds the feature a phase of `tasks.md` at a time, in rounds of up to 4
-slices (stubs, failing tests, code), verifies and opens a PR, which it does not merge.
+After that it audits, then builds the feature in rounds of up to 4 slices (stubs, failing tests,
+code), small phases of `tasks.md` sharing one, verifies and opens a PR, which it does not merge.
 
 #### 3. A small change: the fast track
 
@@ -344,7 +344,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 104 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 114 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -452,9 +452,14 @@ the spec wrong carries that line's new wording on a `Spec:` line. Its report nam
 decision IDs, so the reasoning is not carried in the main session for the rest of the run. At the
 plan stop the skill reads the section in one command and asks you about every open decision at
 once; with more than 4, its first question takes every recommended option in one answer, in which
-you can also name exceptions (`D5: B`). One architect revision then applies all the answers,
-moving each entry to a `## Decisions` section with the answer and the date, and product-owner,
-launched in the same message, rewords the spec lines the chosen options carry. The spec and the
+you can also name exceptions (`D5: B`). The architect writes the plan and the tasks as its
+recommendations make them, so when every answer is the recommended option the main session launches
+no one: it adds `Answer (<date>): <option>, as recommended` under each decision, renames the section
+`## Decisions` and puts the chosen `Spec:` lines into the spec itself (in the full run of 2026-10-24
+that was an architect and a product-owner for one edit each, 0.16M tokens). Otherwise one architect
+revision applies all the answers, moving each entry to a `## Decisions` section with the answer and
+the date, and product-owner, launched in the same message, rewords the spec lines the chosen options
+carry. The spec and the
 plan then agree before the first audit; in the 004 run a decision that contradicted FR-012 failed
 it ([Feature 004](docs/measurements.md#feature-004-interactive)).
 
@@ -506,8 +511,15 @@ holds the skill, both owners and both reviewers to the same words.
 
 After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. A round is the slices of one phase of `tasks.md` (Setup, Foundational, one user
-story), at most 4 of them, and gets one stub pass, one test-writer and one implementer. Until
+those slices. A round is at most 4 slices in task order, and gets one stub pass, one test-writer and
+one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
+together share a round, since each extra round costs a test-writer and an implementer more. The
+architect never makes a slice of an implementation that leaves out what a later task adds just so
+that task's test fails against it: in the full runs of 2026-10-24 and 2026-10-25 `sum()` without its
+empty-array case became a slice of its own that way, which cost a round. The architect's report
+ends with one line per round (`Round 1: stub T001; red T002; green T003`), so the main session
+launches the first round straight from the audit's PASS instead of spending a response, 60k tokens
+in the 2026-10-25 run, on reading `tasks.md`. Until
 2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
 implementation task, each starting from nothing (11k to 14k tokens, see
 [Context budget](#context-budget)) and reading the code again; that was most of why a run felt
@@ -546,11 +558,24 @@ made while building never void the audit.
 
 For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
 implementer in its own git worktree, merged back into the feature branch in task order. It does so
-only if you say so at the plan stop. Side by side may save wall-clock time but costs more: each
-slice gets its own test-writer and implementer instead of sharing its round's, plus a few
-main-session requests for the merges, and several agents then draw on your usage limits at once.
-It recommends one at a time: no run with real models has built slices side by side yet
-([#114](https://github.com/PIsberg/speckit-agents/issues/114)).
+only if you say so at the plan stop, and recommends one at a time. Each slice side by side gets its
+own test-writer and implementer instead of sharing its round's, the merges take main-session
+responses, and several agents draw on your usage limits at once. Measured on 2026-10-25 with real
+models ([#114](https://github.com/PIsberg/speckit-agents/issues/114)), one two-slice feature
+(`sum()` and `capitalize()` in two files, `tools/full-run.mjs --two-slices` and `--side-by-side`):
+
+| Build, first stub to last implementer | One at a time | Side by side |
+|---|--:|--:|
+| Wall-clock | 95 s | 140 s |
+| Build launches | 3 | 7 |
+| Build agents' input | 0.20M | 0.57M |
+| Main-session responses, whole run | 13 | 19 |
+
+Slices that take seconds each gain nothing from running at once; the launches, the merges and
+the cleanup cost more than the overlap saves. Side by side can pay off only for slices that each
+take minutes, which no run has measured. The side-by-side run also had two stub implementers, a
+docs-only implementer and a commit to take out worktrees, since fixed (below); the one-at-a-time
+run already had the architect's round lines, which save the main session one response.
 
 Claude Code does run them side by side: agents launched in one message overlap, in worktrees too,
 and the main session waits for all of them, checked against a fake API and pinned by
@@ -559,8 +584,11 @@ The same check shaped the rules for worktrees. A worktree starts from the last c
 uncommitted work, so the main session commits the round's tests in the message that launches the
 implementers. An implementer there ticks nothing in `tasks.md`, because ticks on adjacent lines in
 two branches conflict when merged; after each implementer step the main session merges the branches,
-ticks the tasks the reports name, and removes each worktree and its branch, which `git add -A` would
-otherwise commit as an embedded repository.
+removes each worktree and its branch, and only then ticks the tasks the reports name and commits.
+The worktrees sit in the repository's `.claude/worktrees/`, so a `git add -A` before the removal
+commits them as embedded repositories, as the first side-by-side run with real models did
+(2026-10-25). The round's stub pass stays one implementer without a worktree: stubs take seconds,
+and two of them in worktrees cost that run a launch and a merge more.
 
 #### Handoffs are lossy on purpose
 
@@ -1324,23 +1352,23 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 374 tests:
+`npm test` runs 387 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 96 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 98 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
-| [`test/usage.test.mjs`](test/usage.test.mjs) | 7 | `tools/usage.mjs`, on synthetic transcripts: the counts, and which relaunch lost its cached prefix |
+| [`test/usage.test.mjs`](test/usage.test.mjs) | 8 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 8 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples and SC IDs skipped, the exit codes, and its test patterns against the hook's |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 14 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1499,9 +1527,12 @@ team and approves every recommended option, plus a note marked as for the main s
 run. It then checks only what does not depend on the models' wording, and fails the run on any of:
 no audit `PASS` in `.git/speckit-team/verdicts/`, no `APPROVED` in `ends/`, a task of `tasks.md` left
 unticked, the scratch repo's `npm test` failing, an agent launched in the background or a
-main-session response that only waited, a cost over the ceiling (`total_cost_usd` of the last
+main-session response that only waited, a worktree or `worktree-*` branch left behind, a cost over the ceiling (`total_cost_usd` of the last
 turn, which counts the turns before it), or the main session's note reaching an agent. It writes `run.json` and exits 0 only when every check
-passed. Nothing is retried, because a retry would hide a real regression.
+passed. Nothing is retried, because a retry would hide a real regression. A turn that ends on an API
+error (a refused connection, an overload) stops the run with a first failure line that names the
+infrastructure, not the team, rather than resuming the session with an answer to a question it never
+asked.
 
 The note is the one check of [Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose) that
 only a real model can fail: what goes into a launch prompt is the main session's choice. Each answer
@@ -1515,6 +1546,22 @@ ran, since a check that saw nothing proves nothing. The idea is the parent-only 
 ```sh
 ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet --max-cost 6
 ```
+
+With `--login` instead of the key, the run uses your own Claude Code login (a subscription works):
+the team is installed into the scratch repo's `.claude/`, where it overrides the agents you installed
+and stays out of the feature's commits (`.git/info/exclude`), and the repo is trusted in your
+`.claude.json` for the run only, the one entry removed again after the last turn. Your own
+`CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
+the settings gates of a team you installed fire beside the scratch repo's.
+
+With `--side-by-side` the request is two functions in two files (`sum()` in `src/math.js`,
+`capitalize()` in a new `src/text.js`, from `request-side-by-side.txt`), and the answer takes every
+recommended option except one at a time: the `[P]` slices are built side by side
+([#114](https://github.com/PIsberg/speckit-agents/issues/114)). The run then also fails unless two
+implementers went out in one response, each with `isolation: "worktree"`. `tools/usage.mjs` prints
+the same from any transcript: how many responses launched more than one agent, and how many agents
+ran in a worktree. `--two-slices` sends the same request with the plain answer, one at a time, and
+fails the run if agents went out together: the run to set against a side-by-side one.
 
 The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
 $4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand
@@ -1569,7 +1616,9 @@ against a fake API (no model ran): the fast track's hooks, and the team question
 On 2026-10-16, with real models: a `--project` block reaching implementer and security-reviewer, and
 security-reviewer's result review with its `ends` check. On 2026-10-24, with real models: the read-only
 agents starting without `CLAUDE.md`, the reuse check, a contested finding and a recorded ruling, and a
-full run passing the leak and drift checks.
+full run passing the leak and drift checks. On 2026-10-25, with real models: one two-slice feature
+built side by side in worktrees and one at a time, side by side slower and dearer
+([docs/measurements.md](docs/measurements.md#side-by-side-against-one-at-a-time)).
 The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]
@@ -1774,8 +1823,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   before; which versions lack it was not checked.
 - **The drift check matches IDs as text.** `tools/drift.mjs` cannot tell feature 003's FR-014 from
   feature 007's: the same ID of another feature in the same test file hides drift, so no problems
-  reported is not proof that every requirement is still tested. A task that names test files but is
-  not a test task (a docs task) can be reported too.
+  reported is not proof that every requirement is still tested. A test task is told from a docs task
+  by its opening words ("Tests in", "Contract test for"), so a test task worded otherwise is not
+  checked at all.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2006,7 +2056,8 @@ model and no tokens:
 node tools/drift.mjs <repo>
 ```
 
-For each ticked task in a `tasks.md` that names a test file and cites FR IDs, it reports the file if
+For each ticked test task in a `tasks.md` (its opening words, before the first file, parenthesis or
+colon, say test or tests) that names a test file and cites FR IDs, it reports the file if
 it is gone, and each cited FR ID that none of the task's test files holds any more (test-writer puts
 the ID in each test's name or a comment). One line per problem, then a count; exit 1 with drift, 0
 without, 2 when the repo has no `specs/`. A file counts as test code by the hook's own patterns and
@@ -2014,11 +2065,11 @@ without, 2 when the repo has no `specs/`. A file counts as test code by the hook
 example inputs and paths inside a subproject. Success criteria (SC-) are not looked for: test-writer
 does not promise to cite them.
 
-Run on this repository on 2026-10-24, it checked 32 test tasks in 7 features and reported 11
-problems. Ten are feature 003's, whose tests moved from `test/hook.test.mjs` to
-`test/hook-patch.test.mjs` after its tasks were written: the coverage is there, the references are
-stale. One is a false positive: feature 007's FR-014 is a documentation requirement, cited by a docs
-task that names test files. The idea is the drift report of
+`test/drift.test.mjs` runs it on this repository too, so a test moved to another file without its
+task fails `npm test`. Its first run, on 2026-10-24, reported 11 problems: ten were feature 003's,
+whose tests had moved from `test/hook.test.mjs` to `test/hook-patch.test.mjs` after its tasks were
+written, and one was a docs task of 007 that names test files. 003's tasks name the new file now
+(#161), and docs tasks are no longer checked. The idea is the drift report of
 [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
 (`docs/designs/drift_report.md`), which compares checked-in specs with the code.
 

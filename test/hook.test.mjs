@@ -10,6 +10,7 @@ import path from 'node:path';
 import { HOOK, FEAT, repo, run, write, denied, pass, handback, decided, stateDir, commitAll, msg } from './hook-helpers.mjs';
 
 
+// 003 FR-010 for `scope protected` and `patch`.
 test('every mode is a no-op outside a Spec Kit repo', () => {
   const { dir } = repo({ speckit: false });
   assert.equal(write(dir, ['scope', 'only', 'specs/'], 'src/main/App.java'), null);
@@ -316,6 +317,7 @@ const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected']
 
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
   // A crashed hook is a non-blocking error: Claude Code lets the action through and says nothing.
+  // `scope protected` and `patch` are in MODES for 003 FR-011.
   const { dir } = repo();
   for (const text of ['{not json', '', '[]', '"text"', 'null', '42']) {
     for (const args of MODES) {

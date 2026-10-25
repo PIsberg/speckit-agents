@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, buildRepo, checkRun, newMarker } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, newMarker, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -131,4 +131,129 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
   const unsent = failures(state(), undefined, undefined, { markerSent: false });
   assert.equal(unsent.length, 1, JSON.stringify(unsent));
   assert.match(unsent[0], /never sent/);
+});
+
+// --login runs on the owner's own Claude Code login instead of an API key: the team goes into the
+// scratch repo's .claude/ (project agents override installed ones) and the repo gets folder trust in
+// the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
+// "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
+test('full run: --login is a flag without a value, and --out is still required', () => {
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, out: path.resolve('x') });
+  assert.equal(args(['--out', 'x']).login, false);
+  assert.throws(() => args(['--login']), /usage/);
+  assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
+});
+
+test('full run: folder trust is added for the run, and its undo removes only that entry, keeping what changed meanwhile', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'scratch', 'repo');
+  const key = repo.split(path.sep).join('/');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: { 'C:/other': { hasTrustDialogAccepted: true } } }));
+  const undo = trustFolder(conf, repo);
+  const during = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.deepEqual(during.projects[key], { hasTrustDialogAccepted: true });
+  assert.equal(during.numStartups, 4);
+  // Claude Code rewrites the file while the run goes on; the undo must not put the old copy back.
+  fs.writeFileSync(conf, JSON.stringify({ ...during, numStartups: 9 }));
+  undo();
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.equal(after.numStartups, 9, 'a change made during the run survives the undo');
+  assert.deepEqual(after.projects, { 'C:/other': { hasTrustDialogAccepted: true } }, 'only the run\'s entry is gone');
+  // A folder already trusted stays trusted.
+  fs.writeFileSync(conf, JSON.stringify({ projects: { [key]: { hasTrustDialogAccepted: true, x: 1 } } }));
+  trustFolder(conf, repo)();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
+});
+
+test('full run: without an API key it stops before writing anything and names --login', () => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-nokey-')), 'run');
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'));
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'full-run.mjs'), '--out', out], { env, encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /ANTHROPIC_API_KEY is not set.*--login/);
+  assert.ok(!fs.existsSync(out), 'nothing written');
+});
+
+// #114: the only run that can show a real main session building [P] slices side by side. The fixture's
+// one-function request has a single slice, so --side-by-side asks for two functions in two files and
+// answers the plan stop's question with side by side; the run then fails unless implementers went out
+// together in worktrees and every worktree and its branch is gone at the end.
+test('full run: --side-by-side asks for two slices in disjoint files and answers side by side (#114)', () => {
+  assert.equal(args(['--side-by-side', '--out', 'x']).sideBySide, true);
+  assert.equal(args(['--out', 'x']).sideBySide, false);
+  const plain = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-p-')), 'repo')).request;
+  const { request } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-sbs-')), 'repo'), { twoSlices: true });
+  assert.notEqual(request, plain);
+  assert.match(request, /src\/math\.js/);
+  assert.match(request, /src\/text\.js/, 'the second slice is in a file of its own');
+  const text = answer(MARKER, { sideBySide: true });
+  assert.match(text, /side by side/);
+  assert.ok(text.includes(MARKER), 'still carries the marker');
+  assert.doesNotMatch(answer(MARKER), /side by side/, 'the plain run keeps the recommended one at a time');
+});
+
+test('full run: a side-by-side run fails unless implementers went out together in worktrees (#114)', () => {
+  const together = [{ type: 'implementer', background: false, worktree: true, together: 2 }, { type: 'implementer', background: false, worktree: true, together: 2 }];
+  const sbs = (s) => failures(s, undefined, undefined, { sideBySide: true });
+  assert.deepEqual(sbs(state({ launches: together })), []);
+  for (const launches of [
+    [{ type: 'implementer', background: false, worktree: false, together: 1 }],
+    [{ type: 'implementer', background: false, worktree: true, together: 1 }],
+    [{ type: 'implementer', background: false, worktree: false, together: 2 }, { type: 'implementer', background: false, worktree: false, together: 2 }],
+  ]) {
+    const f = sbs(state({ launches }));
+    assert.equal(f.length, 1, JSON.stringify(f));
+    assert.match(f[0], /side by side/);
+  }
+  assert.deepEqual(failures(state({ launches: [{ type: 'implementer', background: false, worktree: false, together: 1 }] })), [], 'one at a time is fine without the flag');
+});
+
+test('full run: a worktree or worktree branch left behind fails the run (#114)', () => {
+  const s = state();
+  fs.writeFileSync(path.join(s.repo, 'f.txt'), 'x');
+  git(s.repo, 'add', '-A');
+  git(s.repo, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'x');
+  const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-wt-')), 'agent-1');
+  assert.equal(git(s.repo, 'worktree', 'add', '-q', '-b', 'worktree-agent-1', wt).status, 0);
+  const f = failures(s);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0], /worktree/);
+  assert.match(f[0], /agent-1/);
+  git(s.repo, 'worktree', 'remove', wt);
+  const branch = failures(s);
+  assert.equal(branch.length, 1, JSON.stringify(branch));
+  assert.match(branch[0], /worktree-agent-1/, 'the branch is left after the worktree went');
+  git(s.repo, 'branch', '-D', 'worktree-agent-1');
+  assert.deepEqual(failures(s), []);
+});
+
+// In the --login run of 2026-10-25 turns 1 to 4 ended on "API Error: Connection refused", and the
+// loop still resumed the session with the approval answer, a reply to a question never asked, using
+// up 4 of the 8 turns. A turn that ends on an API error now stops the run, which is reported as the
+// infrastructure's failure, not the team's; nothing is retried.
+test('full run: a turn that ends on an API error stops the run and says it was the infrastructure', () => {
+  const refused = { is_error: true, result: 'API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)', session_id: 's' };
+  assert.match(turnError(refused, 1), /^infrastructure, not the team: API Error: Connection refused/);
+  assert.match(turnError({ is_error: false, result: 'API Error: Overloaded', session_id: 's' }, 1), /API Error: Overloaded/, 'the text alone is enough');
+  assert.match(turnError(null, 1), /claude printed no result \(exit 1\)/);
+  assert.equal(turnError({ is_error: false, result: 'Which roles take part?', session_id: 's' }, 0), null, 'a stop of the skill is no error');
+});
+
+// #114 asks for the same feature built one at a time, to set against side by side in tokens and
+// wall-clock time. --two-slices sends the two-file request with the plain answer; --side-by-side
+// implies it.
+test('full run: --two-slices sends the two-file request with the one-at-a-time answer, and --side-by-side implies it (#114)', () => {
+  assert.deepEqual([args(['--two-slices', '--out', 'x']).twoSlices, args(['--two-slices', '--out', 'x']).sideBySide], [true, false]);
+  assert.deepEqual([args(['--side-by-side', '--out', 'x']).twoSlices, args(['--side-by-side', '--out', 'x']).sideBySide], [true, true]);
+  assert.equal(args(['--out', 'x']).twoSlices, false);
+  const one = (launches) => failures(state({ launches }), undefined, undefined, { twoSlices: true });
+  assert.deepEqual(one([{ type: 'implementer', background: false, worktree: false, together: 1 }]), []);
+  const f = one([{ type: 'test-writer', background: false, worktree: false, together: 2 }, { type: 'test-writer', background: false, worktree: false, together: 2 }]);
+  assert.equal(f.length, 1, JSON.stringify(f));
+  assert.match(f[0], /one at a time/, 'the answer was one at a time, so agents going out together fail the run');
+  // The plan stop sends an architect revision and product-owner's Spec: lines in one message (step 2):
+  // that is not a build going side by side. The one-at-a-time run of 2026-10-25 failed on it.
+  const revision = [{ type: 'product-owner', background: false, worktree: false, together: 2 }, { type: 'architect', background: false, worktree: false, together: 2 }];
+  assert.deepEqual(one(revision), [], 'only test-writers and implementers count');
 });

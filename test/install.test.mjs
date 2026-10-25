@@ -77,6 +77,7 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   const s = settingsOf(dir);
   assert.equal(s.model, 'opus');
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
+  // 003 FR-009: the fast track adds no settings gate, so the team's gates are exactly these.
   assert.deepEqual(gates(s).sort(), GATES);
   assert.ok(!JSON.stringify(s).includes('C:/old/place'), 'stale gate replaced, not duplicated');
   assert.equal(backups(dir).length, 1, 'settings.json backed up before the change');
@@ -154,16 +155,40 @@ test('installed patcher checks the tree once more before reporting, so an over-b
 });
 
 // Speed: each slice built on its own cost up to three agent launches in a row (stubs, red, green),
-// each with a fresh start. The skill builds a phase of tasks.md as one round of at most 4 slices.
-test('installed speckit-team skill builds a tasks.md phase per round, at most 4 slices, never the whole feature', () => {
+// each with a fresh start. The skill builds up to 4 slices per round. In the full runs of 2026-10-24
+// and 2026-10-25 the architect split sum() into two slices by planning T003 without the empty-array
+// case so that T004 would fail against it, which forced two rounds: one test-writer and one
+// implementer more. A test that fails against the stub is seen failing already.
+test('installed speckit-team skill builds up to 4 slices per round, across phases, never the whole feature', () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
+  const architect = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  assert.match(architect, /never plan an implementation that leaves out what a later task adds/i, 'no slice made only to see a test fail');
+  assert.match(architect, /fails against the stub is seen failing/i);
+  assert.doesNotMatch(architect, /builds a phase at a time/, 'the architect plans for the same rounds as the skill');
   const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
-  const section = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.'));
-  assert.match(section, /a round is the slices of one phase of `tasks\.md`/i);
+  const section = flat(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.')));
+  assert.doesNotMatch(section, /a round is the slices of one phase/i, 'a phase is no longer a round of its own');
   assert.match(section, /at most 4 slices/);
+  assert.match(section, /phases of `tasks\.md` \([^)]*\) that fit in 4 slices together share a round/, 'small phases share a round');
   assert.match(section, /one stub pass, one test-writer and one implementer per round/i);
   assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
+});
+
+// In the --login run of 2026-10-25 the main session spent a response (60k input) right after the
+// audit PASS only to `cat tasks.md` and plan the rounds. The architect knows them when it writes the
+// tasks, so its report carries one line per round and the skill launches the first round from it.
+test('installed architect reports the rounds, and the skill builds from those lines without reading tasks.md', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const architect = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  const report = architect.slice(architect.indexOf('## Report'));
+  assert.ok(report.includes('`Round <n>: stub <IDs>; red <IDs>; green <IDs>`'), 'one line per round in the report');
+  assert.match(report, /`\[P\]`/, 'and whether its slices can go side by side');
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const build = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.'));
+  assert.match(build, /`Round <n>:` lines[^.]*architect's last report/);
+  assert.match(build, /read `tasks\.md` only when/);
 });
 
 // #70: the plan stop and the dictated revision are a contract between the skill and the architect.
@@ -254,6 +279,31 @@ test('installed skill, architect and product-owner settle the plan decisions and
     assert.match(text, /every mention/, `${name}: a dropped ID is one edit for every mention`);
   }
   assert.match(architect, /`cut`/);
+});
+
+// In the full run of 2026-10-24 the answer took the recommended option, and an architect and a
+// product-owner were launched for one Edit each (0.16M tokens). The architect writes the plan and the
+// tasks as its recommendations make them, so taking them changes only the record, which the main
+// session writes itself. Each half is in another file.
+test('installed skill records answers that take every recommendation itself, which the architect plans for', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const stop = skill.slice(skill.indexOf('## 2.'), skill.indexOf('## 3.'));
+  assert.match(flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8')), /`plan\.md` and `tasks\.md` as your recommended options make them/);
+  assert.match(stop, /every answer is the option the architect recommended[^.]*launch no one/i);
+  assert.ok(stop.includes('`Answer (<date>): <option>, as recommended`'), 'the record line');
+  assert.ok(stop.includes('rename `## Open Decisions` to `## Decisions`'));
+  assert.match(stop, /each chosen `Spec:` line[^.]*`spec\.md`/i, 'the main session applies the chosen spec lines');
+  assert.match(stop, /offset and a limit/, 'reading only the line it edits');
+  assert.match(stop, /Otherwise send all the answers to one architect revision/);
+  // The side-by-side run of 2026-10-25 (Sonnet main session) still launched a dictated product-owner
+  // for a new Edge Cases line and a dictated architect for the record, 0.16M and 44 s: the Handoffs
+  // bullet routed answers to a dictated architect, and a `Spec:` line that adds a line was not covered.
+  assert.match(stop, /never a dictated revision/i, 'the rule names the path the run took');
+  assert.match(stop, /a line it adds[^.]*where the `Spec:` line puts it/i, 'a Spec: line that adds a line is covered');
+  const handoffs = skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace'));
+  assert.match(handoffs, /answers that all take the recommended option are no revision[^.]*step 2/i, 'the Handoffs bullet says so too');
 });
 
 // specs/004-board-clear/findings.md, 4: past the Bash tool's default 2 minutes Claude Code moves a
@@ -404,8 +454,18 @@ test('installed skill and implementer agree on building [P] slices side by side 
   for (const term of ['`isolation: "worktree"`', '`worktree` in its prompt', 'in the message that launches the implementers', 'After each implementer step, in one Bash call', '`worktreeBranch`', 'in task order', '`git worktree remove`', '`git branch -d`']) {
     assert.ok(side.includes(term), term);
   }
+  // The side-by-side run of 2026-10-25 (#114): the tick commit's git add -A ran while both worktrees
+  // were still in .claude/worktrees/ and committed them, and the stub pass went out as two
+  // implementers in worktrees and a merge where one implementer does it in seconds.
+  const removed = side.indexOf('`git worktree remove`');
+  const ticked = side.indexOf('tick the tasks each report names as done and commit');
+  assert.ok(ticked > removed && removed >= 0, 'the worktrees and their branches go before the tick commit');
+  assert.match(side, /stub pass stays one implementer, without a worktree/);
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
-  assert.match(ask, /one at a time \(recommended: it costs less, and no run with real models has built slices side by side yet\)/);
+  // #114: the two runs of 2026-10-25 built one two-slice feature both ways, so the recommendation
+  // stands on numbers and no longer on there being no run.
+  assert.match(ask, /one at a time \(recommended: in two real runs of one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3\)/);
+  assert.doesNotMatch(ask, /no run with real models/);
 });
 
 // The main session is the run's largest cost: in 004 its 58 run responses took 8.92M, 2.73M of it

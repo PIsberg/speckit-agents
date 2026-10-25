@@ -102,3 +102,23 @@ test("drift: the tool's TEST_PATTERNS are the hook's", () => {
   assert.ok(hook, 'the hook declares TEST_PATTERNS');
   assert.equal(patterns('tools/drift.mjs'), hook);
 });
+
+// A docs or measurement task names test files too ("held by `test/install.test.mjs`", "run
+// `test/docs.test.mjs`") without promising that they hold its IDs: only a task that says it writes
+// tests, before the first file it names, is checked. This repo's 007 T016 is such a docs task.
+test('drift: a task that names test files but does not write tests is not checked', () => {
+  const tasks = '- [X] T001 Docs in the same change (FR-014): `README.md` gets a section, held by\n  `test/sum.test.js`. Run `npm test` for `test/sum.test.js`.\n'
+    + '- [X] T002 [P] [US1] Contract tests for FR-003 in `test/sum.test.js`\n';
+  const r = drift(repo(tasks, { 'test/sum.test.js': SUM_TEST }));
+  assert.equal(r.tasks, 1, 'T002 is a test task, T001 is not');
+  assert.equal(r.problems.length, 1, JSON.stringify(r.problems));
+  assert.match(r.problems[0], /T002: FR-003 is in none of test\/sum\.test\.js/);
+});
+
+// The check on this repository itself: a test moved to another file without its task updated (#161)
+// fails here instead of waiting for someone to run the tool.
+test('drift: this repository\'s finished features name the test files that hold their IDs', () => {
+  const r = drift(ROOT);
+  assert.deepEqual(r.problems, []);
+  assert.ok(r.tasks >= 30, `checked ${r.tasks} test tasks`);
+});

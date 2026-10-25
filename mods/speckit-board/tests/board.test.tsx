@@ -91,6 +91,11 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
 // The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
 // slow runner (macOS in CI) that came before the poll's file reads were back. Moves the clock, then
 // waits, bounded, until the board shows what the test expects; the assertion after it says if not.
+// A test that runs the clock for minutes fires the 4-second poll and the 1-second ticker every time
+// on the way: about 1 s alone, but over the kit's 5000 ms default in a full npm test, where the e2e
+// suites load the machine (5031 ms on 2026-10-25). The time is for a hang, not a speed check.
+const CLOCK_HEAVY = { timeoutMs: 20_000 }
+
 async function poll(clock: MockClock, ms: number, isThere: () => boolean | Promise<boolean>) {
   await clock.advance(ms)
   for (let i = 0; i < 200 && !(await isThere()); i++) {
@@ -376,7 +381,7 @@ test('a change seen by refreshes in several events is announced once', async ($,
 })
 
 // The clock redrew the pane only while an agent ran, so the last agent to stop kept "0s ago" for good.
-test('a finished agent\'s age keeps counting', async ($, on) => {
+test('a finished agent\'s age keeps counting', CLOCK_HEAVY, async ($, on) => {
   const seen = await world(on)
   on('classic.SubagentStart', () => ({}))
   on('classic.SubagentStop', () => ({}))
@@ -394,7 +399,7 @@ test('a finished agent\'s age keeps counting', async ($, on) => {
 // The board learned of an agent's end only from SubagentStop. One that is stopped or fails ends
 // without a report, and its row and phase stayed running for the rest of the session.
 for (const status of ['killed', 'failed'] as const) {
-  test(`an agent the engine lists as ${status} stops running on the board`, async ($, on) => {
+  test(`an agent the engine lists as ${status} stops running on the board`, CLOCK_HEAVY, async ($, on) => {
     const seen = await world(on)
     delete seen.files[`${ROOT}/.git/speckit-team/verdicts/001-x.json`]
     let listed: AgentInfo[] = []

@@ -41,7 +41,8 @@ A subagent starts with nothing but the prompt you write, so keep every prompt lo
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
 and answers, or another agent's full report.
 - architect: the feature directory and, on a revision, the findings it owns or the user's answers
-  by decision ID. When the answers or findings fully determine every edit (a value, a list entry,
+  by decision ID. Answers that all take the recommended option are no revision: you record them
+  yourself (step 2). When the answers or findings fully determine every edit (a value, a list entry,
   a wording), start the prompt with `dictated:` and give each exact edit with where it goes (file
   and heading or line): the architect then greps and edits without re-reading the artifacts. In
   the 003 run a revision that named the line cost 0.11M tokens; one with fully decided changes that
@@ -234,17 +235,28 @@ stop with AskUserQuestion, recommended option first, each option's description s
 follows from it. With more than 4, ask first one question that lists every decision with its
 options: take every recommended option (recommended), or decide one by one. The user can also
 answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recommended option.
-Then send all the answers to one architect revision (dictated where they fully determine the
+When every answer is the option the architect recommended, also when the user gave it in advance,
+its plan and tasks already follow it, so launch no one: no architect, no product-owner, never a
+dictated revision. Record the answers yourself, in the message that commits them and launches the
+audit. Under each decision's `###` heading in `plan.md` add the line
+`Answer (<date>): <option>, as recommended`, then rename `## Open Decisions` to `## Decisions` (if
+`plan.md` has a `## Decisions` section already, move the entries under it instead). Put each chosen
+`Spec:` line's wording into `spec.md`: a changed line in place of the line it names, a line it adds
+under the heading where the `Spec:` line puts it. Grep for the place, Read only those lines with an
+offset and a limit, and Edit. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
+product-owner were launched for one such Edit each instead, 0.16M tokens and about 44 s.
+Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
 the two write different files, and the first audit then reads a spec that agrees with the plan.
 In the 004 run a decision that contradicted FR-012 failed the first audit, and the fix cost a
 product-owner and a second audit (229 s, 0.59M tokens). In the 003 run four architect revisions
 only applied answers, 7.37M tokens together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
-same stop, with AskUserQuestion, whether to build them one at a time (recommended: it costs less, and
-no run with real models has built slices side by side yet) or side by side. Say why it matters: side by side may be faster but
-costs more, since each `[P]` slice then gets its own agents instead of sharing its round's, and it
-runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
+same stop, with AskUserQuestion, whether to build them one at a time (recommended: in two real runs of
+one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3) or side by
+side. Say why it matters: each `[P]` slice then gets its own agents instead of sharing its round's,
+and the merges take main-session responses, so it can pay off only for slices that each take
+minutes to build; it also runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
 Only when spec-auditor is in the team; without it, skip this step.
@@ -273,12 +285,18 @@ ask implementer for a test file, since its lane check makes it delete one at its
 of its brief, and the hand-over lists the tests the request named as not written.
 
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
-that cover it, as the architect wrote them. A round is the slices of one phase of `tasks.md` (Setup,
-Foundational, one user story), at most 4 slices: split a longer phase into rounds in task order.
-Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
-finish it before starting the next. Every launch starts from nothing (11k to 14k tokens before it
-reads a file) and reads the code again, so up to three launches per slice made the build the
-longest part of a run. Never hand the whole feature to one test-writer or one implementer.
+that cover it, as the architect wrote them. A round is at most 4 slices, in task order: phases of
+`tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
+longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer
+and one implementer per round, and finish it before starting the next. Every launch starts from
+nothing (11k to 14k tokens before it reads a file) and reads the code again, so up to three
+launches per slice made the build the longest part of a run. Never hand the whole feature to one
+test-writer or one implementer.
+
+Take the rounds from the `Round <n>:` lines of the architect's last report that gave them, and
+launch the first round's first agent in the response that reads the audit's PASS; read `tasks.md`
+only when no report gave them. In the 2026-10-25 run a response spent only on reading `tasks.md`
+cost 60k tokens.
 
 For each round:
 1. **Stubs** (implementer, only if the round's tests will call a file, function or type that does
@@ -308,15 +326,18 @@ For each round:
    resets the count), or hand the decision to the user.
 
 Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
-touch disjoint files run side by side instead: one loop per slice, each step's agents launched
-together in one message, each implementer with `isolation: "worktree"` and `worktree` in its prompt,
-so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
+touch disjoint files run side by side instead. The round's stub pass stays one implementer, without a
+worktree: stubs take seconds, and in the side-by-side run of 2026-10-25 two stub implementers and their
+merge cost a launch and a main-session response more. Then one loop per slice, each step's agents
+launched together in one message, each implementer with `isolation: "worktree"` and `worktree` in its
+prompt, so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
 A worktree starts from the last commit, without uncommitted work: commit the round's tests and
 ticks in the message that launches the implementers. After each implementer step, in one Bash
 call chained with `&&`: merge the branches the results name (`worktreeBranch`) into the feature
-branch in task order, tick the tasks each report names as done and commit, then
-`git worktree remove` each `worktreePath` and `git branch -d` its branch, since `git add -A` would
-commit a worktree left in place.
+branch in task order, `git worktree remove` each `worktreePath` and `git branch -d` its branch, and
+only then tick the tasks each report names as done and commit. The worktrees sit inside the repository
+(`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
+the 2026-10-25 run committed both and spent a commit taking them out.
 
 ## 6. Verify: spec-gatekeeper
 Only when spec-gatekeeper is in the team; without it, skip this step. Start it as soon as the last

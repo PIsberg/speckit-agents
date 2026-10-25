@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--two-slices | --side-by-side]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -10,7 +10,13 @@
 // resumes the session with one answer that takes the full team, approves and takes every recommended
 // option, plus a marker meant for the main session only. When spec-gatekeeper has given its word, or after --max-turns, it checks the run and writes
 // <dir>/run.json. Exit 0 only when every check passed. The agents run on their own `model:` lines;
-// --model is the main session's. ANTHROPIC_API_KEY must be set; nothing is retried.
+// --model is the main session's. ANTHROPIC_API_KEY must be set, unless --login: then the run uses your
+// own Claude Code login and config, the team goes into <dir>/repo/.claude (project agents override the
+// ones you installed) and the repo is trusted in your .claude.json for the run only. Your own
+// CLAUDE.md, settings and hooks then load too, as in your sessions. --two-slices asks for two functions
+// in two files and keeps the recommended one at a time: the run then fails if agents went out together.
+// --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
+// then fails unless implementers went out together in worktrees. Nothing is retried.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,7 +38,10 @@ const ANSWER = 'Full team. I approve the spec, the plan and the tasks, and I tak
 // an old transcript cannot pass the check (the parent-only marker of google/elephant-goldfish-model's
 // tests/integration/test_claude.py).
 export const newMarker = () => `LEAK-${randomBytes(8).toString('hex')}`;
-export const answer = (marker) => `${ANSWER} (A note for this session only: ${marker}. It is not for any agent: do not repeat it, `
+// The plan stop's recommendation is one at a time; --side-by-side takes the other option.
+const SIDE_BY_SIDE = 'Full team. I approve the spec, the plan and the tasks, and I take every recommended option, except '
+  + 'that the [P] slices are built side by side. Go on to the next step.';
+export const answer = (marker, { sideBySide = false } = {}) => `${sideBySide ? SIDE_BY_SIDE : ANSWER} (A note for this session only: ${marker}. It is not for any agent: do not repeat it, `
   + 'write it into a file or pass it on.)';
 
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -42,7 +51,7 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo) {
+export function buildRepo(repo, { twoSlices = false } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
@@ -55,13 +64,13 @@ export function buildRepo(repo) {
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'mathlib, before the feature');
-  return { request: fs.readFileSync(path.join(FIXTURE, 'request.txt'), 'utf8').trim() };
+  return { request: fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim() };
 }
 
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide }) {
   const out = [];
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
@@ -86,6 +95,22 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   if (!launches.length) out.push('no agent was launched');
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
+  if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {
+    out.push('no implementers went out side by side: none shared a response with another, each in a worktree');
+  }
+  // Only the build: step 2 sends an architect and a product-owner together on any run.
+  const together = launches.filter((l) => l.together > 1 && ['test-writer', 'implementer'].includes(l.type));
+  if (twoSlices && !sideBySide && together.length) {
+    out.push(`${together.length} agent(s) went out side by side although the answer was one at a time: ${together.map((l) => l.type).join(', ')}`);
+  }
+  // The skill removes each worktree and its branch after merging it; one left behind gets committed by
+  // the next git add -A as an embedded repository.
+  const worktrees = git(repo, 'worktree', 'list', '--porcelain').split(/\r?\n/).filter((l) => l.startsWith('worktree ')).slice(1);
+  if (worktrees.length) out.push(`${worktrees.length} worktree(s) left in place: ${worktrees.map((l) => l.slice(9)).join(', ')}`);
+  else {
+    const branches = git(repo, 'branch', '--list', 'worktree-*', '--format=%(refname:short)').split(/\r?\n/).filter(Boolean);
+    if (branches.length) out.push(`worktree branch(es) left after their worktree went: ${branches.join(', ')}`);
+  }
   if (usage?.main?.waits) out.push(`${usage.main.waits} main-session response(s) only waited for a background agent`);
   // A check that saw no agent, or a marker that was never sent, proves nothing.
   if (!markerSent) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run');
@@ -100,43 +125,78 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   return out;
 }
 
-function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8 };
+// Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
+// (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
+// Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
+// Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
+// overload) is the infrastructure's failure: resuming with the next answer would reply to a question
+// never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
+export function turnError(res, status) {
+  if (!res) return `claude printed no result (exit ${status})`;
+  const text = String(res.result ?? '');
+  if (res.is_error || /^API Error/.test(text)) return `infrastructure, not the team: ${text.slice(0, 300) || `exit ${status}`}; run it again`;
+  return null;
+}
+
+export function trustFolder(confFile, repo) {
+  const key = repo.split(path.sep).join('/');
+  const conf = readJson(confFile) ?? {};
+  if (conf.projects?.[key]?.hasTrustDialogAccepted) return () => {};
+  conf.hasCompletedOnboarding = true;
+  (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
+  fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
+  return () => {
+    const now = readJson(confFile);
+    if (!now?.projects?.[key]) return;
+    delete now.projects[key];
+    fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
+  };
+}
+
+export function args(argv) {
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
-    if (k === '--out') o.out = path.resolve(v);
+    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--two-slices | --side-by-side]');
   return o;
 }
 
 function main() {
   const o = args(process.argv.slice(2));
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set');
+  if (!o.login && !process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set (or pass --login to use your own Claude Code login)');
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
-  const cfg = path.join(o.out, 'cfg');
-  const { request } = buildRepo(repo);
+  const { request } = buildRepo(repo, { twoSlices: o.twoSlices });
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
-  Object.assign(env, { CLAUDE_CONFIG_DIR: cfg, MSYS_NO_PATHCONV: '1' });
-  const install = run(process.execPath, [path.join(ROOT, 'install.mjs')], { env });
+  env.MSYS_NO_PATHCONV = '1';
+  // Without --login a throwaway config dir; with it the user's own, whose .claude.json sits in the home
+  // folder when CLAUDE_CONFIG_DIR is unset.
+  const cfg = o.login ? (process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')) : path.join(o.out, 'cfg');
+  const confFile = o.login && !process.env.CLAUDE_CONFIG_DIR ? path.join(os.homedir(), '.claude.json') : path.join(cfg, '.claude.json');
+  if (!o.login) env.CLAUDE_CONFIG_DIR = cfg;
+  const target = o.login ? ['--claude-dir', path.join(repo, '.claude')] : [];
+  const install = run(process.execPath, [path.join(ROOT, 'install.mjs'), ...target], { env });
   if (install.status !== 0) throw new Error(`install.mjs failed: ${install.stdout}${install.stderr}`);
-  // Folder trust, or Claude Code skips the agents' frontmatter hooks (README, "Troubleshooting").
-  const conf = readJson(path.join(cfg, '.claude.json')) ?? {};
-  conf.hasCompletedOnboarding = true;
-  (conf.projects ??= {})[repo.replaceAll('\\', '/')] = { hasTrustDialogAccepted: true };
-  fs.writeFileSync(path.join(cfg, '.claude.json'), JSON.stringify(conf, null, 2));
+  // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
+  if (o.login) {
+    fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), ['agents/', 'hooks/', 'settings.json', 'settings.json.*',
+      'skills/speckit-team/', 'skills/speckit-patch/', 'skills/speckit-triage/'].map((p) => `/.claude/${p}\n`).join(''));
+  }
+  const untrust = trustFolder(confFile, repo);
 
   const turns = [];
   const marker = newMarker();
   let session = null;
+  let stopped = null;
   for (let n = 0; n < o.maxTurns; n++) {
-    const prompt = n === 0 ? `/speckit-team ${request}` : answer(marker);
+    const prompt = n === 0 ? `/speckit-team ${request}` : answer(marker, { sideBySide: o.sideBySide });
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
     let res = null;
@@ -144,12 +204,14 @@ function main() {
     turns.push({ prompt: prompt.slice(0, 80), status: r.status, cost: res?.total_cost_usd ?? null, turns: res?.num_turns ?? null,
       session: res?.session_id ?? null, result: String(res?.result ?? r.stderr ?? '').slice(-600) });
     console.log(`turn ${n + 1}: exit ${r.status}, $${(res?.total_cost_usd ?? 0).toFixed(2)}, ${res?.num_turns ?? '?'} model turns`);
-    if (!res?.session_id) break;
-    session = res.session_id;
+    if (res?.session_id) session = res.session_id;
+    const err = turnError(res, r.status) ?? (session ? null : 'claude returned no session to resume');
+    if (err) { stopped = `turn ${n + 1}: ${err}`; break; }
     const ends = path.join(repo, '.git', 'speckit-team', 'ends');
     if (fs.existsSync(ends) && fs.readdirSync(ends).length) break;
   }
 
+  untrust();
   const projects = path.join(cfg, 'projects');
   const transcript = session && fs.existsSync(projects) && fs.readdirSync(projects)
     .map((p) => path.join(projects, p, `${session}.jsonl`)).find((f) => fs.existsSync(f));
@@ -158,9 +220,10 @@ function main() {
   const agentTexts = subagents && fs.existsSync(subagents) ? fs.readdirSync(subagents).filter((f) => f.endsWith('.jsonl'))
     .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
   const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices });
   if (!transcript) failures.push('no transcript of the main session was found');
-  const report = { model: o.model, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
+  if (stopped) failures.unshift(stopped);
+  const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(failures.length ? 1 : 0);

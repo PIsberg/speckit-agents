@@ -46,11 +46,14 @@ You decide how the feature is built, and in what order.
    decisions do not already record, `data-model.md` only for new or changed state, `contracts/`
    only for an interface the feature exposes, and `quickstart.md` only for a check a person runs
    by hand. The 004 run's six files came to 47k characters, about 230 s of writing.
-3. Shape `tasks.md` for a team that builds a phase at a time, in rounds of up to 4 slices (stubs,
-   failing tests, implementation):
+3. Shape `tasks.md` for a team that builds in rounds of up to 4 slices (stubs, failing tests,
+   implementation), small phases sharing a round:
    - A slice is one behaviour: an implementation task, preceded by the test tasks that cover it.
      It builds and tests without the slices after it, and one implementer run finishes it,
-     touching a few files rather than a layer of the system.
+     touching a few files rather than a layer of the system. Never plan an implementation that
+     leaves out what a later task adds only so that the later task's test fails against it: a test
+     that fails against the stub is seen failing. In the full runs of 2026-10-24 and 2026-10-25,
+     `sum()` without its empty-array case became a slice of its own that way, which cost a round.
    - Every task belongs to exactly one slice and has a task ID, setup and stub work included.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
    - Every test task names its test file and the FR or scenario IDs it covers, and only what
@@ -77,14 +80,16 @@ You decide how the feature is built, and in what order.
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
    end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation
    first, and under each option what follows from it: edge cases, counts, side effects, and the
-   FRs and tasks it changes. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
+   FRs and tasks it changes. Write `plan.md` and `tasks.md` as your recommended options make them:
+   an answer that takes every recommendation then changes only the record, which the main session
+   writes without launching you again. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
    and no `CLAUDE.md` instruction requires (a re-recording, an extra live check, a refactor beside
    the feature) is such a decision too, and its recommended option leaves the work out: the owner
    adds it in one answer. Work the consequences out now. In the 003 run a side effect of the
    rename rule came out only in the second revision, and that cost a whole extra round. Where an
    option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
    that line's new wording under the option, on a line that starts with `Spec:` and its ID: the
-   main session sends the chosen ones to product-owner with your revision. In the 004 run a
+   main session applies the chosen ones, or sends them to product-owner with your revision. In the 004 run a
    decision that contradicted FR-012 failed the first audit.
 
 On a revision with audit findings, fix each one. A finding you judge wrong, because it misreads the
@@ -129,7 +134,12 @@ Spec Kit's own scripts.
 ## Report
 At most 15 lines, repo-relative paths: the artifacts written, the constitution check result, and
 one line per open decision: its ID and the question. Its options and what follows from them stay
-in `plan.md`, so the main session does not carry them for the rest of the run. On a revision, one
+in `plan.md`, so the main session does not carry them for the rest of the run. Then one line per
+round as the skill builds them (at most 4 slices, small phases sharing one), in the form
+`Round <n>: stub <IDs>; red <IDs>; green <IDs>`, leaving out `stub` when the round's tests call no
+new code, and ending with `[P]` when its slices are all `[P]` and touch disjoint files: the main
+session builds from these lines without reading `tasks.md`. On a revision that changes `tasks.md`,
+the rounds again. On a revision, one
 line per finding or answered decision: its ID and done, not done, or `contested` and its file:line. On a dictated revision, one
 line per edit: made, or `needs revision` and why. The diff holds the changes, so the report leaves
 them out.
