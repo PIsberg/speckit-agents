@@ -48,7 +48,7 @@ skills' frontmatter applies the acting role's lane to every write. No agent file
 | V. Public contracts additive and listed in README | T002, T018, T023, T029 | `contracts/skill-agents.md`; `role` field added to two records; the `args` report line (D10) |
 | VI. Metadata only | T009, T018, T032 | the role record holds paths, a sha, an offset and a prompt id; only the verdict word is kept from the transcript |
 | VII. Every platform, forward slashes | T008, T011, T014, T017, T009 | e2e runs in CI on all three; paths through `repoRel` |
-| VIII. README, CLAUDE.md, installer help; verified live vs by test; prose | T002, T023, T024, T029, T032 | T029: the D10 path as verified by test only, and the test counts; T032: the role's end read from `prompt_id`, end to end |
+| VIII. README, CLAUDE.md, installer help; verified live vs by test; prose | T002, T023, T024, T029, T032 | T029: the D10 path as verified by test only, and the test counts; T032: the role's end read from `prompt_id`, a resumed prompt end to end by T031; interrupt, StopFailure, AskUserQuestion answer and mid-turn typed message not verified at all (R5) |
 | Install: idempotent, marker, no overwrite without `--force` | T001, T002 | |
 | Install: validate before writing | T001, T002 | every role skill rendered before the first write; a bad agent file writes nothing |
 | Install: nothing in repos without `.specify/` | T010 | no settings entry added; `scope role` exits there (`notSpecKit`) |

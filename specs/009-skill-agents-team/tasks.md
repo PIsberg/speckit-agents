@@ -312,8 +312,11 @@ rule ended a role at its own start on CI (T017's session 2, macOS). One slice.
   roleEnded(rec: object): boolean` is true only when `rec.prompt_id` is a non-empty string and
   `str(input.prompt_id)` is another; remove `promptRow`, its only caller being `roleEnded`; keep
   `linesAfter` for `roleTexts`; fix their comments. Reuse `str`, `dropRole`. `README.md`, "What was
-  verified how": the role's end with its turn is read from Claude Code's `prompt_id` and covered end to
-  end (T031). README's "Test suite" and `CLAUDE.md`'s `npm test` counts only if `npm test`'s count
+  verified how": the role's end with its turn is read from Claude Code's `prompt_id`; end to end (T031)
+  covers only a resumed prompt ending the role. The same sentence lists as not verified at all (research
+  R5): an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293
+  bundle, never seen running), and whether a message typed during a turn gets a new `prompt_id` (not
+  known). README's "Test suite" and `CLAUDE.md`'s `npm test` counts only if `npm test`'s count
   changed.
 
 ## Dependencies
