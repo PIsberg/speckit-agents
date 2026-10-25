@@ -173,7 +173,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   Skill `speckit-role-test-writer`: the call goes through and `state(s, 'verdicts', '001-x.json')` is
   PASS. Session 2: the auditor role, then `say` ending `VERDICT: PASS`: the Stop records it. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T018 [P] [US3] Implement in `hooks/speckit-team.mjs`, `closeRole` step 2: `function roleTexts(file: string, offset: number): string[]`
+- [X] T018 [P] [US3] Implement in `hooks/speckit-team.mjs`, `closeRole` step 2: `function roleTexts(file: string, offset: number): string[]`
   reading through T012's `linesAfter`, built on `function assistantText(line: string, mainOnly: boolean): string`, the row parsing taken out
   of `lastAssistantText` (`hooks/speckit-team.mjs`; one JSONL row to its assistant text, `''` for a
   malformed or non-assistant row and, with `mainOnly`, a sidechain row), which `lastAssistantText` then
@@ -194,7 +194,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
 - [X] T020 [P] [US1] Test in `test/usage.test.mjs` (SC-001): `skills(rows)` lists the main session's Skill
   tool calls by `input.skill` (or `skill_name`) in order, skipping sidechain rows; `summarise(file).main.skills`
   holds the same list. Row builders: the ones at the top of the file.
-- [ ] T021 [P] [US1] Implement in `tools/usage.mjs`: `export function skills(rows: object[]): string[]`
+- [X] T021 [P] [US1] Implement in `tools/usage.mjs`: `export function skills(rows: object[]): string[]`
   beside `launches`, and `main.skills` in `summarise`. In `tools/full-run.mjs`: `args` sets
   `skillAgents`; `export function firstPrompt(request: string, { skillAgents = false } = {}): string`,
   used by `main`; `checkRun` option `skillAgents = false`; `--login` also excludes

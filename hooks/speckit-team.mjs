@@ -542,6 +542,48 @@ function laneOutside(base, rule, prefixes, whoName) {
   return { outside: changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel)) };
 }
 
+// The main session's assistant texts after a role's start offset, or null when the transcript cannot be read.
+function roleTexts(file, offset) {
+  const rows = linesAfter(file, offset);
+  return rows === null ? null : rows.map((l) => assistantText(l, true)).filter(Boolean);
+}
+// Record what the closing role reported (contract section 6, step 2): the auditor's VERDICT or the gatekeeper's word.
+function recordReport(rec) {
+  if (rec.role !== 'spec-auditor' && rec.role !== 'spec-gatekeeper') return;
+  const texts = roleTexts(rec.transcript, rec.offset);
+  if (texts === null) {
+    addNote(`speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
+    return;
+  }
+  const feat = feature() ?? rec.feature;
+  const at = new Date().toISOString();
+  if (rec.role === 'spec-auditor') {
+    const verdict = verdictIn(texts.join('\n'));
+    if (!verdict) {
+      addNote('speckit-team: no VERDICT line was found in the spec-auditor role\'s turn, so nothing was recorded. '
+        + 'Call the Skill speckit-role-spec-auditor again and end its report with `VERDICT: PASS` or `VERDICT: FAIL`.');
+      return;
+    }
+    if (!feat) { addNote(`speckit-team: the spec-auditor role's VERDICT: ${verdict} was not recorded: no active feature.`); return; }
+    if (!rec.fingerprint || rec.fingerprint !== fingerprint(feat)) {
+      addNote(`speckit-team: the spec-auditor role's VERDICT: ${verdict} was not recorded: spec, plan, tasks or constitution of ${feat} `
+        + 'changed after it started reading them, so it describes files that are gone. The last recorded verdict stands; '
+        + 'call the Skill speckit-role-spec-auditor again on the current files.');
+      return;
+    }
+    writeJson(verdictFile(feat), { verdict, feature: feat, fingerprint: fingerprint(feat), at, agent_id: null, role: rec.role });
+    addNote(`spec-auditor role recorded VERDICT: ${verdict} for ${feat}`);
+    return;
+  }
+  const word = [...texts].reverse().map(lastWord).find((w) => w === 'APPROVED' || w === 'REJECTED');
+  if (!word) {
+    addNote('speckit-team: the spec-gatekeeper role ended without a final APPROVED or REJECTED line, so no word was recorded.');
+    return;
+  }
+  if (!feat) { addNote(`speckit-team: the spec-gatekeeper role's ${word} was not recorded: no active feature.`); return; }
+  writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
+}
+
 // Close the acting role (contract section 6) at a Skill call ('skill': denies on a lane violation, else
 // returns) or at Stop ('stop': blocks on one, else removes the record and ends the hook).
 // `gate`, given at a Skill call, runs once the record is known live and before its lane is judged: a spec,
@@ -555,6 +597,7 @@ function closeRole(rec, at, gate = null) {
     return done();
   }
   if (roleEnded(rec)) { addNote(dropRole(rec)); return at === 'stop' ? finish() : undefined; }
+  recordReport(rec);
   if (gate) gate();
   const [rule, ...prefixes] = ROLE_LANES[rec.role];
   if (rule !== 'none') {
@@ -578,19 +621,36 @@ function closeRole(rec, at, gate = null) {
 const reportText = (viaHandback) => (viaHandback
   ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText());
 
+// One JSONL row to its assistant text: '' for a malformed or non-assistant row and, with `mainOnly`, a sidechain row.
+function assistantText(line, mainOnly) {
+  try {
+    const r = JSON.parse(line);
+    if (mainOnly && r?.isSidechain) return '';
+    const m = r.message;
+    if (m?.role !== 'assistant') return '';
+    return typeof m.content === 'string' ? m.content
+      : (m.content || []).filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+  } catch { return ''; }
+}
+// The last VERDICT line of a report, or null.
+function verdictIn(text) {
+  const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
+  return found ? found[1].toUpperCase() : null;
+}
+// The word a report ends with, upper-cased.
+function lastWord(text) {
+  const last = text.trim().split('\n').pop() ?? '';
+  return last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+}
+
 function lastAssistantText() {
   const last = str(input.last_assistant_message);
   if (last) return last;
   // A number would reach readFileSync as a file descriptor, so only a string is a path.
   const entries = lines(readOr(str(input.agent_transcript_path) ?? '', '')).reverse();
   for (const l of entries) {
-    try {
-      const m = JSON.parse(l).message;
-      if (m?.role !== 'assistant') continue;
-      const c = typeof m.content === 'string' ? m.content
-        : (m.content || []).filter((p) => p.type === 'text').map((p) => p.text).join('\n');
-      if (c) return c;
-    } catch { /* skip malformed line */ }
+    const c = assistantText(l, false);
+    if (c) return c;
   }
   return '';
 }
@@ -808,7 +868,7 @@ if (mode === 'verdict') {
   }
   const viaHandback = event === 'PreToolUse';
   const text = reportText(viaHandback);
-  const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
+  const found = verdictIn(text);
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
   // The Stop after a handback is the same report: neither recorded twice nor asked for again.
@@ -826,7 +886,7 @@ if (mode === 'verdict') {
     block(ask);
   }
   if (!feat) process.exit(0);
-  const verdict = found[1].toUpperCase();
+  const verdict = found;
   if (doneFile) writeJson(doneFile, { verdict });
   // No start record (an auditor that made no tool call, or a main-thread Stop) keeps the old rule:
   // the verdict is on the files as they are now. An unreadable one proves nothing, so it is stale.
@@ -891,8 +951,7 @@ if (mode === 'ends') {
   if (!words.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
   const ok = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
-  const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
-  const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+  const word = lastWord(reportText(viaHandback));
   if (words.includes(word)) {
     if (ok) writeJson(ok, {});
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
