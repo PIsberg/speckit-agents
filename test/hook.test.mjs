@@ -2328,6 +2328,7 @@ test('009 T025 contract 6: last_assistant_message a number never crashes', () =>
   const { dir, t } = auditorRole();
   say(t, 'No findings.\nVERDICT: PASS');
   const out = stopRole(dir, { last_assistant_message: 7 });
+  assert.doesNotMatch(msg(out) ?? '', /TypeError|crash/i, 'a number last message does not crash the hook');
   assert.equal(verdictRec(dir)?.verdict, 'PASS', 'the transcript still counts');
   const b = auditorRole();
   say(b.t, 'No findings.');
