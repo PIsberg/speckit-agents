@@ -1672,3 +1672,42 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /start message/i, 'the hook start message is mentioned as not repeated');
   assert.match(sec, /not repeat|does not repeat|never repeat/i);
 });
+
+// 009 T022 FR-010, Constitution VIII, plan P4: the docs describe `--team skill-agents`.
+test('009 T022 FR-010: README has a skill-agents section naming the enforced and not-enforced guardrails and what was verified how', () => {
+  const readme = repoText('README.md');
+  const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);
+  assert.ok(m, 'README.md has a heading that names skill-agents');
+  const sec = flat(mdSection(readme, m[0]));
+  assert.ok(sec, 'the section has a body');
+  assert.match(sec, /--team skill-agents/);
+  assert.match(sec, /enforced/i);
+  assert.match(sec, /not enforced|not-enforced/i);
+  for (const part of [/lane/i, /audit gate/i, /verdict/i, /retry limit/i, /every role sees this conversation|sees (this|the) conversation/i, /tool list/i]) {
+    assert.match(sec, part, `the section names ${part}`);
+  }
+  assert.match(sec, /verified live/i, 'says what was verified live');
+  assert.match(sec, /by test|only by test|tests? (only|cover)/i, 'says what was verified by test');
+});
+
+test('009 T022 FR-010: README guardrail table has `scope role` and `lane role` rows', () => {
+  const lines = repoText('README.md').split('\n');
+  for (const mode of ['scope role', 'lane role']) {
+    const row = lines.find((l) => l.startsWith('| `' + mode));
+    assert.ok(row, `the guardrail table has a row for ${mode}`);
+    assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${mode} row names where it runs and what it stops`);
+  }
+});
+
+test('009 T022 FR-010: README "Requirements" Claude Code row names skill frontmatter hooks: and user-invocable', () => {
+  const row = repoText('README.md').split('\n').find((l) => /^\| \[Claude Code\]/.test(l));
+  assert.ok(row, 'the Claude Code row of Requirements');
+  assert.match(row, /skill frontmatter `hooks:`/);
+  assert.match(row, /user-invocable/);
+});
+
+test('009 T022 FR-010: CLAUDE.md "Rules" names the ROLE_LANES twin', () => {
+  const rules = mdSection(repoText('CLAUDE.md'), '## Rules');
+  assert.ok(rules, 'CLAUDE.md has a Rules section');
+  assert.match(rules, /ROLE_LANES/);
+});

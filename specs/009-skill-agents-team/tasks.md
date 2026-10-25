@@ -205,7 +205,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
 T024 runs in Round 4, before T022 and T023, so the README's verified-live statement (FR-010) reports
 what was seen.
 
-- [ ] T022 Test in `test/install.test.mjs` (FR-010, Constitution VIII, plan P4): README.md has a section on
+- [X] T022 Test in `test/install.test.mjs` (FR-010, Constitution VIII, plan P4): README.md has a section on
   `--team skill-agents` that names the enforced and the not-enforced guardrails of contract section 7
   and says what was verified live and what by test; its guardrail table has `scope role` and `lane role`
   rows; the Claude Code row of "Requirements" names skill frontmatter `hooks:` and `user-invocable`;
