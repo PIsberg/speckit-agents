@@ -307,7 +307,7 @@ rule ended a role at its own start on CI (T017's session 2, macOS). One slice.
   session 1's, so the script stays keyed by `MAIN`; session 1's team record still holds `skillAgents`;
   no frontmatter hook of session 1 runs there, so the `gate` entry's Skill call reads the record. Fails
   with `SPECKIT_E2E_NO_HOOK=1`, and against T012's rule (no transcript: live).
-- [ ] T032 [US3] Implement in `hooks/speckit-team.mjs` (contract section 8, data-model): the gate mode's
+- [X] T032 [US3] Implement in `hooks/speckit-team.mjs` (contract section 8, data-model): the gate mode's
   Skill branch adds `prompt_id: str(input.prompt_id)` to the role record it writes; `function
   roleEnded(rec: object): boolean` is true only when `rec.prompt_id` is a non-empty string and
   `str(input.prompt_id)` is another; remove `promptRow`, its only caller being `roleEnded`; keep
