@@ -283,10 +283,16 @@ of its brief, and the hand-over lists the tests the request named as not written
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
 that cover it, as the architect wrote them. A round is at most 4 slices, in task order: phases of
 `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
-longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
-finish it before starting the next. Every launch starts from nothing (11k to 14k tokens before it
-reads a file) and reads the code again, so up to three launches per slice made the build the
-longest part of a run. Never hand the whole feature to one test-writer or one implementer.
+longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer
+and one implementer per round, and finish it before starting the next. Every launch starts from
+nothing (11k to 14k tokens before it reads a file) and reads the code again, so up to three
+launches per slice made the build the longest part of a run. Never hand the whole feature to one
+test-writer or one implementer.
+
+Take the rounds from the `Round <n>:` lines of the architect's last report that gave them, and
+launch the first round's first agent in the response that reads the audit's PASS; read `tasks.md`
+only when no report gave them. In the 2026-10-25 run a response spent only on reading `tasks.md`
+cost 60k tokens.
 
 For each round:
 1. **Stubs** (implementer, only if the round's tests will call a file, function or type that does

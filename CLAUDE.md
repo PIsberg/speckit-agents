@@ -39,7 +39,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 385 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 386 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
@@ -93,7 +93,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - The accepted record's fields are read by `skills/speckit-patch/SKILL.md`; change both, and
   `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the
-  `dictated:` prefix, a `contested` finding and where its ruling is recorded, `Spec:` lines, `last round`, `worktree`), the Bash `timeout` sentence of the four
+  `dictated:` prefix, a `contested` finding and where its ruling is recorded, `Spec:` lines, `last round`, `worktree`,
+  the architect's `Round <n>:` report lines, answers that take every recommendation), the Bash `timeout` sentence of the four
   agents that run tests, and the agent body lengths README.md states are held together by
   `test/install.test.mjs`. The skill's rule to commit with the next launch relies on Claude Code running
   one message's calls in order, its side-by-side slices on calls in one message running together and on

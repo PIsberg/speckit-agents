@@ -344,7 +344,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 109 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 114 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -516,7 +516,10 @@ one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that
 together share a round, since each extra round costs a test-writer and an implementer more. The
 architect never makes a slice of an implementation that leaves out what a later task adds just so
 that task's test fails against it: in the full runs of 2026-10-24 and 2026-10-25 `sum()` without its
-empty-array case became a slice of its own that way, which cost a round. Until
+empty-array case became a slice of its own that way, which cost a round. The architect's report
+ends with one line per round (`Round 1: stub T001; red T002; green T003`), so the main session
+launches the first round straight from the audit's PASS instead of spending a response, 60k tokens
+in the 2026-10-25 run, on reading `tasks.md`. Until
 2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
 implementation task, each starting from nothing (11k to 14k tokens, see
 [Context budget](#context-budget)) and reading the code again; that was most of why a run felt
@@ -1333,13 +1336,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 385 tests:
+`npm test` runs 386 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 105 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 97 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 98 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 8 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

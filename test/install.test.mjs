@@ -175,6 +175,22 @@ test('installed speckit-team skill builds up to 4 slices per round, across phase
   assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
 });
 
+// In the --login run of 2026-10-25 the main session spent a response (60k input) right after the
+// audit PASS only to `cat tasks.md` and plan the rounds. The architect knows them when it writes the
+// tasks, so its report carries one line per round and the skill launches the first round from it.
+test('installed architect reports the rounds, and the skill builds from those lines without reading tasks.md', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const architect = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  const report = architect.slice(architect.indexOf('## Report'));
+  assert.ok(report.includes('`Round <n>: stub <IDs>; red <IDs>; green <IDs>`'), 'one line per round in the report');
+  assert.match(report, /`\[P\]`/, 'and whether its slices can go side by side');
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const build = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.'));
+  assert.match(build, /`Round <n>:` lines[^.]*architect's last report/);
+  assert.match(build, /read `tasks\.md` only when/);
+});
+
 // #70: the plan stop and the dictated revision are a contract between the skill and the architect.
 // The skill greps plan.md for the section and starts a prompt with the prefix; renaming either on
 // one side only would quietly bring back a revision round per decision.

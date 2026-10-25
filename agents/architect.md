@@ -134,7 +134,12 @@ Spec Kit's own scripts.
 ## Report
 At most 15 lines, repo-relative paths: the artifacts written, the constitution check result, and
 one line per open decision: its ID and the question. Its options and what follows from them stay
-in `plan.md`, so the main session does not carry them for the rest of the run. On a revision, one
+in `plan.md`, so the main session does not carry them for the rest of the run. Then one line per
+round as the skill builds them (at most 4 slices, small phases sharing one), in the form
+`Round <n>: stub <IDs>; red <IDs>; green <IDs>`, leaving out `stub` when the round's tests call no
+new code, and ending with `[P]` when its slices are all `[P]` and touch disjoint files: the main
+session builds from these lines without reading `tasks.md`. On a revision that changes `tasks.md`,
+the rounds again. On a revision, one
 line per finding or answered decision: its ID and done, not done, or `contested` and its file:line. On a dictated revision, one
 line per edit: made, or `needs revision` and why. The diff holds the changes, so the report leaves
 them out.
