@@ -46,11 +46,14 @@ You decide how the feature is built, and in what order.
    decisions do not already record, `data-model.md` only for new or changed state, `contracts/`
    only for an interface the feature exposes, and `quickstart.md` only for a check a person runs
    by hand. The 004 run's six files came to 47k characters, about 230 s of writing.
-3. Shape `tasks.md` for a team that builds a phase at a time, in rounds of up to 4 slices (stubs,
-   failing tests, implementation):
+3. Shape `tasks.md` for a team that builds in rounds of up to 4 slices (stubs, failing tests,
+   implementation), small phases sharing a round:
    - A slice is one behaviour: an implementation task, preceded by the test tasks that cover it.
      It builds and tests without the slices after it, and one implementer run finishes it,
-     touching a few files rather than a layer of the system.
+     touching a few files rather than a layer of the system. Never plan an implementation that
+     leaves out what a later task adds only so that the later task's test fails against it: a test
+     that fails against the stub is seen failing. In the full runs of 2026-10-24 and 2026-10-25,
+     `sum()` without its empty-array case became a slice of its own that way, which cost a round.
    - Every task belongs to exactly one slice and has a task ID, setup and stub work included.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
    - Every test task names its test file and the FR or scenario IDs it covers, and only what

@@ -155,11 +155,17 @@ test('installed patcher checks the tree once more before reporting, so an over-b
 });
 
 // Speed: each slice built on its own cost up to three agent launches in a row (stubs, red, green),
-// each with a fresh start. The skill builds up to 4 slices per round; in the full run of 2026-10-24 a
-// 3-slice feature in two phases took two rounds, one test-writer and one implementer more than one.
+// each with a fresh start. The skill builds up to 4 slices per round. In the full runs of 2026-10-24
+// and 2026-10-25 the architect split sum() into two slices by planning T003 without the empty-array
+// case so that T004 would fail against it, which forced two rounds: one test-writer and one
+// implementer more. A test that fails against the stub is seen failing already.
 test('installed speckit-team skill builds up to 4 slices per round, across phases, never the whole feature', () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
+  const architect = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  assert.match(architect, /never plan an implementation that leaves out what a later task adds/i, 'no slice made only to see a test fail');
+  assert.match(architect, /fails against the stub is seen failing/i);
+  assert.doesNotMatch(architect, /builds a phase at a time/, 'the architect plans for the same rounds as the skill');
   const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
   const section = flat(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 6.')));
   assert.doesNotMatch(section, /a round is the slices of one phase/i, 'a phase is no longer a round of its own');

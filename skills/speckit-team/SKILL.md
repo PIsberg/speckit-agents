@@ -283,8 +283,7 @@ of its brief, and the hand-over lists the tests the request named as not written
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
 that cover it, as the architect wrote them. A round is at most 4 slices, in task order: phases of
 `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
-longer phase is split into rounds. In the full run of 2026-10-24 a 3-slice feature in two phases
-took two rounds, one test-writer and one implementer more than one round would have. Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
+longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer and one implementer per round, and
 finish it before starting the next. Every launch starts from nothing (11k to 14k tokens before it
 reads a file) and reads the code again, so up to three launches per slice made the build the
 longest part of a run. Never hand the whole feature to one test-writer or one implementer.

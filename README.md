@@ -344,7 +344,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 106 lines long,
+not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 109 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
 preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
 `test/install.test.mjs` counts them.
@@ -513,8 +513,10 @@ After the audit it builds the feature in rounds, never in one shot. A slice is o
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
 those slices. A round is at most 4 slices in task order, and gets one stub pass, one test-writer and
 one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
-together share a round, since in the full run of 2026-10-24 a 3-slice feature in two phases cost a
-test-writer and an implementer more as two rounds. Until
+together share a round, since each extra round costs a test-writer and an implementer more. The
+architect never makes a slice of an implementation that leaves out what a later task adds just so
+that task's test fails against it: in the full runs of 2026-10-24 and 2026-10-25 `sum()` without its
+empty-array case became a slice of its own that way, which cost a round. Until
 2026-10-10 every slice was its own round, so a feature cost up to three agent launches per
 implementation task, each starting from nothing (11k to 14k tokens, see
 [Context budget](#context-budget)) and reading the code again; that was most of why a run felt
