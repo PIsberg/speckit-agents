@@ -96,7 +96,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   not `@agent-spec-auditor` (contract section 4 step 4), then one to `speckit-role-architect`
   goes through and the only file under `.git/speckit-team/role/` names architect. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T009 [US3] Implement in `hooks/speckit-team.mjs`, gate mode's PreToolUse `Skill` branch, contract
+- [X] T009 [US3] Implement in `hooks/speckit-team.mjs`, gate mode's PreToolUse `Skill` branch, contract
   section 4 steps 1, 2, 4, 5: `const ROLE_SKILL = /(^|:)speckit-role-([a-z-]+)$/` over the name the branch
   reads for `speckit-implement` (`ti.skill_name || ti.skill || ti.name`); add
   `function auditorRef(): string` (`the Skill speckit-role-spec-auditor (an agent launch ends
@@ -120,7 +120,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   the Claude Code under test. After the session, `run(dir, ['scope', 'role'], …)` on a role record over
   that session's real transcript with `offset: 0` (the typed prompt's row lies after it) decides nothing
   (contract section 8). Fails with `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T012 [US3] Implement in `hooks/speckit-team.mjs`, scope mode: `const ROLE_LANES` (contract
+- [X] T012 [US3] Implement in `hooks/speckit-team.mjs`, scope mode: `const ROLE_LANES` (contract
   section 5), rule `role` resolved from the session's role record to its rule and prefixes, rule `none`
   denying every path, denial texts naming the role; reuse `readState`, `roleFile`, `inLane`,
   `inPrefixes`, `inGitDir`, `repoRel`, `deny`. Contract section 8: `function linesAfter(file: string,
@@ -147,7 +147,7 @@ Team record for unit tests: written by hand into `stateDir(dir)/team/<session_id
   Bash as the existing case "implementer may not change tests, and its lane check catches a test written
   through Bash" does, then ends with `say`; the Stop is blocked with the lane check's text. Fails with
   `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T015 [US3] Implement in `hooks/speckit-team.mjs`: `function closeRole(rec: object, at: 'skill' | 'stop'): void`
+- [X] T015 [US3] Implement in `hooks/speckit-team.mjs`: `function closeRole(rec: object, at: 'skill' | 'stop'): void`
   (contract section 6 steps 1 and 3; denies at a Skill call, blocks at Stop), called from T009's step 3
   and from lane mode's `role` rule. Take lane mode's check (`hooks/speckit-team.mjs`, `mode === 'lane'`:
   the unreadable and incomplete start record, the hex-sha test that keeps options out of git's
