@@ -401,6 +401,8 @@ launch, a stop like the others: Full team (recommended), Build only (test-writer
 Implement only (implementer), or Spec and build with no audit or verification (product-owner,
 architect, test-writer, implementer). Its free-text answer is a role list. All six core roles is the full
 team. The `security-reviewer` is opt-in, included via `--security` or named in `--team` (`security-reviewer` or alias `security`). `patcher` is not a team role.
+Two typed forms run no agent: `--team noagents` (Spec Kit's own skills, below) and
+`--team skill-agents` (the team's roles as skills in your session, [below](#running-the-roles-as-skills---team-skill-agents)).
 
 The skill refuses before launching anything, naming the valid roles: a name that is not a role;
 `noagents` with a role; neither test-writer nor implementer; architect without product-owner;
@@ -476,6 +478,28 @@ less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Cov
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
 close and its end with the turn, the verdict and word records, and the rest of the table; the
 end-to-end tests fire the role skills' hook entries against the real Claude Code.
+
+**Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
+returns a capped report. A role skill loads its instructions into your session, so every role works
+in one context that keeps growing. The numbers below are the one pair of runs of 2026-10-25 in
+[`docs/measurements.md`](docs/measurements.md); the rest follows from the design.
+
+| | Agents (default) | Skills (`--team skill-agents`) |
+|---|---|---|
+| Fixture run, 2026-10-25 | $1.86, about 15 min, 2.41M input tokens over 10 launches | $0.78, 5 min 17 s, 3.16M input tokens in one session, peak context 105k against 72k |
+| Context | each role starts near 14k tokens and reads the code again | nothing is re-read across roles, but every response re-reads everything before it, so a large feature can reach compaction |
+| Handoffs | lossy: a role knows only its prompt, and a wrong prompt costs a relaunch | none: a later role sees what earlier ones settled |
+| Independent review | spec-auditor and spec-gatekeeper never see the reasoning they judge | every role sees the whole conversation, the reviewers included |
+| Guardrails | Claude Code holds each agent to its tools, and its hooks end with it | rebuilt by the hook from the transcript; the table above lists what is not enforced |
+| Models | per role: architect and spec-auditor on opus | the session's model for every role |
+| Side-by-side slices | yes, in worktrees | no |
+
+Choose agents for a large feature, for review that should not have seen the reasoning, for the
+strongest guardrails, or for opus on the hard roles. Choose skills for a small or medium feature you
+will watch, when time and cost matter more than an independent review. Part of the cost gap is the
+model mix: the default run's architect and spec-auditor ran on opus, so the pair is not a
+like-for-like price comparison. Whether skills still win on a feature large enough to fill the
+context is not measured.
 
 #### Settling decisions
 
