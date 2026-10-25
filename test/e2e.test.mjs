@@ -205,12 +205,14 @@ function reply(res, stream, step, id) {
 // Runs `claude -p MAIN` with the script as the model. Returns every request each sender made, the
 // stream-json events and the exit code. bypassPermissions by default: a guardrail that does not fire
 // then lets the action through, instead of a permission check stopping it in the hook's place.
-async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [] } = {}) {
+async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [], idBase = 0 } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
   // When each sender's requests arrived, in ms: shows whether two agents ran at the same time.
   const times = Object.fromEntries(senders.map((k) => [k, []]));
-  let ids = 0;
+  // A resumed session keeps the first one's tool_use ids in its history: pass another idBase, or a new call
+  // that reuses an id is merged into the old pair and its result never reaches the next request.
+  let ids = idBase;
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -1078,7 +1080,7 @@ test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the s
   const recFile = path.join(s.repo, '.git', 'speckit-team', 'role', `${id}.json`);
   fs.writeFileSync(recFile, JSON.stringify(rec));
   s.write('src/x.js', 'export const x = 1;\n');
-  const r2 = await session(s, { [MAIN]: [roleSkill('product-owner')] }, { prompt: MAIN, args: ['--resume', id] });
+  const r2 = await session(s, { [MAIN]: [roleSkill('product-owner')] }, { prompt: MAIN, args: ['--resume', id], idBase: 100 });
   assert.ok(r2.requests[MAIN].length >= 2, `the resumed session answered the Skill call:\n${story(r2)}`);
   assert.ok(!lastResultIsError(r2.requests[MAIN][1]), `the product-owner call was let through:\n${story(r2)}`);
   assert.ok(!fs.existsSync(recFile) || JSON.parse(fs.readFileSync(recFile, 'utf8')).role !== 'architect', 'the ended architect record is gone');

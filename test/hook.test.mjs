@@ -1885,7 +1885,7 @@ test('009 T010 twin: ROLE_LANES equals the scope arguments in agents/<role>.md',
 
 // Contract section 8, plan D11: a role record has ended once the hook input carries a prompt_id other than
 // the record's. A record or an input without a string prompt_id stays live.
-const ENDED_MSG = (role) => new RegExp(`speckit-team: the ${role} role ended with its turn and no Stop ran; its lane check and report did not run\. Call the Skill speckit-role-${role} again to continue it\.`);
+const ENDED_MSG = (role) => new RegExp(`speckit-team: the ${role} role ended with its turn and no Stop ran; its lane check and report did not run\\. Call the Skill speckit-role-${role} again to continue it\\.`);
 
 test('009 T030 contract 8 plan D11: the Skill call stores its prompt_id, null when it is no non-empty string', () => {
   const { dir } = repo();
