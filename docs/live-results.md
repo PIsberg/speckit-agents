@@ -388,6 +388,22 @@ agent's `model:` line ([#39](https://github.com/PIsberg/speckit-agents/issues/39
 
 </details>
 
+## Skill-agents
+
+<details>
+<summary><b>2026-10-25</b>: Claude Code 2.1.310, Haiku, <code>--team skill-agents</code> typed, three guardrail checks (009 T024)</summary>
+
+Setup: a scratch repo built as `tools/full-run.mjs` builds it, three `claude -p` turns of one session
+on `--model haiku`, $0.045 in all.
+
+| What | Result |
+|---|---|
+| Typed `/speckit-team --team skill-agents add a sum() function to src/math.js` | The start message was in the transcript: "skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call inside test-writer and implementer ...". |
+| A `speckit-role-test-writer` call before any audit | Denied: `PreToolUse:Skill hook error: Implementation gate: no active feature: .specify/feature.json has no feature_directory inside the repo. Run the Skill speckit-role-spec-auditor (an agent launch ends skill-agents mode) and get VERDICT: PASS first.` |
+| `speckit-role-architect`, then a Write to `src/x.js` | Denied: `PreToolUse:Write hook error: architect may only write specs/, CLAUDE.md; src/x.js is outside that lane. ...` No file was created. |
+
+</details>
+
 ## The board
 
 - **The `[ clear ]` button, interactive ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).**

@@ -1529,3 +1529,210 @@ test('installed speckit-team skill re-verifies a security fix and stops security
   assert.match(result, /re-run spec-gatekeeper[^.]*before[^.]*security-reviewer/);
 });
 
+
+// 009 T001 (FR-009, FR-012, FR-013, SC-007, contract section 2): one role skill per team role, generated
+// from agents/<role>.md.
+const roleSkillPath = (dir, role) => path.join(dir, 'skills', `speckit-role-${role}`, 'SKILL.md');
+const afterFrontmatter = (text) => {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  assert.equal(lines[0], '---');
+  const close = lines.indexOf('---', 1);
+  assert.ok(close > 0, 'closing frontmatter line');
+  return lines.slice(close + 1).join('\n');
+};
+
+test('009 T001 FR-013 FR-012 contract 2: install writes speckit-role-<role> for the seven team roles, none for patcher', () => {
+  const dir = claudeDir();
+  const r = install(dir);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  for (const role of TEAM_ORDER) {
+    const file = roleSkillPath(dir, role);
+    assert.ok(fs.existsSync(file), `skills/speckit-role-${role}/SKILL.md installed`);
+    const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+    const head = text.slice(0, text.indexOf('\n---', 4));
+    assert.match(head, /speckit-agents: managed by install\.mjs/, role);
+    assert.match(head, new RegExp(`^name: speckit-role-${role}$`, 'm'), role);
+    assert.match(head, /^description: .*\/speckit-team --team skill-agents/m, role);
+    assert.match(head, /^user-invocable: false$/m, role);
+    assert.ok(head.includes(`node "${hookPath}" scope role`), `${role}: scope role command with the installed hook path`);
+    assert.ok(head.includes(`node "${hookPath}" lane role`), `${role}: lane role command with the installed hook path`);
+    assert.match(head, /matcher: "Write\|Edit\|MultiEdit\|NotebookEdit"/, role);
+    assert.match(head, /^\s*PreToolUse:/m, role);
+    assert.match(head, /^\s*Stop:/m, role);
+    for (const key of ['context', 'agent', 'model', 'allowed-tools']) {
+      assert.doesNotMatch(head, new RegExp(`^${key}:`, 'm'), `${role}: no ${key}: key`);
+    }
+    assert.doesNotMatch(text, /\{\{HOOK\}\}/, role);
+    // FR-013: the body after the preamble is the installed agent's body, byte for byte.
+    const body = afterFrontmatter(fs.readFileSync(path.join(dir, 'agents', `${role}.md`), 'utf8'));
+    const skillBody = afterFrontmatter(text);
+    assert.ok(skillBody.endsWith(body), `${role}: the skill ends with agents/${role}.md after its frontmatter`);
+    const preamble = skillBody.slice(0, skillBody.length - body.length);
+    assert.match(preamble, new RegExp(role), `${role}: the preamble names the role`);
+    assert.match(preamble, /skill-agents/, role);
+    assert.match(preamble, /\$ARGUMENTS/, role);
+    assert.match(preamble, /SubagentHandback/, role);
+  }
+  assert.ok(!fs.existsSync(path.join(dir, 'skills', 'speckit-role-patcher')), 'no skill for patcher');
+});
+
+test('009 T001 FR-009: a rerun logs unchanged for each role skill; --uninstall removes the seven folders', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const again = install(dir);
+  assert.equal(again.status, 0, again.stderr + again.stdout);
+  for (const role of TEAM_ORDER) {
+    assert.match(again.stdout, new RegExp(`unchanged\\s+.*speckit-role-${role}`), role);
+  }
+  assert.ok(TEAM_ORDER.every((r) => fs.existsSync(roleSkillPath(dir, r))));
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.ok(TEAM_ORDER.every((r) => !fs.existsSync(path.dirname(roleSkillPath(dir, r)))), 'the folders are gone');
+  assert.deepEqual(roundTrip(claudeDir()), [], 'a round trip leaves nothing behind');
+});
+
+test('009 T001 FR-009: a role skill the user wrote is refused, and --force backs it up', () => {
+  const dir = claudeDir();
+  const own = roleSkillPath(dir, 'architect');
+  const mine = '---\nname: speckit-role-architect\n---\nmine\n';
+  fs.mkdirSync(path.dirname(own), { recursive: true });
+  fs.writeFileSync(own, mine);
+  const r = install(dir);
+  assert.notEqual(r.status, 0, 'install refuses');
+  assert.equal(fs.readFileSync(own, 'utf8'), mine);
+  assert.ok(!fs.existsSync(path.join(dir, 'hooks')), 'nothing installed on refusal');
+  const f = install(dir, '--force');
+  assert.equal(f.status, 0, f.stderr + f.stdout);
+  assert.match(fs.readFileSync(own, 'utf8'), /managed by install\.mjs/);
+  const kept = fs.readdirSync(path.dirname(own)).filter((n) => n.includes('.bak-speckit-agents'));
+  assert.equal(kept.length, 1, 'the user file is backed up');
+  assert.equal(fs.readFileSync(path.join(path.dirname(own), kept[0]), 'utf8'), mine);
+});
+
+test('009 T001: --help names /speckit-team --team skill-agents', () => {
+  const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(r.stdout, /\/speckit-team --team skill-agents/);
+});
+
+test('009 T001 Installation Constraints: an agent file without frontmatter fails the install before anything is written', () => {
+  const other = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skagents-checkout-')), 'bad checkout');
+  for (const p of ['install.mjs', 'agents', 'hooks', 'skills']) {
+    fs.cpSync(path.join(path.dirname(INSTALL), p), path.join(other, p), { recursive: true });
+  }
+  fs.writeFileSync(path.join(other, 'agents', 'architect.md'), 'no frontmatter here\n');
+  const dir = claudeDir();
+  const r = spawnSync(process.execPath, [path.join(other, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(fs.readdirSync(dir), [], 'the claude dir is still empty');
+});
+
+// 009 T005 (contract section 1, plan D2, P3, P5, D8): the installed skill's skill-agents text.
+test('009 T005 FR-001 FR-006: argument-hint names skill-agents; ## Team gives the refusals and keeps the question as it was', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /skill-agents/);
+  const team = flat(skillSection(skill, '## Team'));
+  assert.match(team, /--team skill-agents/);
+  assert.match(team, /skill-agents.{0,200}(no|any) role name/i, 'skill-agents with a role name is refused');
+  assert.match(team, /skill-agents.{0,300}noagents|noagents.{0,300}skill-agents/, 'with noagents is refused');
+  assert.match(team, /free-text answer of `?skill-agents`?/, 'a free-text answer is not the mode');
+  assert.match(team, /typed as `\/speckit-team --team skill-agents <request>`/);
+  const question = team.slice(team.indexOf('With no roles named'), team.indexOf('A free-text answer ("Other")'));
+  assert.ok(question.includes('Full team (Recommended)'), 'the question is located');
+  assert.doesNotMatch(question, /skill-agents/, 'the four options do not mention it');
+  assert.match(team, /does not offer it|not one of the question's options/i);
+  assert.match(team, /valid names/);
+});
+
+test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Skill agents maps launches to one Skill call at a time', () => {
+  const skill = teamSkill();
+  assert.ok(skill.indexOf('\n## No agents') < skill.indexOf('\n## Skill agents'), '## Skill agents comes after ## No agents');
+  const sec = flat(skillSection(skill, '## Skill agents'));
+  assert.match(sec, /no Agent call/i);
+  assert.match(sec, /Skill call to `?speckit-role-<role>`?/);
+  assert.match(sec, /`?args`?/);
+  assert.match(sec, /## Handoffs/, 'the role Inputs are the Handoffs bullets');
+  assert.match(sec, /Inputs/);
+  assert.match(sec, /one line naming the role|in one line.{0,40}role/i, 'one line naming the role before each call');
+  assert.match(sec, /one role (Skill call )?(at a time|per response)/i);
+  assert.match(sec, /never two in one message|not two in one message/i);
+  assert.match(sec, /side by side/i, 'the side-by-side launches become sequential');
+  assert.match(sec, /Spec:/, 'the architect revision with product-owner Spec: lines');
+  assert.match(sec, /previous role|after the previous/i);
+  assert.match(sec, /called again/i, 'a role continued after the user answers is called again (D8)');
+  assert.match(sec, /before it writes/i);
+  assert.match(sec, /steps 1 to 6/);
+  assert.match(sec, /stops? .{0,40}hold/i);
+  assert.match(sec, /side-by-side question is not asked|does not ask the side-by-side question/i);
+  assert.match(sec, /--project/);
+  assert.match(sec, /node "\{\{HOOK\}\}" project|`project` output|project CLI output/i);
+  assert.match(sec, /## No agents/, 'the project block is read as ## No agents step 1');
+  assert.match(sec, /security-reviewer/);
+  assert.match(sec, /both points|both the spec|spec and (the )?result/i);
+  assert.match(sec, /3 .{0,40}`?RESULT: RED`? in a row/, 'the skill counts RED itself');
+  assert.match(sec, /start message/i, 'the hook start message is mentioned as not repeated');
+  assert.match(sec, /not repeat|does not repeat|never repeat/i);
+});
+
+// 009 T022 FR-010, Constitution VIII, plan P4: the docs describe `--team skill-agents`.
+test('009 T022 FR-010: README has a skill-agents section naming the enforced and not-enforced guardrails and what was verified how', () => {
+  const readme = repoText('README.md');
+  const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);
+  assert.ok(m, 'README.md has a heading that names skill-agents');
+  const sec = flat(mdSection(readme, m[0]));
+  assert.ok(sec, 'the section has a body');
+  assert.match(sec, /--team skill-agents/);
+  assert.match(sec, /enforced/i);
+  assert.match(sec, /not enforced|not-enforced/i);
+  for (const part of [/lane/i, /audit gate/i, /verdict/i, /retry limit/i, /every role sees this conversation|sees (this|the) conversation/i, /tool list/i]) {
+    assert.match(sec, part, `the section names ${part}`);
+  }
+  assert.match(sec, /verified live/i, 'says what was verified live');
+  assert.match(sec, /by test|only by test|tests? (only|cover)/i, 'says what was verified by test');
+});
+
+test('009 T022 FR-010: README guardrail table has `scope role` and `lane role` rows', () => {
+  const lines = repoText('README.md').split('\n');
+  for (const mode of ['scope role', 'lane role']) {
+    const row = lines.find((l) => l.startsWith('| `' + mode));
+    assert.ok(row, `the guardrail table has a row for ${mode}`);
+    assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${mode} row names where it runs and what it stops`);
+  }
+});
+
+test('009 T022 FR-010: README "Requirements" Claude Code row names skill frontmatter hooks: and user-invocable', () => {
+  const row = repoText('README.md').split('\n').find((l) => /^\| \[Claude Code\]/.test(l));
+  assert.ok(row, 'the Claude Code row of Requirements');
+  assert.match(row, /skill frontmatter `hooks:`/);
+  assert.match(row, /user-invocable/);
+});
+
+test('009 T022 FR-010: CLAUDE.md "Rules" names the ROLE_LANES twin', () => {
+  const rules = mdSection(repoText('CLAUDE.md'), '## Rules');
+  assert.ok(rules, 'CLAUDE.md has a Rules section');
+  assert.match(rules, /ROLE_LANES/);
+});
+
+// 009 T028 FR-008 FR-010, plan D10, Constitution VIII: the report's last line travels in the next Skill call's args.
+test("009 T028 FR-008 plan D10: the installed ## Skill agents says the Skill call after spec-auditor's or spec-gatekeeper's report starts its args with that report's last line", () => {
+  const sec = flat(skillSection(teamSkill(), '## Skill agents'));
+  assert.match(sec, /spec-auditor/);
+  assert.match(sec, /spec-gatekeeper/);
+  assert.match(sec, /starts? its `?args`? with .{0,60}last line/i, 'args starts with the report last line');
+});
+
+test('009 T028 FR-008 FR-010 plan D10: README skill-agents section says the verdict and word are also read from the args line and the Stop last message', () => {
+  const readme = repoText('README.md');
+  const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);
+  assert.ok(m, 'README.md has a heading that names skill-agents');
+  const sec = flat(mdSection(readme, m[0]));
+  assert.match(sec, /`?args`? line/i, 'names the args line');
+  assert.match(sec, /Stop.{0,80}last (assistant )?message|last (assistant )?message.{0,80}Stop/i, "names the Stop's last message");
+  assert.match(sec, /verdict.{0,200}\bword\b.{0,200}\bargs\b|\bargs\b.{0,200}verdict.{0,100}\bword\b/i, 'verdict and word are read from args');
+});
+
+test('009 T028 FR-010 plan D10: CLAUDE.md "Rules" names the args report line as a skill half and a hook half', () => {
+  const rules = flat(mdSection(repoText('CLAUDE.md'), '## Rules'));
+  assert.ok(rules, 'CLAUDE.md has a Rules section');
+  assert.match(rules, /`args`.{0,200}(report|last) line|(report|last) line.{0,200}`args`/i, 'the args report line');
+  assert.match(rules, /`args`.{0,300}(skill|Skill)[^.]{0,80}hook|(skill|Skill)[^.]{0,80}hook.{0,300}`args`/i, 'a skill half and a hook half');
+});

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { summarise } from '../tools/usage.mjs';
+import { skills, summarise } from '../tools/usage.mjs';
 
 const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'tools', 'usage.mjs');
 const usage = (cacheRead, cacheWrite = 0) => ({ input_tokens: 1, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheWrite, output_tokens: 1 });
@@ -158,3 +158,30 @@ test('usage does not warn on a relaunch after the cache lifetime has passed', ()
   assert.deepEqual(warnings, []);
 });
 
+
+// 009 T020 (SC-001): the main session's Skill calls, in order, sidechain rows left out.
+const skillCall = (id, input) => ({ type: 'tool_use', id, name: 'Skill', input });
+
+test('usage lists the main session Skill calls by name, in order, skipping sidechain rows (SC-001)', () => {
+  const rows = [
+    hear('/speckit-team --team skill-agents x'),
+    say('m1', usage(10), [skillCall('s1', { skill: 'speckit-role-product-owner' })]),
+    say('m2', usage(10), [{ type: 'text', text: 'ok' }, skillCall('s2', { skill_name: 'speckit-role-architect' })]),
+    say('m3', usage(10), [skillCall('s3', { skill: 'speckit-role-hidden' })], { isSidechain: true }),
+    say('m4', usage(10), [{ type: 'tool_use', id: 'r', name: 'Read', input: {} }]),
+    say('m5', usage(10), [skillCall('s4', { skill: 'speckit-role-test-writer' })]),
+  ];
+  assert.deepEqual(skills(rows), ['speckit-role-product-owner', 'speckit-role-architect', 'speckit-role-test-writer']);
+  assert.deepEqual(skills([]), []);
+});
+
+test('usage summary holds the same Skill list as main.skills (SC-001)', () => {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skusage-skills-')), 'sess.jsonl');
+  fs.writeFileSync(file, [
+    hear('/speckit-team --team skill-agents x'),
+    say('m1', usage(10), [skillCall('s1', { skill: 'speckit-role-product-owner' })]),
+    result('s1', 'ok'),
+    say('m2', usage(10), [skillCall('s2', { skill: 'speckit-role-architect' })]),
+  ].map((l) => JSON.stringify(l)).join('\n'));
+  assert.deepEqual(summarise(file).main.skills, ['speckit-role-product-owner', 'speckit-role-architect']);
+});

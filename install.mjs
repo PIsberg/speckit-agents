@@ -14,7 +14,7 @@
 //
 // Any other argument is refused before anything is written.
 //
-// What gets installed: eight subagents, three skills, one hook script, and settings.json gates
+// What gets installed: eight subagents, three skills, seven role skills (speckit-role-<role>), one hook script, and settings.json gates
 // (PreToolUse, UserPromptExpansion, and SubagentStart for the eight roles to record start and inject project context).
 //
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
@@ -25,6 +25,8 @@
 //                                             architect, spec-auditor, test-writer, implementer, spec-gatekeeper,
 //                                             security-reviewer
 //   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
+//   /speckit-team --team skill-agents <request> every role runs as a skill in this session, not a subagent
+//                                             (the seven speckit-role-<role> skills, generated from agents/)
 //   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
 import fs from 'node:fs';
@@ -111,12 +113,43 @@ function remove(file) {
   if (!dryRun) fs.rmSync(file, { recursive: true, force: true });
 }
 
+// The role skills of /speckit-team --team skill-agents: one per team role, generated from the agent file.
+const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher');
+const ROLE_PREAMBLE = `You act as the <role> role inline in this session, for /speckit-team --team skill-agents. Your inputs are $ARGUMENTS and the files they name. There is no SubagentHandback here: your report is a message of yours whose last line is the one your Report section names, after which the orchestrating skill goes on. A skill the text below says is preloaded you invoke with the Skill tool. Launch no agent. The hook holds you to the <role> lane until the next role skill or the end of the turn.
+
+`;
+function roleSkill(role, agentText) {
+  const lines = agentText.replace(/\r\n/g, '\n').split('\n');
+  const close = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+  if (close < 0) throw new Error(`agents/${role}.md has no frontmatter`);
+  const head = [
+    '---',
+    `# ${MARKER}. Generated from agents/${role}.md: edit that file and reinstall.`,
+    `name: speckit-role-${role}`,
+    `description: The ${role} role of /speckit-team --team skill-agents, run in this session. Only that skill invokes it.`,
+    'user-invocable: false',
+    'hooks:',
+    '  PreToolUse:',
+    '    - matcher: "Write|Edit|MultiEdit|NotebookEdit"',
+    '      hooks:',
+    '        - type: command',
+    `          command: '${hookCommand('scope role')}'`,
+    '  Stop:',
+    '    - hooks:',
+    '        - type: command',
+    `          command: '${hookCommand('lane role')}'`,
+    '---',
+  ];
+  return `${head.join('\n')}\n${ROLE_PREAMBLE.replaceAll('<role>', role)}${lines.slice(close + 1).join('\n')}`;
+}
+
 function files() {
   return [
     ...AGENTS.map((a) => ({ src: `agents/${a}.md`, dst: path.join(claudeDir, 'agents', `${a}.md`) })),
     { src: 'skills/speckit-team/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-team', 'SKILL.md') },
     { src: 'skills/speckit-triage/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-triage', 'SKILL.md') },
     { src: 'skills/speckit-patch/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-patch', 'SKILL.md') },
+    ...ROLE_SKILLS.map((role) => ({ src: `agents/${role}.md`, dst: path.join(claudeDir, 'skills', `speckit-role-${role}`, 'SKILL.md'), role })),
     { src: `hooks/${HOOK_FILE}`, dst: path.join(claudeDir, 'hooks', HOOK_FILE) },
   ];
 }
@@ -452,6 +485,18 @@ if (major < 18) {
   process.exit(1);
 }
 
+// Rendered before anything is written, so a source that cannot be rendered writes nothing.
+const rendered = new Map();
+try {
+  for (const { src, dst, role } of files()) {
+    const text = fs.readFileSync(path.join(SRC, src), 'utf8');
+    rendered.set(dst, (role ? roleSkill(role, text) : text).replaceAll('{{HOOK}}', hookPath));
+  }
+} catch (e) {
+  console.error(`ERROR: ${e.message}`);
+  process.exit(1);
+}
+
 const collisions = [...files().map(({ dst }) => dst), manifestFile].filter((dst) => fs.existsSync(dst) && !ours(dst));
 if (collisions.length && !force) {
   console.error('ERROR: these files exist and were not installed by speckit-agents:');
@@ -465,13 +510,13 @@ console.log(`Installing the Spec Kit agent team into ${claudeDir}\n`);
 const createdDirs = [...new Set([...(manifest?.createdDirs ?? []),
   ...['agents', 'hooks', 'skills'].filter((d) => !fs.existsSync(abs(d)))])];
 const forceBackups = [...(manifest?.forceBackups ?? [])];
-for (const { src, dst } of files()) {
+for (const { dst } of files()) {
   if (collisions.includes(dst)) {
     log('backup', `${dst} -> ${path.basename(dst)}${BACKUP}`);
     if (!dryRun) fs.copyFileSync(dst, `${dst}${BACKUP}`);
     forceBackups.push({ path: rel(dst), backup: rel(`${dst}${BACKUP}`) });
   }
-  write(dst, fs.readFileSync(path.join(SRC, src), 'utf8').replaceAll('{{HOOK}}', hookPath));
+  write(dst, rendered.get(dst));
 }
 
 // One backup of the user's own settings, taken the first time this installer changes them, kept

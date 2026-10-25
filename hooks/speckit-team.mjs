@@ -159,7 +159,15 @@ const git = (cwd, ...a) => {
 };
 const lines = (s) => (s ? s.split('\n').filter(Boolean) : []);
 const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } catch { return fallback; } };
-const emit = (obj) => { process.stdout.write(JSON.stringify(obj)); process.exit(0); };
+// A message a role-skill step passes on with whatever the hook decides next (contract section 8).
+let note = null;
+const addNote = (m) => { note = [note, m].filter(Boolean).join('\n'); };
+const emit = (obj) => {
+  const say = [note, obj.systemMessage].filter(Boolean).join('\n');
+  process.stdout.write(JSON.stringify(say ? { ...obj, systemMessage: say } : obj));
+  process.exit(0);
+};
+const finish = () => (note ? emit({}) : process.exit(0));
 const deny = (reason) => emit({ hookSpecificOutput: {
   hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const block = (reason) => emit({ decision: 'block', reason });
@@ -393,6 +401,13 @@ const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer',
 const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
+// 009: the role acting in a skill-agents request's main session (data-model.md).
+const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
+// The role skills a typed `--team skill-agents` needs, found from this script's own folder.
+function missingRoleSkills() {
+  return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
+}
+const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
 // The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
 const projectFile = (sessionId) => path.join(stateDir, 'project', `${sessionId}.json`);
 const parseProject = (prompt) => /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})[ \t]*$/m.exec(prompt)?.[1] ?? null;
@@ -440,7 +455,7 @@ function teamOf() {
   if (!id || !SESSION_ID.test(id)) return null;
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
-  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0 };
+  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -469,11 +484,157 @@ function changedSince(base) {
   ])];
 }
 
+// The auditor to run next: in a skill-agents request an agent launch would end the mode (contract section 4).
+const auditorRef = () => (teamOf()?.skillAgents
+  ? 'the Skill speckit-role-spec-auditor (an agent launch ends skill-agents mode)' : '@agent-spec-auditor');
+
+// 009: the scope rule of each role skill, equal to the `scope` hook in agents/<role>.md (a test holds the twin).
+// Keys in double quotes, values in single: the twin test in test/hook.test.mjs reads this literal.
+const ROLE_LANES = {
+  "product-owner": ['only', 'specs/', '.specify/feature.json'],
+  "architect": ['only', 'specs/', 'CLAUDE.md'],
+  "spec-auditor": ['none'],
+  "test-writer": ['tests'],
+  "implementer": ['no-tests'],
+  "spec-gatekeeper": ['none'],
+  "security-reviewer": ['none'],
+};
+const ROLE_SKILL = /(^|:)speckit-role-([a-z-]+)$/;
+
+// The JSONL lines of a file from byte `offset`, or null when it cannot be read.
+function linesAfter(file, offset) {
+  if (typeof file !== 'string' || !file) return null;
+  try {
+    const buf = fs.readFileSync(file);
+    return lines(buf.subarray(Number.isInteger(offset) && offset > 0 ? offset : 0).toString('utf8'));
+  } catch { return null; }
+}
+// The role ended when the record holds a prompt_id and this call carries another: a new prompt is a new turn.
+// A record or input without a string prompt_id leaves the role live.
+function roleEnded(rec) {
+  return typeof rec?.prompt_id === 'string' && rec.prompt_id !== '' && str(input.prompt_id) !== null && str(input.prompt_id) !== rec.prompt_id;
+}
+function dropRole(rec) {
+  const id = str(input.session_id);
+  if (id && SESSION_ID.test(id)) fs.rmSync(roleFile(id), { force: true });
+  return `speckit-team: the ${rec.role} role ended with its turn and no Stop ran; its lane check and report did not run. Call the Skill speckit-role-${rec.role} again to continue it.`;
+}
+
+// The files changed since a start record that fall outside a lane. Only a hex commit id reaches git's
+// argument list: "--output=..." would be read as an option.
+function laneOutside(base, rule, prefixes, whoName) {
+  const no = (why) => ({ problem: `lane check could not run for ${whoName}: ${why}` });
+  if (!base || typeof base !== 'object') return no('its start record is unreadable.');
+  if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) return no('its start record is incomplete.');
+  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) return no(`${testPaths.bad}.`);
+  // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
+  if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) return no(`its start commit ${base.sha.slice(0, 12)} is not in this repo.`);
+  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : inLane(rule, rel));
+  return { outside: changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel)) };
+}
+
+// The main session's assistant texts after a role's start offset, or null when the transcript cannot be read.
+function roleTexts(file, offset) {
+  const rows = linesAfter(file, offset);
+  return rows === null ? null : rows.map((l) => assistantText(l, true)).filter(Boolean);
+}
+// Record what the closing role reported (contract section 6, step 2): the auditor's VERDICT or the gatekeeper's word.
+// `last` is one more text after the transcript's: the first `args` line of the next Skill call, or the Stop's last message.
+function recordReport(rec, last = null, where = 'stop') {
+  if (rec.role !== 'spec-auditor' && rec.role !== 'spec-gatekeeper') return;
+  const read = roleTexts(rec.transcript, rec.offset);
+  const texts = [...(read ?? []), ...(last ? [last] : [])];
+  const unread = () => addNote(`speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
+  const feat = feature() ?? rec.feature;
+  const at = new Date().toISOString();
+  if (rec.role === 'spec-auditor') {
+    const verdict = verdictIn(texts.join('\n'));
+    if (!verdict) {
+      if (read === null) return unread();
+      addNote('speckit-team: no VERDICT line was found in the spec-auditor role\'s turn, so nothing was recorded. '
+        + 'Call the Skill speckit-role-spec-auditor again and end its report with `VERDICT: PASS` or `VERDICT: FAIL`'
+        + (where === 'skill' ? ', and start the `args` of the next Skill call with that line.' : '.'));
+      return;
+    }
+    if (!feat) { addNote(`speckit-team: the spec-auditor role's VERDICT: ${verdict} was not recorded: no active feature.`); return; }
+    if (!rec.fingerprint || rec.fingerprint !== fingerprint(feat)) {
+      addNote(`speckit-team: the spec-auditor role's VERDICT: ${verdict} was not recorded: spec, plan, tasks or constitution of ${feat} `
+        + 'changed after it started reading them, so it describes files that are gone. The last recorded verdict stands; '
+        + 'call the Skill speckit-role-spec-auditor again on the current files.');
+      return;
+    }
+    writeJson(verdictFile(feat), { verdict, feature: feat, fingerprint: fingerprint(feat), at, agent_id: null, role: rec.role });
+    addNote(`spec-auditor role recorded VERDICT: ${verdict} for ${feat}`);
+    return;
+  }
+  const word = [...texts].reverse().map(lastWord).find((w) => w === 'APPROVED' || w === 'REJECTED');
+  if (!word) {
+    if (read === null) return unread();
+    addNote('speckit-team: the spec-gatekeeper role ended without a final APPROVED or REJECTED line, so no word was recorded.');
+    return;
+  }
+  if (!feat) { addNote(`speckit-team: the spec-gatekeeper role's ${word} was not recorded: no active feature.`); return; }
+  writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
+}
+
+// Close the acting role (contract section 6) at a Skill call ('skill': denies on a lane violation, else
+// returns) or at Stop ('stop': blocks on one, else removes the record and ends the hook).
+// `gate`, given at a Skill call, runs once the record is known live and before its lane is judged: a spec,
+// plan or tasks edit made inside the role is then named by the audit gate (tests/hook.test.mjs, T007).
+function closeRole(rec, at, gate = null) {
+  const id = str(input.session_id);
+  const drop = () => { if (id && SESSION_ID.test(id)) fs.rmSync(roleFile(id), { force: true }); };
+  const done = () => { if (at === 'stop') { drop(); finish(); } };
+  if (!rec || typeof rec !== 'object' || !Object.hasOwn(ROLE_LANES, rec.role)) {
+    addNote('speckit-team: lane check could not run for the acting role: its role record is unreadable or incomplete.');
+    return done();
+  }
+  if (roleEnded(rec)) { addNote(dropRole(rec)); return at === 'stop' ? finish() : undefined; }
+  recordReport(rec, at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] ?? null : str(input.last_assistant_message), at);
+  if (gate) gate();
+  const [rule, ...prefixes] = ROLE_LANES[rec.role];
+  if (rule !== 'none') {
+    const r = laneOutside(rec, rule, prefixes, rec.role);
+    if ('problem' in r) { addNote(`speckit-team: ${r.problem}`); return done(); }
+    if (r.outside.length) {
+      const text = `Lane check: ${rec.role} changed files outside its lane: ${r.outside.join(', ')}. `
+        + `Restore them (git checkout ${rec.sha.slice(0, 12)} -- <file>, or delete new files), then go on.`;
+      if (at === 'skill') deny(text);
+      if (!input.stop_hook_active) block(text);
+      drop();
+      emit({ systemMessage: `WARNING: ${rec.role} left changes outside its lane: ${r.outside.join(', ')}` });
+    }
+  }
+  return done();
+}
+
 // Two ways a report arrives: as the SubagentHandback tool's message (PreToolUse, the normal case in
 // interactive sessions) or as the agent's last message (SubagentStop, e.g. under claude -p).
 // Only a string is a report: String(['VERDICT: PASS']) would otherwise read as a PASS.
 const reportText = (viaHandback) => (viaHandback
   ? (typeof input.tool_input?.message === 'string' ? input.tool_input.message : '') : lastAssistantText());
+
+// One JSONL row to its assistant text: '' for a malformed or non-assistant row and, with `mainOnly`, a sidechain row.
+function assistantText(line, mainOnly) {
+  try {
+    const r = JSON.parse(line);
+    if (mainOnly && r?.isSidechain) return '';
+    const m = r.message;
+    if (m?.role !== 'assistant') return '';
+    return typeof m.content === 'string' ? m.content
+      : (m.content || []).filter((p) => p.type === 'text').map((p) => p.text).join('\n');
+  } catch { return ''; }
+}
+// The last VERDICT line of a report, or null.
+function verdictIn(text) {
+  const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
+  return found ? found[1].toUpperCase() : null;
+}
+// The word a report ends with, upper-cased.
+function lastWord(text) {
+  const last = text.trim().split('\n').pop() ?? '';
+  return last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+}
 
 function lastAssistantText() {
   const last = str(input.last_assistant_message);
@@ -481,13 +642,8 @@ function lastAssistantText() {
   // A number would reach readFileSync as a file descriptor, so only a string is a path.
   const entries = lines(readOr(str(input.agent_transcript_path) ?? '', '')).reverse();
   for (const l of entries) {
-    try {
-      const m = JSON.parse(l).message;
-      if (m?.role !== 'assistant') continue;
-      const c = typeof m.content === 'string' ? m.content
-        : (m.content || []).filter((p) => p.type === 'text').map((p) => p.text).join('\n');
-      if (c) return c;
-    } catch { /* skip malformed line */ }
+    const c = assistantText(l, false);
+    if (c) return c;
   }
   return '';
 }
@@ -498,49 +654,66 @@ if (mode === 'scope') {
   if (given === undefined || given === null || given === '') process.exit(0);
   const file = str(given);
   if (!file) noDecision(`tool_input.file_path is ${Array.isArray(given) ? 'an array' : typeof given}, not a path`);
+  // 009: `scope role` holds the main session to the acting role skill's lane (contract section 5).
+  let ruleArgs = args;
+  let actor = who;
+  if (args[0] === 'role') {
+    const id = str(input.session_id);
+    if (agentId || !id || !SESSION_ID.test(id)) process.exit(0);
+    const rec = readState(roleFile(id));
+    if (rec === undefined) process.exit(0);
+    if (!rec || typeof rec !== 'object' || !Object.hasOwn(ROLE_LANES, rec.role)) {
+      deny('speckit-team: the role record for this session is unreadable or incomplete, so no role lane can be applied. '
+        + 'Report this to the user, who removes the file; do not edit it yourself.');
+    }
+    if (roleEnded(rec)) { addNote(dropRole(rec)); finish(); }
+    ruleArgs = ROLE_LANES[rec.role];
+    actor = rec.role;
+  }
   const target = path.resolve(cwd, file);
   // Verdicts and retry counts live in the git dir; an agent that could write there could reset its own
   // limit. Checked before the outside-the-repo exit: a linked worktree's state is in the main checkout.
   if (inGitDir(target)) {
-    deny(`${who} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
+    deny(`${actor} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
       + 'Report what you need instead; only the user resets that state.');
   }
   if (args[0] === 'protected' && isTeamFile(target)) {
-    deny(`${who} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
+    deny(`${actor} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
       + 'Stop and report ESCALATE; the developer uses /speckit-team.');
   }
+  if (ruleArgs[0] === 'none') deny(`${actor} is a read-only role and writes no files. Report what should change instead.`);
   const rel = repoRel(file);
   if (rel === null) process.exit(0);
-  const [rule, ...prefixes] = args;
+  const [rule, ...prefixes] = ruleArgs;
   const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
   if (why) {
     // Name the path as the caller wrote it; matching used the case the disk reports.
     const typed = path.relative(path.resolve(root), target).split(path.sep).join('/');
     const shown = typed && !typed.startsWith('..') && !path.isAbsolute(typed) ? typed : rel;
-    deny(`${who} may not write ${shown}: it is a protected path (${why}). The fast track does not change it. `
+    deny(`${actor} may not write ${shown}: it is a protected path (${why}). The fast track does not change it. `
       + 'Stop and report ESCALATE; the developer uses /speckit-team.');
   }
   if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
-    deny(`${who} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
+    deny(`${actor} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
       + 'Report this to the user, who fixes the file; do not edit it yourself.');
   }
   if (rule === 'only' && !inPrefixes(prefixes, rel)) {
-    deny(`${who} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
+    deny(`${actor} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
       + 'Tests belong to test-writer and production code to implementer: report what should change instead.');
   }
   if (rule === 'tests' && !inLane('tests', rel)) {
     if (SPECKIT_CONFIG.test(rel)) {
-      deny(`${who} may not write ${rel}: .specify/ holds Spec Kit's config or a project's files, not a test. Report what should change instead.`);
+      deny(`${actor} may not write ${rel}: .specify/ holds Spec Kit's config or a project's files, not a test. Report what should change instead.`);
     }
-    deny(`${who} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
+    deny(`${actor} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
       + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
   }
   if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
-    deny(`${who} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
+    deny(`${actor} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
       + 'Report what should change instead.');
   }
   if (rule === 'no-tests' && !inLane('no-tests', rel)) {
-    deny(`${who} may not change tests: ${rel} is part of the executable spec. `
+    deny(`${actor} may not change tests: ${rel} is part of the executable spec. `
       + 'If the test is wrong, stop and report it with evidence so test-writer or the human can fix it.');
   }
   process.exit(0);
@@ -557,7 +730,17 @@ if (mode === 'gate') {
     if (!id || !SESSION_ID.test(id)) process.exit(0);
     fs.rmSync(teamFile(id), { force: true });
     fs.rmSync(projectFile(id), { force: true });
+    fs.rmSync(roleFile(id), { force: true });
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
+    // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
+    const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
+    const nextWord = (afterTeam[afterTeam.indexOf('--team') + 2] ?? '').toLowerCase();
+    if (roles?.length === 1 && roles[0] === 'skill-agents' && nextWord !== 'noagents') {
+      const missing = missingRoleSkills();
+      if (missing.length) block(`speckit-team: --team skill-agents needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
+      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, at: new Date().toISOString() });
+      emit({ systemMessage: SKILL_AGENTS_START });
+    }
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
     writeJson(teamFile(id), { session_id: id, roles: [], noagents: true, at: new Date().toISOString() });
     emit({ systemMessage: 'speckit-team: no agents for this request: /speckit-implement in this session skips the audit gate until the next /speckit-team or team agent launch' });
@@ -602,11 +785,40 @@ if (mode === 'gate') {
   }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
     const ti = input.tool_input || {};
-    if (!/(^|:)speckit[-.]implement$/.test(ti.skill_name || ti.skill || ti.name || '')) process.exit(0);
+    const skillName = ti.skill_name || ti.skill || ti.name || '';
+    const roleSkill = typeof skillName === 'string' ? ROLE_SKILL.exec(skillName)?.[2] : null;
+    if (roleSkill && TEAM_ROLES.includes(roleSkill)) {
+      // A role skill call of the main session (contract section 4).
+      if (agentId) process.exit(0);
+      const id = str(input.session_id);
+      if (!teamOf()?.skillAgents) {
+        deny(`speckit-role-${roleSkill} runs only in a request typed as /speckit-team --team skill-agents <request>.`);
+      }
+      const auditGate = () => {
+        const gap = ['test-writer', 'implementer', 'spec-gatekeeper'].includes(roleSkill) ? auditProblem() : null;
+        if (gap) deny(`Implementation gate: ${gap}. Run ${auditorRef()} and get VERDICT: PASS first.`);
+      };
+      const live = readState(roleFile(id));
+      if (live !== undefined) closeRole(live, 'skill', auditGate);
+      auditGate();
+      const sha = git(root, 'rev-parse', 'HEAD');
+      if (sha) {
+        const transcript = str(input.transcript_path);
+        let offset = 0;
+        try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: offset 0 */ }
+        const feat = feature();
+        writeJson(roleFile(id), {
+          session_id: id, role: roleSkill, sha, dirty: changedSince('HEAD'), transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
+          feature: feat, fingerprint: roleSkill === 'spec-auditor' && feat ? fingerprint(feat) : null, at: new Date().toISOString(),
+        });
+      }
+      finish();
+    }
+    if (!/(^|:)speckit[-.]implement$/.test(typeof skillName === 'string' ? skillName : '')) process.exit(0);
   }
   const problem = auditSkipped() ? null : auditProblem();
   if (problem) {
-    const reason = `Implementation gate: ${problem}. Run @agent-spec-auditor and get VERDICT: PASS first.`;
+    const reason = `Implementation gate: ${problem}. Run ${auditorRef()} and get VERDICT: PASS first.`;
     if (typed) block(reason);
     deny(reason);
   }
@@ -649,7 +861,7 @@ if (mode === 'verdict') {
   }
   const viaHandback = event === 'PreToolUse';
   const text = reportText(viaHandback);
-  const found = [...text.matchAll(/^[\s*>#]*VERDICT:?[\s*]*(PASS|FAIL)\b/gim)].pop();
+  const found = verdictIn(text);
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
   // The Stop after a handback is the same report: neither recorded twice nor asked for again.
@@ -667,7 +879,7 @@ if (mode === 'verdict') {
     block(ask);
   }
   if (!feat) process.exit(0);
-  const verdict = found[1].toUpperCase();
+  const verdict = found;
   if (doneFile) writeJson(doneFile, { verdict });
   // No start record (an auditor that made no tool call, or a main-thread Stop) keeps the old rule:
   // the verdict is on the files as they are now. An unreadable one proves nothing, so it is stale.
@@ -732,8 +944,7 @@ if (mode === 'ends') {
   if (!words.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
   const ok = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
-  const last = reportText(viaHandback).trim().split('\n').pop() ?? '';
-  const word = last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+  const word = lastWord(reportText(viaHandback));
   if (words.includes(word)) {
     if (ok) writeJson(ok, {});
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
@@ -771,26 +982,27 @@ if (mode === 'start') {
   emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: r.block } });
 }
 
+if (mode === 'lane' && args[0] === 'role') {
+  // 009: the acting role skill's Stop (contract section 6).
+  const id = str(input.session_id);
+  if (agentId || !id || !SESSION_ID.test(id)) process.exit(0);
+  const rec = readState(roleFile(id));
+  if (rec === undefined) process.exit(0);
+  closeRole(rec, 'stop');
+}
+
 if (mode === 'lane') {
   // `only <prefix>...` holds product-owner and architect to the prefixes of their scope rule.
   const [rule, ...prefixes] = args;
-  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : inLane(rule, rel));
   const f = agentId && baseFile(agentKey);
   const base = f && readState(f);
   if (!base) {
     if (base === null) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is unreadable.` });
     process.exit(0);
   }
-  // Only a hex commit id reaches git's argument list: "--output=..." would be read as an option.
-  if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) {
-    emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start record is incomplete.` });
-  }
-  if (rule !== 'only' && testPaths.bad) emit({ systemMessage: `speckit-team: lane check could not run for ${who}: ${testPaths.bad}.` });
-  // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
-  if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) {
-    emit({ systemMessage: `speckit-team: lane check could not run for ${who}: its start commit ${base.sha.slice(0, 12)} is not in this repo.` });
-  }
-  const outside = changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel));
+  const found = laneOutside(base, rule, prefixes, who);
+  if ('problem' in found) emit({ systemMessage: `speckit-team: ${found.problem}` });
+  const { outside } = found;
   if (outside.length && !input.stop_hook_active) {
     block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
       + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);

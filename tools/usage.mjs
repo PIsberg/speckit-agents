@@ -75,6 +75,21 @@ export function launches(rows) {
   return out;
 }
 
+// The main session's Skill calls by name, in order.
+export function skills(rows) {
+  const out = [];
+  for (const r of rows) {
+    if (r.isSidechain) continue;
+    for (const p of Array.isArray(r.message?.content) ? r.message.content : []) {
+      if (p?.type === 'tool_use' && p.name === 'Skill') {
+        const name = p.input?.skill ?? p.input?.skill_name;
+        if (typeof name === 'string') out.push(name);
+      }
+    }
+  }
+  return out;
+}
+
 const sum = (list, k) => list.reduce((s, x) => s + x[k], 0);
 
 export function summarise(file) {
@@ -86,7 +101,7 @@ export function summarise(file) {
     responses: resp.length, input: sum(resp, 'input'), cacheRead: sum(resp, 'cacheRead'), cacheWrite: sum(resp, 'cacheWrite'),
     first: resp[0]?.input ?? 0, peak: Math.max(0, ...resp.map((x) => x.input)),
     models: [...new Set(resp.map((x) => x.model))],
-    launches: launches(rows), waits: waits.length, waitInput: sum(waits, 'input'),
+    launches: launches(rows), skills: skills(rows), waits: waits.length, waitInput: sum(waits, 'input'),
   };
   const dir = path.join(path.dirname(file), path.basename(file, '.jsonl'), 'subagents');
   const all = [...resp];

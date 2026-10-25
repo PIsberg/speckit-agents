@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--two-slices | --side-by-side]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -16,7 +16,8 @@
 // CLAUDE.md, settings and hooks then load too, as in your sessions. --two-slices asks for two functions
 // in two files and keeps the recommended one at a time: the run then fails if agents went out together.
 // --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
-// then fails unless implementers went out together in worktrees. Nothing is retried.
+// then fails unless implementers went out together in worktrees. --skill-agents types
+// `/speckit-team --team skill-agents`: the run then fails on any agent launch or a core role skill never called. Nothing is retried.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -70,7 +71,7 @@ export function buildRepo(repo, { twoSlices = false } = {}) {
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false }) {
   const out = [];
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
@@ -92,7 +93,13 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   const t = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['test'], { cwd: repo, env, shell: process.platform === 'win32' });
   if (t.status !== 0) out.push(`the scratch repo's npm test exits ${t.status}: ${(t.stdout + t.stderr).trim().split('\n').slice(-5).join(' | ')}`);
   const launches = usage?.main?.launches ?? [];
-  if (!launches.length) out.push('no agent was launched');
+  if (skillAgents) {
+    if (launches.length) out.push(`${launches.length} agent launch(es) in a skill-agents run, which has none: ${launches.map((l) => l.type).join(', ')}`);
+    const called = usage?.main?.skills ?? [];
+    for (const role of ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper']) {
+      if (!called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was never called`);
+    }
+  } else if (!launches.length) out.push('no agent was launched');
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
   if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {
@@ -114,7 +121,7 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   if (usage?.main?.waits) out.push(`${usage.main.waits} main-session response(s) only waited for a background agent`);
   // A check that saw no agent, or a marker that was never sent, proves nothing.
   if (!markerSent) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run');
-  else if (!agentTexts?.length) out.push('no agent transcript was found in the session\'s subagents/ folder: the leak check saw nothing');
+  else if (!skillAgents && !agentTexts?.length) out.push('no agent transcript was found in the session\'s subagents/ folder: the leak check saw nothing');
   else {
     const leaked = agentTexts.filter((a) => a.text.includes(marker)).map((a) => a.file);
     if (leaked.length) out.push(`the parent-only marker ${marker} reached ${leaked.length} agent transcript(s): ${leaked.join(', ')}`);
@@ -131,6 +138,11 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 // Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
 // overload) is the infrastructure's failure: resuming with the next answer would reply to a question
 // never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
+// The first prompt of the run: skill-agents mode names its team on the typed line.
+export function firstPrompt(request, { skillAgents = false } = {}) {
+  return skillAgents ? `/speckit-team --team skill-agents ${request}` : `/speckit-team ${request}`;
+}
+
 export function turnError(res, status) {
   if (!res) return `claude printed no result (exit ${status})`;
   const text = String(res.result ?? '');
@@ -154,10 +166,10 @@ export function trustFolder(confFile, repo) {
 }
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
-    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
+    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
@@ -187,7 +199,7 @@ function main() {
   // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
   if (o.login) {
     fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), ['agents/', 'hooks/', 'settings.json', 'settings.json.*',
-      'skills/speckit-team/', 'skills/speckit-patch/', 'skills/speckit-triage/'].map((p) => `/.claude/${p}\n`).join(''));
+      'skills/speckit-team/', 'skills/speckit-patch/', 'skills/speckit-triage/', 'skills/speckit-role-*/'].map((p) => `/.claude/${p}\n`).join(''));
   }
   const untrust = trustFolder(confFile, repo);
 
@@ -196,7 +208,7 @@ function main() {
   let session = null;
   let stopped = null;
   for (let n = 0; n < o.maxTurns; n++) {
-    const prompt = n === 0 ? `/speckit-team ${request}` : answer(marker, { sideBySide: o.sideBySide });
+    const prompt = n === 0 ? firstPrompt(request, { skillAgents: o.skillAgents }) : answer(marker, { sideBySide: o.sideBySide });
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
     let res = null;
@@ -220,7 +232,7 @@ function main() {
   const agentTexts = subagents && fs.existsSync(subagents) ? fs.readdirSync(subagents).filter((f) => f.endsWith('.jsonl'))
     .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
   const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (!transcript) failures.push('no transcript of the main session was found');
   if (stopped) failures.unshift(stopped);
   const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };

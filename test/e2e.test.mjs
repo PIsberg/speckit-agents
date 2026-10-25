@@ -60,6 +60,9 @@ function setup() {
   return { repo, cfg, hook: path.join(cfg, 'hooks', 'speckit-team.mjs'), write };
 }
 
+// The verdict recorded for 001-x, or 'none recorded'.
+const verdict = (x) => (fs.existsSync(path.join(x.repo, '.git', 'speckit-team', 'verdicts', '001-x.json')) ? state(x, 'verdicts', '001-x.json').verdict : 'none recorded');
+
 // Records a PASS for the files as they are now, through the installed verdict hook itself.
 function recordPass({ repo, hook }) {
   execFileSync(process.execPath, [hook, 'verdict'], {
@@ -173,8 +176,11 @@ const lastResultIsError = (req) => lastToolResult(req)?.is_error === true;
 // A scripted reply is one block ({ text } or { name, input }) or an array of them, sent as one
 // response in that order: several tool calls in one message, as a model makes them.
 function reply(res, stream, step, id) {
-  const blocks = (Array.isArray(step) ? step : [step]).map(({ text, name, input }, i) => (name
-    ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text }));
+  // A step with both `text` and `name` is a text block, then the tool call, in the one response.
+  const blocks = (Array.isArray(step) ? step : [step]).flatMap(({ text, name, input }, i) => [
+    ...(text !== undefined && name ? [{ type: 'text', text }] : []),
+    name ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text },
+  ]);
   const stop = blocks.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
   const message = { id: `msg_${id}`, type: 'message', role: 'assistant', model: 'claude-fake', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
   if (!stream) {
@@ -199,12 +205,14 @@ function reply(res, stream, step, id) {
 // Runs `claude -p MAIN` with the script as the model. Returns every request each sender made, the
 // stream-json events and the exit code. bypassPermissions by default: a guardrail that does not fire
 // then lets the action through, instead of a permission check stopping it in the hook's place.
-async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN } = {}) {
+async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [], idBase = 0 } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
   // When each sender's requests arrived, in ms: shows whether two agents ran at the same time.
   const times = Object.fromEntries(senders.map((k) => [k, []]));
-  let ids = 0;
+  // A resumed session keeps the first one's tool_use ids in its history: pass another idBase, or a new call
+  // that reuses an id is merged into the old pair and its result never reaches the next request.
+  let ids = idBase;
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', (d) => { body += d; });
@@ -231,7 +239,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
     return await new Promise((resolve, reject) => {
       let out = '';
       let err = '';
-      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode],
+      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...args],
         { cwd: repo, env: fakeEnv(cfg, server.address().port, env), stdio: ['ignore', 'pipe', 'pipe'] });
       child.stdout.on('data', (d) => { out += d; });
       child.stderr.on('data', (d) => { err += d; });
@@ -598,7 +606,7 @@ test("spec-auditor's report through SubagentHandback is refused once without a V
   }, { permissionMode: 'auto' });
   assert.ok(lastResultIsError(r.requests['e2e auditor'][1]), story(r));
   assert.match(lastResult(r.requests['e2e auditor'][1]), /`VERDICT: PASS` or `VERDICT: FAIL`\. Add it and send the report again/, story(r));
-  assert.equal(state(s, 'verdicts', '001-x.json').verdict, 'PASS', story(r));
+  assert.equal(verdict(s), 'PASS', story(r));
   // A handed-back report reaches the main session as a message of its own, not as the tool result.
   assert.match(shown(r.requests[MAIN][1]), /VERDICT: PASS/, story(r));
 });
@@ -1028,6 +1036,80 @@ test("security-reviewer's report must end in VERDICT: PASS or VERDICT: FAIL", { 
   });
   assert.match(shown(r.requests['e2e security ends'][1]), /Your report must end with a final line that is exactly one of: VERDICT: PASS, VERDICT: FAIL/, story(r));
   assert.match(lastResult(r.requests[MAIN][1]), /^\s*VERDICT: PASS$/m, story(r));
+});
+
+// ---- 009 skill-agents: role skills in the session (T008, T011, T014) ----
+// Typed /speckit-team --team skill-agents: the hook records skillAgents at UserPromptExpansion, and each
+// role is a Skill call of the main session. With SPECKIT_E2E_NO_HOOK=1 none of these can pass.
+const SA_PROMPT = `/speckit-team --team skill-agents ${MAIN}`;
+const roleSkill = (role) => call('Skill', { skill: `speckit-role-${role}` });
+
+test('009 T008 contract 3 and 4: a typed --team skill-agents gates the role skills, and a let-through call records the role', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, { [MAIN]: [roleSkill('test-writer'), roleSkill('architect'), wfile(s, 'src/x.js', 'export const x = 1;\n')] }, { prompt: SA_PROMPT });
+  const denial = lastResult(r.requests[MAIN][1]);
+  assert.match(denial, /Implementation gate: spec-auditor has not passed specs\/001-x/, story(r));
+  assert.match(denial, /speckit-role-spec-auditor/, story(r));
+  assert.doesNotMatch(denial, /@agent-spec-auditor/, story(r));
+  assert.ok(r.requests[MAIN].length >= 3, `the architect call was answered:\n${story(r)}`);
+  const id = sessionId(r);
+  assert.equal(state(s, 'team', `${id}.json`).skillAgents, true, story(r));
+  // The role record existed after the architect's Skill call: the next call is held to the architect's lane.
+  // The main session's Stop removes the record at the end of the turn (contract 6 step 3; hook.test.mjs).
+  assert.ok(lastResultIsError(r.requests[MAIN][3]), story(r));
+  assert.match(lastResult(r.requests[MAIN][3]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
+});
+
+test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the session, and a resumed prompt ends the role afterwards", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [roleSkill('architect'), wfile(s, 'src/x.js', 'export const x = 1;\n'), roleSkill('spec-auditor'), wfile(s, 'specs/001-x/spec.md', '# changed\n')],
+  }, { prompt: SA_PROMPT });
+  assert.ok(lastResultIsError(r.requests[MAIN][2]), story(r));
+  assert.match(lastResult(r.requests[MAIN][2]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
+  assert.match(lastResult(r.requests[MAIN][4]), /spec-auditor is a read-only role and writes no files/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
+  // Contract section 8, plan D11, research R5: a resumed prompt has another prompt_id, which ends a record
+  // of the earlier one. The record below is outside architect's lane (src/x.js), so a record read as live
+  // denies the next role's Skill call with the lane check.
+  const id = sessionId(r);
+  const rec = { session_id: id, role: 'architect', sha: head(s), dirty: [], transcript: null, offset: 0, feature: 'specs/001-x', fingerprint: null, prompt_id: 'an earlier prompt', at: new Date().toISOString() };
+  fs.mkdirSync(path.join(s.repo, '.git', 'speckit-team', 'role'), { recursive: true });
+  const recFile = path.join(s.repo, '.git', 'speckit-team', 'role', `${id}.json`);
+  fs.writeFileSync(recFile, JSON.stringify(rec));
+  s.write('src/x.js', 'export const x = 1;\n');
+  const r2 = await session(s, { [MAIN]: [roleSkill('product-owner')] }, { prompt: MAIN, args: ['--resume', id], idBase: 100 });
+  assert.ok(r2.requests[MAIN].length >= 2, `the resumed session answered the Skill call:\n${story(r2)}`);
+  assert.ok(!lastResultIsError(r2.requests[MAIN][1]), `the product-owner call was let through:\n${story(r2)}`);
+  assert.ok(!fs.existsSync(recFile) || JSON.parse(fs.readFileSync(recFile, 'utf8')).role !== 'architect', 'the ended architect record is gone');
+});
+
+test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the implementer skill blocks the Stop with the lane check", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [roleSkill('implementer'), call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a file' }), say('implemented')],
+  }, { prompt: SA_PROMPT });
+  assert.ok(fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call never ran:\n${story(r)}`);
+  assert.match(shown(r.requests[MAIN][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
+});
+
+test("009 T017 T026 FR-008 US3-5 plan D10 research R1: the auditor role's VERDICT is recorded at the next role's Skill call, and at Stop", { skip: noClaude, timeout: 240_000 }, async () => {
+  // 1. The verdict only in the next Skill call's args (the response holding the call may not be in the transcript yet, plan D10): closing comes before the gate.
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('spec-auditor'), { text: 'No findings.', ...call('Skill', { skill: 'speckit-role-test-writer', args: 'VERDICT: PASS\n<inputs>' }) }],
+  }, { prompt: SA_PROMPT });
+  const id = sessionId(r);
+  assert.equal(state(s, 'verdicts', '001-x.json').verdict, 'PASS', story(r));
+  assert.ok(!lastResultIsError(r.requests[MAIN][2]), `the test-writer call was let through:\n${story(r)}`);
+  assert.equal(state(s, 'team', `${id}.json`).skillAgents, true, story(r));
+  // 2. The Stop after the auditor role's last message records it.
+  const s2 = setup();
+  const r2 = await session(s2, { [MAIN]: [roleSkill('spec-auditor'), say('No findings.\n\nVERDICT: PASS')] }, { prompt: SA_PROMPT });
+  assert.equal(verdict(s2), 'PASS', story(r2));
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
