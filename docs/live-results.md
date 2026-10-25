@@ -6,6 +6,25 @@ said where it was run. The README's [Live results](../README.md#live-results) is
 ## Lessons from elephant-goldfish-model
 
 <details>
+<summary><b>2026-10-25</b>: Claude Code 2.1.310, Windows 11, two full runs on the owner's subscription, one feature side by side and one at a time (#114)</summary>
+
+Setup: `node tools/full-run.mjs --login` with `--side-by-side` (from commit `a301812`) and then
+`--two-slices` (from `aabdc5d`), each run from a worktree of the branch so that uncommitted edits
+in the checkout stayed out; the feature `sum()` in `src/math.js` and `capitalize()` in a new
+`src/text.js`. `~/.claude/CLAUDE.md` loaded in every session. $3.53 in all.
+
+| Check | Result |
+|---|---|
+| Side by side ($1.89, 2 turns) | Passed every check: audit PASS, `APPROVED`, every task ticked, the repo's tests green, 13 foreground launches, no wait, the marker in no agent transcript, no worktree or `worktree-*` branch left. Four responses launched two agents each: two stub implementers, two test-writers, two implementers, all four implementers with `isolation: "worktree"`; the merges were clean. |
+| The worktree trap | Seen, and fixed in `8385810`. The main session merged, then ticked and committed with `git add -A` before removing the worktrees, as the skill then said; both worktrees in `.claude/worktrees/` went into the commit as embedded repositories, and its next response committed their removal. |
+| One at a time ($1.64, 2 turns) | Built both slices in one round (one stub implementer, one test-writer, one implementer, 9 launches), and the main session planned it from the architect's round lines without reading `tasks.md`. `checkRun` failed it on its own check: the product-owner and architect that step 2 sends together counted as going side by side. Fixed in `183718f`; every other check passed. |
+| A recommended answer | Not yet as the skill says: in both runs D1 was answered with the recommended option, and the main session still launched a dictated product-owner and architect. Both runs predate `b731747`, which addresses it. |
+
+The comparison is in [docs/measurements.md](measurements.md#side-by-side-against-one-at-a-time).
+
+</details>
+
+<details>
 <summary><b>2026-10-24</b>: Claude Code 2.1.310, Windows 11, real models on the owner's subscription (#160, #162 to #165)</summary>
 
 Setup: scratch repos built by `buildRepo` from `tools/full-run.mjs` (the full-run fixture), the

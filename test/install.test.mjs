@@ -462,7 +462,10 @@ test('installed skill and implementer agree on building [P] slices side by side 
   assert.ok(ticked > removed && removed >= 0, 'the worktrees and their branches go before the tick commit');
   assert.match(side, /stub pass stays one implementer, without a worktree/);
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
-  assert.match(ask, /one at a time \(recommended: it costs less, and no run with real models has built slices side by side yet\)/);
+  // #114: the two runs of 2026-10-25 built one two-slice feature both ways, so the recommendation
+  // stands on numbers and no longer on there being no run.
+  assert.match(ask, /one at a time \(recommended: in two real runs of one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3\)/);
+  assert.doesNotMatch(ask, /no run with real models/);
 });
 
 // The main session is the run's largest cost: in 004 its 58 run responses took 8.92M, 2.73M of it

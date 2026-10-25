@@ -252,10 +252,11 @@ In the 004 run a decision that contradicted FR-012 failed the first audit, and t
 product-owner and a second audit (229 s, 0.59M tokens). In the 003 run four architect revisions
 only applied answers, 7.37M tokens together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
-same stop, with AskUserQuestion, whether to build them one at a time (recommended: it costs less, and
-no run with real models has built slices side by side yet) or side by side. Say why it matters: side by side may be faster but
-costs more, since each `[P]` slice then gets its own agents instead of sharing its round's, and it
-runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
+same stop, with AskUserQuestion, whether to build them one at a time (recommended: in two real runs of
+one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3) or side by
+side. Say why it matters: each `[P]` slice then gets its own agents instead of sharing its round's,
+and the merges take main-session responses, so it can pay off only for slices that each take
+minutes to build; it also runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
 
 ## 3. Audit: spec-auditor
 Only when spec-auditor is in the team; without it, skip this step.

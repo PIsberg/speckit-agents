@@ -558,11 +558,24 @@ made while building never void the audit.
 
 For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
 implementer in its own git worktree, merged back into the feature branch in task order. It does so
-only if you say so at the plan stop. Side by side may save wall-clock time but costs more: each
-slice gets its own test-writer and implementer instead of sharing its round's, plus a few
-main-session requests for the merges, and several agents then draw on your usage limits at once.
-It recommends one at a time: no run with real models has built slices side by side yet
-([#114](https://github.com/PIsberg/speckit-agents/issues/114)).
+only if you say so at the plan stop, and recommends one at a time. Each slice side by side gets its
+own test-writer and implementer instead of sharing its round's, the merges take main-session
+responses, and several agents draw on your usage limits at once. Measured on 2026-10-25 with real
+models ([#114](https://github.com/PIsberg/speckit-agents/issues/114)), one two-slice feature
+(`sum()` and `capitalize()` in two files, `tools/full-run.mjs --two-slices` and `--side-by-side`):
+
+| Build, first stub to last implementer | One at a time | Side by side |
+|---|--:|--:|
+| Wall-clock | 95 s | 140 s |
+| Build launches | 3 | 7 |
+| Build agents' input | 0.20M | 0.57M |
+| Main-session responses, whole run | 13 | 19 |
+
+Slices that take seconds each gain nothing from running at once; the launches, the merges and
+the cleanup cost more than the overlap saves. Side by side can pay off only for slices that each
+take minutes, which no run has measured. The side-by-side run also had two stub implementers, a
+docs-only implementer and a commit to take out worktrees, since fixed (below); the one-at-a-time
+run already had the architect's round lines, which save the main session one response.
 
 Claude Code does run them side by side: agents launched in one message overlap, in worktrees too,
 and the main session waits for all of them, checked against a fake API and pinned by
@@ -1603,7 +1616,9 @@ against a fake API (no model ran): the fast track's hooks, and the team question
 On 2026-10-16, with real models: a `--project` block reaching implementer and security-reviewer, and
 security-reviewer's result review with its `ends` check. On 2026-10-24, with real models: the read-only
 agents starting without `CLAUDE.md`, the reuse check, a contested finding and a recorded ruling, and a
-full run passing the leak and drift checks.
+full run passing the leak and drift checks. On 2026-10-25, with real models: one two-slice feature
+built side by side in worktrees and one at a time, side by side slower and dearer
+([docs/measurements.md](docs/measurements.md#side-by-side-against-one-at-a-time)).
 The record for each day: [Live results](docs/live-results.md).
 
 > [!NOTE]

@@ -206,9 +206,9 @@ and the Agent result names both (`worktreePath:`, `worktreeBranch:`); one with n
 With git 2.55, two branches that tick adjacent lines of `tasks.md` conflict when merged, while ticks
 with an unchanged line between them merge cleanly, and `git add -A` in the main tree stages a
 worktree left in place as an embedded repository (mode 160000). Those findings are the side-by-side
-rules in "4-5. Red and green" of [the skill](../skills/speckit-team/SKILL.md). Not checked: a real
-main session following them, and what side by side saves against what it costs
-([#114](https://github.com/PIsberg/speckit-agents/issues/114)).
+rules in "4-5. Red and green" of [the skill](../skills/speckit-team/SKILL.md). A real main session
+following them, and what side by side saves against what it costs, is
+[Side by side against one at a time](#side-by-side-against-one-at-a-time).
 
 ## The constitution check
 
@@ -354,3 +354,40 @@ What it led to: nothing moves. The skill stays one file, over the 24,000-byte li
 google/elephant-goldfish-model holds its skills to. Fewer launches is where the tokens are: the same
 full run spent 0.16M on an architect and a product-owner that each made one edit, and two rounds
 where one would do (README.md, "Settling decisions" and "Building in slices").
+
+## Side by side against one at a time
+
+One feature built both ways with real models on 2026-10-25
+([#114](https://github.com/PIsberg/speckit-agents/issues/114)): `sum()` in `src/math.js` and
+`capitalize()` in a new `src/text.js`, two `[P]` slices with disjoint files, through
+[`tools/full-run.mjs`](../tools/full-run.mjs) `--login --side-by-side` and `--two-slices`, headless,
+Claude Code 2.1.310, Windows 11, the owner's subscription, Sonnet main session. Times are the
+agents' first and last transcript lines; tokens from `tools/usage.mjs`.
+
+| | One at a time | Side by side |
+|---|--:|--:|
+| Cost (`total_cost_usd`) | $1.64 | $1.89 |
+| Agent launches | 9 | 13 |
+| Build launches (stubs, test-writers, implementers) | 3 | 7 |
+| Build wall-clock, first stub to last implementer | 95 s | 140 s |
+| Build agents' input | 0.20M | 0.57M |
+| Main-session responses | 13 | 19 |
+| Main-session input | 0.75M | 1.16M |
+| All agents' input | 0.94M | 1.29M |
+
+Side by side lost on every line. Each slice side by side got its own stub implementer (24 s each,
+where one did both in 15 s), its own test-writer and its own implementer, each starting from nothing
+at 11k to 14k tokens; the merges took three main-session responses, one of them a commit taking out
+the two worktrees the tick commit had swept in; and a docs part of a task the side-by-side
+implementers left needed one more implementer. The overlap saved little, because each slice's agents
+ran 10 s to 27 s.
+
+Not a clean comparison: the one-at-a-time run had commit `f653fd8` (the architect reports the
+rounds, so the main session does not read `tasks.md`, one response fewer), the side-by-side run did
+not. Both runs launched a dictated product-owner and architect for a decision answered with the
+recommended option (0.16M and 44 agent-seconds, and 0.18M and 68), from before the fix in `b731747`.
+
+What it led to: the plan stop still recommends one at a time, now with these numbers instead of
+"no run has built slices side by side"; the stub pass stays one implementer without a worktree; and
+the worktrees and their branches are removed before the tick commit (`8385810`). Side by side can pay
+off only for slices that each take minutes to build, which no run has measured.
