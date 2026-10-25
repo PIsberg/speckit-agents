@@ -1324,7 +1324,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 374 tests:
+`npm test` runs 376 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1337,7 +1337,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 47 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 8 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples and SC IDs skipped, the exit codes, and its test patterns against the hook's |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 6 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
@@ -1774,8 +1774,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   before; which versions lack it was not checked.
 - **The drift check matches IDs as text.** `tools/drift.mjs` cannot tell feature 003's FR-014 from
   feature 007's: the same ID of another feature in the same test file hides drift, so no problems
-  reported is not proof that every requirement is still tested. A task that names test files but is
-  not a test task (a docs task) can be reported too.
+  reported is not proof that every requirement is still tested. A test task is told from a docs task
+  by its opening words ("Tests in", "Contract test for"), so a test task worded otherwise is not
+  checked at all.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2006,7 +2007,8 @@ model and no tokens:
 node tools/drift.mjs <repo>
 ```
 
-For each ticked task in a `tasks.md` that names a test file and cites FR IDs, it reports the file if
+For each ticked test task in a `tasks.md` (its opening words, before the first file, parenthesis or
+colon, say test or tests) that names a test file and cites FR IDs, it reports the file if
 it is gone, and each cited FR ID that none of the task's test files holds any more (test-writer puts
 the ID in each test's name or a comment). One line per problem, then a count; exit 1 with drift, 0
 without, 2 when the repo has no `specs/`. A file counts as test code by the hook's own patterns and
@@ -2014,11 +2016,11 @@ without, 2 when the repo has no `specs/`. A file counts as test code by the hook
 example inputs and paths inside a subproject. Success criteria (SC-) are not looked for: test-writer
 does not promise to cite them.
 
-Run on this repository on 2026-10-24, it checked 32 test tasks in 7 features and reported 11
-problems. Ten are feature 003's, whose tests moved from `test/hook.test.mjs` to
-`test/hook-patch.test.mjs` after its tasks were written: the coverage is there, the references are
-stale. One is a false positive: feature 007's FR-014 is a documentation requirement, cited by a docs
-task that names test files. The idea is the drift report of
+`test/drift.test.mjs` runs it on this repository too, so a test moved to another file without its
+task fails `npm test`. Its first run, on 2026-10-24, reported 11 problems: ten were feature 003's,
+whose tests had moved from `test/hook.test.mjs` to `test/hook-patch.test.mjs` after its tasks were
+written, and one was a docs task of 007 that names test files. 003's tasks name the new file now
+(#161), and docs tasks are no longer checked. The idea is the drift report of
 [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model)
 (`docs/designs/drift_report.md`), which compares checked-in specs with the code.
 

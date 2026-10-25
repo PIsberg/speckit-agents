@@ -77,6 +77,7 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   const s = settingsOf(dir);
   assert.equal(s.model, 'opus');
   assert.deepEqual(s.hooks.PreToolUse[0], UNRELATED);
+  // 003 FR-009: the fast track adds no settings gate, so the team's gates are exactly these.
   assert.deepEqual(gates(s).sort(), GATES);
   assert.ok(!JSON.stringify(s).includes('C:/old/place'), 'stale gate replaced, not duplicated');
   assert.equal(backups(dir).length, 1, 'settings.json backed up before the change');

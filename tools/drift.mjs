@@ -5,8 +5,9 @@
 //
 // A ticked task in specs/<feature>/tasks.md that names a test file and cites requirement IDs (FR-001)
 // drifted when that file is gone, or when none of its test files holds a cited ID any more:
-// test-writer puts each ID in a test's name or a comment. Success criteria (SC-) are not promised
-// there and are not looked for. In a git repo a path git never tracked is an example input or a path
+// test-writer puts each ID in a test's name or a comment. Only a task that says it writes tests, before
+// the first file it names, counts; a docs task that names a test file to point at it does not. Success
+// criteria (SC-) are not promised there and are not looked for. In a git repo a path git never tracked is an example input or a path
 // inside a subproject, not a file the task built, and is skipped. One line per problem, then a count. Exit 0
 // without drift, 1 with it, 2 when the repo has no specs/. An ID is matched as text, so the same ID of
 // another feature in the same file hides drift: a pass is not proof. The drift report of
@@ -32,6 +33,10 @@ const TASK = /^\s*[-*]\s+\[([ xX])\]\s+(T\d+)\b/;
 const IDS = /\bFR-\d{3}\b/g;
 // A repo-relative path with a directory and an extension, as tasks name files.
 const PATHS = /[\w.@-]+(?:\/[\w.@-]+)+\.\w+/g;
+// A test task says so in its opening words, before the first file it names, parenthesis or colon
+// ("Tests in `test/x.test.mjs`", "Contract test for ... in"); a docs or measurement task names test
+// files only to point at them ("Docs in the same change (FR-014): ... held by `test/x.test.mjs`").
+const writesTests = (text) => /\btests?\b/i.test(text.split(/[(:]/)[0].split(PATHS)[0]);
 
 const readOr = (f, d) => { try { return fs.readFileSync(f, 'utf8'); } catch { return d; } };
 
@@ -68,7 +73,7 @@ export function drift(repo) {
     const text = readOr(path.join(repo, file), null);
     if (text === null) continue;
     features++;
-    for (const t of tasksOf(text).filter((x) => x.done)) {
+    for (const t of tasksOf(text).filter((x) => x.done && writesTests(x.text))) {
       const tests = [...new Set(t.text.match(PATHS) ?? [])]
         .filter((rel) => isTest(rel) && (fs.existsSync(path.join(repo, rel)) || tracked(rel)));
       const ids = [...new Set(t.text.match(IDS) ?? [])];
