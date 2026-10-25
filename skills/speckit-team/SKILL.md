@@ -41,7 +41,8 @@ A subagent starts with nothing but the prompt you write, so keep every prompt lo
 that agent's Inputs section lists. Never paste this conversation, the product owner's questions
 and answers, or another agent's full report.
 - architect: the feature directory and, on a revision, the findings it owns or the user's answers
-  by decision ID. When the answers or findings fully determine every edit (a value, a list entry,
+  by decision ID. Answers that all take the recommended option are no revision: you record them
+  yourself (step 2). When the answers or findings fully determine every edit (a value, a list entry,
   a wording), start the prompt with `dictated:` and give each exact edit with where it goes (file
   and heading or line): the architect then greps and edits without re-reading the artifacts. In
   the 003 run a revision that named the line cost 0.11M tokens; one with fully decided changes that
@@ -234,14 +235,16 @@ stop with AskUserQuestion, recommended option first, each option's description s
 follows from it. With more than 4, ask first one question that lists every decision with its
 options: take every recommended option (recommended), or decide one by one. The user can also
 answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recommended option.
-When every answer is the option the architect recommended, its plan and tasks already follow it,
-so launch no one: record the answers yourself, in one message, before the audit. Under each
-decision's `###` heading in `plan.md` add the line `Answer (<date>): <option>, as recommended`, then
-rename `## Open Decisions` to `## Decisions` (if `plan.md` has a `## Decisions` section already,
-move the entries under it instead). Put each chosen `Spec:` line's wording into `spec.md` in place
-of the line it names: grep for that line, Read it alone with an offset and a limit, and Edit it. In
-the full run of 2026-10-24 an architect and a product-owner were launched for one such Edit each,
-0.16M tokens and two agent starts.
+When every answer is the option the architect recommended, also when the user gave it in advance,
+its plan and tasks already follow it, so launch no one: no architect, no product-owner, never a
+dictated revision. Record the answers yourself, in the message that commits them and launches the
+audit. Under each decision's `###` heading in `plan.md` add the line
+`Answer (<date>): <option>, as recommended`, then rename `## Open Decisions` to `## Decisions` (if
+`plan.md` has a `## Decisions` section already, move the entries under it instead). Put each chosen
+`Spec:` line's wording into `spec.md`: a changed line in place of the line it names, a line it adds
+under the heading where the `Spec:` line puts it. Grep for the place, Read only those lines with an
+offset and a limit, and Edit. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
+product-owner were launched for one such Edit each instead, 0.16M tokens and about 44 s.
 Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
 the two write different files, and the first audit then reads a spec that agrees with the plan.

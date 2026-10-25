@@ -297,6 +297,13 @@ test('installed skill records answers that take every recommendation itself, whi
   assert.match(stop, /each chosen `Spec:` line[^.]*`spec\.md`/i, 'the main session applies the chosen spec lines');
   assert.match(stop, /offset and a limit/, 'reading only the line it edits');
   assert.match(stop, /Otherwise send all the answers to one architect revision/);
+  // The side-by-side run of 2026-10-25 (Sonnet main session) still launched a dictated product-owner
+  // for a new Edge Cases line and a dictated architect for the record, 0.16M and 44 s: the Handoffs
+  // bullet routed answers to a dictated architect, and a `Spec:` line that adds a line was not covered.
+  assert.match(stop, /never a dictated revision/i, 'the rule names the path the run took');
+  assert.match(stop, /a line it adds[^.]*where the `Spec:` line puts it/i, 'a Spec: line that adds a line is covered');
+  const handoffs = skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace'));
+  assert.match(handoffs, /answers that all take the recommended option are no revision[^.]*step 2/i, 'the Handoffs bullet says so too');
 });
 
 // specs/004-board-clear/findings.md, 4: past the Bash tool's default 2 minutes Claude Code moves a
