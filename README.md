@@ -477,7 +477,7 @@ built once as the default team and once with `--team skill-agents`, 31% more inp
 less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
 close, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
-end-to-end tests fire the role skills' hook entries against the real Claude Code.
+end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers only a resumed prompt ending the role. Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running), and whether a message typed during a turn gets a new `prompt_id` (not known).
 
 **Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
 returns a capped report. A role skill loads its instructions into your session, so every role works
