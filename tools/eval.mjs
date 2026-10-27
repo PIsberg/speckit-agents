@@ -131,7 +131,7 @@ function main() {
     let report = null;
     try { report = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8')); } catch { /* no run.json: infrastructure or crash */ }
     // A run that never reached a verdict because of the infrastructure is not a miss: it is reported apart.
-    const infra = !report || /infrastructure, not the team|claude printed no result/.test(report.failures?.[0] ?? '');
+    const infra = !report || /infrastructure, not the team|claude printed no result|main session changed the repo/.test((report.failures ?? []).join('; '));
     const s = infra ? null : scoreRun(c, { repo: path.join(dir, 'repo'), report });
     console.log(`${arm.label} ${c} #${n}: ${infra ? 'NOT SCORED (infrastructure or crash)' : `${s.right ? 'right' : 'WRONG'}: ${s.why}`} (full-run exit ${r.status})`);
     if (!infra) rows.push({ arm: arm.label, case: c, right: s.right, cost: report.cost, input: (report.usage?.main?.input ?? 0) + (report.usage?.agents ?? []).reduce((n, a) => n + a.input, 0) });

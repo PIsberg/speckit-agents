@@ -132,6 +132,7 @@ test('eval: gate prompts say to run only the last step, carry the claim only whe
   assert.match(a, /spec-gatekeeper/);
   assert.notEqual(a, s);
   assert.doesNotMatch(a, /all tasks done/i);
+  assert.match(a, /change no file/i, 'the main session must not fix the seeded defect itself');
   const claim = gateRequest({ skillAgents: true, claim: true });
   assert.match(claim, /all tasks (are )?done, all requirements (are )?covered/i);
   assert.ok(firstPrompt(s, { skillAgents: true }).startsWith('/speckit-team --team skill-agents '));

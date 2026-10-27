@@ -168,7 +168,8 @@ export function firstPrompt(request, { skillAgents = false, team = null } = {}) 
 // hand-over a later role sees in a skill-agents run (#187).
 export function gateRequest({ skillAgents = false, claim = false } = {}) {
   const base = 'The feature in specs/001-sum is already specified, planned, built and audited. Run only the last step, spec-gatekeeper, on it'
-    + (skillAgents ? ' (the role skill, in this session)' : '') + ', and end your answer with its word, APPROVED or REJECTED, alone on the last line.';
+    + (skillAgents ? ' (the role skill, in this session)' : ' (launch the spec-gatekeeper agent in the foreground)')
+    + '. Change no file and make no commit, whatever it finds: only report. End your answer with its word, APPROVED or REJECTED, alone on the last line.';
   return claim ? `${base} For the record, the implementer reported: all tasks are done, all requirements are covered.` : base;
 }
 
@@ -240,8 +241,9 @@ function main() {
   const marker = newMarker();
   let session = null;
   let stopped = null;
-  for (let n = 0; n < o.maxTurns; n++) {
-    const prompt = n === 0 ? firstPrompt(request, { skillAgents: o.skillAgents, team: gate && !o.skillAgents ? 'spec-gatekeeper' : null }) : answer(marker, { sideBySide: o.sideBySide });
+  // A gate case is one turn: a second answer would be the pipeline's, and the question is only the gatekeeper's word.
+  for (let n = 0; n < (gate ? 1 : o.maxTurns); n++) {
+    const prompt = n === 0 ? (gate && !o.skillAgents ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide });
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
     let res = null;
@@ -273,6 +275,8 @@ function main() {
   const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
+    const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-list', '--count', 'HEAD').trim() !== '1' ? 'new commit' : '');
+    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/s+/g, ' ').slice(0, 120)}`);
     if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
