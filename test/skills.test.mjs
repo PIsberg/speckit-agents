@@ -74,3 +74,44 @@ test('skills: the collision check fails on two descriptions that say the same th
   assert.equal(collisions(same, 0.25).length, 1);
   assert.deepEqual(collisions([same[0], { name: 'c', description: 'Suggest a track for a change and run nothing.' }], 0.25), []);
 });
+
+// #189: the authoring rules that a test can hold. Each check is a function over text so it can be shown failing
+// on a violating fixture; the model-neutrality rule is a review criterion in the constitution, not a test.
+const MAX_SKILL_LINES = 500; // agent-skills' docs/skill-anatomy.md; speckit-team is 375 at 2026-10-27
+const MAX_ROLE_LINES = 150; // a role skill is its agent's body plus a preamble; architect's is 143
+const MAX_DESCRIPTION = 1024;
+const MODEL_NAME = /\b(opus|sonnet|haiku|fable)\b|claude-[a-z]+-\d/i;
+export const problems = {
+  description: (s) => (s.description.length > MAX_DESCRIPTION ? [`${s.name}: description is ${s.description.length} characters, over ${MAX_DESCRIPTION}`] : []),
+  lines: (s) => (s.lines > MAX_SKILL_LINES ? [`${s.name}: ${s.lines} lines, over ${MAX_SKILL_LINES}`] : []),
+  roleLines: (s) => (s.name.startsWith('speckit-role-') && s.lines > MAX_ROLE_LINES ? [`${s.name}: ${s.lines} lines, over the role budget of ${MAX_ROLE_LINES}`] : []),
+  modelName: (s) => {
+    const body = s.text.replace(/^---\n[\s\S]*?\n---\n/, ''); // frontmatter excluded: `model:` lives there
+    const m = MODEL_NAME.exec(body);
+    return m ? [`${s.name}: names the model "${m[0]}" in its body`] : [];
+  },
+};
+const fixture = (over) => ({ name: 'speckit-role-x', description: 'd', lines: 10, text: '---\nname: x\n---\nbody\n', ...over });
+
+test('skills: every installed skill is within the description, line and model-name rules (#189)', () => {
+  const skills = installed();
+  const found = skills.flatMap((s) => Object.values(problems).flatMap((check) => check(s)));
+  assert.deepEqual(found, []);
+});
+
+test('skills: the agent bodies name no model, so a role skill runs on whichever model the session has (#189)', () => {
+  for (const f of fs.readdirSync(path.join(ROOT, 'agents')).filter((n) => n.endsWith('.md'))) {
+    const body = fs.readFileSync(path.join(ROOT, 'agents', f), 'utf8').replace(/\r\n/g, '\n').split(/^---$/m).slice(2).join('---');
+    assert.doesNotMatch(body, MODEL_NAME, `agents/${f}`);
+  }
+});
+
+test('skills: each authoring check fails on a skill that breaks its rule (#189)', () => {
+  assert.equal(problems.description(fixture({ description: 'x'.repeat(1025) })).length, 1);
+  assert.equal(problems.description(fixture({ description: 'x'.repeat(1024) })).length, 0);
+  assert.equal(problems.lines(fixture({ lines: 501 })).length, 1);
+  assert.equal(problems.roleLines(fixture({ lines: 151 })).length, 1);
+  assert.equal(problems.roleLines(fixture({ name: 'speckit-team', lines: 151 })).length, 0, 'the role budget is for role skills');
+  assert.equal(problems.modelName(fixture({ text: '---\nname: x\n---\nRun this on Opus.\n' })).length, 1);
+  assert.equal(problems.modelName(fixture({ text: '---\nname: x\nmodel: opus\n---\nRun it.\n' })).length, 0, 'the frontmatter is not the body');
+});

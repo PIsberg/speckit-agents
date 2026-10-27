@@ -1455,7 +1455,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 12 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
-| [`test/skills.test.mjs`](test/skills.test.mjs) | 4 | the installed skills' text: no description collides with another's, and the role skills differ by their role name only |
+| [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 20 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
@@ -2114,6 +2114,11 @@ wired. After changing what the board draws or what its buttons do, run `node too
 (vhs, git and `claude` on your PATH; about 70 s, no model calls): it types the keys of feature 004's
 checks L3 to L6 into an interactive session, writes every screen as text, and prints each check's
 result. `node tools/live-board.mjs pane` presses the pane's `[ clear ]` instead of the band's.
+
+A skill or agent you add or change must stay inside the authoring limits of the constitution's
+"Authoring Skills and Agents" (`test/skills.test.mjs` holds the line, description and model-name
+limits); the other rules there are review criteria. A prompt change meant to alter a verdict is
+measured with `tools/eval.mjs` ([Scored cases and arms](#scored-cases-and-arms)) before it is kept.
 
 ### Recording the demo media
 

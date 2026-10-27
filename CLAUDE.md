@@ -61,6 +61,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   After changing a hook's command, event or matcher, also run README.md's "Live check".
 
 ## Rules
+- Skill and agent authoring limits (line budgets, description length, no model name in a body, no colliding
+  descriptions) are held by `test/skills.test.mjs`; the rest are review criteria in the constitution.
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;
   install and uninstall tell their own files from the user's by it.
 - A new hook command goes in an agent's frontmatter or `SETTINGS_GATES` in `install.mjs`, and in the
