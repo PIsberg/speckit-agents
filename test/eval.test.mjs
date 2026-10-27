@@ -95,6 +95,10 @@ test('eval: the gate cases build a finished, audited feature; only the defect ha
     assert.ok(!/\[ \]/.test(fs.readFileSync(path.join(repo, feature, 'tasks.md'), 'utf8')), 'every task ticked, so the open-task check passes');
     assert.equal(node(repo).status, 0, `${c}: the repo's own tests are green either way`);
     assert.equal(git(repo, 'status', '--short').stdout, '', `${c}: committed`);
+    assert.equal(git(repo, 'branch', '--show-current').stdout.trim(), '001-sum');
+    assert.equal(git(repo, 'rev-list', '--count', 'main..HEAD').stdout.trim(), '2', `${c}: tests and spec, then code`);
+    const first = git(repo, 'log', '--reverse', '--name-only', '--format=format:@@', 'main..HEAD').stdout.split('@@').filter(Boolean);
+    assert.ok(first[0].includes('test/math.test.js') && !first[0].includes('src/math.js'), `${c}: the tests come before the code`);
     const verdict = JSON.parse(fs.readFileSync(path.join(repo, '.git', 'speckit-team', 'verdicts', '001-sum.json'), 'utf8'));
     assert.equal(verdict.verdict, 'PASS', 'the audit gate is already open');
   }

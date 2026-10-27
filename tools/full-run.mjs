@@ -68,16 +68,25 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
   fs.mkdirSync(path.join(repo, '.specify', 'memory'), { recursive: true });
   fs.copyFileSync(path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
   for (const rel of ['CLAUDE.md', 'package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, rel), path.join(repo, rel), { recursive: true });
-  if (CASES[name]?.gate) {
-    // A finished feature: spec, plan, tasks ticked, code and tests. The defect case swaps in the test that passes without the code.
-    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') });
-    if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
-    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
-  }
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'mathlib, before the feature');
+  if (CASES[name]?.gate) {
+    // A finished feature on its own branch, in the order the team builds it: spec, plan, tasks and the
+    // tests first, then the code, so `git diff main...HEAD` shows test-first (spec-gatekeeper checks the
+    // constitution's rules against it; with one commit it rejected a clean feature, 1 run in 12, 2026-10-27).
+    // The defect case swaps in the test that passes without the code.
+    git(repo, 'checkout', '-q', '-b', '001-sum');
+    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && path.basename(f) !== 'math.js' });
+    if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'spec, plan, tasks and failing tests for sum()');
+    fs.copyFileSync(path.join(FIXTURE, 'gate', 'src', 'math.js'), path.join(repo, 'src', 'math.js'));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'implement sum()');
+  }
   // The audit gate is open for a gate case, recorded by the hook itself so its fingerprint is the hook's.
   if (CASES[name]?.gate) {
     const r = run(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'verdict'], { input: JSON.stringify({ cwd: repo,
@@ -218,6 +227,7 @@ function main() {
   const repo = path.join(o.out, 'repo');
   const gate = CASES[o.case].gate;
   const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, case: o.case });
+  const head0 = git(repo, 'rev-parse', 'HEAD').trim();
   const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
@@ -275,7 +285,7 @@ function main() {
   const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
-    const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-list', '--count', 'HEAD').trim() !== '1' ? 'new commit' : '');
+    const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
     if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/s+/g, ' ').slice(0, 120)}`);
     if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
