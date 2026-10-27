@@ -1,5 +1,14 @@
 <!--
 Sync Impact Report
+- Version change: 1.2.0 -> 1.3.0 (MINOR, 2026-10-27)
+- Added sections: Authoring Skills and Agents. Rules from agent-skills' docs/skill-anatomy.md (#189), split into
+  the ones a test holds (test/skills.test.mjs) and the review criteria no test can.
+- Principles modified: none
+- Removed sections: none
+- Templates: .specify/templates/plan-template.md (OK), spec-template.md (OK), tasks-template.md (OK)
+- Deferred TODOs: none
+
+Previous report (1.2.0):
 - Version change: 1.1.0 -> 1.2.0 (MINOR, 2026-10-15)
 - Modified sections: Installation Constraints, the "cost nothing without .specify/" bullet: the
   allowance of one hook process per gated tool call now also covers one per start of a subagent the
@@ -123,6 +132,25 @@ failing test or a live run exposed.
   output. A settings gate MAY start one hook process per gated tool call or per start of a subagent
   its matcher names, which exits with no output (148 ms measured on Windows).
 - `--uninstall` MUST remove every file and settings entry the installer added, and nothing else.
+
+## Authoring Skills and Agents
+
+Held by `test/skills.test.mjs`, on the skills as `install.mjs` writes them:
+
+- A skill's `SKILL.md` MUST stay under 500 lines, a generated role skill under 150, and a
+  `description:` at most 1024 characters.
+- No two user skills' descriptions may share more than a quarter of their words, and the role skills'
+  descriptions MUST differ by their role name alone.
+- An agent body, and so its role skill, MUST name no model. The model is a `model:` frontmatter line.
+
+Review criteria, checked by the reviewer and not counted as enforced:
+
+- Write the procedure, not the workaround: no step exists only because one model got a call wrong.
+- Load detail on demand: a long reference goes in a file the skill names, not in the skill.
+- Prefer a script to inline code a model must retype.
+- Each line of an agent body is paid on every launch: a line added to one needs a reason a reader
+  could not recover from the code, and `tools/usage.mjs` before and after when it is more than a
+  sentence.
 
 ## Workflow and Quality Gates
 

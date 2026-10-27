@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -291,4 +291,25 @@ test('full run: skill-agents mode fails on any launch and on a core role skill n
 
 test('full run: without the option a run with no launch still fails as before (T019)', () => {
   assert.match(failures(state({ launches: [] }))[0], /no agent/i);
+});
+
+test('full run: --case, --claim and --team-root are read, an unknown case is refused, and the defaults change nothing (#188)', () => {
+  const o = args(['--out', 'x', '--case', 'defect', '--claim', '--team-root', 'other']);
+  assert.equal(o.case, 'defect');
+  assert.equal(o.claim, true);
+  assert.equal(o.teamRoot, path.resolve('other'));
+  assert.throws(() => args(['--out', 'x', '--case', 'nope']), /unknown case nope/);
+  assert.equal(args(['--out', 'x']).case, 'clean');
+  assert.equal(args(['--out', 'x']).teamRoot, ROOT, 'the team installed is this checkout\'s unless told otherwise');
+});
+
+test('full run: a team-root arm installs that checkout\'s agents, so two arms can differ by one prompt line (#188)', () => {
+  const arm = fs.mkdtempSync(path.join(os.tmpdir(), 'skarm-'));
+  for (const f of ['install.mjs', 'agents', 'skills', 'hooks']) fs.cpSync(path.join(ROOT, f), path.join(arm, f), { recursive: true });
+  fs.appendFileSync(path.join(arm, 'agents', 'spec-gatekeeper.md'), '\nARM-MARKER-LINE\n');
+  const cfg = path.join(arm, 'cfg');
+  const r = spawnSync(process.execPath, [path.join(arm, 'install.mjs'), '--claude-dir', cfg], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(fs.readFileSync(path.join(cfg, 'agents', 'spec-gatekeeper.md'), 'utf8'), /ARM-MARKER-LINE/);
+  assert.match(fs.readFileSync(path.join(cfg, 'skills', 'speckit-role-spec-gatekeeper', 'SKILL.md'), 'utf8'), /ARM-MARKER-LINE/);
 });

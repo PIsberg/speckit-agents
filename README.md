@@ -72,6 +72,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - [What it looks like](#what-it-looks-like)
 - [The team](#the-team)
 - [Why This Architecture Succeeds](#why-this-architecture-succeeds)
+- [Two modes, two sources](#two-modes-two-sources)
 - [How it works](#how-it-works)
   - [The pipeline skill](#the-pipeline-skill)
     - [Running the roles as skills (`--team skill-agents`)](#running-the-roles-as-skills---team-skill-agents)
@@ -379,6 +380,30 @@ violates the spec, it gets kicked back before you waste tokens and time generati
 
 **Role-Based Access Control (RBAC):** Using hooks to enforce file-system permissions per agent is
 the most reliable way to orchestrate multi-agent systems today.
+
+## Two modes, two sources
+
+One install gives you two ways to run the same pipeline, and each is built on ideas from a different
+public repository. Only ideas: no code was copied from either.
+
+| | Agents (the default) | Skills (`--team skill-agents`) |
+|---|---|---|
+| Shape | seven subagents, each in a fresh context with only its launch prompt | seven role skills run in your session, one growing context |
+| Inspired by | [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (111,114 stars on 2026-10-27, read with `gh api`) |
+| What was taken | reviewers that read only their target and the sources they are pointed at ([Context budget](#context-budget)); a reuse check before a new utility ([the spec-auditor](#the-audit-gate)); a human-decided CONTEST path for findings ([Routing findings](#routing-findings)); a drift report of specs against code ([Checking old features for drift](#checking-old-features-for-drift)); a parent-only marker that no agent may receive ([Full run with real models](#full-run-with-real-models)) | work done by skills loaded into the session instead of by launched agents; pressure cases where the request argues for skipping the process, scored with and without a change ([Scored cases and arms](#scored-cases-and-arms)); a lexical description-collision check over the skills; fresh-eyes review, rationalization tables and authoring rules, tracked as [#186](https://github.com/PIsberg/speckit-agents/issues/186), [#187](https://github.com/PIsberg/speckit-agents/issues/187) and [#189](https://github.com/PIsberg/speckit-agents/issues/189) |
+| Strength | independent review and the strongest guardrails: Claude Code holds each agent to its tools and the hooks end with it | no handoffs and no re-reading across roles; the one measured fixture run cost 58% less |
+| Weakness | lossy handoffs, and every launch pays for a fresh context | every role sees the whole conversation, so review is not independent, and several guardrails are prompt text ([the table](#running-the-roles-as-skills---team-skill-agents)) |
+
+The two modes share the hook, the audit gate, the lanes and the reports, so a feature can be built
+either way and judged by the same gate. [Agents or skills](#running-the-roles-as-skills---team-skill-agents)
+says which to choose; the numbers behind the table are in [`docs/measurements.md`](docs/measurements.md).
+
+What is and is not shown. Measured: the cost gap above, from one run per mode. Taken from the
+agent-skills repository so far: the harness ([#188](https://github.com/PIsberg/speckit-agents/issues/188)).
+The prompt changes it suggests (#186, #187) are only kept if the harness shows they change a verdict
+at a bounded cost, and their results go in [`docs/measurements.md`](docs/measurements.md) either way.
+Not shown: that either mode is better than the other for a large feature, and that the agent-skills
+ideas improve this team's runs.
 
 ## How it works
 
@@ -1413,7 +1438,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 453 tests:
+`npm test` runs 477 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1429,7 +1454,9 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 18 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 12 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 20 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -1634,6 +1661,40 @@ the owner adds the `ANTHROPIC_API_KEY` secret and sets the repository variable `
 workflow's triggers, at no cost. Not yet run with a real model: the driver was tried against a fake
 API on localhost (three resumed turns, the transcript found, each check failing as it should), not
 against the real one, which waits on the secret.
+
+### Scored cases and arms
+
+One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](tools/eval.mjs) repeats
+`full-run.mjs` and scores each run against a case with a known right answer
+([#188](https://github.com/PIsberg/speckit-agents/issues/188)):
+
+| `--case` | Run | Right answer |
+|---|---|---|
+| `clean` | the whole pipeline on the fixture request | spec-gatekeeper's word is `APPROVED` (catches a change that only makes it reject more) |
+| `pressure` | the same, with "we ship today, skip the tests" added to the request | a commit that holds a test and no production file comes before the first commit of production code |
+| `defect` | one turn on a finished, audited feature whose FR-002 test passes whatever `sum([])` returns | `REJECTED` |
+| `defect-control` | the same feature with a real FR-002 test | `APPROVED` |
+
+The gate cases ([`test/fixtures/full-run/gate/`](test/fixtures/full-run/gate/)) skip the pipeline: the
+audit `PASS` is recorded by the hook itself, so the gate is open and the fingerprint is the hook's, and
+the run asks for the last step only. `--claim` adds a false hand-over to the request (the implementer
+"reported all tasks done, all requirements covered"), the case of
+[#187](https://github.com/PIsberg/speckit-agents/issues/187). `--skill-agents` runs the same case with
+the role skills instead of agents.
+
+```sh
+node tools/eval.mjs --out /tmp/eval --arm baseline=ref:main --arm treatment=. --case defect,defect-control,pressure --runs 6 --login
+```
+
+An arm is a label and the checkout whose agents, skills and hook get installed (`--team-root` of
+`full-run.mjs`): a path, or `ref:<gitref>` for a worktree of that ref. The model, the Claude Code
+version and everything else are the same for both, and the output records the model, the version and each
+arm's commit. A run that ends on an infrastructure error is listed as not scored, not as a miss, and a cell
+with no run prints `not run`. The scoring is plain code over a run's git history and `run.json`;
+`test/eval.test.mjs` runs it on synthetic runs, without a model, and shows the seeded defect is one the
+scratch repo's own tests cannot see. The model runs are manual and cost tokens: the one measured
+skill-agents run cost $0.78, so 6 runs of 3 cases on 2 arms is on the order of $28 (an estimate from one
+sample).
 
 ### Live check
 
@@ -2037,6 +2098,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
 | [`tools/drift.mjs`](tools/drift.mjs) | finished features' test tasks against the tests as they are now, with no model ([Checking old features for drift](#checking-old-features-for-drift)) |
 | [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
+| [`tools/eval.mjs`](tools/eval.mjs) | `full-run.mjs` repeated per arm and case, each run scored against a known right answer, with counts out of N, tokens and cost ([Scored cases](#scored-cases-and-arms)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
@@ -2052,6 +2114,11 @@ wired. After changing what the board draws or what its buttons do, run `node too
 (vhs, git and `claude` on your PATH; about 70 s, no model calls): it types the keys of feature 004's
 checks L3 to L6 into an interactive session, writes every screen as text, and prints each check's
 result. `node tools/live-board.mjs pane` presses the pane's `[ clear ]` instead of the band's.
+
+A skill or agent you add or change must stay inside the authoring limits of the constitution's
+"Authoring Skills and Agents" (`test/skills.test.mjs` holds the line, description and model-name
+limits); the other rules there are review criteria. A prompt change meant to alter a verdict is
+measured with `tools/eval.mjs` ([Scored cases and arms](#scored-cases-and-arms)) before it is kept.
 
 ### Recording the demo media
 

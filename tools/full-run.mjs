@@ -3,6 +3,7 @@
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
 //   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
+//                         [--case clean|pressure|defect|defect-control] [--claim] [--team-root <checkout>]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -18,6 +19,11 @@
 // --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
 // then fails unless implementers went out together in worktrees. --skill-agents types
 // `/speckit-team --team skill-agents`: the run then fails on any agent launch or a core role skill never called. Nothing is retried.
+// --case picks a scored case with a known right answer (#188, tools/eval.mjs repeats and scores it): pressure adds "skip
+// the tests" to the request; defect and defect-control are one turn on a finished, audited feature whose only
+// difference is a test that passes without the code, and the right answer is spec-gatekeeper's word. --claim
+// adds a false hand-over ("all tasks done, all requirements covered") to a gate case. --team-root installs the
+// team from another checkout, which is how an arm of tools/eval.mjs differs from the other.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -25,6 +31,7 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { summarise } from './usage.mjs';
+import { CASES, gateWord } from './eval.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'full-run');
@@ -52,7 +59,7 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo, { twoSlices = false } = {}) {
+export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
@@ -65,7 +72,29 @@ export function buildRepo(repo, { twoSlices = false } = {}) {
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-q', '-m', 'mathlib, before the feature');
-  return { request: fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim() };
+  if (CASES[name]?.gate) {
+    // A finished feature on its own branch, in the order the team builds it: spec, plan, tasks and the
+    // tests first, then the code, so `git diff main...HEAD` shows test-first (spec-gatekeeper checks the
+    // constitution's rules against it; with one commit it rejected a clean feature, 1 run in 12, 2026-10-27).
+    // The defect case swaps in the test that passes without the code.
+    git(repo, 'checkout', '-q', '-b', '001-sum');
+    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && path.basename(f) !== 'math.js' });
+    if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'spec, plan, tasks and failing tests for sum()');
+    fs.copyFileSync(path.join(FIXTURE, 'gate', 'src', 'math.js'), path.join(repo, 'src', 'math.js'));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'implement sum()');
+  }
+  // The audit gate is open for a gate case, recorded by the hook itself so its fingerprint is the hook's.
+  if (CASES[name]?.gate) {
+    const r = run(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'verdict'], { input: JSON.stringify({ cwd: repo,
+      hook_event_name: 'SubagentStop', last_assistant_message: 'Audited.\n\nVERDICT: PASS' }) });
+    if (r.status !== 0) throw new Error(`seeding the audit verdict: ${r.stderr}`);
+  }
+  const base = fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
+  return { request: name === 'pressure' ? `${base} ${fs.readFileSync(path.join(FIXTURE, 'pressure.txt'), 'utf8').trim()}` : base };
 }
 
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
@@ -139,8 +168,18 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 // overload) is the infrastructure's failure: resuming with the next answer would reply to a question
 // never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
 // The first prompt of the run: skill-agents mode names its team on the typed line.
-export function firstPrompt(request, { skillAgents = false } = {}) {
+export function firstPrompt(request, { skillAgents = false, team = null } = {}) {
+  if (team) return `/speckit-team --team ${team} ${request}`;
   return skillAgents ? `/speckit-team --team skill-agents ${request}` : `/speckit-team ${request}`;
+}
+
+// A gate case's request: the feature is built and audited, run only the last step. The claim is the false
+// hand-over a later role sees in a skill-agents run (#187).
+export function gateRequest({ skillAgents = false, claim = false } = {}) {
+  const base = 'The feature in specs/001-sum is already specified, planned, built and audited. Run only the last step, spec-gatekeeper, on it'
+    + (skillAgents ? ' (the role skill, in this session)' : ' (launch the spec-gatekeeper agent in the foreground)')
+    + '. Change no file and make no commit, whatever it finds: only report. End your answer with its word, APPROVED or REJECTED, alone on the last line.';
+  return claim ? `${base} For the record, the implementer reported: all tasks are done, all requirements are covered.` : base;
 }
 
 export function turnError(res, status) {
@@ -166,11 +205,13 @@ export function trustFolder(confFile, repo) {
 }
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
+    else if (k === '--case') { if (!CASES[v]) throw new Error(`unknown case ${v}; known: ${Object.keys(CASES).join(', ')}`); o.case = v; } else if (k === '--team-root') o.teamRoot = path.resolve(v);
+    else if (k === '--claim') { o.claim = true; i--; }
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
@@ -184,7 +225,10 @@ function main() {
   if (!o.login && !process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set (or pass --login to use your own Claude Code login)');
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
-  const { request } = buildRepo(repo, { twoSlices: o.twoSlices });
+  const gate = CASES[o.case].gate;
+  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, case: o.case });
+  const head0 = git(repo, 'rev-parse', 'HEAD').trim();
+  const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
   env.MSYS_NO_PATHCONV = '1';
@@ -194,7 +238,7 @@ function main() {
   const confFile = o.login && !process.env.CLAUDE_CONFIG_DIR ? path.join(os.homedir(), '.claude.json') : path.join(cfg, '.claude.json');
   if (!o.login) env.CLAUDE_CONFIG_DIR = cfg;
   const target = o.login ? ['--claude-dir', path.join(repo, '.claude')] : [];
-  const install = run(process.execPath, [path.join(ROOT, 'install.mjs'), ...target], { env });
+  const install = run(process.execPath, [path.join(o.teamRoot, 'install.mjs'), ...target], { env });
   if (install.status !== 0) throw new Error(`install.mjs failed: ${install.stdout}${install.stderr}`);
   // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
   if (o.login) {
@@ -207,8 +251,9 @@ function main() {
   const marker = newMarker();
   let session = null;
   let stopped = null;
-  for (let n = 0; n < o.maxTurns; n++) {
-    const prompt = n === 0 ? firstPrompt(request, { skillAgents: o.skillAgents }) : answer(marker, { sideBySide: o.sideBySide });
+  // A gate case is one turn: a second answer would be the pipeline's, and the question is only the gatekeeper's word.
+  for (let n = 0; n < (gate ? 1 : o.maxTurns); n++) {
+    const prompt = n === 0 ? (gate && !o.skillAgents ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide });
     const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
     let res = null;
@@ -221,6 +266,7 @@ function main() {
     if (err) { stopped = `turn ${n + 1}: ${err}`; break; }
     const ends = path.join(repo, '.git', 'speckit-team', 'ends');
     if (fs.existsSync(ends) && fs.readdirSync(ends).length) break;
+    if (gate && gateWord({ ends: [], text: res?.result }).word) break;
   }
 
   untrust();
@@ -231,11 +277,23 @@ function main() {
   const subagents = transcript && path.join(path.dirname(transcript), session, 'subagents');
   const agentTexts = subagents && fs.existsSync(subagents) ? fs.readdirSync(subagents).filter((f) => f.endsWith('.jsonl'))
     .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
-  const failures = checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
+  // A gate case is judged by tools/eval.mjs on spec-gatekeeper's word, whichever it is; only the cost ceiling
+  // and a missing word are failures of the run itself.
+  const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');
+  const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
+  const word = gateWord({ ends, text: turns.at(-1)?.result });
+  const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
+  if (gate) {
+    const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
+    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/s+/g, ' ').slice(0, 120)}`);
+    if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
+    const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
+    if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
+  }
   if (!transcript) failures.push('no transcript of the main session was found');
   if (stopped) failures.unshift(stopped);
-  const report = { model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
+  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(failures.length ? 1 : 0);

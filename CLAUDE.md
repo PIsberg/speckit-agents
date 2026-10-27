@@ -34,14 +34,15 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   `tools/drift.mjs`: finished features' test tasks against the tests as they are now, no model.
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key);
-  `--login` runs it on your own Claude Code login instead of a key, `--side-by-side` builds two `[P]`
+  `--login` runs it on your own Claude Code login instead of a key, `--case` picks a scored case
+  (`pressure`, `defect`, `defect-control`; `tools/eval.mjs` repeats them per arm and counts right answers, #188), `--side-by-side` builds two `[P]`
   slices side by side (#114), `--two-slices` the same request one at a time.
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
 - `.claude/settings.json`: `CLAUDE_CODE_FORK_SUBAGENT=0`, so the team's agents run in the foreground
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 453 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 477 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
@@ -60,6 +61,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   After changing a hook's command, event or matcher, also run README.md's "Live check".
 
 ## Rules
+- Skill and agent authoring limits (line budgets, description length, no model name in a body, no colliding
+  descriptions) are held by `test/skills.test.mjs`; the rest are review criteria in the constitution.
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;
   install and uninstall tell their own files from the user's by it.
 - A new hook command goes in an agent's frontmatter or `SETTINGS_GATES` in `install.mjs`, and in the
