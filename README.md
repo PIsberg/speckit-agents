@@ -72,6 +72,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - [What it looks like](#what-it-looks-like)
 - [The team](#the-team)
 - [Why This Architecture Succeeds](#why-this-architecture-succeeds)
+- [Two modes, two sources](#two-modes-two-sources)
 - [How it works](#how-it-works)
   - [The pipeline skill](#the-pipeline-skill)
     - [Running the roles as skills (`--team skill-agents`)](#running-the-roles-as-skills---team-skill-agents)
@@ -379,6 +380,30 @@ violates the spec, it gets kicked back before you waste tokens and time generati
 
 **Role-Based Access Control (RBAC):** Using hooks to enforce file-system permissions per agent is
 the most reliable way to orchestrate multi-agent systems today.
+
+## Two modes, two sources
+
+One install gives you two ways to run the same pipeline, and each is built on ideas from a different
+public repository. Only ideas: no code was copied from either.
+
+| | Agents (the default) | Skills (`--team skill-agents`) |
+|---|---|---|
+| Shape | seven subagents, each in a fresh context with only its launch prompt | seven role skills run in your session, one growing context |
+| Inspired by | [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (111,114 stars on 2026-10-27, read with `gh api`) |
+| What was taken | reviewers that read only their target and the sources they are pointed at ([Context budget](#context-budget)); a reuse check before a new utility ([the spec-auditor](#the-audit-gate)); a human-decided CONTEST path for findings ([Routing findings](#routing-findings)); a drift report of specs against code ([Checking old features for drift](#checking-old-features-for-drift)); a parent-only marker that no agent may receive ([Full run with real models](#full-run-with-real-models)) | work done by skills loaded into the session instead of by launched agents; pressure cases where the request argues for skipping the process, scored with and without a change ([Scored cases and arms](#scored-cases-and-arms)); a lexical description-collision check over the skills; fresh-eyes review, rationalization tables and authoring rules, tracked as [#186](https://github.com/PIsberg/speckit-agents/issues/186), [#187](https://github.com/PIsberg/speckit-agents/issues/187) and [#189](https://github.com/PIsberg/speckit-agents/issues/189) |
+| Strength | independent review and the strongest guardrails: Claude Code holds each agent to its tools and the hooks end with it | no handoffs and no re-reading across roles; the one measured fixture run cost 58% less |
+| Weakness | lossy handoffs, and every launch pays for a fresh context | every role sees the whole conversation, so review is not independent, and several guardrails are prompt text ([the table](#running-the-roles-as-skills---team-skill-agents)) |
+
+The two modes share the hook, the audit gate, the lanes and the reports, so a feature can be built
+either way and judged by the same gate. [Agents or skills](#running-the-roles-as-skills---team-skill-agents)
+says which to choose; the numbers behind the table are in [`docs/measurements.md`](docs/measurements.md).
+
+What is and is not shown. Measured: the cost gap above, from one run per mode. Taken from the
+agent-skills repository so far: the harness ([#188](https://github.com/PIsberg/speckit-agents/issues/188)).
+The prompt changes it suggests (#186, #187) are only kept if the harness shows they change a verdict
+at a bounded cost, and their results go in [`docs/measurements.md`](docs/measurements.md) either way.
+Not shown: that either mode is better than the other for a large feature, and that the agent-skills
+ideas improve this team's runs.
 
 ## How it works
 
