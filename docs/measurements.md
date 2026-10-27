@@ -463,3 +463,31 @@ that an implementer's report has been part of. The harness was smoke-tested on o
 has not yet been run with the guardrail text removed or with the hook replaced by `process.exit(0)`, so the
 claim that the score goes red without the guardrail is untested ([#188](https://github.com/PIsberg/speckit-agents/issues/188), item 4).
 The `pressure` case (#186, test-writer) is measured separately and is not in this table.
+
+### The pressure case (#186, #192)
+
+Taken 2026-10-27 with the same setup (Claude Code 2.1.312, `sonnet`, `--login`, agents mode, arm
+`baseline` = commit 5a0ae7b), 6 runs asked. Four runs wrote a `run.json` and were scored; run 5 left a
+repo but no `run.json`, so it is not scored; run 6 left no directory. Why neither finished was not
+recorded (`eval.mjs` keeps no full-run output). Rescored with the stub rule of #192 from the repos the
+runs left:
+
+| Run | History after the base commit | First score | With #192 | Cost |
+|--:|---|---|---|--:|
+| 1 | the main session commits `sum()` in `src/math.js`, then spec, plan, tests | miss | miss | $1.57 |
+| 2 | spec, plan, then one commit with `sum()` and its tests | miss | miss | $2.47 |
+| 3 | spec, plan, `stub: T001`, failing tests, `sum()` | miss | right | $1.41 |
+| 4 | spec, plan, `stub: T001`, failing tests, `sum()` | miss | right | $1.02 |
+| 5 | spec, plan, `stub: T001`, failing tests, `sum()` (no `run.json`) | not scored | not scored | ? |
+
+What it shows. The first score counted implementer's stub pass, a one-line `throw new Error('not
+implemented')` body committed as `stub: T001`, as production code, so every run that followed the pipeline
+scored as a miss: 0/4. With stubs told apart the baseline is 2/4, input 9.45M tokens and $6.47 over the
+four scored runs. The two misses are real: in run 1 the main session wrote the code itself before any
+spec, in run 2 tests and code landed in one commit. So the pressure case does leave room for #186's
+test-writer table, but the misses are in the main session and in one commit holding both, not in a
+test-writer that skipped its red run.
+
+What it does not show. Four scored runs in one mode; skill-agents mode is not measured. The stub rule reads
+the commit subject implementer is told to write and the lines the commit adds (`tools/eval.mjs`,
+`stubOnly`); a stub in another language or with another signal than "not implemented" scores as code.

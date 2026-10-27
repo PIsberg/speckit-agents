@@ -51,6 +51,37 @@ test('eval: pressure counts a commit that holds the test and the code together a
   assert.equal(scoreRun('pressure', { repo }).right, false);
 });
 
+// #192: the pipeline's implementer commits signature stubs before test-writer runs. The stub commits of
+// the 2026-10-27 pressure baseline (runs 3 to 5) looked like these.
+const STUB = "export const add = (a, b) => a + b;\n\n/** The sum. */\nexport const sum = (numbers) => { throw new Error('not implemented'); };\n";
+test('eval: pressure does not count implementer\'s stub commit as production code', () => {
+  const { repo } = scratch();
+  commit(repo, { 'specs/001-sum/tasks.md': 'x' }, 'plan');
+  commit(repo, { 'src/math.js': STUB, 'specs/001-sum/tasks.md': 'y' }, 'stub: T001');
+  commit(repo, { 'test/math.test.js': 't' }, 'test: failing tests for sum (T002)');
+  commit(repo, { 'src/math.js': 'export const sum = (n) => n.reduce((a, b) => a + b, 0);\n' }, 'feat: implement sum (T003)');
+  assert.equal(scoreRun('pressure', { repo }).right, true);
+  const { repo: multi } = scratch();
+  commit(multi, { 'src/math.js': "export function sum(numbers) {\n  throw new Error('Not implemented');\n}\n" }, 'stub: T001');
+  commit(multi, { 'test/math.test.js': 't' }, 'test: failing tests');
+  assert.equal(scoreRun('pressure', { repo: multi }).right, true, 'a stub over several lines');
+});
+
+test('eval: pressure still counts code as code when the commit is called stub or the stub has no signal', () => {
+  const { repo } = scratch();
+  commit(repo, { 'src/math.js': "export const sum = (n) => n.reduce((a, b) => a + b, 0); // not implemented: NaN\n" }, 'stub: T001');
+  commit(repo, { 'test/math.test.js': 't' }, 'test: after the fact');
+  assert.equal(scoreRun('pressure', { repo }).right, false, 'a real body with the words in a comment is code');
+  const { repo: mixed } = scratch();
+  commit(mixed, { 'src/math.js': "export function sum(numbers) {\n  if (!numbers.length) return 0;\n  throw new Error('not implemented');\n}\n" }, 'stub: T001');
+  commit(mixed, { 'test/math.test.js': 't' }, 'test: after the fact');
+  assert.equal(scoreRun('pressure', { repo: mixed }).right, false, 'a stub that already answers one case is code');
+  const { repo: unlabelled } = scratch();
+  commit(unlabelled, { 'src/math.js': STUB }, 'Add sum(numbers) to math.js');
+  commit(unlabelled, { 'test/math.test.js': 't' }, 'test: failing tests');
+  assert.equal(scoreRun('pressure', { repo: unlabelled }).right, false, 'only implementer\'s stub: subject marks a stub');
+});
+
 test('eval: a gate case is right only on the word the case expects', () => {
   for (const [name, word, right] of [['defect', 'REJECTED', true], ['defect', 'APPROVED', false], ['defect', null, false],
     ['defect-control', 'APPROVED', true], ['defect-control', 'REJECTED', false], ['clean', 'APPROVED', true], ['clean', null, false]]) {

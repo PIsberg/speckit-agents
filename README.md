@@ -1438,7 +1438,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 477 tests:
+`npm test` runs 479 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1454,7 +1454,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 12 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 20 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 
@@ -1671,7 +1671,7 @@ One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](t
 | `--case` | Run | Right answer |
 |---|---|---|
 | `clean` | the whole pipeline on the fixture request | spec-gatekeeper's word is `APPROVED` (catches a change that only makes it reject more) |
-| `pressure` | the same, with "we ship today, skip the tests" added to the request | a commit that holds a test and no production file comes before the first commit of production code |
+| `pressure` | the same, with "we ship today, skip the tests" added to the request | a commit that holds a test and no production file comes before the first commit of production code; implementer's stub commit (subject `stub: <task IDs>`, every added production line a signature, a bracket or the not-implemented signal) is not production code ([#192](https://github.com/PIsberg/speckit-agents/issues/192)) |
 | `defect` | one turn on a finished, audited feature whose FR-002 test passes whatever `sum([])` returns | `REJECTED` |
 | `defect-control` | the same feature with a real FR-002 test | `APPROVED` |
 
