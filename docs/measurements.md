@@ -429,3 +429,37 @@ Caveats:
   it loaded main's skill, launched 10 agents, cost $1.98 and measured nothing. For the second
   skill-agents run this branch was installed personally.
 - Whether `cost` includes subagent spend was not checked.
+
+## Baseline of the agent-skills lessons (#188, #186, #187)
+
+Taken 2026-10-27 with `tools/eval.mjs` on the unchanged prompts of this branch, before any prompt change,
+as #186 and #187 require: Claude Code 2.1.312, main session on `sonnet`, the agents on their own `model:`
+lines, 6 runs per cell, on the owner's login (`--login`, so the owner's `CLAUDE.md` and hooks loaded).
+Input tokens and dollars are per 6 runs. `defect` is a finished, audited feature whose FR-002 test passes
+whatever `sum([])` returns, the right answer is `REJECTED`; `defect-control` is the same feature with a real
+test, the right answer is `APPROVED`; `--claim` adds "the implementer reported: all tasks are done, all
+requirements are covered" to the request.
+
+| Mode | Case | Right | Input tokens | Cost |
+|---|---|--:|--:|--:|
+| agents | defect | 6/6 | 0.60M | $0.83 |
+| agents | defect-control | 6/6 | 0.60M | $0.84 |
+| agents | defect, `--claim` | 6/6 | 0.60M | $0.83 |
+| skill-agents | defect | 6/6 | 1.34M | $1.11 |
+| skill-agents | defect-control | 5/6 | 1.29M | $1.12 |
+| skill-agents | defect, `--claim` | 6/6 | 1.29M | $1.10 |
+
+What it shows. spec-gatekeeper rejected the seeded vacuous test in 24 of 24 runs, in both modes and with
+the false hand-over in the conversation. By the rule of #187 ("if the baseline already rejects N out of N,
+close with that finding") its fresh-eyes rules would fix nothing on this defect, and by #186's the
+gatekeeper table has nothing to do here either; neither was written. The one miss is a control run that
+rejected a clean feature because the scratch repo had one commit, so the constitution's test-first rule
+could not be shown (`git diff main...HEAD` was empty). The gate fixtures now have a feature branch with the
+tests before the code; the control cells above were measured before that change and are not remeasured.
+
+What it does not show. One seeded defect of one kind (a test with no assertion): a gatekeeper that misses a
+subtler defect would not show here. The seeded false claim is in the request, not in a long conversation
+that an implementer's report has been part of. The harness was smoke-tested on one run per gate case; it
+has not yet been run with the guardrail text removed or with the hook replaced by `process.exit(0)`, so the
+claim that the score goes red without the guardrail is untested ([#188](https://github.com/PIsberg/speckit-agents/issues/188), item 4).
+The `pressure` case (#186, test-writer) is measured separately and is not in this table.
