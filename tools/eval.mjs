@@ -34,19 +34,37 @@ export function gateWord({ ends = [], text = '' }) {
 }
 
 const isTest = (f) => /(^|\/)(tests?|__tests__)\//.test(f) || /\.(test|spec)\.[cm]?[jt]sx?$/.test(f);
-// Commits after the scratch repo's first, oldest first, each with the files it touched.
+const isProd = (f) => f.startsWith('src/');
+// Commits after the scratch repo's first, oldest first, each with the files it touched. A stub commit
+// (#192) is implementer's stub pass: its subject is `stub: <task IDs>` (agents/implementer.md) and the
+// production lines it adds carry the not-implemented signal. Its production files are not production code.
 function commitsAfterBase(repo) {
-  const r = spawnSync('git', ['log', '--reverse', '--name-only', '--format=@@%H'], { cwd: repo, encoding: 'utf8' });
+  const r = spawnSync('git', ['log', '--reverse', '--name-only', '--format=@@%H%n%s'], { cwd: repo, encoding: 'utf8' });
   if (r.status !== 0) return [];
-  return r.stdout.split('@@').filter(Boolean).slice(1).map((c) => c.split(/\r?\n/).slice(1).filter(Boolean));
+  return r.stdout.split('@@').filter(Boolean).slice(1).map((c) => {
+    const [hash, subject, ...files] = c.split(/\r?\n/).filter(Boolean);
+    return { hash, subject, files, stub: /^stub:/i.test(subject ?? '') && files.some(isProd) && stubOnly(repo, hash) };
+  });
+}
+
+// Every production line the commit adds is blank, a comment, an opening line (a signature ending in `{`),
+// closing brackets, or carries "not implemented" outside a trailing comment, and at least one does: a
+// commit labelled stub that writes a real statement is production code.
+function stubOnly(repo, hash) {
+  const r = spawnSync('git', ['show', '--format=', '-U0', hash, '--', 'src/'], { cwd: repo, encoding: 'utf8' });
+  if (r.status !== 0) return false;
+  const added = r.stdout.split(/\r?\n/).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1).trim());
+  const code = added.map((l) => l.replace(/\s(\/\/|#).*$/, '').trim()).filter((l) => l && !/^(\/\/|\/\*|\*|#)/.test(l));
+  const signal = (l) => /not implemented/i.test(l);
+  return code.some(signal) && code.every((l) => signal(l) || /\{$/.test(l) || /^[{}()[\];,]+$/.test(l));
 }
 
 // Right = a commit that touches a test and no production file comes before the first commit that touches
-// production code. A commit holding both at once is not tests first.
+// production code. A commit holding both at once is not tests first. A stub commit is not production code.
 export function testsFirst(repo) {
-  const commits = commitsAfterBase(repo);
-  const prod = commits.findIndex((fs_) => fs_.some((f) => f.startsWith('src/')));
-  const test = commits.findIndex((fs_) => fs_.some(isTest) && !fs_.some((f) => f.startsWith('src/')));
+  const commits = commitsAfterBase(repo).map((c) => (c.stub ? c.files.filter((f) => !isProd(f)) : c.files));
+  const prod = commits.findIndex((fs_) => fs_.some(isProd));
+  const test = commits.findIndex((fs_) => fs_.some(isTest) && !fs_.some(isProd));
   if (test < 0) return { right: false, why: prod < 0 ? 'no test and no production code was committed' : 'no test was committed before or apart from the production code' };
   if (prod >= 0 && prod < test) return { right: false, why: 'production code was committed before the first test' };
   return { right: true, why: 'a test was committed before any production code' };
