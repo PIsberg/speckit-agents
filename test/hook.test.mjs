@@ -2180,6 +2180,30 @@ test('#180: a transcript unreadable at the role start reads no earlier turn as t
   assert.equal(verdictRec(b.dir)?.verdict, 'PASS', 'the Stop\'s last message is the role\'s own');
 });
 
+// #178: a half-written or odd row in the transcript is skipped, never a crash, and the rows around it count.
+test('#178: malformed transcript rows are skipped and the role\'s verdict around them is still recorded', () => {
+  const odd = [
+    '{"type":"assistant","message":{"role":"assist',
+    '{"type":"assistant"}',
+    'null',
+    '7',
+    JSON.stringify({ type: 'assistant', message: null }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: 5 } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: { type: 'text', text: 'VERDICT: FAIL' } } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [null, { type: 'text', text: 'VERDICT: FAIL' }] } }),
+    JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 9 }] } }),
+  ];
+  for (const where of ['before', 'after']) {
+    const { dir, t } = auditorRole();
+    if (where === 'after') say(t, 'No findings.\nVERDICT: PASS');
+    fs.appendFileSync(t, odd.join('\n') + '\n');
+    if (where === 'before') say(t, 'No findings.\nVERDICT: PASS');
+    const out = stopRole(dir);
+    assert.doesNotMatch(msg(out) ?? '', /internal error|no decision made/, where);
+    assert.equal(verdictRec(dir)?.verdict, 'PASS', `odd rows ${where} the verdict`);
+  }
+});
+
 test('009 T016 contract 6 step 2: no VERDICT line records nothing and says so, naming the role skill', () => {
   const { dir, t } = auditorRole();
   say(t, 'I looked at everything and it seems fine.');
