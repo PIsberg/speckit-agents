@@ -125,8 +125,9 @@ applies. No role record, or a subagent: no decision. An ended record (section 8)
      starting with the role's VERDICT line. Both messages name the Skill `speckit-role-spec-auditor`
      as step 4 of section 4 does, never `@agent-spec-auditor`. A denied call leaves the role live
      (section 4 step 5 does not run), so the call made again closes the same role.
-   - spec-gatekeeper: the last of those texts whose last line, normalised as the `ends` mode does it, is
-     `APPROVED` or `REJECTED`, recorded to `ends/<feature>.json`.
+   - spec-gatekeeper: the last line of those texts that, normalised as the `ends` mode does it, is
+     `APPROVED` or `REJECTED`, recorded to `ends/<feature>.json`. Not the very last line: the report
+     and the hand-over can share one response, and text after the word would hide it (#185).
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
