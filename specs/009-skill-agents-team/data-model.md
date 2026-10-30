@@ -26,7 +26,7 @@ The role acting in the main session of a skill-agents request. At most one per s
 | `sha` | string | `git rev-parse HEAD` when the role started; hex, 40 to 64 characters |
 | `dirty` | string[] | `changedSince('HEAD')` when the role started; excluded from its lane check |
 | `transcript` | string or null | `transcript_path` of the Skill call |
-| `offset` | number | that file's size in bytes then; the role's text starts there |
+| `offset` | number or null | that file's size in bytes then; the role's text starts there. Null when the file could not be read then: the start is unknown, never 0, which would read earlier turns as the role's (#180) |
 | `prompt_id` | string or null, new (plan D11) | `prompt_id` of the Skill call's hook input when a non-empty string |
 | `feature` | string or null | `feature()` then |
 | `fingerprint` | string or null | `fingerprint(feature)` then, only for spec-auditor (the #77 rule) |

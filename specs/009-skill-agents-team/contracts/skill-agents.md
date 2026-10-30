@@ -132,7 +132,9 @@ applies. No role record, or a subagent: no decision. An ended record (section 8)
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
-says so only when that holds no verdict or word.
+says so only when that holds no verdict or word. So does a transcript that could not be read when the role
+started (a null `offset`), even once it can: earlier turns' texts cannot be told from the role's, and the
+message says the transcript was unreadable at the start (#180).
 
 ## 7. The start message
 

@@ -542,9 +542,15 @@ function roleTexts(file, offset) {
 // `last` is one more text after the transcript's: the first `args` line of the next Skill call, or the Stop's last message.
 function recordReport(rec, last = null, where = 'stop') {
   if (rec.role !== 'spec-auditor' && rec.role !== 'spec-gatekeeper') return;
-  const read = roleTexts(rec.transcript, rec.offset);
+  // A null offset: the transcript was unreadable when the role started, so its texts cannot be told from
+  // earlier turns' and only `last` counts.
+  const startUnknown = rec.offset === null;
+  const read = startUnknown ? null : roleTexts(rec.transcript, rec.offset);
   const texts = [...(read ?? []), ...(last ? [last] : [])];
-  const unread = () => addNote(`speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
+  const unread = () => addNote(startUnknown
+    ? `speckit-team: the ${rec.role} role's report was not recorded: the transcript could not be read when the ${rec.role} role started, `
+      + `so its report cannot be told from earlier turns. Call the Skill speckit-role-${rec.role} again.`
+    : `speckit-team: the ${rec.role} role's report was not recorded: its transcript could not be read.`);
   const feat = feature() ?? rec.feature;
   const at = new Date().toISOString();
   if (rec.role === 'spec-auditor') {
@@ -810,8 +816,10 @@ if (mode === 'gate') {
       const sha = git(root, 'rev-parse', 'HEAD');
       if (sha) {
         const transcript = str(input.transcript_path);
-        let offset = 0;
-        try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: offset 0 */ }
+        // #180: an unreadable transcript leaves the role's start unknown (null), never 0, which would read
+        // earlier turns as the role's report.
+        let offset = null;
+        try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: start unknown */ }
         const feat = feature();
         writeJson(roleFile(id), {
           session_id: id, role: roleSkill, sha, dirty: changedSince('HEAD'), transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),

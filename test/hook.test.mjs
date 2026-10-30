@@ -1705,13 +1705,13 @@ test('009 T007 FR-008 contract 4 step 5 and data-model: product-owner is let thr
   assert.equal(rec.feature, FEAT);
   assert.equal(rec.fingerprint, null, 'only spec-auditor records a fingerprint');
   assert.ok(!Number.isNaN(Date.parse(rec.at)));
-  // spec-auditor records the fingerprint of the files it starts from (#77); no transcript is offset 0.
+  // spec-auditor records the fingerprint of the files it starts from (#77); no transcript leaves its start unknown, offset null (#180).
   const aud = skillCall(dir, 'speckit-role-spec-auditor');
   assert.ok(!decided(aud), JSON.stringify(aud));
   const r2 = roleRec(dir);
   assert.equal(r2.role, 'spec-auditor');
   assert.equal(typeof r2.fingerprint, 'string');
-  assert.equal(r2.offset, 0);
+  assert.equal(r2.offset, null);
   assert.equal(r2.transcript ?? null, null);
   // A file dirty when the role starts is recorded.
   fs.writeFileSync(path.join(dir, 'src', 'main', 'Dirty.java'), 'x');
@@ -2125,6 +2125,28 @@ test('009 T016 FR-008 contract 6 step 2: a FAIL is recorded and test-writer is d
   assert.equal(v?.verdict, 'FAIL');
   assert.equal(v.role, 'spec-auditor');
   assert.equal(v.agent_id, null);
+});
+
+// #180: with no readable transcript at the role's start, where its texts begin is unknown, so an earlier
+// turn's VERDICT must not be read as the role's. The Stop's last message is the role's own and still counts.
+test('#180: a transcript unreadable at the role start reads no earlier turn as the report, and says why', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  const t = path.join(dir, 'late-transcript.jsonl');
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t })));
+  fs.writeFileSync(t, [userRow('typed'), assistantRow('an earlier turn\nVERDICT: PASS'), assistantRow('Still reading.')]
+    .map((r) => JSON.stringify(r)).join('\n') + '\n');
+  const out = stopRole(dir);
+  assert.equal(verdictRec(dir), null, 'an earlier turn\'s PASS is not the role\'s');
+  assert.match(msg(out), /could not be read when the spec-auditor role started/);
+  assert.match(msg(out), /speckit-role-spec-auditor/);
+  const b = repo();
+  skillAgentsTeam(b.dir);
+  const t2 = path.join(b.dir, 'late-transcript.jsonl');
+  skillCall(b.dir, 'speckit-role-spec-auditor', { transcript_path: t2 });
+  fs.writeFileSync(t2, JSON.stringify(assistantRow('an earlier turn\nVERDICT: FAIL')) + '\n');
+  stopRole(b.dir, { last_assistant_message: 'No findings.\nVERDICT: PASS' });
+  assert.equal(verdictRec(b.dir)?.verdict, 'PASS', 'the Stop\'s last message is the role\'s own');
 });
 
 test('009 T016 contract 6 step 2: no VERDICT line records nothing and says so, naming the role skill', () => {
