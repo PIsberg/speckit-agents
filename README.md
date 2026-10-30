@@ -1438,13 +1438,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 479 tests:
+`npm test` runs 491 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 146 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 157 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 112 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 113 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -1456,7 +1456,8 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 20 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, a turn that ends on an API error, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 22 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
@@ -2108,11 +2109,12 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`tools/drift.mjs`](tools/drift.mjs) | finished features' test tasks against the tests as they are now, with no model ([Checking old features for drift](#checking-old-features-for-drift)) |
 | [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
 | [`tools/eval.mjs`](tools/eval.mjs) | `full-run.mjs` repeated per arm and case, each run scored against a known right answer, with counts out of N, tokens and cost ([Scored cases](#scored-cases-and-arms)) |
+| [`tools/changelog.mjs`](tools/changelog.mjs) | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) from the git history, every non-merge commit by day; `--check` exits 1 when the file is behind ([Making a change](#making-a-change)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |
 | [`docs/measurements.md`](docs/measurements.md), [`docs/live-results.md`](docs/live-results.md) | the record behind this README: what runs cost and what each finding changed; what was seen in a real session, by date |
 | [`docs/spec-kit-and-speckit-agents.html`](docs/spec-kit-and-speckit-agents.html) | the presentation on Spec Kit and this team, one self-contained HTML file ([Publications](#publications)) |
-| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 008 |
+| [`.specify/`](.specify/), [`specs/`](specs/) | this repo's own Spec Kit setup: its [constitution](.specify/memory/constitution.md) and features 001 to 009 |
 | [`.claude/settings.json`](.claude/settings.json) | turns fork subagents off for sessions in this repo, so the team's agents run in the foreground ([Foreground launches](#foreground-launches)) |
 
 ### Making a change
@@ -2128,6 +2130,11 @@ A skill or agent you add or change must stay inside the authoring limits of the 
 "Authoring Skills and Agents" (`test/skills.test.mjs` holds the line, description and model-name
 limits); the other rules there are review criteria. A prompt change meant to alter a verdict is
 measured with `tools/eval.mjs` ([Scored cases and arms](#scored-cases-and-arms)) before it is kept.
+
+Keep [`docs/CHANGELOG.md`](docs/CHANGELOG.md) current: as the last commit of a pull request (of the
+last one, for a chain of stacked pull requests), run `node tools/changelog.mjs` and commit the file it
+writes. It lists every non-merge commit up to
+the commit before, since a commit cannot name its own hash; never edit it by hand.
 
 ### Recording the demo media
 

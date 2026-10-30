@@ -10,6 +10,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   troubleshooting, known limits, developing.
 - `docs/measurements.md`: what runs cost, and which prompt rule each finding led to.
 - `docs/live-results.md`: what was seen in a real session, by date.
+- `docs/CHANGELOG.md`: every commit by day, written by `node tools/changelog.mjs`; regenerate it as a
+  PR's last commit (a chain's last PR), never edit it by hand.
 - `docs/architecture.md`: pipeline overview, security-reviewer dual-gate lifecycle, and diagram prompt.
 - `.specify/memory/constitution.md`: the rules every change is held to (tests first, guardrails never
   fail silently, docs in the same change).
@@ -32,6 +34,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   before and after. `tools/live-board.mjs`: the board's interactive checks, vhs driving a real session
   against a fake API at $0; run it after changing what the board draws or its buttons do.
   `tools/drift.mjs`: finished features' test tasks against the tests as they are now, no model.
+  `tools/changelog.mjs`: `docs/CHANGELOG.md` from `git log --no-merges`; `--check` says if it is behind.
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key);
   `--login` runs it on your own Claude Code login instead of a key, `--case` picks a scored case
@@ -42,7 +45,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 479 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 491 tests (the files and what each runs:
   README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
   the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
