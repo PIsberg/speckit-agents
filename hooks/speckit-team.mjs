@@ -567,7 +567,8 @@ function recordReport(rec, last = null, where = 'stop') {
     addNote(`spec-auditor role recorded VERDICT: ${verdict} for ${feat}`);
     return;
   }
-  const word = [...texts].reverse().map(lastWord).find((w) => w === 'APPROVED' || w === 'REJECTED');
+  // #185: the report and the hand-over can share one response, so the last word line counts, not the last line.
+  const word = [...texts].reverse().map(lastGatekeeperWord).find(Boolean);
   if (!word) {
     if (read === null) return unread();
     addNote('speckit-team: the spec-gatekeeper role ended without a final APPROVED or REJECTED line, so no word was recorded.');
@@ -634,6 +635,11 @@ function verdictIn(text) {
 function lastWord(text) {
   const last = text.trim().split('\n').pop() ?? '';
   return last.replace(/^[\s*>#`]+|[\s*`.]+$/g, '').toUpperCase();
+}
+// The last line of a text that is only APPROVED or REJECTED once markdown is stripped, or null: a word
+// inside a sentence is not one.
+function lastGatekeeperWord(text) {
+  return text.split('\n').map(lastWord).reverse().find((w) => w === 'APPROVED' || w === 'REJECTED') ?? null;
 }
 
 function lastAssistantText() {
