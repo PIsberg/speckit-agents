@@ -1705,13 +1705,13 @@ test('009 T007 FR-008 contract 4 step 5 and data-model: product-owner is let thr
   assert.equal(rec.feature, FEAT);
   assert.equal(rec.fingerprint, null, 'only spec-auditor records a fingerprint');
   assert.ok(!Number.isNaN(Date.parse(rec.at)));
-  // spec-auditor records the fingerprint of the files it starts from (#77); no transcript is offset 0.
+  // spec-auditor records the fingerprint of the files it starts from (#77); no transcript leaves its start unknown, offset null (#180).
   const aud = skillCall(dir, 'speckit-role-spec-auditor');
   assert.ok(!decided(aud), JSON.stringify(aud));
   const r2 = roleRec(dir);
   assert.equal(r2.role, 'spec-auditor');
   assert.equal(typeof r2.fingerprint, 'string');
-  assert.equal(r2.offset, 0);
+  assert.equal(r2.offset, null);
   assert.equal(r2.transcript ?? null, null);
   // A file dirty when the role starts is recorded.
   fs.writeFileSync(path.join(dir, 'src', 'main', 'Dirty.java'), 'x');
