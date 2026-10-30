@@ -13,7 +13,8 @@
 // <dir>/run.json. Exit 0 only when every check passed. The agents run on their own `model:` lines;
 // --model is the main session's. ANTHROPIC_API_KEY must be set, unless --login: then the run uses your
 // own Claude Code login and config, the team goes into <dir>/repo/.claude (project agents override the
-// ones you installed) and the repo is trusted in your .claude.json for the run only. Your own
+// ones you installed, but a personal skill overrides a project one, so the run refuses to start while a
+// personal team skill differs from the run's copy, #175) and the repo is trusted in your .claude.json for the run only. Your own
 // CLAUDE.md, settings and hooks then load too, as in your sessions. --two-slices asks for two functions
 // in two files and keeps the recommended one at a time: the run then fails if agents went out together.
 // --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
@@ -161,12 +162,6 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   return out;
 }
 
-// Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
-// (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
-// Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
-// Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
-// overload) is the infrastructure's failure: resuming with the next answer would reply to a question
-// never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
 // The first prompt of the run: skill-agents mode names its team on the typed line.
 export function firstPrompt(request, { skillAgents = false, team = null } = {}) {
   if (team) return `/speckit-team --team ${team} ${request}`;
@@ -182,6 +177,9 @@ export function gateRequest({ skillAgents = false, claim = false } = {}) {
   return claim ? `${base} For the record, the implementer reported: all tasks are done, all requirements are covered.` : base;
 }
 
+// Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
+// overload) is the infrastructure's failure: resuming with the next answer would reply to a question
+// never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
 export function turnError(res, status) {
   if (!res) return `claude printed no result (exit ${status})`;
   const text = String(res.result ?? '');
@@ -189,6 +187,25 @@ export function turnError(res, status) {
   return null;
 }
 
+// The team skills in a personal skills folder that would shadow the run's project copy: Claude Code
+// takes a personal skill over a project one of the same name (seen 2026-10-25 on 2.1.310, #175), so the
+// run would test the personal version. Texts are compared with the hook path, which differs by install
+// folder, taken out; a personal copy equal to the checkout's is harmless.
+export function shadowingSkills(personalDir, projectDir) {
+  const text = (dir, name) => {
+    try {
+      return fs.readFileSync(path.join(dir, 'skills', name, 'SKILL.md'), 'utf8')
+        .replaceAll(path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/'), '{{HOOK}}');
+    } catch { return null; }
+  };
+  let names = [];
+  try { names = fs.readdirSync(path.join(projectDir, 'skills')).filter((n) => /^speckit-(team|patch|triage|role-[a-z-]+)$/.test(n)); } catch { /* none */ }
+  return names.filter((n) => { const own = text(personalDir, n); return own !== null && own !== text(projectDir, n); }).sort();
+}
+
+// Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
+// (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
+// Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
 export function trustFolder(confFile, repo) {
   const key = repo.split(path.sep).join('/');
   const conf = readJson(confFile) ?? {};
@@ -240,6 +257,11 @@ function main() {
   const target = o.login ? ['--claude-dir', path.join(repo, '.claude')] : [];
   const install = run(process.execPath, [path.join(o.teamRoot, 'install.mjs'), ...target], { env });
   if (install.status !== 0) throw new Error(`install.mjs failed: ${install.stdout}${install.stderr}`);
+  const shadow = o.login ? shadowingSkills(cfg, path.join(repo, '.claude')) : [];
+  if (shadow.length) {
+    throw new Error(`--login: your personal ${shadow.join(', ')} in ${path.join(cfg, 'skills')} differ from the run's copy and would be `
+      + `used instead of it (#175). Reinstall the team from ${o.teamRoot} (node install.mjs) or move them aside, then run again.`);
+  }
   // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
   if (o.login) {
     fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), ['agents/', 'hooks/', 'settings.json', 'settings.json.*',

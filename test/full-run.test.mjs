@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -312,4 +312,22 @@ test('full run: a team-root arm installs that checkout\'s agents, so two arms ca
   assert.equal(r.status, 0, r.stderr);
   assert.match(fs.readFileSync(path.join(cfg, 'agents', 'spec-gatekeeper.md'), 'utf8'), /ARM-MARKER-LINE/);
   assert.match(fs.readFileSync(path.join(cfg, 'skills', 'speckit-role-spec-gatekeeper', 'SKILL.md'), 'utf8'), /ARM-MARKER-LINE/);
+});
+
+// #175: under --login a personal team skill wins over the project copy the run installs, so the run would
+// test the personal version. One that matches this checkout's (hook path aside) is harmless.
+test('full run: --login names a personal team skill that differs from the checkout\'s, and only that (#175)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skshadow-'));
+  const [personal, project] = [path.join(tmp, 'home', '.claude'), path.join(tmp, 'repo', '.claude')];
+  for (const dir of [personal, project]) {
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+  }
+  assert.deepEqual(shadowingSkills(personal, project), [], 'the same version installed in two places, hook paths differing');
+  fs.appendFileSync(path.join(personal, 'skills', 'speckit-team', 'SKILL.md'), '\nan older line\n');
+  fs.rmSync(path.join(personal, 'skills', 'speckit-patch'), { recursive: true });
+  fs.mkdirSync(path.join(personal, 'skills', 'my-own'));
+  fs.writeFileSync(path.join(personal, 'skills', 'my-own', 'SKILL.md'), 'not the team\'s');
+  assert.deepEqual(shadowingSkills(personal, project), ['speckit-team']);
+  assert.deepEqual(shadowingSkills(path.join(tmp, 'nowhere'), project), [], 'no personal skills folder');
 });

@@ -1640,7 +1640,11 @@ the team is installed into the scratch repo's `.claude/`, where it overrides the
 and stays out of the feature's commits (`.git/info/exclude`), and the repo is trusted in your
 `.claude.json` for the run only, the one entry removed again after the last turn. Your own
 `CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
-the settings gates of a team you installed fire beside the scratch repo's.
+the settings gates of a team you installed fire beside the scratch repo's. Skills are the exception
+to the override: a personal skill wins over a project one of the same name, so the run refuses to
+start, at no cost, while a team skill in your own `skills/` differs from the run's copy (hook paths
+aside), and names them. Reinstall the team from the checkout under test, or move those skills aside
+([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
 
 With `--side-by-side` the request is two functions in two files (`sum()` in `src/math.js`,
 `capitalize()` in a new `src/text.js`, from `request-side-by-side.txt`), and the answer takes every
