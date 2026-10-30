@@ -1956,6 +1956,18 @@ const stopRole = (dir, extra = {}) => run(dir, ['lane', 'role'], { hook_event_na
 const putFile = (dir, rel, text = 'x\n') => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
 const LANE_NEEDS_RUN = /lane check could not run/;
 
+// #177: the session-wide Stop hook also fires as a subagent's SubagentStop; that must not close the main
+// session's acting role, whose lane and report belong to the main session's own Stop.
+test('#177: lane role at a subagent\'s Stop leaves the main session\'s role alone', () => {
+  const { dir } = repo();
+  putRole(dir, 'product-owner');
+  putFile(dir, 'src/outside.js');
+  const out = run(dir, ['lane', 'role'], { hook_event_name: 'SubagentStop', session_id: 's1', agent_id: 'sub1', agent_type: 'Explore' });
+  assert.equal(out, null, JSON.stringify(out));
+  assert.ok(hasRole(dir), 'the role is still acting');
+  assert.equal(stopRole(dir)?.decision, 'block', 'the main session\'s Stop still checks its lane');
+});
+
 test('009 T013 FR-008 US3-6 contract 6 step 1: a file outside the lane denies the next role skill and blocks Stop', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
