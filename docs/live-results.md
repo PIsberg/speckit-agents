@@ -95,6 +95,22 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-30</b>: Claude Code 2.1.314, Windows 11, one full run on Spec Kit 1.2.5, on the owner's subscription</summary>
+
+Setup: `node tools/full-run.mjs --login` from commit `c468c7c`, whose vendored Spec Kit files are a
+clean `specify init --here --integration claude --script ps --extension git` from 1.2.5 (the
+scratch repo's `init-options.json` read `1.2.5`). Sonnet main session, agents on their own
+`model:` lines.
+
+- one full `/speckit-team` run of the `sum()` feature, all six agents: spec, plan, an audit, a
+  revised plan, a second audit, stub, failing tests, code, spec-gatekeeper APPROVED, recorded by
+  the hook. No failures in `run.json`. With the git extension the feature went on branch
+  `001-array-sum`; `main` kept only the initial commit, and `.specify/feature.json` named
+  `specs/001-array-sum`. $1.68 as reported, 17 model turns over 2 turns.
+
+</details>
+
+<details>
 <summary><b>2026-10-17</b>: Claude Code 2.1.302, Windows 11, a real main session answered Build only (006 L4, #100), Haiku main session</summary>
 
 Setup: the branch's team installed into a throwaway config dir, a fresh Spec Kit repo with the demo
