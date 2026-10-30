@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, runFailures, runTurns, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -330,4 +330,39 @@ test('full run: --login names a personal team skill that differs from the checko
   fs.writeFileSync(path.join(personal, 'skills', 'my-own', 'SKILL.md'), 'not the team\'s');
   assert.deepEqual(shadowingSkills(personal, project), ['speckit-team']);
   assert.deepEqual(shadowingSkills(path.join(tmp, 'nowhere'), project), [], 'no personal skills folder');
+});
+
+// #173: main()'s loop, with claude replaced by canned --output-format json results, one per turn.
+test('full run: the turn loop stops on an API error, on no session, on a recorded end and at --max-turns (#173)', () => {
+  const canned = (results) => {
+    const calls = [];
+    return { calls, invoke: (prompt, session) => { calls.push({ prompt, session }); const r = results[calls.length - 1]; return { status: r ? 0 : 1, stdout: r ? JSON.stringify(r) : '', stderr: '' }; } };
+  };
+  const ok = (extra = {}) => ({ session_id: 'sess', total_cost_usd: 0.1, num_turns: 3, result: 'Spec ready. Approve?', ...extra });
+  const promptFor = (n) => `prompt ${n + 1}`;
+  const quiet = { log: () => {} };
+
+  const err = canned([{ is_error: true, result: 'API Error: Connection refused', session_id: 'sess' }, ok()]);
+  const a = runTurns({ maxTurns: 8, promptFor, invoke: err.invoke, ended: () => false, ...quiet });
+  assert.equal(err.calls.length, 1, 'no answer is sent after an API error');
+  assert.equal(a.turns.length, 1);
+  assert.match(a.stopped, /^turn 1: infrastructure, not the team: API Error: Connection refused/);
+
+  const none = canned([ok({ session_id: undefined })]);
+  assert.match(runTurns({ maxTurns: 8, promptFor, invoke: none.invoke, ended: () => false, ...quiet }).stopped, /^turn 1: claude returned no session to resume/);
+  assert.match(runTurns({ maxTurns: 8, promptFor, invoke: canned([]).invoke, ended: () => false, ...quiet }).stopped, /^turn 1: claude printed no result \(exit 1\)/);
+
+  const ends = canned([ok(), ok(), ok()]);
+  const b = runTurns({ maxTurns: 8, promptFor, invoke: ends.invoke, ended: (res, n) => n === 1, ...quiet });
+  assert.equal(b.stopped, null);
+  assert.deepEqual(ends.calls, [{ prompt: 'prompt 1', session: null }, { prompt: 'prompt 2', session: 'sess' }], 'the second turn resumes the first one\'s session');
+
+  const all = canned([ok(), ok(), ok(), ok()]);
+  const c = runTurns({ maxTurns: 3, promptFor, invoke: all.invoke, ended: () => false, ...quiet });
+  assert.equal(c.turns.length, 3, '--max-turns');
+  assert.equal(c.session, 'sess');
+  assert.deepEqual(c.turns.map((t) => t.cost), [0.1, 0.1, 0.1]);
+
+  assert.deepEqual(runFailures(['a check'], 'turn 2: infrastructure'), ['turn 2: infrastructure', 'a check'], 'the stop comes first');
+  assert.deepEqual(runFailures(['a check'], null), ['a check']);
 });
