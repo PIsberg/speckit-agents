@@ -1946,6 +1946,11 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   the session's `CLAUDE.md`, and sees the whole conversation; the hook enforces lanes, the audit
   gate at each Skill call, and the verdict records, not the retry limit, the report's last line or
   tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
+- **Role skills are not denied outside a Spec Kit repo.** Inside one, the hook denies a
+  `speckit-role-<role>` call outside a typed `/speckit-team --team skill-agents` request. In a repo
+  without `.specify/` every hook mode exits with no output, as the constitution requires of the team
+  there, so the model can call a role skill, and its `scope role` and `lane role` hooks stay
+  registered for the session and decide nothing. Nothing is written and nothing is blocked (#179).
 - **A subset team's retry count is the active feature's.** A run without a spec still counts
   implementer's `RESULT: RED` reports against the feature `.specify/feature.json` names: 3 in a row
   block implementer there until a GREEN, a new audit, or you delete the record, and
