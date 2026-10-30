@@ -6,7 +6,7 @@
 
 [![test](https://github.com/PIsberg/speckit-agents/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/PIsberg/speckit-agents/actions/workflows/test.yml)
 [![Claude Code 2.1.293 in CI](https://img.shields.io/badge/Claude_Code-2.1.293_in_CI-d97757)](https://code.claude.com/docs/en/sub-agents)
-[![Spec Kit 0.8.11 and 1.1.2](https://img.shields.io/badge/Spec_Kit-0.8.11_%7C_1.1.2-24292f?logo=github)](https://github.com/github/spec-kit)
+[![Spec Kit 0.8.11, 1.1.2 and 1.2.5](https://img.shields.io/badge/Spec_Kit-0.8.11_%7C_1.1.2_%7C_1.2.5-24292f?logo=github)](https://github.com/github/spec-kit)
 [![Node 18 or newer](https://img.shields.io/badge/Node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Linux, macOS and Windows](https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-0969da)](.github/workflows/test.yml)
 
@@ -109,7 +109,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 | [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291); for `--team skill-agents` also skill frontmatter `hooks:` and a model-invoked skill with `user-invocable: false` (verified on 2.1.310); the `omitClaudeMd` agent field for the read-only agents to start without your `CLAUDE.md` (verified on 2.1.293 and 2.1.310) | `claude --version` |
 | [Node](https://nodejs.org) 18+ | every hook is a Node script | `node --version` |
 | [git](https://git-scm.com) | the hooks use it to find the repo and diff an agent's work | `git --version` |
-| [Spec Kit](https://github.com/github/spec-kit) (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11 and 1.1.2) |
+| [Spec Kit](https://github.com/github/spec-kit) (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11, 1.1.2 and 1.2.5) |
 | [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
 
 #### Installing uv and Spec Kit
