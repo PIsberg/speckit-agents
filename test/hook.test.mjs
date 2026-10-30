@@ -1668,6 +1668,16 @@ const headSha = (dir) => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, 
 const userRow = (content = 'next request', extra = {}) => ({ type: 'user', message: { role: 'user', content }, ...extra });
 const assistantRow = (text) => ({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text }] } });
 
+// #179: outside a Spec Kit repo a role skill is not denied (the constitution allows no blocking and no
+// output there), and its own hooks decide nothing and write nothing. README.md, "Known limits".
+test('#179: outside a Spec Kit repo a role skill call and its scope and lane hooks stay silent', () => {
+  const { dir } = repo({ speckit: false });
+  assert.equal(skillCall(dir, 'speckit-role-implementer'), null);
+  assert.equal(write(dir, ['scope', 'role'], 'tests/AppTest.java'), null);
+  assert.equal(run(dir, ['lane', 'role'], { hook_event_name: 'Stop', session_id: 's1' }), null);
+  assert.ok(!fs.existsSync(stateDir(dir)), 'no state written');
+});
+
 test('009 T007 FR-005 FR-006 contract 4 step 2: a role skill outside a typed skill-agents request is denied', () => {
   const { dir } = repo();
   const want = /speckit-role-product-owner runs only in a request typed as \/speckit-team --team skill-agents <request>\./;
