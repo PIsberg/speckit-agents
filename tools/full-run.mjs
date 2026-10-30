@@ -203,6 +203,30 @@ export function shadowingSkills(personalDir, projectDir) {
   return names.filter((n) => { const own = text(personalDir, n); return own !== null && own !== text(projectDir, n); }).sort();
 }
 
+// main()'s turns: prompt n, invoke claude on it (resuming the session after the first), stop on a turn
+// error or a lost session, or once `ended` says the run is over. `invoke` returns a spawnSync result.
+export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log }) {
+  const turns = [];
+  let session = null;
+  for (let n = 0; n < maxTurns; n++) {
+    const prompt = promptFor(n);
+    const r = invoke(prompt, session);
+    let res = null;
+    try { res = JSON.parse(r.stdout); } catch { /* claude printed no result: the turn failed */ }
+    turns.push({ prompt: prompt.slice(0, 80), status: r.status, cost: res?.total_cost_usd ?? null, turns: res?.num_turns ?? null,
+      session: res?.session_id ?? null, result: String(res?.result ?? r.stderr ?? '').slice(-600) });
+    log(`turn ${n + 1}: exit ${r.status}, $${(res?.total_cost_usd ?? 0).toFixed(2)}, ${res?.num_turns ?? '?'} model turns`);
+    if (res?.session_id) session = res.session_id;
+    const err = turnError(res, r.status) ?? (session ? null : 'claude returned no session to resume');
+    if (err) return { turns, session, stopped: `turn ${n + 1}: ${err}` };
+    if (ended(res, n)) break;
+  }
+  return { turns, session, stopped: null };
+}
+
+// The run's failures: why it stopped early comes first, since the checks after it judge a run cut short.
+export const runFailures = (failures, stopped) => (stopped ? [stopped, ...failures] : [...failures]);
+
 // Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
 // (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
 // Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
@@ -269,27 +293,16 @@ function main() {
   }
   const untrust = trustFolder(confFile, repo);
 
-  const turns = [];
   const marker = newMarker();
-  let session = null;
-  let stopped = null;
+  const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');
   // A gate case is one turn: a second answer would be the pipeline's, and the question is only the gatekeeper's word.
-  for (let n = 0; n < (gate ? 1 : o.maxTurns); n++) {
-    const prompt = n === 0 ? (gate && !o.skillAgents ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide });
-    const r = run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
-      '--output-format', 'json', ...(session ? ['--resume', session] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 });
-    let res = null;
-    try { res = JSON.parse(r.stdout); } catch { /* claude printed no result: the turn failed */ }
-    turns.push({ prompt: prompt.slice(0, 80), status: r.status, cost: res?.total_cost_usd ?? null, turns: res?.num_turns ?? null,
-      session: res?.session_id ?? null, result: String(res?.result ?? r.stderr ?? '').slice(-600) });
-    console.log(`turn ${n + 1}: exit ${r.status}, $${(res?.total_cost_usd ?? 0).toFixed(2)}, ${res?.num_turns ?? '?'} model turns`);
-    if (res?.session_id) session = res.session_id;
-    const err = turnError(res, r.status) ?? (session ? null : 'claude returned no session to resume');
-    if (err) { stopped = `turn ${n + 1}: ${err}`; break; }
-    const ends = path.join(repo, '.git', 'speckit-team', 'ends');
-    if (fs.existsSync(ends) && fs.readdirSync(ends).length) break;
-    if (gate && gateWord({ ends: [], text: res?.result }).word) break;
-  }
+  const { turns, session, stopped } = runTurns({
+    maxTurns: gate ? 1 : o.maxTurns,
+    promptFor: (n) => (n === 0 ? (gate && !o.skillAgents ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
+    invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
+      '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
+    ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word),
+  });
 
   untrust();
   const projects = path.join(cfg, 'projects');
@@ -301,24 +314,23 @@ function main() {
     .map((f) => ({ file: f, text: fs.readFileSync(path.join(subagents, f), 'utf8') })) : [];
   // A gate case is judged by tools/eval.mjs on spec-gatekeeper's word, whichever it is; only the cost ceiling
   // and a missing word are failures of the run itself.
-  const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');
   const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
   const word = gateWord({ ends, text: turns.at(-1)?.result });
   const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
-    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/s+/g, ' ').slice(0, 120)}`);
+    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
     if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
   }
   if (!transcript) failures.push('no transcript of the main session was found');
-  if (stopped) failures.unshift(stopped);
-  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures, platform: `${os.platform()} ${os.release()}` };
+  const all = runFailures(failures, stopped);
+  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
-  console.log(failures.length ? `FAILED:\n- ${failures.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
-  process.exit(failures.length ? 1 : 0);
+  console.log(all.length ? `FAILED:\n- ${all.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
+  process.exit(all.length ? 1 : 0);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
