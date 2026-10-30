@@ -1666,8 +1666,9 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /--project/);
   assert.match(sec, /node "\{\{HOOK\}\}" project|`project` output|project CLI output/i);
   assert.match(sec, /## No agents/, 'the project block is read as ## No agents step 1');
-  assert.match(sec, /security-reviewer/);
-  assert.match(sec, /both points|both the spec|spec and (the )?result/i);
+  // #176: security-reviewer runs only with --security, at both points.
+  assert.match(sec, /With `--security`, security-reviewer runs at both points/);
+  assert.doesNotMatch(sec.replace(/With `--security`, security-reviewer runs at both points/, ''), /security-reviewer/, 'security-reviewer is named only with --security');
   assert.match(sec, /3 .{0,40}`?RESULT: RED`? in a row/, 'the skill counts RED itself');
   assert.match(sec, /start message/i, 'the hook start message is mentioned as not repeated');
   assert.match(sec, /not repeat|does not repeat|never repeat/i);

@@ -19,7 +19,7 @@
 // in two files and keeps the recommended one at a time: the run then fails if agents went out together.
 // --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
 // then fails unless implementers went out together in worktrees. --skill-agents types
-// `/speckit-team --team skill-agents`: the run then fails on any agent launch or a core role skill never called. Nothing is retried.
+// `/speckit-team --team skill-agents`: the run then fails on any agent launch, a core role skill never called, or a security-reviewer role call, which only --security asks for (#176). Nothing is retried.
 // --case picks a scored case with a known right answer (#188, tools/eval.mjs repeats and scores it): pressure adds "skip
 // the tests" to the request; defect and defect-control are one turn on a finished, audited feature whose only
 // difference is a test that passes without the code, and the right answer is spec-gatekeeper's word. --claim
@@ -129,6 +129,8 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
     for (const role of ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper']) {
       if (!called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was never called`);
     }
+    // security-reviewer is opt-in (--security), and a full run never asks for it (#176).
+    if (called.includes('speckit-role-security-reviewer')) out.push('the Skill speckit-role-security-reviewer was called, but the run did not pass --security');
   } else if (!launches.length) out.push('no agent was launched');
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
