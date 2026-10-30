@@ -105,6 +105,9 @@ applies. No role record, or a subagent: no decision. An ended record (section 8)
 
 ## 6. Closing a role (at section 4 step 3, and `lane role` at Stop)
 
+`lane role` from a subagent (`agent_id` set, the hook firing as its `SubagentStop`): no decision, and
+the main session's role stays acting; its own Stop closes it (#177).
+
 1. Lane, for a role whose rule is not `none`: `changedSince(sha)` minus `dirty`, outside the role's
    rule. A read-only role gets no lane check at close, as its agent has no `lane` hook in a default run
    (SC-006, plan D7); section 5 denies its Write and Edit calls as the agent's `disallowedTools` do. At a Skill
