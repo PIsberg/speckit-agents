@@ -488,7 +488,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 
 | | Enforced by the hook | Not enforced |
 |---|---|---|
-| Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run |
+| Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run; and, not observed either way, after a background task's notice, a compaction or a message typed mid-turn, if Claude Code gives it a new `prompt_id` (#184) |
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
 | Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Retry limit | nothing | the skill counts 3 `RESULT: RED` in a row itself; the hook does not |
@@ -502,7 +502,7 @@ built once as the default team and once with `--team skill-agents`, 31% more inp
 less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
 close, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
-end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers only a resumed prompt ending the role. Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running), and whether a message typed during a turn gets a new `prompt_id` (not known).
+end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers only a resumed prompt ending the role. Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running), and whether a background task's notice, an auto-compaction summary or a message typed during a turn gets a new `prompt_id` (not known; if one does, the acting role ends mid-turn with its lane unchecked for the rest of the turn, which the start message names, [#184](https://github.com/PIsberg/speckit-agents/issues/184)).
 
 **Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
 returns a capped report. A role skill loads its instructions into your session, so every role works

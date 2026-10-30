@@ -1584,6 +1584,15 @@ test('009 T003 FR-002 FR-006 US3-1 contract 3 and 7: a typed --team skill-agents
   assert.ok(!JSON.stringify(rec).includes('add a flag'), 'no request text in the record');
 });
 
+// #184: whether these inputs carry a new prompt_id was never observed; if one does, the acting role ends
+// mid-turn with its lane unchecked, so FR-008 asks the start message to name them until a probe settles it.
+test('#184: the start message names the inputs whose prompt_id was never observed', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team skill-agents add a flag');
+  assert.match(msg(out), /a background task's notice, a compaction or a message typed while a role runs/);
+  assert.match(msg(out), /may end the role mid-turn/);
+});
+
 test('009 T003 FR-002 US3-1 US3-2 US3-3: which typed forms count', () => {
   const cases = [
     ['--team skill-agents add', true], ['--team Skill-Agents add', true], ['--team SKILL-AGENTS', true],

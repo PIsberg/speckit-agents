@@ -149,7 +149,13 @@ spec-gatekeeper starts), the retry limit (the skill counts), the check that a re
 each role's own context (every role sees this conversation), each agent's tool list (a role may use
 every tool of this session, MCP tools included, and a read-only role's write through one is not
 checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the
-role's lane check and report then do not run).`
+role's lane check and report then do not run). Not observed: whether a background task's notice, a
+compaction or a message typed while a role runs carries a new prompt_id; if one does, it may end the
+role mid-turn, with the message that the role ended, and its lane goes unchecked for the rest of that
+turn.`
+
+The last sentence stays until those three inputs are probed on the oldest supported Claude Code
+(section 8; #184).
 
 The skill does not repeat it; it adds its one-line team notice as in `## Team`.
 
