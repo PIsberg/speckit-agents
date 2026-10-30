@@ -8,7 +8,7 @@ written with `writeJson`, read with `readState`. Metadata only (Constitution VI)
 | Field | Type | Rule |
 |---|---|---|
 | `skillAgents` | `true`, new | only from a typed `/speckit-team --team skill-agents` (UserPromptExpansion); never from a launch prompt or an answer (FR-006) |
-| `roles` | string[] | `TEAM_ROLES`, all seven, when `skillAgents` |
+| `roles` | string[] | `TEAM_ROLES`, all seven, when `skillAgents`: the roles whose Skill call is let through. The six core roles run; security-reviewer only with `--security` (#176) |
 | `session_id`, `at` | as before | |
 
 `teamOf()` returns `{ roles, noagents, skillAgents }`; `skillAgents` is true only when the field is

@@ -287,6 +287,10 @@ test('full run: skill-agents mode fails on any launch and on a core role skill n
     assert.equal(f.length, 1, `${missing}: ${JSON.stringify(f)}`);
     assert.match(f[0], new RegExp(`speckit-role-${missing}`));
   }
+  // #176: security-reviewer is opt-in through --security, which a full run never passes.
+  const sec = run({ launches: [], waits: 0, skills: [...roleSkills(), 'speckit-role-security-reviewer'] });
+  assert.equal(sec.length, 1, JSON.stringify(sec));
+  assert.match(sec[0], /speckit-role-security-reviewer was called.*--security/);
 });
 
 test('full run: without the option a run with no launch still fails as before (T019)', () => {

@@ -6,8 +6,8 @@
 
 ## Summary
 
-`/speckit-team --team skill-agents <request>` runs the seven team roles as skills in the main
-session. `install.mjs` generates one skill per role from `agents/<role>.md` (FR-013). The hook's
+`/speckit-team --team skill-agents <request>` runs the six core team roles as skills in the main
+session, and security-reviewer too when `--security` asks for it (#176). `install.mjs` generates one skill per role from `agents/<role>.md` (FR-013). The hook's
 existing Skill gate sees each role skill call: it records the acting role, closes the previous one
 (its lane check of the whole diff, and spec-auditor's or spec-gatekeeper's word read from the session
 transcript and, for its last message, from the hook input: D10) and holds test-writer and implementer to the audit gate. A `scope role` rule in the role
@@ -193,7 +193,7 @@ denied. In this mode the gate runs at a role skill call only, and implementer's 
   go on until the role ends, but neither the next build role nor verification starts until
   spec-auditor passes again. One word in the hook's role list and one clause of message; T007 gets the
   spec-gatekeeper cases, T009 and T004 carry it. Stricter than a default run, where nothing gates
-  spec-gatekeeper's launch; in this mode the team is always all seven, so an audit always exists.
+  spec-gatekeeper's launch; in this mode the team always has the six core roles, spec-auditor among them, so an audit always exists.
 - B: the same per-call gate as the agents. Every role skill's frontmatter (contract section 2) gains a
   PreToolUse `.*` entry `gate role`; gate mode, from the main session with a role record of test-writer
   or implementer, denies any tool call but a role Skill call while `auditProblem()` is set. Same outcome

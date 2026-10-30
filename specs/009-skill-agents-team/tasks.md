@@ -66,7 +66,7 @@ Helpers named once here: `test/hook-helpers.mjs`: `repo`, `run(dir, args, payloa
   one role call after the other, the next after the previous role's work is done; a role that goes on
   after the user answers in a new message is called again before it writes (plan D8); the stops of steps 1 to 6 hold; the side-by-side question is not asked; with
   `--project` the block is read from `node "{{HOOK}}" project` output and followed by every role, as
-  `## No agents` step 1; security-reviewer at both points of steps 1 and 6; the skill counts 3
+  `## No agents` step 1; with `--security` only, security-reviewer at both points of steps 1 and 6 (#176); the skill counts 3
   `RESULT: RED` in a row itself; the hook's start message is not repeated.
 - [X] T006 [US1] Implement in `skills/speckit-team/SKILL.md`: the `argument-hint`, a `## Team` paragraph
   and refusals (contract section 1), and a `## Skill agents` section after `## No agents` that maps each
