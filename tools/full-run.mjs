@@ -320,7 +320,7 @@ function main() {
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
-    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/s+/g, ' ').slice(0, 120)}`);
+    if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
     if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
