@@ -2307,6 +2307,15 @@ test('009 T025 contract 6 step 2: args VERDICT: FAIL after a transcript PASS rec
   assert.equal(verdictRec(dir)?.verdict, 'FAIL');
 });
 
+// #181: D10 the other way round: the args line is the report's last line, so it wins over an earlier FAIL.
+test('#181: args VERDICT: PASS after a transcript FAIL records PASS and lets test-writer through', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'First pass: T003 has no test.\nVERDICT: FAIL');
+  const out = callWithArgs(dir, 'speckit-role-test-writer', t, 'VERDICT: PASS\n<inputs>');
+  assert.ok(!denied(out), JSON.stringify(out));
+  assert.equal(verdictRec(dir)?.verdict, 'PASS');
+});
+
 test('009 T025 contract 6 step 2: a VERDICT on the second args line counts for nothing', () => {
   const { dir, t } = auditorRole();
   say(t, 'No findings.');

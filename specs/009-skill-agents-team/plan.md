@@ -31,7 +31,7 @@ skills' frontmatter applies the acting role's lane to every write. No agent file
 
 **Constraints**: every role on the session's model and with the session's `CLAUDE.md` (inline, FR-012); seven skill descriptions in every session's skill list, about 700 characters (D5)
 
-**Scale/Scope**: 4 source files, 5 test files, 5 doc files; `agents/*.md` unchanged (US2-3)
+**Scale/Scope**: 5 source files, 5 test files, 5 doc files; `agents/*.md` unchanged (US2-3)
 
 ## Constitution Check
 
@@ -338,8 +338,8 @@ report path needs no change.
   a hook input with another one ends the role (contract section 8, data-model). No transcript read for
   it, no new hook entry, no timing assumption; `promptRow` goes, and `scope role` no longer reads the
   transcript on every write. Follows: the outcomes of D8 A for a typed prompt, an interrupt, an API
-  error, an AskUserQuestion answer and a Skill's body (R5; the last three read in the bundle, not
-  seen); a record or an input without a string `prompt_id` (a record written before this change, a
+  error, an AskUserQuestion answer and a Skill's body (R5; the interrupt, the API error and the
+  AskUserQuestion answer read in the bundle, not seen); a record or an input without a string `prompt_id` (a record written before this change, a
   Claude Code that drops the field) stays live until the next role or Stop, as an unreadable
   transcript does now; a message typed while a turn runs, if Claude Code gives it a new id (not known,
   R5), ends the role mid-turn with section 8's message, so its lane check and report do not run. The

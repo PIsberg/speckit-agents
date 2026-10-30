@@ -1674,6 +1674,20 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /not repeat|does not repeat|never repeat/i);
 });
 
+// #181 L2 and L3: what T006 and SC-002 promise of the skill text. Every /speckit-team run reads the skill, so
+// the mode's text is capped; the team question is the one of 1030987, the last main before feature 009.
+const TEAM_QUESTION_BEFORE_009 = 'With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:\n1. Full team (Recommended): all six roles.\n2. Build only: test-writer, implementer.\n3. Implement only: implementer.\n4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.\n\n';
+test('#181 009 T006 SC-002: the skill-agents text stays under 3,000 characters, the team question is unchanged, and a dirty tree is asked about', () => {
+  const source = repoText('skills/speckit-team/SKILL.md').replace(/\r\n/g, '\n');
+  const team = skillSection(source, '## Team');
+  const added = skillSection(source, '## Skill agents').length + team.split('\n').filter((l) => /skill-agents/.test(l)).join('\n').length;
+  assert.ok(added <= 3000, `## Skill agents and the ## Team lines naming skill-agents are ${added} characters`);
+  assert.equal(team.slice(team.indexOf('With no roles named'), team.indexOf('A free-text answer ("Other")')), TEAM_QUESTION_BEFORE_009);
+  // Spec edge case: a dirty tree gets the default run's precondition, which ## Skill agents runs as written.
+  assert.match(skillSection(source, '## 0. Preconditions'), /The working tree is clean\. If not, ask before going on\./);
+  assert.match(flat(skillSection(source, '## Skill agents')), /Steps 0 to 7 run as written/);
+});
+
 // 009 T022 FR-010, Constitution VIII, plan P4: the docs describe `--team skill-agents`.
 test('009 T022 FR-010: README has a skill-agents section naming the enforced and not-enforced guardrails and what was verified how', () => {
   const readme = repoText('README.md');
