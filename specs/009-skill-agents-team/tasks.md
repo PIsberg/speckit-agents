@@ -230,6 +230,8 @@ what was seen.
   section 7), a `speckit-role-test-writer` call before an audit denied with contract section 4 step 4's
   text, and a Write outside architect's lane denied; record what was seen and `claude --version` in
   `docs/live-results.md`. A run that cannot start from an agent's shell goes to the user.
+  Not in this live check: the Stop's `lane role` wiring, which only `test/e2e.test.mjs` and the full
+  run's APPROVED check reach (#181 L7).
 
 ## Phase 7: User Story 3, a role's last message from the hook input (Round 6, plan D10)
 

@@ -17,6 +17,9 @@ records: `data-model.md`.
   FR-006). A free-text answer `skill-agents` is not the mode: the skill says in one line that it is
   typed as `/speckit-team --team skill-agents <request>`, and stops (US3-4).
 - `--team skill-agents` after the request text has started is request text (US3-3).
+- `--team skill-agents noagents <request>`, with `noagents` as the next word rather than in the list, is
+  refused as `skill-agents` with `noagents` is: the hook records no team and gives no start message, and
+  the skill refuses (#181; the T003 typed-forms test holds the hook's half).
 
 ## 2. Installed role skills (`install.mjs`)
 

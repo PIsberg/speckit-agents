@@ -477,6 +477,11 @@ function auditProblem() {
 
 // No rename detection: a rename is listed by its new path only, and a test moved out of the test tree
 // would read as one new production file.
+// A lane's start: HEAD and the files already changed then, which its check leaves out; null without a HEAD.
+function startRecord() {
+  const sha = git(root, 'rev-parse', 'HEAD');
+  return sha ? { sha, dirty: changedSince('HEAD') } : null;
+}
 function changedSince(base) {
   return [...new Set([
     ...lines(git(root, 'diff', '--no-renames', '--name-only', base)),
@@ -813,8 +818,8 @@ if (mode === 'gate') {
       const live = readState(roleFile(id));
       if (live !== undefined) closeRole(live, 'skill', auditGate);
       auditGate();
-      const sha = git(root, 'rev-parse', 'HEAD');
-      if (sha) {
+      const start = startRecord();
+      if (start) {
         const transcript = str(input.transcript_path);
         // #180: an unreadable transcript leaves the role's start unknown (null), never 0, which would read
         // earlier turns as the role's report.
@@ -822,7 +827,7 @@ if (mode === 'gate') {
         try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: start unknown */ }
         const feat = feature();
         writeJson(roleFile(id), {
-          session_id: id, role: roleSkill, sha, dirty: changedSince('HEAD'), transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
+          session_id: id, role: roleSkill, ...start, transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
           feature: feat, fingerprint: roleSkill === 'spec-auditor' && feat ? fingerprint(feat) : null, at: new Date().toISOString(),
         });
       }
@@ -854,8 +859,8 @@ if (mode === 'gate') {
     }
   }
   if (agentId && !fs.existsSync(baseFile(agentKey))) {
-    const sha = git(root, 'rev-parse', 'HEAD');
-    if (sha) writeJson(baseFile(agentKey), { sha, dirty: changedSince('HEAD') });
+    const start = startRecord();
+    if (start) writeJson(baseFile(agentKey), start);
   }
   process.exit(0);
 }
@@ -983,8 +988,8 @@ if (mode === 'ends') {
 if (mode === 'start') {
   const type = str(input.agent_type);
   if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
-    const sha = git(root, 'rev-parse', 'HEAD');
-    if (sha) writeJson(baseFile(agentKey), { sha, dirty: changedSince('HEAD') });
+    const start = startRecord();
+    if (start) writeJson(baseFile(agentKey), start);
   }
   const id = str(input.session_id);
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);

@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-25
 
-**Status**: Draft
+**Status**: Implemented (merged in PR #183, 2026-10-25); the audit findings accepted at hand-over are issues #176 to #181, #184 and #185.
 
 **Input**: User description: "According to Anthropic it is smarter to use role-based skills rather than role-based agents. Add a mode so that `/speckit-team --team skill-agents <request>` runs the team's roles as skills rather than as subagents. The existing agent-based team (the default, and every current `--team` option) stays exactly as it is."
 
@@ -103,7 +103,7 @@ A user adds `--security` or `--project <name>` to a skill-agents run and gets th
 - **FR-001**: `/speckit-team --team skill-agents <request>` MUST run the six core roles, in pipeline order, as role-based skills and MUST launch no subagent.
 - **FR-002**: The word `skill-agents` MUST be accepted only as the whole team list, in the same position as other `--team` lists, and MUST be refused with a message when combined with any role name.
 - **FR-003**: A run in this mode MUST stop for the user at every point where the default team stops, and MUST show the user which role is acting.
-- **FR-004**: A run in this mode MUST produce the same feature files (spec, plan, tasks, tests, built result) as a default run for the same request.
+- **FR-004**: A run in this mode MUST produce the same kinds of feature file (spec, plan, tasks, tests, built result) as a default run for the same request; their content may differ, as SC-004 measures.
 - **FR-005**: Requests without `--team`, and every existing `--team` form, `--security` and `--project`, MUST behave exactly as before, including the team-size question and its four options.
 - **FR-006**: The team-size question MUST NOT offer skill-agents as an option; the mode is chosen only by typing `--team skill-agents` in the command. A free-text answer of `skill-agents` to the team-size question MUST NOT start the mode.
 - **FR-007**: `--security` and `--project <name>` MUST work in this mode with the same outcomes as in a default run.

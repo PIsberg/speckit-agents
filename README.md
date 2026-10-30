@@ -515,7 +515,7 @@ in one context that keeps growing. The numbers below are the one pair of runs of
 | Context | each role starts near 14k tokens and reads the code again | nothing is re-read across roles, but every response re-reads everything before it, so a large feature can reach compaction |
 | Handoffs | lossy: a role knows only its prompt, and a wrong prompt costs a relaunch | none: a later role sees what earlier ones settled |
 | Independent review | spec-auditor and spec-gatekeeper never see the reasoning they judge | every role sees the whole conversation, the reviewers included |
-| Guardrails | Claude Code holds each agent to its tools, and its hooks end with it | rebuilt by the hook from the transcript; the table above lists what is not enforced |
+| Guardrails | Claude Code holds each agent to its tools, and its hooks end with it | rebuilt by the hook: a role ends on a new `prompt_id`, and only its report is read from the transcript; the table above lists what is not enforced |
 | Models | per role: architect and spec-auditor on opus | the session's model for every role |
 | Side-by-side slices | yes, in worktrees | no |
 

@@ -36,7 +36,7 @@ Lifecycle: written at the PreToolUse of a `speckit-role-<role>` Skill call that 
 closed (contract section 6) and replaced at the next such call; closed and removed at the main
 session's Stop (`lane role`); removed by a typed `/speckit-team`. Ended once a hook input carries another
 `prompt_id` (contract section 8): removed where it is next read, never closed. Unreadable or incomplete: the
-lane check says it could not run, and `scope role` denies writes until a typed `/speckit-team`.
+lane check says it could not run, and `scope role` denies writes until the next role Skill call replaces it (contract section 4 step 5) or a typed `/speckit-team` removes it.
 
 ## Verdict and ends records (changed, additive)
 
