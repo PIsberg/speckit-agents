@@ -2307,6 +2307,38 @@ test('009 T025 FR-008 contract 6 step 2: the spec-gatekeeper role APPROVED is re
   assert.equal(e.agent_id, null);
 });
 
+// #185: the gatekeeper's report and the orchestrator's hand-over can share one response, so the word is
+// the response's last standalone APPROVED or REJECTED line, not its very last line.
+test('#185: a spec-gatekeeper word followed by hand-over text in the same response is recorded', () => {
+  const handover = 'Every task is ticked.\n\n**APPROVED**\n\nThe feature is ready for review; open the PR when you are.';
+  for (const where of ['stop', 'transcript']) {
+    const { dir } = repo();
+    skillAgentsTeam(dir);
+    pass(dir);
+    const t = transcriptIn(dir, [userRow('typed')]);
+    skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t });
+    if (where === 'transcript') say(t, handover);
+    stopRole(dir, where === 'stop' ? { last_assistant_message: handover } : {});
+    assert.equal(endsRec(dir)?.word, 'APPROVED', where);
+  }
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t });
+  say(t, 'A first pass said\nAPPROVED\nbut T003 is open.\nREJECTED\nHanding back to fix T003.');
+  stopRole(dir);
+  assert.equal(endsRec(dir)?.word, 'REJECTED', 'the last word line of the response wins');
+  const q = repo();
+  skillAgentsTeam(q.dir);
+  pass(q.dir);
+  const t2 = transcriptIn(q.dir, [userRow('typed')]);
+  skillCall(q.dir, 'speckit-role-spec-gatekeeper', { transcript_path: t2 });
+  say(t2, 'I would write APPROVED if every task were ticked.\nT003 is open.');
+  stopRole(q.dir);
+  assert.equal(endsRec(q.dir), null, 'a word inside a sentence is not a word line');
+});
+
 test('009 T025 FR-008 contract 6 step 2: a spec-gatekeeper APPROVED as the first args line of the security-reviewer call is recorded', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
