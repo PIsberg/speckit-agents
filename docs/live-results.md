@@ -95,18 +95,28 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
-<summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, the fast track's undo command (#213), on the owner's subscription</summary>
+<summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, the fast track's undo command and end record (#213, #221), on the owner's subscription</summary>
 
-Setup: the same scratch repo as the scope check below, with the team of branch `fix/patch-undo-213`
-installed into its `.claude/`, folder trusted for the run. `claude -p '/speckit-patch add forty
-exported constants c1 to c40 to src/greet.js, one per line, each equal to its number'` on
-`--model haiku`, `acceptEdits`, `patcher` on its own `model:` line. Forty lines is over the 30-line
-budget, so the run must commit nothing.
+Setup: the same scratch repo as the scope check below, with the team of the branch under test
+installed into its `.claude/` (`fix/patch-undo-213`, then `fix/patch-outcome-221`), folder trusted
+for each run, `acceptEdits`, `patcher` on its own `model:` line. The request: forty exported
+constants c1 to c40 in `src/greet.js`, over the 30-line budget, so a run must commit nothing.
 
-| What | Result |
+**Read this first:** runs 1 to 6 typed `/speckit-patch`, and the owner's personal `speckit-patch`
+skill, the one from `main` installed in `~/.claude/skills`, shadowed the project's copy: run 6's main
+session hash-checked `~/.claude/hooks/speckit-team.mjs`, the path in the personal skill (the
+shadowing of [#175](https://github.com/PIsberg/speckit-agents/issues/175)). So those runs had this
+branch's `patcher` and hook, which wrote the end record, and `main`'s skill text. Run 7 had the
+main session follow the project's `.claude/skills/speckit-patch/SKILL.md` explicitly.
+
+| Run | Result |
 |---|---|
-| First run, the command only in the end check's message | `patcher` reported `ESCALATE`, nothing was committed. The over-budget message with "To undo only patcher's changes, run: git restore --source=... -- 'src/greet.js' 'test/greet.test.js'" was in `patcher`'s transcript as a `hook_system_message` and nowhere in the main session's, whose report offered no undo. $0.054. The command moved to `patch-undo.json`. |
-| Second run, with `patch-undo.json` | The main session ran `cat .git/speckit-team/patch-undo.json` and its report gave the restore command for `src/greet.js` and `test/greet.test.js`, with the sha shortened to 7 characters; it ran nothing, and both files were still changed afterwards. It reported the run `FAILED` for a changed team file, comparing the start record's SHA-256 hashes with `git hash-object` output: it could not see the over-budget message either ([#221](https://github.com/PIsberg/speckit-agents/issues/221)). $0.060. |
+| 1, Haiku, the command only in the end check's message | `patcher` reported `ESCALATE`, nothing was committed. The over-budget message with "To undo only patcher's changes, run: git restore --source=... -- 'src/greet.js' 'test/greet.test.js'" was in `patcher`'s transcript as a `hook_system_message` and nowhere in the main session's, whose report offered no undo. $0.054. The command moved to `patch-undo.json`. |
+| 2, Haiku, `patch-undo.json` written | The main session ran `cat .git/speckit-team/patch-undo.json` on its own and gave the restore command with the sha shortened to 7 characters; it ran nothing. It reported `FAILED` for a changed team file, comparing the start record's SHA-256 hashes with `git hash-object` output: no message told it the run was over budget ([#221](https://github.com/PIsberg/speckit-agents/issues/221)). $0.060. |
+| 3, Haiku, end record with `outcome` and `message` | Cause right ("over the 30-line production budget", from `patcher`'s own report), no undo offered, the record not read. $0.055. |
+| 4 and 5, Haiku | Run 4: `patcher` escalated before writing, nothing to undo, $0.040. Run 5: `patcher` wrote 40 lines; the main session never read the record and offered no undo, $0.041. |
+| 6, Sonnet | `patcher` wrote 44 lines; the main session read `patch-accepted.json` only, called the size "the likely cause" and offered no undo. $0.219. |
+| 7, Haiku, the branch's skill text | Cause right, and the report ended with the record's command word for word, `git restore --source=d14301b6bbfe337e6e99713ac689ca272038bc69 --staged --worktree -- 'src/greet.js'`, then "Do you want me to run it? It discards the 40 lines, so I'll wait for an explicit yes." It ran nothing; `src/greet.js` was still changed afterwards. One run, $0.041. |
 
 </details>
 

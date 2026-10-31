@@ -890,10 +890,12 @@ changes and nothing else, from the same lists: `git restore --source=<start> --s
 for the files it changed or deleted (a file the start commit lacks is removed too), then `rm -f --`
 for the ones it created, each path in single quotes. Files uncommitted at the start and protected
 files are never in it. Every end check past the protected and commit checks writes it to
-`<git dir>/speckit-team/patch-undo.json` (`key`, `sha`, `undo`; `undo` is `null` when nothing
-changed), which the next `patch` call removes, and the over-budget and `FAILED` messages end with
-"To undo only patcher's changes, run: ...". The file is what the skill reads: a live run on
-2026-10-31 showed the message reaches only `patcher`'s own transcript, never the main session. The
+`<git dir>/speckit-team/patch-undo.json` (`key`, `sha`, `undo`, `null` when nothing changed, and
+the end check's `outcome` and `message`, [#221](https://github.com/PIsberg/speckit-agents/issues/221)),
+which the next `patch` call removes, and the over-budget and `FAILED` messages end with
+"To undo only patcher's changes, run: ...". The file is what the skill reads, for the undo and
+for the cause of a run it does not commit: a live run on 2026-10-31 showed the message reaches only
+`patcher`'s own transcript, never the main session, whose report then named a cause of its own. The
 hook runs none of it. The skill shows the command, asks, and runs it exactly as given only on an
 explicit yes, never `git stash`, `git reset --hard`, `git clean` or `git checkout .`, which would take
 your work too ([#213](https://github.com/PIsberg/speckit-agents/issues/213)). A test runs the command
@@ -1494,13 +1496,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 507 tests:
+`npm test` runs 509 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 160 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 73 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 115 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 74 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 116 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

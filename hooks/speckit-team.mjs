@@ -1739,34 +1739,38 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
     refuse(`Fast track: ${who} committed (${m.lines} lines in ${m.files} files since ${s12}). The fast track never commits; /speckit-patch commits after this check. `
       + `Run git reset --soft ${s12} so the work stays uncommitted, then finish.`);
   }
-  // #213: what takes the run back, for the skill to offer. A SubagentStop message reaches only patcher's own
-  // transcript, never the main session, so the command goes in a file next to the accepted record.
-  writeJson(undoFile, { key, sha: start.sha, undo: undoCommand(start.sha, m), at: new Date().toISOString() });
+  // The end record (#213, #221): what takes the run back, and what the end check decided and why. A
+  // SubagentStop message reaches only patcher's own transcript, never the main session, so the skill reads
+  // these from a file next to the accepted record. Written before the message goes out, in its words.
+  const end = (outcome, message) => {
+    writeJson(undoFile, { key, sha: start.sha, undo: undoCommand(start.sha, m), outcome, message, at: new Date().toISOString() });
+    emit({ systemMessage: message });
+  };
   const team = teamChanged(start.team);
   if (team.length) {
-    emit({ systemMessage: `fast track FAILED: installed agent team files changed during the run: ${team.map((t) => `${TEAM_DIR}/${t}`).join(', ')}. `
+    end('failed', `fast track FAILED: installed agent team files changed during the run: ${team.map((t) => `${TEAM_DIR}/${t}`).join(', ')}. `
       + 'The fast track cannot restore them, and cannot tell a change patcher made from a setting Claude Code or you saved. '
       + 'The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
       + 'Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.'
-      + undoSentence(start.sha, m) });
+      + undoSentence(start.sha, m));
   }
   // A push cannot be taken back by the agent, so this fails the run rather than blocking the stop.
   const moved = remotesChanged(start.remotes);
   if (moved.length) {
-    emit({ systemMessage: `fast track FAILED: remote-tracking refs changed during the run: ${moved.join(', ')}. `
+    end('failed', `fast track FAILED: remote-tracking refs changed during the run: ${moved.join(', ')}. `
       + 'A push or a fetch happened, which the fast track never does, so the end check did not accept the run: /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
       + 'Check the remote for a pushed branch or a pull request before you run the change again.'
-      + undoSentence(start.sha, m) });
+      + undoSentence(start.sha, m));
   }
   if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
-    emit({ systemMessage: `fast track stopped: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
+    end('stopped', `fast track stopped: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
       + (m.binary.length ? `; binary production files: ${m.binary.join(', ')}` : '')
       + (m.dirtyTouched.length ? `; changed although they had uncommitted changes when the run started: ${m.dirtyTouched.join(', ')}` : '')
       + '. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.'
-      + undoSentence(start.sha, m) });
+      + undoSentence(start.sha, m));
   }
   writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });
-  emit({ systemMessage: `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.` });
+  end('accepted', `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.`);
 }
 
 // #72, the structural option. A Bash command the hook lets through runs with git's network transports
