@@ -993,6 +993,38 @@ test("a Project line in test-writer's launch puts the project block in its first
   assert.equal(state(s, 'project', `${sessionId(r)}.json`).name, 'demo', story(r));
 });
 
+// #211: project knowledge varies per run and per project, so it must sit after everything static in an
+// agent's request, or a relaunch with another project would rewrite the cached prefix. Two launches of
+// one agent type with projects of different sizes send the same tools and system blocks, the project
+// block is never in `system`, and every message block ahead of it is the same. With
+// SPECKIT_E2E_NO_HOOK=1 no project block arrives and the test fails.
+test('#211: the project block comes after every static block, so a launch with another project keeps the prefix', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  s.write('.specify/projects/small/instructions.md', 'Money is never a float.\n');
+  s.write('.specify/projects/large/instructions.md', `${'Every handler logs its request id.\n'.repeat(40)}`);
+  s.write('.specify/projects/large/api.md', '# API\n');
+  const r = await session(s, {
+    [MAIN]: [teamAgent('e2e project small', 'e2e project small: go\nProject: small'), teamAgent('e2e project large', 'e2e project large: go\nProject: large')],
+    'e2e project small': [say('T001 fails on its assertion.\nRED')],
+    'e2e project large': [say('T001 fails on its assertion.\nRED')],
+  });
+  const [a, b] = [r.requests['e2e project small'][0], r.requests['e2e project large'][0]];
+  assert.ok(a && b, story(r));
+  assert.equal(JSON.stringify(a.tools), JSON.stringify(b.tools), 'the tools are the same');
+  assert.deepEqual(a.system.slice(1), b.system.slice(1), 'the system blocks after the billing header are the same');
+  for (const req of [a, b]) assert.doesNotMatch(textOf(req.system), /Project (small|large):/, 'no project text in system');
+  const blocks = (req) => req.messages.flatMap((m) => (Array.isArray(m.content) ? m.content : [{ type: 'text', text: String(m.content) }]));
+  const [ba, bb] = [blocks(a), blocks(b)];
+  const [ia, ib] = [ba.findIndex((x) => /Project small:/.test(x.text ?? '')), bb.findIndex((x) => /Project large:/.test(x.text ?? ''))];
+  assert.ok(ia >= 0 && ib >= 0, `each launch got its project block: ${story(r)}`);
+  // The launch prompt differs between any two launches; the project block comes after it, last.
+  const [pa, pb] = [ba.findIndex((x) => x.text?.startsWith('e2e project small: go')), bb.findIndex((x) => x.text?.startsWith('e2e project large: go'))];
+  assert.ok(pa >= 0 && pa === pb, `the launch prompt is at the same place in both: ${story(r)}`);
+  assert.deepEqual(ba.slice(0, pa), bb.slice(0, pb), 'every block ahead of the launch prompt is the same');
+  assert.ok(ia > pa && ib > pb, 'the project block comes after the launch prompt');
+  assert.notEqual(ba[ia].text, bb[ib].text, 'control: the project blocks differ');
+});
+
 test('security-reviewer in real session: opted in via Team line, reviews spec and result', { skip: noClaude, timeout: 240_000 }, async () => {
   const s = setup();
   const team = 'Team: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer';
