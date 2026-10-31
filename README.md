@@ -1472,7 +1472,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 497 tests:
+`npm test` runs 498 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1485,7 +1485,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 53 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 11 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
@@ -2007,8 +2007,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   ([Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose)). A rule they must check goes in
   the constitution. A Claude Code older than the `omitClaudeMd` field gives them the files as
   before; which versions lack it was not checked.
-- **The drift check matches IDs as text.** `tools/drift.mjs` cannot tell feature 003's FR-014 from
-  feature 007's: the same ID of another feature in the same test file hides drift, so no problems
+- **The drift check matches IDs as text.** `tools/drift.mjs` tells feature 003's FR-014 from
+  feature 007's only on a line that names the feature by its number (`003 T012 FR-014 ...`, as this
+  repo's tests do, [#212](https://github.com/PIsberg/speckit-agents/issues/212)). In tests that name
+  no feature, the same ID of another feature in the same test file still hides drift, so no problems
   reported is not proof that every requirement is still tested. A test task is told from a docs task
   by its opening words ("Tests in", "Contract test for"), so a test task worded otherwise is not
   checked at all.
@@ -2260,7 +2262,10 @@ node tools/drift.mjs <repo>
 For each ticked test task in a `tasks.md` (its opening words, before the first file, parenthesis or
 colon, say test or tests) that names a test file and cites FR IDs, it reports the file if
 it is gone, and each cited FR ID that none of the task's test files holds any more (test-writer puts
-the ID in each test's name or a comment). One line per problem, then a count; exit 1 with drift, 0
+the ID in each test's name or a comment). A line that names a feature by its number, once the IDs on
+it are set aside (`009 T010 FR-008 ...`, `specs/009-x`), holds its IDs for that feature only, so
+another feature's test of the same ID number does not hide drift; a line naming no feature holds them
+for any ([#212](https://github.com/PIsberg/speckit-agents/issues/212)). One line per problem, then a count; exit 1 with drift, 0
 without, 2 when the repo has no `specs/`. A file counts as test code by the hook's own patterns and
 `.specify/test-paths`. In a git repo a path git never tracked is skipped, since tasks also name
 example inputs and paths inside a subproject. Success criteria (SC-) are not looked for: test-writer

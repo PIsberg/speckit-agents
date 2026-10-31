@@ -70,6 +70,26 @@ test('drift: a cited ID that none of the task\'s test files holds any more is re
   assert.match(r.problems[0], /^specs\/001-sum\/tasks\.md T001: FR-002 is in none of test\/sum\.test\.js$/);
 });
 
+// #212: an ID was matched as text, so another feature's test of the same ID number in the same file hid
+// drift. A line that names a feature by its number (`009 T010 FR-008 ...`) now holds the ID for that
+// feature only; a line that names none still holds it for any, as before.
+test('drift (#212): the same ID of another feature in the same test file does not hide drift', () => {
+  const dir = repo('- [X] T001 Test FR-001 in `test/shared.test.js`\n');
+  const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
+  write('specs/002-avg/tasks.md', '# Tasks\n\n- [X] T004 Test FR-001 and FR-002 in `test/shared.test.js`\n');
+  const cases = [
+    ["test('001 FR-001 adds the numbers', () => {});\ntest('002 FR-002 averages', () => {});\n", ['specs/002-avg/tasks.md T004: FR-001 is in none of test/shared.test.js for 002-avg (only on lines naming another feature)']],
+    ["test('001 FR-001 adds', () => {});\ntest('002 FR-001 FR-002 averages', () => {});\n", []],
+    ["test('FR-001 adds', () => {});\n// FR-002\n", []],
+    ["test('001 and 002 share FR-001 and FR-002', () => {});\n", []],
+    ["// specs/001-sum: FR-001\n// FR-002 in 002-avg\n", ['specs/002-avg/tasks.md T004: FR-001 is in none of test/shared.test.js for 002-avg (only on lines naming another feature)']],
+  ];
+  for (const [text, problems] of cases) {
+    write('test/shared.test.js', text);
+    assert.deepEqual(drift(dir).problems, problems, text);
+  }
+});
+
 test('drift: an unticked task is not built yet, and a test path the repo adds in .specify/test-paths counts', () => {
   const tasks = '- [ ] T001 Test FR-001 in `test/sum.test.js`\n- [x] T002 Test FR-003 in `checks/sum_check.js`\n';
   const missing = drift(repo(tasks, {}));
