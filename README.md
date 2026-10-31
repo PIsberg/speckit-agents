@@ -958,6 +958,13 @@ The injected block contains:
 
 Agents read knowledge files on demand from `.specify/projects/<name>/`. Launch prompts carry only a `Project: <name>` line (the hook twin pattern) and never paste the block directly. In a `--team noagents` run, the main session reads the project block from the `project` CLI mode and follows it itself.
 
+Claude Code puts the block last in the agent's first message, after the launch prompt. Everything
+ahead of it is the same whatever the project: the tools, the system blocks (the agent's body among
+them) and Claude Code's context blocks before the launch prompt. So a launch with another project,
+or a larger one, keeps that cached prefix and writes only its own prompt and block again. An e2e test
+pins the order on Claude Code 2.1.316 against the fake API, and fails if the block moves into the
+system blocks or ahead of the launch prompt ([#211](https://github.com/PIsberg/speckit-agents/issues/211)).
+
 #### Limits and precedence
 
 - **Name pattern**: `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` (letters, digits, `-` and `_` only, at most 64 characters).
@@ -1472,7 +1479,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 498 tests:
+`npm test` runs 499 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1483,7 +1490,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 53 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 54 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 11 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
@@ -1566,7 +1573,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 40
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 41
   tests fire every hook entry the installer writes: each agent's scope rule (on a write tool and
   on Bash), both gates, every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1594,7 +1601,7 @@ need no login and cost nothing.
   variables; without the hook it uses the token and tries to connect
   ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 40
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 41
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
