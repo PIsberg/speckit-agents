@@ -21,7 +21,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `agents/*.md`: the eight subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`, `project`. `hooks/speckit-drift.mjs`: the drift check, installed
+  `ends`, `start`, `lane`, `patch`, `project`, `check`. `hooks/speckit-drift.mjs`: the drift check, installed
   beside it and loaded at spec-gatekeeper's `APPROVED` (#228); `tools/drift.mjs` is its command line.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
@@ -70,7 +70,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Skill and agent authoring limits (line budgets, description length, no model name in a body, no colliding
   descriptions) are held by `test/skills.test.mjs`; the rest are review criteria in the constitution.
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;
-  install and uninstall tell their own files from the user's by it.
+  install and uninstall tell their own files from the user's by it. The installer stamps the build after
+  it (#230); `buildOf()` in `install.mjs` and in the hook are twins, held by `test/install.test.mjs`.
 - A new hook command goes in an agent's frontmatter or `SETTINGS_GATES` in `install.mjs`, and in the
   README's guardrail table.
 - Hooks fail open when they crash. Any change that can make the script throw needs a test.

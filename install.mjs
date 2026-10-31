@@ -29,6 +29,7 @@
 //                                             (the seven speckit-role-<role> skills, generated from agents/)
 //   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -37,6 +38,24 @@ import { fileURLToPath } from 'node:url';
 
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const MARKER = 'speckit-agents: managed by install.mjs';
+// #230: the checkout's build, stamped on every file's marker line, so the hook's `check` can tell an
+// install from another checkout, or a second install, from this one. Twin: buildOf() in the hook,
+// which computes it for a speckit-agents checkout; held equal by test/install.test.mjs.
+function buildOf(dir) {
+  const h = createHash('sha256');
+  const list = (d, keep) => { try { return fs.readdirSync(path.join(dir, d)).filter(keep).sort().map((n) => `${d}/${n}`); } catch { return []; } };
+  const files = [...list('agents', (n) => n.endsWith('.md')), ...list('skills', (n) => !n.startsWith('.')).map((d) => `${d}/SKILL.md`),
+    ...list('hooks', (n) => n.endsWith('.mjs')), 'install.mjs', 'package.json'];
+  for (const f of files) {
+    let text = '<missing>';
+    try { text = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n'); } catch { /* counted as missing */ }
+    h.update(`${f}\0${text}\0`);
+  }
+  return h.digest('hex').slice(0, 12);
+}
+const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(SRC, 'package.json'), 'utf8')).version ?? '0'; } catch { return '0'; } })();
+const BUILD = buildOf(SRC);
+const STAMPED = `${MARKER} (speckit-agents ${VERSION}, build ${BUILD})`;
 const HOOK_FILE = 'speckit-team.mjs';
 // The drift check the hook loads from beside itself at spec-gatekeeper's APPROVED (#228).
 const DRIFT_FILE = 'speckit-drift.mjs';
@@ -493,7 +512,7 @@ const rendered = new Map();
 try {
   for (const { src, dst, role } of files()) {
     const text = fs.readFileSync(path.join(SRC, src), 'utf8');
-    rendered.set(dst, (role ? roleSkill(role, text) : text).replaceAll('{{HOOK}}', hookPath));
+    rendered.set(dst, (role ? roleSkill(role, text) : text).replaceAll('{{HOOK}}', hookPath).replace(MARKER, STAMPED));
   }
 } catch (e) {
   console.error(`ERROR: ${e.message}`);
@@ -549,6 +568,8 @@ const boardResult = wantBoard ? installBoard(addedBefore, pluginBefore)
   : { added: addedBefore, plugin: pluginBefore };
 write(manifestFile, `${JSON.stringify({
   managedBy: MARKER,
+  build: BUILD,
+  version: VERSION,
   createdDirs,
   createdSettings: manifest?.createdSettings ?? settingsText === null,
   settingsBackup,

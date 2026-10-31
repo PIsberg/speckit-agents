@@ -706,6 +706,30 @@ test("#228: spec-gatekeeper's APPROVED is refused while a ticked test task's FR 
   assert.equal(state(s, 'ends', '001-x.json').word, 'REJECTED', story(r));
 });
 
+// #230: with the team in the config dir and in the repo's .claude/, of different builds, a typed
+// /speckit-patch runs the personal skill (#175, seen on 2.1.310 and 2.1.316), and the check its first step
+// runs names both installs and exits 1. The first request shows which skill Claude Code expanded.
+test('#230: a personal install shadows a project one of another build, and the skill\'s check stops the run', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const project = path.join(s.repo, '.claude');
+  execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', project], { stdio: 'ignore' });
+  const STAMP = /(speckit-agents: managed by install\.mjs \(speckit-agents \S+, build )[0-9a-f]{12}\)/;
+  for (const rel of ['skills/speckit-patch/SKILL.md', 'hooks/speckit-team.mjs', 'agents/patcher.md']) {
+    const f = path.join(project, ...rel.split('/'));
+    fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(STAMP, '$1ffffffffffff)'));
+  }
+  const fwd = (p) => p.split(path.sep).join('/');
+  const personalHook = fwd(s.hook);
+  const r = await session(s, { [MAIN]: [call('Bash', { command: `node "${personalHook}" check`, description: 'Check the team' })] },
+    { prompt: `/speckit-patch ${MAIN} rename x` });
+  const first = shown(r.requests[MAIN][0]);
+  assert.ok(first.includes(`node "${personalHook}" check`), `the personal skill was expanded:\n${story(r)}`);
+  assert.ok(!first.includes(fwd(path.join(project, 'hooks', 'speckit-team.mjs'))), 'not the project one');
+  const out = lastResult(r.requests[MAIN][1]);
+  assert.match(out, /speckit-team: check: two installs of the team/, story(r));
+  assert.ok(out.includes(fwd(project)), out);
+});
+
 test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED, BLOCKED or FIXED", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);

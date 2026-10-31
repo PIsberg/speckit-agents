@@ -1830,3 +1830,166 @@ test('009 T028 FR-010 plan D10: CLAUDE.md "Rules" names the args report line as 
   assert.match(rules, /`args`.{0,200}(report|last) line|(report|last) line.{0,200}`args`/i, 'the args report line');
   assert.match(rules, /`args`.{0,300}(skill|Skill)[^.]{0,80}hook|(skill|Skill)[^.]{0,80}hook.{0,300}`args`/i, 'a skill half and a hook half');
 });
+
+// --- #230: the team that runs is the team the user thinks ---
+// On 2026-10-31 (Claude Code 2.1.316) three setups ran something other than the install the user meant,
+// and nothing said so: a personal skill shadowing the project's copy, a project install in a folder not
+// trusted (its agents' hooks skipped), and an install from an old checkout. The installer now stamps one
+// build into every file it writes, and `check`, which both pipeline skills run first, compares them.
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+const STAMP = /speckit-agents: managed by install\.mjs \(speckit-agents (\S+), build ([0-9a-f]{12})\)/;
+const VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+// Every file under an install folder that carries the ownership marker, with its stamp.
+function stamps(dir) {
+  const out = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(md|mjs)$/.test(e.name) && fs.readFileSync(p, 'utf8').includes('speckit-agents: managed by install.mjs')) {
+        out.push({ file: p, m: STAMP.exec(fs.readFileSync(p, 'utf8')) });
+      }
+    }
+  };
+  for (const sub of ['agents', 'skills', 'hooks']) if (fs.existsSync(path.join(dir, sub))) walk(path.join(dir, sub));
+  return out;
+}
+function specRepo() {
+  const repo = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'skcheck-')));
+  fs.mkdirSync(path.join(repo, '.specify', 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.specify', 'memory', 'constitution.md'), '# Constitution\n');
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  return repo;
+}
+const fwd = (p) => p.split(path.sep).join('/');
+const trust = (cfg, dir, accepted = true) => fs.writeFileSync(path.join(cfg, '.claude.json'),
+  JSON.stringify({ projects: { [fwd(dir)]: { hasTrustDialogAccepted: accepted } } }));
+// The installed hook's check, as a skill runs it: from Bash in the repo, no stdin, the user's config dir.
+const check = (installDir, repo, cfg) => spawnSync(process.execPath, [path.join(installDir, 'hooks', 'speckit-team.mjs'), 'check'], {
+  cwd: repo, encoding: 'utf8', input: '', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg },
+});
+const restamp = (dir, build) => {
+  for (const { file } of stamps(dir)) {
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(STAMP, `speckit-agents: managed by install.mjs (speckit-agents ${VERSION}, build ${build})`));
+  }
+};
+
+test('#230: every file the installer writes carries one build stamp, and a second run changes nothing', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const all = stamps(dir);
+  assert.ok(all.length >= 8 + 3 + 7 + 2, `${all.length} stamped files`);
+  for (const s of all) assert.ok(s.m, `${s.file} carries the stamp`);
+  assert.equal(new Set(all.map((s) => s.m[2])).size, 1, 'one build');
+  assert.equal(all[0].m[1], VERSION);
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'hooks', 'speckit-agents.install.json'), 'utf8'));
+  assert.equal(manifest.build, all[0].m[2]);
+  const before = all.map((s) => fs.readFileSync(s.file, 'utf8'));
+  assert.equal(install(dir).status, 0);
+  assert.deepEqual(stamps(dir).map((s) => fs.readFileSync(s.file, 'utf8')), before);
+});
+
+test('#230: check passes for one install and names it', () => {
+  const cfg = claudeDir();
+  assert.equal(install(cfg).status, 0);
+  const r = check(cfg, specRepo(), cfg);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, new RegExp(`^speckit-team: check: ok, speckit-agents ${VERSION.replace(/\./g, '\\.')} build [0-9a-f]{12} in `));
+  assert.doesNotMatch(r.stdout, /note:/);
+});
+
+test('#230: check stops on a file of another build in the same install', () => {
+  const cfg = claudeDir();
+  assert.equal(install(cfg).status, 0);
+  const f = path.join(cfg, 'agents', 'implementer.md');
+  fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(STAMP, `speckit-agents: managed by install.mjs (speckit-agents ${VERSION}, build 000000000000)`));
+  const r = check(cfg, specRepo(), cfg);
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /implementer\.md/);
+  assert.match(r.stdout, /build 000000000000/);
+  assert.match(r.stdout, /node install\.mjs/);
+});
+
+test('#230: a personal and a project install of different builds stop the check from either side, and of one build only note it', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  const project = path.join(repo, '.claude');
+  assert.equal(install(cfg).status, 0);
+  assert.equal(install(project).status, 0);
+  trust(cfg, repo);
+  restamp(project, 'ffffffffffff');
+  for (const side of [cfg, project]) {
+    const r = check(side, repo, cfg);
+    assert.equal(r.status, 1, r.stdout);
+    assert.ok(r.stdout.includes(fwd(cfg)), `names the personal install: ${r.stdout}`);
+    assert.ok(r.stdout.includes(fwd(project)), `names the project install: ${r.stdout}`);
+    assert.match(r.stdout, /personal skill/);
+  }
+  assert.equal(install(project).status, 0, 'reinstalled from the same checkout');
+  const same = check(cfg, repo, cfg);
+  assert.equal(same.status, 0, same.stdout);
+  assert.match(same.stdout, /^note: .*two installs/m);
+});
+
+test('#230: a project install in a folder Claude Code has not trusted stops the check', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  const project = path.join(repo, '.claude');
+  assert.equal(install(project).status, 0);
+  const none = check(project, repo, cfg);
+  assert.equal(none.status, 1, none.stdout);
+  assert.match(none.stdout, /not trusted/);
+  assert.match(none.stdout, /frontmatter hooks/);
+  trust(cfg, repo, false);
+  assert.equal(check(project, repo, cfg).status, 1, 'an entry that says no');
+  trust(cfg, repo);
+  assert.equal(check(project, repo, cfg).status, 0);
+  trust(cfg, path.dirname(repo));
+  assert.equal(check(project, repo, cfg).status, 0, 'a folder above it trusted');
+  fs.writeFileSync(path.join(cfg, '.claude.json'), '{ not json');
+  const unread = check(project, repo, cfg);
+  assert.equal(unread.status, 0, unread.stdout);
+  assert.match(unread.stdout, /^note: .*could not tell whether/m);
+});
+
+// In a speckit-agents checkout the install is compared with the checkout: the hook computes the build the
+// installer would stamp, so the two build functions are held equal here.
+test('#230: in a speckit-agents checkout, check notes an install that is not this checkout', () => {
+  const co = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'skcheck-co-')));
+  for (const rel of ['install.mjs', 'package.json', 'agents', 'hooks', 'skills/speckit-team', 'skills/speckit-patch', 'skills/speckit-triage']) {
+    fs.cpSync(path.join(ROOT, rel), path.join(co, rel), { recursive: true });
+  }
+  fs.mkdirSync(path.join(co, '.specify', 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(co, '.specify', 'memory', 'constitution.md'), '# Constitution\n');
+  for (const a of [['init', '-q'], ['add', '-A'], ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'co']]) spawnSync('git', a, { cwd: co });
+  const cfg = claudeDir();
+  const i = spawnSync(process.execPath, [path.join(co, 'install.mjs'), '--claude-dir', cfg], { encoding: 'utf8' });
+  assert.equal(i.status, 0, i.stderr);
+  const same = check(cfg, co, cfg);
+  assert.equal(same.status, 0, same.stdout);
+  assert.doesNotMatch(same.stdout, /note:/, 'installed from this checkout');
+  fs.appendFileSync(path.join(co, 'agents', 'architect.md'), '\nA new rule.\n');
+  const behind = check(cfg, co, cfg);
+  assert.equal(behind.status, 0, behind.stdout);
+  assert.match(behind.stdout, /^note: .*not this checkout's/m);
+  assert.match(behind.stdout, /node install\.mjs/);
+});
+
+test('#230: the hook as checked out, not installed, refuses the check', () => {
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'check'], { cwd: specRepo(), encoding: 'utf8', input: '' });
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /not an installed copy/);
+});
+
+test('#230: both pipeline skills run the check first and stop on its exit 1', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = fwd(path.join(dir, 'hooks', 'speckit-team.mjs'));
+  for (const [skill, heading] of [['speckit-team', '## 0. Preconditions'], ['speckit-patch', '## 1. Preconditions']]) {
+    const text = fs.readFileSync(path.join(dir, 'skills', skill, 'SKILL.md'), 'utf8');
+    const section = text.slice(text.indexOf(heading));
+    const first = section.split('\n').find((l) => l.startsWith('- '));
+    assert.ok(first?.includes(`node "${hookPath}" check`), `${skill}: first precondition runs the check: ${first}`);
+    assert.match(flat(section.slice(0, 900)), /exit 1.{0,80}stop|stop.{0,80}exit 1/i, skill);
+  }
+});

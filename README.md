@@ -154,6 +154,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `skills/speckit-role-<role>/SKILL.md` | seven role skills, one per team role, generated from `agents/<role>.md` for [`--team skill-agents`](#running-the-roles-as-skills---team-skill-agents); `user-invocable: false`, so only that mode calls them |
 | `hooks/speckit-team.mjs` | every guardrail |
+| `hooks/speckit-agents.install.json` | what the installer added (for `--uninstall`), and the version and build it stamped on every file it wrote ([#230](https://github.com/PIsberg/speckit-agents/issues/230)) |
 | `hooks/speckit-drift.mjs` | the drift check the hook runs at spec-gatekeeper's `APPROVED` ([#228](https://github.com/PIsberg/speckit-agents/issues/228)); [`tools/drift.mjs`](#checking-old-features-for-drift) runs the same file |
 | `settings.json` | three hook entries merged in (`PreToolUse`, `UserPromptExpansion`, and `SubagentStart` for the eight agents to record start and inject project context), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
 
@@ -1038,6 +1039,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
 | `start` | `settings.json`: `SubagentStart` of the eight agents | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all eight when a project is active (007); never decides |
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
+| `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
 | `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
@@ -1849,6 +1851,27 @@ check of 2026-10-31 in an untrusted folder saw none of the project agents' new h
 same check passed once the folder was trusted ([Live results](docs/live-results.md)). A personal
 skill also shadows the project's copy of the same name, trusted or not
 ([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
+
+`/speckit-team` and `/speckit-patch` now stop on all of this before anything runs
+([#230](https://github.com/PIsberg/speckit-agents/issues/230)). The installer stamps every file it
+writes with the checkout's version and build (a hash of `agents/`, `skills/`, `hooks/`,
+`install.mjs` and `package.json`) on its marker line, and records the build in
+`hooks/speckit-agents.install.json`. Each skill's first step runs `node "<hook>" check`, which exits 1,
+and the skill stops, naming the paths, when:
+
+- the install mixes builds (a file left from another checkout);
+- a second install of another build exists, in your config dir (`CLAUDE_CONFIG_DIR`, else `~/.claude`)
+  or in the repo's `.claude/`: the run could take its skill from one and its agents from the other.
+  Remove one with `node install.mjs --claude-dir <dir> --uninstall`, or install the same checkout into
+  both;
+- the install is the repo's `.claude/`, and your `.claude.json` (beside `CLAUDE_CONFIG_DIR`'s
+  contents, else in your home) trusts neither the repo nor a folder above it.
+
+It prints a `note:` line and goes on for a second install of the same build, a `.claude.json` that is
+not JSON, and, in a speckit-agents checkout, an install that is not this checkout's build (run
+`node install.mjs`). Verified by `test/install.test.mjs` on throwaway installs, and by an e2e case in
+which Claude Code runs the personal skill over the project's and its check stops the run. Not
+verified: that Claude Code counts a trusted folder above the repo as trust for it, as the check does.
 
 If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git for Windows
 2.56 fails every command (`fatal: unknown error occurred while reading the configuration files`;

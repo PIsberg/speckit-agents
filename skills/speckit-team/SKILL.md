@@ -88,6 +88,8 @@ the background (see Handoffs). AskUserQuestion takes at most 4 questions per cal
 in as many calls as it takes, all before the next launch.
 
 ## 0. Preconditions
+- Run `node "{{HOOK}}" check` in one Bash call. On exit 1, show its lines and stop with nothing launched:
+  the team that would run is not this install alone (#230). On exit 0, show any `note:` line, then go on.
 - `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
 - The conversation holds nothing but this run. If it already holds other work, tell the user once,
   in one line, that every response of the run re-reads it and that `/clear` before `/speckit-team`
