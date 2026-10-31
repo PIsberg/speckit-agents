@@ -1,5 +1,17 @@
 <!--
 Sync Impact Report
+- Version change: 1.3.0 -> 1.4.0 (MINOR, 2026-10-31)
+- Principles modified: IV. Zero Runtime Dependencies: the Node floor for hooks, installer and tests
+  rises from 18 to 22 (#223). Owner decision 2026-10-31: CI tests Node 22 only, and Node 18 and 20 are
+  past end of life. Held equal to package.json's engines, the setup scripts, install.mjs, the README
+  and CI's node-version by test/versions.test.mjs.
+- Added sections: none
+- Removed sections: none
+- Templates: .specify/templates/plan-template.md (OK), spec-template.md (OK), tasks-template.md (OK)
+- Deferred TODOs: none
+- Also fixed: the footer still read 1.2.0, last amended 2026-10-15, after the 1.3.0 amendment.
+
+Previous report (1.3.0):
 - Version change: 1.2.0 -> 1.3.0 (MINOR, 2026-10-27)
 - Added sections: Authoring Skills and Agents. Rules from agent-skills' docs/skill-anatomy.md (#189), split into
   the ones a test holds (test/skills.test.mjs) and the review criteria no test can.
@@ -86,7 +98,7 @@ failing test or a live run exposed.
 
 ### IV. Zero Runtime Dependencies
 
-- Hooks, installer and tests MUST use only the Node standard library (Node 18 or newer).
+- Hooks, installer and tests MUST use only the Node standard library (Node 22 or newer).
 - Code that runs inside Claude Code as a plugin MUST use only the plugin API (`$`), and MUST be
   shippable as source with no build or `npm install` step for the user.
 - Adding a runtime dependency requires amending this constitution first.
@@ -174,4 +186,4 @@ Review criteria, checked by the reviewer and not counted as enforced:
   redefining a principle, MINOR for adding one, PATCH for wording. Each amendment updates the
   Sync Impact Report above.
 
-**Version**: 1.2.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-15
+**Version**: 1.4.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-31

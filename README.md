@@ -7,7 +7,7 @@
 [![test](https://github.com/PIsberg/speckit-agents/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/PIsberg/speckit-agents/actions/workflows/test.yml)
 [![Claude Code 2.1.293 in CI](https://img.shields.io/badge/Claude_Code-2.1.293_in_CI-d97757)](https://code.claude.com/docs/en/sub-agents)
 [![Spec Kit 0.8.11, 1.1.2 and 1.2.5](https://img.shields.io/badge/Spec_Kit-0.8.11_%7C_1.1.2_%7C_1.2.5-24292f?logo=github)](https://github.com/github/spec-kit)
-[![Node 18 or newer](https://img.shields.io/badge/Node-18%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Node 22 or newer](https://img.shields.io/badge/Node-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![Linux, macOS and Windows](https://img.shields.io/badge/platform-Linux_%7C_macOS_%7C_Windows-0969da)](.github/workflows/test.yml)
 
 [Install](#install) · [Quick start](#quick-start) · [The team](#the-team) · [How it works](#how-it-works) · [The fast track](#the-fast-track) · [Board mod](#board-mod-experimental) · [Troubleshooting](#troubleshooting)
@@ -108,7 +108,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 | Tool | Why | Check |
 |---|---|---|
 | [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291); for `--team skill-agents` also skill frontmatter `hooks:` and a model-invoked skill with `user-invocable: false` (verified on 2.1.310); the `omitClaudeMd` agent field for the read-only agents to start without your `CLAUDE.md` (verified on 2.1.293 and 2.1.310) | `claude --version` |
-| [Node](https://nodejs.org) 18+ | every hook is a Node script, run as `node` from your `PATH`; `setup.sh` and `setup.ps1` refuse an older one by name | `node --version` |
+| [Node](https://nodejs.org) 22+ | every hook is a Node script, run as `node` from your `PATH`; `setup.sh`, `setup.ps1` and `install.mjs` refuse an older one by name. 22 since [#223](https://github.com/PIsberg/speckit-agents/issues/223): CI tests that version, and 18 and 20 are past end of life | `node --version` |
 | [git](https://git-scm.com) | the hooks use it to find the repo and diff an agent's work | `git --version` |
 | [Spec Kit](https://github.com/github/spec-kit) (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11, 1.1.2 and 1.2.5) |
 | [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
@@ -1496,7 +1496,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 511 tests:
+`npm test` runs 512 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1510,7 +1510,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 54 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 11 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
-| [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
+| [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
@@ -2189,7 +2189,7 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`agents/`](agents/) | the eight subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
 | [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the hook modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane` and `patch`, and `project`, which the skills run from Bash |
 | [`skills/`](skills/) | the `/speckit-team` pipeline skill, the `/speckit-patch` fast-track skill and the advisory `/speckit-triage` skill, each in `<name>/SKILL.md` |
-| [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node 18 or newer and call it |
+| [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node 22 or newer and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
