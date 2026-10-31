@@ -868,6 +868,25 @@ test('patch end (#213): an accepted run writes the undo record too, one that cha
   assert.equal(undoRecord(second.dir).undo, null);
 });
 
+// #221: the end check's message reaches only patcher's transcript, so a skill that found no accepted
+// record named a cause of its own (live, 2026-10-31: a changed team file, for a run over budget). The
+// end record now says what the end check decided and why, in the words of its message.
+test('patch end (#221): the end record holds the outcome and the message, for a stopped and an accepted run', () => {
+  const over = fresh({ 'src/a.js': nl(40, 'a') });
+  begin(over.dir);
+  edit(over.dir, 'src/a.js', 0, 40);
+  const out = stop(over.dir);
+  assert.equal(undoRecord(over.dir).outcome, 'stopped');
+  assert.equal(undoRecord(over.dir).message, msg(out));
+  assert.match(undoRecord(over.dir).message, /^fast track stopped: 40 changed production lines/);
+  const ok = fresh({ 'src/a.js': nl(10, 'a') });
+  begin(ok.dir);
+  edit(ok.dir, 'src/a.js', 0, 2);
+  const accepted = stop(ok.dir);
+  assert.equal(undoRecord(ok.dir).outcome, 'accepted');
+  assert.equal(undoRecord(ok.dir).message, msg(accepted));
+});
+
 // #72: the command deny reads a command's text, so a push it cannot read (a script the agent wrote, a
 // string built at run time) went unseen until the skill's own push failed. The start record keeps the
 // remote-tracking refs, and a change to them, which a push or a fetch makes however it was typed,
@@ -892,6 +911,8 @@ test('patch: a remote-tracking ref that moves during the run stops it and fails 
   assert.equal(record(dir), null, 'no accepted record, so /speckit-patch commits nothing');
   assert.match(msg(hand(dir)), /^fast track FAILED: remote-tracking refs changed/);
   assert.equal(record(dir), null);
+  assert.equal(undoRecord(dir).outcome, 'failed', '#221: the end record says why');
+  assert.match(undoRecord(dir).message, /^fast track FAILED: remote-tracking refs changed/);
 });
 
 test('patch: a start record without the remote-tracking refs cannot be measured (#72, fail closed)', () => {

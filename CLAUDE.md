@@ -46,7 +46,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 507 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 509 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.
@@ -104,8 +104,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - product-owner's and architect's `lane only` prefixes at Stop equal their `scope only` prefixes; the
   `start` entry in `SETTINGS_GATES` records where they start. Held by `test/install.test.mjs`.
 - In `--team skill-agents` the report's last line (`VERDICT: PASS`, `APPROVED`) is read from the next Skill call's `args` first line: the skill writes it, the hook reads it with the Stop's last message beside the transcript; both halves are held by `test/install.test.mjs` and `test/hook.test.mjs`.
-- The accepted record's fields are read by `skills/speckit-patch/SKILL.md`; change both, and
-  `test/install.test.mjs`.
+- The accepted record's fields, and the end record's (`patch-undo.json`: `undo`, `outcome`, `message`),
+  are read by `skills/speckit-patch/SKILL.md`; change both, and `test/install.test.mjs`.
 - Prompt rules with a half in the skill and a half in an agent (the `## Open Decisions` section, the
   `dictated:` prefix, a `contested` finding and where its ruling is recorded, `Spec:` lines, `last round`, `worktree`,
   the architect's `Round <n>:` report lines, answers that take every recommendation), the Bash `timeout` sentence of the four

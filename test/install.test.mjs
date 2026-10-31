@@ -145,6 +145,19 @@ test("installed speckit-patch skill checks the remote-tracking refs and the dirt
 
 // #213: a failed run left patcher's changes among the developer's uncommitted work. The hook names the
 // command that undoes only patcher's changes; the skill offers it and runs it only on an explicit yes.
+// #221: the end check's message reaches only patcher's transcript; a skill that guessed the cause of a
+// missing accepted record named the wrong one live. It reads the cause from the end record instead.
+test('#221: speckit-patch takes the cause of a missing accepted record from the end record, not a guess', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8'));
+  const commit = text.slice(text.indexOf('## 4.'), text.indexOf('## 5.'));
+  assert.match(commit, /patch-undo\.json/, 'step 4 reads the end record');
+  assert.match(commit, /`outcome`/);
+  assert.match(commit, /`message`/);
+  assert.doesNotMatch(commit, /which the hook's message names/, 'no longer relies on a message it never sees');
+});
+
 test("#213: speckit-patch offers the hook's undo command after a failed run, and runs it only on an explicit yes", () => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
@@ -154,6 +167,9 @@ test("#213: speckit-patch offers the hook's undo command after a failed run, and
   assert.match(report, /speckit-team\/patch-undo\.json/, 'reads the undo record');
   assert.match(report, /`sha` equals the start and its `undo` is not `null`/, 'only the record of this run');
   assert.match(report, /only on an explicit yes/);
+  // Live (2026-10-31, #221 run): with the undo in a paragraph after the bullets, the ESCALATE report left it out.
+  assert.match(report, /^## 5\. Report When nothing was committed[^.]*read `\$\(git rev-parse --git-dir\)\/speckit-team\/patch-undo\.json` first/, 'read first');
+  for (const word of ['FAILED', 'ESCALATE']) assert.match(report, new RegExp(`- \`${word}\`:(?:(?!- \`).)*then the undo`), `${word} ends with the undo`);
   for (const cmd of ['git stash', 'git reset --hard', 'git clean', 'git checkout .']) assert.ok(report.includes(`\`${cmd}\``), `names ${cmd} as forbidden`);
 });
 

@@ -61,25 +61,27 @@ Otherwise:
    on red, report it to the user, with no automatic fix round.
 
 If a check fails, commit nothing and report the run as FAILED, say which check failed, and that
-the work is uncommitted in the working tree. A missing accepted record is such a check; one cause
-is an installed team file (an agent, hook, skill or settings file in the config directory) changed
-during the run, which the hook's message names.
+the work is uncommitted in the working tree. A missing accepted record is such a check: its cause is
+the `outcome` (`stopped`, `failed`) and `message` of `$(git rev-parse --git-dir)/speckit-team/patch-undo.json`
+when its `sha` equals the start. Quote the message; never work a cause out from other files. No
+such record: say the end check left none.
 
 ## 5. Report
+When nothing was committed (`FAILED`, `ESCALATE`, a failed check), read
+`$(git rev-parse --git-dir)/speckit-team/patch-undo.json` first: the undo below is part of the report.
+
 Relay the outcome in at most 5 lines: what changed, the active project (if one was active), the size against the budget, the test outcome,
 the PR link.
-- `FAILED`: say which test failed or that tests were not run; no commit, no PR.
+- `FAILED`: say which test failed or that tests were not run; no commit, no PR; then the undo.
 - `DONE` with an empty `files`: say that `patcher` changed no file; no commit, no PR.
 - `ESCALATE`: say why, that the work is uncommitted in the working tree, and that `/speckit-team`
-  is the way on. Never start `/speckit-team`.
+  is the way on; then the undo. Never start `/speckit-team`.
 
-After a run that committed nothing, read `$(git rev-parse --git-dir)/speckit-team/patch-undo.json`.
-If its `sha` equals the start and its `undo` is not `null`, offer that command, the one that takes
-back `patcher`'s changes and nothing else: show it and ask whether to run it; run it exactly as
-given, only on an explicit yes. No file, another `sha` or `null`: say there is nothing to undo
-that way. Never undo any other way
-(`git stash`, `git reset --hard`, `git clean`, `git checkout .`): those take the developer's own
-uncommitted work too.
+The undo: if the record's `sha` equals the start and its `undo` is not `null`, show that command,
+the one that takes back `patcher`'s changes and nothing else, and ask whether to run it; run it
+exactly as given, only on an explicit yes. No file, another `sha` or `null`: say there is nothing
+to undo that way. Never undo any other way (`git stash`, `git reset --hard`, `git clean`,
+`git checkout .`): those take the developer's own uncommitted work too.
 
 ## 6. Merging
 Never merge.
