@@ -183,7 +183,7 @@ function specifyAbove(dir) {
   let d;
   try { d = fs.realpathSync.native(path.resolve(dir)); } catch { return true; }
   for (;;) {
-    if (fs.existsSync(path.join(d, '.specify'))) return true;
+    if (fs.existsSync(path.join(d, '.specify'))) return d;
     const up = path.dirname(d);
     if (up === d) return false;
     d = up;
@@ -191,9 +191,34 @@ function specifyAbove(dir) {
 }
 // Every hook mode stays silent outside a Spec Kit repo; the project mode is asked a question and says no.
 const notSpecKit = () => (mode === 'project' ? projectRefuse('no .specify/ in this repository.') : process.exit(0));
-if (!specifyAbove(cwd)) notSpecKit();
+const specDir = specifyAbove(cwd);
+if (!specDir) notSpecKit();
 // One git process for the work tree's root and the git directory every worktree shares.
-const [root, commonDir] = lines(git(cwd, 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'));
+// #215: a global config git may not read (a sandbox that denies ~/.gitconfig) fails every git command
+// on git 2.56, and a failed call here read as "no repo", so every mode let the action through in
+// silence. Then the repo is read without the global and system config, which git could not use
+// anyway: NUL on Windows, where git refuses Node's \\.\nul. A Spec Kit folder git still cannot read,
+// though a .git sits beside its .specify/, gets a visible no-decision instead of silence.
+function repoDirs() {
+  const args = ['-c', 'core.quotepath=off', 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'];
+  const once = () => {
+    try { return { out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) {
+      return { err: String(e?.stderr ?? e?.message ?? '') };
+    }
+  };
+  let r = once();
+  if ('err' in r && /reading the configuration files|unable to access/.test(r.err)) {
+    process.env.GIT_CONFIG_GLOBAL = process.platform === 'win32' ? 'NUL' : os.devNull;
+    process.env.GIT_CONFIG_NOSYSTEM = '1';
+    r = once();
+  }
+  if ('out' in r) return lines(r.out.trim());
+  if (/not a git repository/i.test(r.err) && !(typeof specDir === 'string' && fs.existsSync(path.join(specDir, '.git')))) return [];
+  const why = r.err.trim().split(/\r?\n/).filter(Boolean).pop() || 'git failed';
+  if (mode === 'project') projectRefuse(`git could not read the repository here (${why}).`);
+  return emit({ systemMessage: `speckit-team: ${mode} could not read the git repository here (${why}); no decision made.` });
+}
+const [root, commonDir] = repoDirs();
 if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecKit();
 inSpecKitRepo = true;
 
