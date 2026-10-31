@@ -1600,7 +1600,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 41
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 42
   tests fire every hook entry the installer writes: each agent's scope rule (on a write tool and
   on Bash), both gates, every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1628,7 +1628,7 @@ need no login and cost nothing.
   variables; without the hook it uses the token and tries to connect
   ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 41
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 42
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
