@@ -12,6 +12,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `docs/live-results.md`: what was seen in a real session, by date.
 - `docs/CHANGELOG.md`: every commit by day, written by `node tools/changelog.mjs`; regenerate it as a
   PR's last commit (a chain's last PR), never edit it by hand.
+- `docs/rules.md`: every rule of the skills and agents and what holds it: hook, script, pinned text, or
+  nothing. A section added, changed or dropped fails `test/rules.test.mjs` until its entry is reviewed.
 - `docs/architecture.md`: pipeline overview, security-reviewer dual-gate lifecycle, and diagram prompt.
 - `.specify/memory/constitution.md`: the rules every change is held to (tests first, guardrails never
   fail silently, docs in the same change).
@@ -47,7 +49,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 533 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 535 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.

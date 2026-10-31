@@ -905,6 +905,12 @@ on a stopped run and checks that the tree is back at the start with your own cha
 
 #### What is prompt text, and what was verified
 
+For the whole team, every rule of every skill and agent and what holds it (a hook, a script the skill
+runs, a test that pins the text, or nothing) is in [docs/rules.md](docs/rules.md), with the
+text-only rules whose breach leaves no trace listed first ([#232](https://github.com/PIsberg/speckit-agents/issues/232)).
+`test/rules.test.mjs` fails when a section of a skill or agent is added, changed or dropped without
+its entry there. For the fast track:
+
 No hook can tell which command is a repo's test suite or whether it passed. These are rules in
 [`agents/patcher.md`](agents/patcher.md) and
 [`skills/speckit-patch/SKILL.md`](skills/speckit-patch/SKILL.md), not hooks: no PR unless the
@@ -1501,7 +1507,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 533 tests:
+`npm test` runs 535 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1521,6 +1527,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 22 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
+| [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
