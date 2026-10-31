@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/hook.test.mjs)
 // Drives speckit-team.mjs exactly as Claude Code does: hook JSON on stdin, decision on stdout. The fast
 // track's patch mode is in hook-patch.test.mjs, so the two files run side by side.
 import { test } from 'node:test';

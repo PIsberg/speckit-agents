@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/full-run.test.mjs)
 // tools/full-run.mjs drives a whole /speckit-team run with real models for the full-run workflow
 // (#46). No test here calls a model: they build the scratch repo, judge synthetic run states, and
 // read the workflow, so what CI pays for is checked by what it would check.

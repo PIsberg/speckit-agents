@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/media.test.mjs)
 // docs/media/leaks.mjs: a recording whose frames show who recorded it (#60) must never reach
 // docs/media, where it could be committed. The check reads vhs's text dump of each tape.
 import { test } from 'node:test';

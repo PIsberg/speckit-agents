@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/hook-patch.test.mjs)
 // The fast track's patch mode (feature 003), driven as test/hook.test.mjs drives the other modes: hook
 // JSON on stdin, decision on stdout. A file of its own, so it runs beside hook.test.mjs.
 import { test } from 'node:test';

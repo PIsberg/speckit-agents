@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/live-board.test.mjs)
 // tools/live-board.mjs runs the board's interactive checks through vhs, which CI does not have. These
 // check how it reads L3 to L6 off the screens, on screens written by hand in vhs's text format: one
 // screen after each command of the tape, between lines of 80 box rules.

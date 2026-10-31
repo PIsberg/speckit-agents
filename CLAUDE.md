@@ -35,6 +35,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   against a fake API at $0; run it after changing what the board draws or its buttons do.
   `tools/drift.mjs`: finished features' test tasks against the tests as they are now, no model.
   `tools/changelog.mjs`: `docs/CHANGELOG.md` from `git log --no-merges`; `--check` says if it is behind.
+  `tools/test.mjs`: `npm test`, every `test/*.test.mjs` under the node that runs it (#214).
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key);
   `--login` runs it on your own Claude Code login instead of a key, `--case` picks a scored case
@@ -45,9 +46,10 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 502 tests (the files and what each runs:
-  README.md, "Test suite"). Tests that need `claude` skip without it. `SPECKIT_E2E_CONCURRENCY=1` runs
-  the e2e tests one by one.
+- `npm test`: every suite, no network beyond localhost, 507 tests (the files and what each runs:
+  README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
+  (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
+  without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
   the oldest supported, moved by hand) and `SPECKIT_REQUIRE_CLAUDE=1` (those tests fail instead of
   skipping), then on Linux `npm ci` and type-checks the board mod:

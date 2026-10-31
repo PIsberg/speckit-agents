@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/eval.test.mjs)
 // tools/eval.mjs scores a finished full-run against a case with a known right answer and tallies the
 // runs of each arm (#188). No test here calls a model: the scoring is pure code over a repo's git history
 // and a run.json, so each case is judged on a synthetic run, and the harness is shown to fail on a wrong one.

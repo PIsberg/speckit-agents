@@ -108,7 +108,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 | Tool | Why | Check |
 |---|---|---|
 | [Claude Code](https://code.claude.com) | runs the agents. Needs subagent frontmatter `hooks:` and `skills:`, and the `UserPromptExpansion` hook event (verified on 2.1.291); for `--team skill-agents` also skill frontmatter `hooks:` and a model-invoked skill with `user-invocable: false` (verified on 2.1.310); the `omitClaudeMd` agent field for the read-only agents to start without your `CLAUDE.md` (verified on 2.1.293 and 2.1.310) | `claude --version` |
-| [Node](https://nodejs.org) 18+ | every hook is a Node script | `node --version` |
+| [Node](https://nodejs.org) 18+ | every hook is a Node script, run as `node` from your `PATH`; `setup.sh` and `setup.ps1` refuse an older one by name | `node --version` |
 | [git](https://git-scm.com) | the hooks use it to find the repo and diff an agent's work | `git --version` |
 | [Spec Kit](https://github.com/github/spec-kit) (`specify`) | per repo, provides the phase skills | `specify --version` (verified on 0.8.11, 1.1.2 and 1.2.5) |
 | [uv](https://docs.astral.sh/uv/) | installs Spec Kit, a Python tool; nothing in this repo runs on it | `uv --version` (verified on 0.11.14) |
@@ -1494,7 +1494,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 502 tests:
+`npm test` runs 507 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1513,15 +1513,23 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 22 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
 three serious bugs in this project were. The end-to-end tests do.
 
+`npm test` is [`tools/test.mjs`](tools/test.mjs), which lists `test/*.test.mjs` itself and runs
+them with `node --test` under the node that started it. It used to hand `node --test` the quoted
+glob, which Node expands only from v21: on Node 20.20.2 it found no file at all
+([#214](https://github.com/PIsberg/speckit-agents/issues/214)). So where the `node` on `PATH` is
+missing or another one, run `/path/to/node tools/test.mjs`, with `node --test` options such as
+`--test-name-pattern=...` and test files after it if you want only some. CI runs Node 22 only.
+
 `node --test` runs the files side by side, and each file's own tests one after another. The hook
 tests start a process per call and wait on it, so they share no time unless they are in different
 files: the `patch` mode's half is a file of its own, with the helpers both use in
-[`test/hook-helpers.mjs`](test/hook-helpers.mjs), which the `*.test.mjs` glob does not run. The
+[`test/hook-helpers.mjs`](test/hook-helpers.mjs), which the runner does not run. The
 end-to-end tests are independent and spend their time waiting on `claude`, so that file runs up to
 four of them at once (one fewer than the machine's cores; `SPECKIT_E2E_CONCURRENCY=1` runs them one
 by one): 149 s became 43 s on Windows (2026-10-11).
@@ -2163,13 +2171,14 @@ directory and leaves any older `*.bak-speckit-agents-<time>` backups in place.
 | [`agents/`](agents/) | the eight subagent definitions; the installer replaces `{{HOOK}}` in them with the installed hook's absolute path |
 | [`hooks/speckit-team.mjs`](hooks/speckit-team.mjs) | every guardrail, in one script with the hook modes `scope`, `gate`, `verdict`, `result`, `ends`, `start`, `lane` and `patch`, and `project`, which the skills run from Bash |
 | [`skills/`](skills/) | the `/speckit-team` pipeline skill, the `/speckit-patch` fast-track skill and the advisory `/speckit-triage` skill, each in `<name>/SKILL.md` |
-| [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node and call it |
+| [`install.mjs`](install.mjs) | the installer; [`setup.sh`](setup.sh) and [`setup.ps1`](setup.ps1) only check for Node 18 or newer and call it |
 | [`mods/speckit-board/`](mods/speckit-board/) | the experimental [board mod](#board-mod-experimental) and its own tests |
 | [`tools/usage.mjs`](tools/usage.mjs) | the input tokens of a recorded session and its agents ([Measuring token usage](#measuring-token-usage)) |
 | [`tools/live-board.mjs`](tools/live-board.mjs) | the board's interactive checks in a real Claude Code session that vhs drives against a fake API, at no cost ([Board mod](#board-mod-experimental)) |
 | [`tools/drift.mjs`](tools/drift.mjs) | finished features' test tasks against the tests as they are now, with no model ([Checking old features for drift](#checking-old-features-for-drift)) |
 | [`tools/full-run.mjs`](tools/full-run.mjs) | a whole `/speckit-team` run with real models on [`test/fixtures/full-run/`](test/fixtures/full-run/), checked on its records, for the `full-run` workflow ([Full run with real models](#full-run-with-real-models)) |
 | [`tools/eval.mjs`](tools/eval.mjs) | `full-run.mjs` repeated per arm and case, each run scored against a known right answer, with counts out of N, tokens and cost ([Scored cases](#scored-cases-and-arms)) |
+| [`tools/test.mjs`](tools/test.mjs) | `npm test`: every `test/*.test.mjs` under `node --test`, run by the node that starts it ([Test suite](#test-suite)) |
 | [`tools/changelog.mjs`](tools/changelog.mjs) | [`docs/CHANGELOG.md`](docs/CHANGELOG.md) from the git history, every non-merge commit by day; `--check` exits 1 when the file is behind ([Making a change](#making-a-change)) |
 | [`test/`](test/) | the `node:test` suites ([Test suite](#test-suite)) |
 | [`docs/media/`](docs/media/) | this README's GIFs, screenshot and diagram, the vhs tapes, `record.mjs` and the demo feature |

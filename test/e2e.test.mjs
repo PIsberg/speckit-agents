@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/e2e.test.mjs)
 // End to end: the real Claude Code, the team installed by install.mjs into a throwaway config dir,
 // and a fake Anthropic API on localhost instead of a model. Unit tests feed the hook JSON by hand,
 // so they cannot show that Claude Code fires it; these do, at no cost and with no login.

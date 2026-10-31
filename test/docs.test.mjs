@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/docs.test.mjs)
 // The docs an agent reads here point into each other: the README into docs/, docs/ back into the
 // README, CLAUDE.md into both. A moved or renamed heading breaks such a link without a word, and the
 // reader lands at the top of a 100 KB file. Every relative link must name a file that exists and, with

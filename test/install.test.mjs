@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/install.test.mjs)
 // Installs into throwaway Claude config dirs (with a space in the path) and checks what lands there.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
