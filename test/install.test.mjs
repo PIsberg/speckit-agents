@@ -37,7 +37,8 @@ const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => 
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
 // SubagentStart matches the eight roles, so every team agent can start with its session's project.
 const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|security-reviewer|patcher';
-const GATES = ['PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
+// #231: PostToolUse on Agent relays what a subagent's hooks said at its Stop to the main session.
+const GATES = ['PostToolUse:Agent', 'PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
 const flat = (s) => s.replace(/\s+/g, ' ');
 

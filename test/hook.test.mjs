@@ -468,7 +468,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']];
 
 // #215: in a sandbox that denies reading ~/.gitconfig, git for Windows 2.56 fails every command ("fatal:
 // unknown error occurred while reading the configuration files"), not only warns. On the Linux and macOS
@@ -541,7 +541,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -2757,4 +2757,52 @@ test('009 T025 contract 6: last_assistant_message a number never crashes', () =>
   say(b.t, 'No findings.');
   stopRole(b.dir, { last_assistant_message: 'VERDICT: PASS' });
   assert.equal(verdictRec(b.dir)?.verdict, 'PASS', 'a string last message is read');
+});
+
+// --- #231: what a subagent's hooks say reaches the main session ---
+// A hook's systemMessage at SubagentStop lands in the subagent's own transcript and never in the main
+// session's (seen 2026-10-31 on 2.1.316): an out-of-lane file left behind, a lane check that could not
+// run, an APPROVED recorded as REJECTED. Under claude -p nobody saw them. The hook now keeps each message a
+// subagent's hook gives, by session, and the `relay` entry (settings.json, PostToolUse on Agent) hands them
+// to the main session as additionalContext once its Agent call returns.
+const relay = (dir, session_id, extra = {}) => run(dir, ['relay'], {
+  hook_event_name: 'PostToolUse', tool_name: 'Agent', session_id, tool_input: {}, tool_response: {}, ...extra,
+});
+const relayed = (out) => out?.hookSpecificOutput?.additionalContext ?? '';
+
+test('#231: a lane WARNING at a subagent\'s Stop reaches the main session once, after its Agent call', () => {
+  const { dir, write: w } = repo();
+  subagentStart(dir, 'a9', 'architect', { session_id: 's31' });
+  w('src/greet.js', 'export const greet = 1;\n');
+  assert.equal(laneOnly(dir, 'a9', ['specs/'], 'architect', { session_id: 's31' })?.decision, 'block');
+  const warn = laneOnly(dir, 'a9', ['specs/'], 'architect', { session_id: 's31', stop_hook_active: true });
+  assert.match(msg(warn), /WARNING: architect left changes outside its lane: src\/greet\.js/, 'the terminal still gets it');
+  assert.equal(relay(dir, 'another-session'), null, 'another session gets nothing');
+  const out = relay(dir, 's31');
+  assert.equal(out?.hookSpecificOutput?.hookEventName, 'PostToolUse');
+  assert.match(relayed(out), /architect: WARNING: architect left changes outside its lane: src\/greet\.js/);
+  assert.ok(!decided(out), 'never a decision');
+  assert.equal(relay(dir, 's31'), null, 'handed over once');
+});
+
+test('#231: a verdict at a hand-back and an APPROVED recorded as REJECTED are relayed too; the main session\'s own Stop is not', () => {
+  const { dir } = driftRepo();
+  handback(dir, 'verdict', 'All good.\n\nVERDICT: PASS', { agent_type: 'spec-auditor', session_id: 's32' });
+  const gk = { hook_event_name: 'SubagentStop', agent_id: 'gk31', agent_type: 'spec-gatekeeper', session_id: 's32', last_assistant_message: 'ok\n\nAPPROVED' };
+  run(dir, GK, gk);
+  run(dir, GK, { ...gk, stop_hook_active: true });
+  const text = relayed(relay(dir, 's32'));
+  assert.match(text, /spec-auditor: spec-auditor recorded VERDICT: PASS for specs\/001-demo/);
+  assert.match(text, /spec-gatekeeper: speckit-team: spec-gatekeeper's APPROVED was recorded as REJECTED: .*FR-001 is in none of test\/a\.test\.mjs/);
+  assert.ok(text.indexOf('spec-auditor:') < text.indexOf('spec-gatekeeper:'), 'in the order they were given');
+  run(dir, ['verdict'], { hook_event_name: 'Stop', session_id: 's33', last_assistant_message: 'VERDICT: PASS' });
+  assert.equal(relay(dir, 's33'), null, 'a main-session message is not a subagent\'s');
+});
+
+test('#231: relay says nothing outside a Spec Kit repo, on another tool, or without a usable session', () => {
+  const { dir: plain } = repo({ speckit: false });
+  assert.equal(relay(plain, 's34'), null);
+  const { dir } = repo();
+  assert.equal(run(dir, ['relay'], { hook_event_name: 'PostToolUse', tool_name: 'Bash', session_id: 's34' }), null);
+  for (const session_id of [undefined, 7, '../x']) assert.ok(!decided(relay(dir, session_id)), String(session_id));
 });

@@ -995,6 +995,18 @@ test("product-owner's and architect's Stop: the lane check catches a file writte
   assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
 });
 
+// #231: the WARNING at product-owner's second Stop went to its own transcript only. The settings.json
+// PostToolUse entry on Agent now hands it to the main session, whose next request carries it.
+test("#231: an out-of-lane file a subagent leaves behind is named in the main session's next request", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('product-owner', 'e2e product-owner'), say('done')],
+    'e2e product-owner': [unseenWrite('owner.js'), say('Spec written.\nREADY FOR PLAN'), say('Spec written.\nREADY FOR PLAN')],
+  });
+  assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
+  assert.match(shown(r.requests[MAIN][1]), /product-owner: WARNING: product-owner left changes outside its lane: owner\.js/, story(r));
+});
+
 // --team noagents: Claude Code hands the typed /speckit-team to the UserPromptExpansion gate, which
 // records that no agent runs, so the main session's own speckit-implement call needs no audit. Without
 // the flag the same call is denied, which shows the gate ran in both sessions.

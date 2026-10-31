@@ -15,7 +15,8 @@
 // Any other argument is refused before anything is written.
 //
 // What gets installed: eight subagents, three skills, seven role skills (speckit-role-<role>), one hook script with its drift check, and settings.json gates
-// (PreToolUse, UserPromptExpansion, and SubagentStart for the eight roles to record start and inject project context).
+// (PreToolUse, UserPromptExpansion, SubagentStart for the eight roles to record start and inject project context,
+// and PostToolUse on Agent to relay what a subagent's hooks said to the main session).
 //
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
 //   /speckit-team <request>                   the pipeline; it asks which roles take part
@@ -72,6 +73,9 @@ const SETTINGS_GATES = [
   // each starts, for the lane check at their Stop (#88). For all eight roles it also injects the
   // session's project block as the agent's starting context, when the launch named one (007).
   { event: 'SubagentStart', matcher: AGENTS.join('|'), mode: 'start' },
+  // What a subagent's hooks said at its Stop reaches only its own transcript; this hands it to the main
+  // session once the Agent call returns (#231). Never a decision.
+  { event: 'PostToolUse', matcher: 'Agent', mode: 'relay' },
 ];
 
 const argv = process.argv.slice(2);

@@ -29,6 +29,8 @@
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
 //   project <name> [--init] Not a hook: the skills run it from Bash. Prints the project's block (feature 007) or one
 //                           refusal line, exit 0 or 1; --init creates .specify/projects/<name>/ with a starter file
+//   relay                   PostToolUse of Agent in the main session: hands it what the hooks said inside its
+//                           subagents (kept under notices/ as they said it), as additionalContext; never a decision
 //   check                   Not a hook: the pipeline skills' first step (#230). Exit 1 when the team that would run
 //                           is not this install alone (mixed builds, a second install of another build, a project
 //                           install in a folder Claude Code has not trusted); `note:` lines otherwise
@@ -150,6 +152,7 @@ const WIRED = {
   lane: ['SubagentStop', 'Stop'],
   start: ['SubagentStart'],
   patch: ['PreToolUse', 'SubagentStop', 'Stop'],
+  relay: ['PostToolUse'],
 };
 const who = input.agent_type || 'the main session';
 
@@ -167,8 +170,11 @@ const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } cat
 // A message a role-skill step passes on with whatever the hook decides next (contract section 8).
 let note = null;
 const addNote = (m) => { note = [note, m].filter(Boolean).join('\n'); };
+// #231: set once the state folder is known, for a hook running in a subagent (see keepNotice below).
+let keepNotice = null;
 const emit = (obj) => {
   const say = [note, obj.systemMessage].filter(Boolean).join('\n');
+  if (say && keepNotice) keepNotice(say);
   process.stdout.write(JSON.stringify(say ? { ...obj, systemMessage: say } : obj));
   process.exit(0);
 };
@@ -448,6 +454,34 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
 const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
+
+// #231: a hook's systemMessage in a subagent lands in that subagent's transcript only, and under claude -p
+// nobody sees it: an out-of-lane file left behind, a lane check that could not run, an APPROVED recorded
+// as REJECTED. So each one is also kept under notices/, by the session the subagent's input names (the
+// main session's), and `relay`, on the main session's PostToolUse of Agent, hands them over once.
+const noticeFile = (sessionId) => path.join(stateDir, 'notices', `${sessionId}.jsonl`);
+const noticeSession = str(input.session_id);
+if (agentId && noticeSession && SESSION_ID.test(noticeSession) && mode !== 'relay') {
+  keepNotice = (text) => {
+    try {
+      fs.mkdirSync(path.dirname(noticeFile(noticeSession)), { recursive: true });
+      fs.appendFileSync(noticeFile(noticeSession), `${JSON.stringify({ agent: str(input.agent_type) ?? 'an agent', at: new Date().toISOString(), text: text.slice(0, 2000) })}\n`);
+    } catch { /* the terminal still shows it */ }
+  };
+}
+if (mode === 'relay') {
+  if (input.tool_name !== 'Agent' || !noticeSession || !SESSION_ID.test(noticeSession)) process.exit(0);
+  // Taken by renaming first, so a notice a parallel agent adds meanwhile goes to the next relay, not nowhere.
+  const taken = `${noticeFile(noticeSession)}.${process.pid}`;
+  try { fs.renameSync(noticeFile(noticeSession), taken); } catch { process.exit(0); }
+  const rows = lines(readOr(taken, '')).flatMap((l) => {
+    try { const r = JSON.parse(l); return typeof r?.text === 'string' ? [`- ${r.agent}: ${r.text}`] : []; } catch { return []; }
+  });
+  fs.rmSync(taken, { force: true });
+  if (!rows.length) process.exit(0);
+  emit({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext:
+    `speckit-team: the team's hooks said this to the agents that just ran; it reached only their transcripts, so act on it here:\n${rows.join('\n')}` } });
+}
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
 // 009: the role acting in a skill-agents request's main session (data-model.md).
 const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
