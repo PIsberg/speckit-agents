@@ -95,6 +95,38 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, one full run side by side, from the head of the #218–#227 chain, on the owner's subscription</summary>
+
+Setup: `node tools/full-run.mjs --login --side-by-side --model sonnet --max-cost 8` from commit
+`6986ddf` (#227's head), with the owner's user-level team swapped to the same commit for the run
+(a personal skill shadows the run's copy, #175) and reinstalled from `main` after it. Agents on
+their own `model:` lines (architect and spec-auditor on Opus, the rest on Sonnet).
+
+- **Passed, every check:** `run.json` has `failures: []`; spec-gatekeeper's APPROVED came from the
+  hook record; $1.58 as reported, 747 s, 2 turns (3 and 17 model turns).
+- **The pipeline:** product-owner, architect, spec-auditor (PASS on its first audit, on the fixture's
+  constitution, not this repository's), an implementer stub pass, two test-writers launched in one
+  message, two implementers launched in one message in worktrees one second apart, then
+  spec-gatekeeper. 9 launches, all in the foreground, 0 responses that only waited. The worktree
+  branch was merged, the tasks ticked after the merge (6 of 6), and no worktree or `worktree-*`
+  branch was left. The scratch repo's own `npm test`: 14 of 14 pass.
+- **Tokens (`tools/usage.mjs`):** main session 15 responses, 0.89M input (0.84M cache reads), peak
+  70k. Agents 1.05M input in all: architect 0.31M over 9 responses (peak 46k), product-owner 0.15M,
+  the two test-writers 0.08M and 0.15M, the three implementer runs 0.04M, 0.07M and 0.10M,
+  spec-auditor 0.08M, spec-gatekeeper 0.06M. Cache hit rate 89% on Sonnet, 83% on Opus.
+- **No guardrail fired:** no hook denial or lane block in any of the session's transcripts. The
+  Bash scope check (#209, #210) ran on every Bash call of the team and let them all through.
+- **A finding ([#228](https://github.com/PIsberg/speckit-agents/issues/228)):** FR-006 (`sum` and
+  `capitalize` independent) is cited by tasks T002 and T005 and by no test; `tools/drift.mjs` reports
+  both. spec-gatekeeper's trace row said "Each test file imports only its own module. I did not run
+  the SC-003 removal check. | ok", and its word was APPROVED.
+- **Not covered by this run:** decision rounds (the fixture's feature had no open decisions, #79),
+  an interactive session with fork subagents off (#66), the eval sweeps (#190, #191), and the
+  `prompt_id` inputs of #184.
+
+</details>
+
+<details>
 <summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, the fast track's undo command and end record (#213, #221), on the owner's subscription</summary>
 
 Setup: the same scratch repo as the scope check below, with the team of the branch under test
