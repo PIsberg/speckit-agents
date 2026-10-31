@@ -480,8 +480,8 @@ if (uninstall) {
 }
 
 const [major] = process.versions.node.split('.').map(Number);
-if (major < 18) {
-  console.error(`ERROR: Node ${process.versions.node} found; the hooks need Node 18 or newer.`);
+if (major < 22) {
+  console.error(`ERROR: Node ${process.versions.node} found; the hooks need Node 22 or newer.`);
   process.exit(1);
 }
 

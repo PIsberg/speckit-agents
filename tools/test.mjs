@@ -8,7 +8,7 @@
 // --test-name-pattern=... Exits as the tests did.
 //
 // #214: the script was `node --test "test/*.test.mjs"`, and Node expands a quoted glob given to --test
-// only from v21: on Node 20.20.2 it found no file at all, although the README promises Node 18. Listing
+// only from v21: on Node 20.20.2 it found no file at all, although the README promised Node 18 (22 since #223). Listing
 // the files here works on every Node from 18, and running them with process.execPath means
 // `/path/to/node tools/test.mjs` works where the `node` on PATH is missing or another one.
 import { spawnSync } from 'node:child_process';

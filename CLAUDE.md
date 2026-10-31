@@ -46,7 +46,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 511 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 512 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.

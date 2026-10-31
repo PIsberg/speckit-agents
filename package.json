@@ -8,7 +8,7 @@
     "setup": "node install.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "config": {
     "claudeCode": "2.1.293"

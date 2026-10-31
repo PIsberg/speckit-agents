@@ -74,3 +74,31 @@ test('versions: the docs give the CI Claude Code version package.json holds, and
     assert.doesNotMatch(text, /eslint[ @]\d|typescript@\d/, `${name} spells out a version package.json holds`);
   }
 });
+
+// #223: the Node floor was 18 in package.json, the README, the setup scripts, the installer and the
+// constitution, while CI tested 22 only and 18 and 20 had reached end of life. The owner raised it to 22
+// (2026-10-31). package.json's engines is the one place; every other statement of it must agree, and CI
+// runs the floor itself, as it runs the oldest supported Claude Code.
+test('versions (#223): every statement of the Node floor equals package.json engines, and CI runs that Node', () => {
+  const floor = /^>=(\d+)$/.exec(pkg.engines?.node ?? '')?.[1];
+  assert.equal(floor, '22', 'engines.node is >=22');
+  const lock = JSON.parse(read('package-lock.json'));
+  assert.equal(lock.packages?.['']?.engines?.node, pkg.engines.node, 'package-lock.json agrees');
+  const says = (file, re) => {
+    const found = [...read(file).matchAll(re)].map((m) => m[1]);
+    assert.ok(found.length, `${file} states the floor`);
+    for (const n of found) assert.equal(n, floor, `${file} says Node ${n}`);
+  };
+  says('setup.sh', /Node (\d+)(?:\+| or newer)/g);
+  says('setup.sh', /-lt (\d+) \]/g);
+  says('setup.ps1', /Node (\d+)(?:\+| or newer)/g);
+  says('setup.ps1', /-lt (\d+)\)/g);
+  says('install.mjs', /major < (\d+)\b/g);
+  says('install.mjs', /need Node (\d+) or newer/g);
+  says(path.join('.specify', 'memory', 'constitution.md'), /\(Node (\d+) or newer\)/g);
+  says('README.md', /badge\/Node-(\d+)%2B/g);
+  says('README.md', /\[Node\]\(https:\/\/nodejs\.org\) (\d+)\+/g);
+  for (const f of WORKFLOWS) {
+    for (const m of read('.github', 'workflows', f).matchAll(/node-version: (\S+)/g)) assert.equal(m[1], floor, `${f} runs Node ${m[1]}`);
+  }
+});
