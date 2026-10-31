@@ -85,6 +85,30 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   assert.match(r.stdout, /\/speckit-patch/, 'the final Next lines name /speckit-patch');
 });
 
+// #228: the hook runs the drift check from a second file beside it. Installed alone, spec-gatekeeper's
+// APPROVED would be recorded unchecked; installed together, the pair refuses an APPROVED with drift.
+test('#228: the drift check is installed beside the hook, and the installed hook runs it', () => {
+  const dir = claudeDir();
+  const r = install(dir);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  const mod = path.join(dir, 'hooks', 'speckit-drift.mjs');
+  assert.ok(fs.existsSync(mod), 'hooks/speckit-drift.mjs installed');
+  assert.match(fs.readFileSync(mod, 'utf8'), /speckit-agents: managed by install\.mjs/);
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'skdrift-inst-'));
+  const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), text); };
+  put('.specify/feature.json', JSON.stringify({ feature_directory: 'specs/001-x' }));
+  put('specs/001-x/tasks.md', '- [X] T001 Test FR-006 in `test/a.test.js`\n');
+  put('test/a.test.js', "test('imports only its own module', () => {});\n");
+  spawnSync('git', ['init', '-q'], { cwd: repo });
+  const out = spawnSync(process.execPath, [path.join(dir, 'hooks', 'speckit-team.mjs'), 'ends', '--record', 'APPROVED', 'REJECTED'], {
+    input: JSON.stringify({ cwd: repo, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_id: 'gk1', tool_input: { message: 'ok\n\nAPPROVED' } }),
+    encoding: 'utf8',
+  });
+  assert.match(out.stdout, /FR-006 is in none of test\/a\.test\.js/, out.stdout + out.stderr);
+  assert.equal(install(dir, '--uninstall').status, 0);
+  assert.ok(!fs.existsSync(mod), 'uninstall removes it');
+});
+
 // 003 FR-002, FR-003, FR-004, FR-006, FR-012, plan.md decision 16 point 3: the prose rules.
 test("installed patcher.md states the fast track's rules", () => {
   const dir = claudeDir();

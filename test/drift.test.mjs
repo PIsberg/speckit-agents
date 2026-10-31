@@ -114,13 +114,33 @@ test('drift: the command exits 1 on drift, 0 without, and 2 where there are no f
   assert.match(none.stderr, /no specs\//);
 });
 
-// The tool decides what a test file is the way the hook's test lanes do; a pattern added on one side
-// only would make the tool miss tests the hook knows, or check files it does not.
-test("drift: the tool's TEST_PATTERNS are the hook's", () => {
+// The check decides what a test file is the way the hook's test lanes do; a pattern added on one side
+// only would make it miss tests the hook knows, or check files it does not. Since #228 the check lives in
+// hooks/speckit-drift.mjs, which the hook loads at spec-gatekeeper's APPROVED and tools/drift.mjs runs.
+test("drift: the check's TEST_PATTERNS are the hook's", () => {
   const patterns = (f) => /const TEST_PATTERNS = \[[\s\S]*?\n\];/.exec(fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n'))?.[0];
   const hook = patterns('hooks/speckit-team.mjs');
   assert.ok(hook, 'the hook declares TEST_PATTERNS');
-  assert.equal(patterns('tools/drift.mjs'), hook);
+  assert.equal(patterns('hooks/speckit-drift.mjs'), hook);
+});
+
+// #228: spec-gatekeeper's APPROVED is checked against the active feature only; another feature's drift
+// is not this feature's to fix. A feature directory outside specs/ is checked too, and a feature without
+// tasks.md has nothing to drift.
+test('drift (#228): one feature checks only that feature, wherever its directory is', () => {
+  const dir = repo(SUM_TASKS, { 'test/sum.test.js': SUM_TEST });
+  const write = (rel, text) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), text); };
+  write('specs/002-avg/tasks.md', '# Tasks\n\n- [X] T004 Test FR-006 in `test/avg.test.js`\n');
+  write('test/avg.test.js', "test('averages', () => {});\n");
+  assert.equal(drift(dir).problems.length, 1, 'the whole repo has one problem, in 002');
+  assert.deepEqual(drift(dir, { feature: 'specs/001-sum' }).problems, []);
+  const one = drift(dir, { feature: 'specs/002-avg' });
+  assert.deepEqual(one.problems, ['specs/002-avg/tasks.md T004: FR-006 is in none of test/avg.test.js']);
+  assert.equal(one.features, 1);
+  write('work/003-x/tasks.md', '- [X] T001 Test FR-001 in `test/x.test.js`\n');
+  write('test/x.test.js', '// nothing\n');
+  assert.deepEqual(drift(dir, { feature: 'work/003-x' }).problems, ['work/003-x/tasks.md T001: FR-001 is in none of test/x.test.js']);
+  assert.deepEqual(drift(dir, { feature: 'specs/009-none' }), { features: 0, tasks: 0, problems: [] });
 });
 
 // A docs or measurement task names test files too ("held by `test/install.test.mjs`", "run

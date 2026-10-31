@@ -906,9 +906,81 @@ test('ends without --record leaves the recorded word alone', () => {
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).word, 'REJECTED');
 });
 
+// #228: in the 2026-10-31 full run spec-gatekeeper approved FR-006, which T002 and T005 cited and no test
+// held, on the argument that each test file imports only its own module. The hook now runs the drift
+// check on the active feature at APPROVED and refuses it while a finished test task cites a requirement
+// none of its test files holds. REJECTED always goes through, so refusing every APPROVED never gags it.
+const DRIFT_TASKS = '- [X] T001 Test FR-001 in `test/a.test.mjs`\n- [X] T002 implement FR-001 in `src/a.mjs`\n';
+function driftRepo() {
+  const r = repo();
+  r.write(`${FEAT}/tasks.md`, DRIFT_TASKS);
+  r.write('test/a.test.mjs', "test('each module imports only itself', () => {});\n");
+  // Another feature's drift is not this feature's to fix.
+  r.write('specs/000-old/tasks.md', '- [X] T009 Test FR-004 in `test/old.test.mjs`\n');
+  r.write('test/old.test.mjs', '// nothing\n');
+  return commitAll(r, 'tests');
+}
+const GK = ['ends', '--record', 'APPROVED', 'REJECTED'];
+const endsWord = (dir) => readState(path.join(stateDir(dir), 'ends', '001-demo.json'));
+function readState(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }
+
+test('#228 FR-001: spec-gatekeeper\'s APPROVED is refused at hand-back while a cited requirement has no test', () => {
+  const { dir, write: put } = driftRepo();
+  const send = (message, agent_id) => run(dir, GK, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  for (const id of ['gk1', 'gk1']) {
+    const out = send('| FR-001 | each test file imports only its own module | ok |\n\nAPPROVED', id);
+    assert.ok(denied(out), JSON.stringify(out));
+    const why = out.hookSpecificOutput.permissionDecisionReason;
+    assert.match(why, /specs\/001-demo\/tasks\.md T001: FR-001 is in none of test\/a\.test\.mjs/);
+    assert.match(why, /REJECTED/);
+    assert.doesNotMatch(why, /000-old|FR-004/, 'another feature is not named');
+  }
+  assert.equal(endsWord(dir), null, 'a refused APPROVED records nothing');
+  assert.equal(send('FR-001 has no test that would fail (owner: test-writer)\n\nREJECTED', 'gk1'), null);
+  assert.equal(endsWord(dir).word, 'REJECTED');
+  put('test/a.test.mjs', "test('FR-001 sum does not import capitalize', () => {});\n");
+  assert.equal(send('All covered.\n\nAPPROVED', 'gk2'), null, 'APPROVED goes through once the test holds the ID');
+  assert.equal(endsWord(dir).word, 'APPROVED');
+});
+
+test('#228 FR-001: at Stop the APPROVED is sent back once, then recorded as REJECTED with the drift', () => {
+  const { dir } = driftRepo();
+  const stop = (extra) => run(dir, GK, { hook_event_name: 'SubagentStop', agent_id: 'gk3', last_assistant_message: 'All covered.\n\nAPPROVED', ...extra });
+  const first = stop({});
+  assert.equal(first?.decision, 'block');
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.equal(endsWord(dir), null);
+  const second = stop({ stop_hook_active: true });
+  assert.ok(!decided(second), 'never blocks twice');
+  assert.match(msg(second), /spec-gatekeeper's APPROVED was recorded as REJECTED/);
+  assert.match(msg(second), /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  const e = endsWord(dir);
+  assert.equal(e.word, 'REJECTED');
+  assert.equal(e.claimed, 'APPROVED');
+  assert.deepEqual(e.drift, ['specs/001-demo/tasks.md T001: FR-001 is in none of test/a.test.mjs']);
+});
+
+// The check is a second file beside the hook. A hook installed without it must not let APPROVED through
+// in silence (constitution II): the word is recorded, and the message says the check did not run.
+test('#228: a hook without its drift module records APPROVED and says the check did not run', () => {
+  const { dir } = driftRepo();
+  const alone = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-')), 'speckit-team.mjs');
+  fs.copyFileSync(HOOK, alone);
+  const out = run(dir, GK, { hook_event_name: 'SubagentStop', agent_id: 'gk4', last_assistant_message: 'All covered.\n\nAPPROVED' }, alone);
+  assert.ok(!decided(out));
+  assert.match(msg(out), /drift check could not run/);
+  assert.equal(endsWord(dir).word, 'APPROVED');
+});
+
+// Non-gatekeeper uses of `ends` (test-writer's RED, patcher's DONE) never run the check.
+test('#228: ends without --record does not run the drift check', () => {
+  const { dir } = driftRepo();
+  assert.equal(run(dir, ['ends', 'APPROVED', 'RED'], { hook_event_name: 'SubagentStop', agent_id: 'tw9', last_assistant_message: 'x\nAPPROVED' }), null);
+});
+
 // --- 003 fast track: `scope protected` (T001; FR-007, FR-001, US3-1, US3-4, SC-003) ---
 const PROT = ['scope', 'protected'];
-const OWN = ['hooks/speckit-team.mjs', 'agents/implementer.md', 'skills/speckit-team/SKILL.md', 'install.mjs', 'package.json'];
+const OWN = ['hooks/speckit-team.mjs', 'hooks/speckit-drift.mjs', 'agents/implementer.md', 'skills/speckit-team/SKILL.md', 'install.mjs', 'package.json'];
 const caseInsensitiveFs = (dir) => fs.existsSync(path.join(dir, '.GIT'));
 // Asserts a deny that names the repo-relative path and /speckit-team, and that disk is unchanged.
 function assertProtected(dir, rel) {
@@ -927,7 +999,7 @@ function assertProtected(dir, rel) {
 function ownRepo() {
   const r = repo();
   r.write('package.json', '{"name":"speckit-agents"}');
-  for (const f of OWN.slice(0, 4)) r.write(f, 'x\n');
+  for (const f of OWN.slice(0, 5)) r.write(f, 'x\n');
   return commitAll(r, 'own');
 }
 
@@ -2591,6 +2663,30 @@ test('009 T025 FR-008 contract 6 step 2: the spec-gatekeeper role APPROVED is re
   assert.equal(e?.word, 'APPROVED');
   assert.equal(e.role, 'spec-gatekeeper');
   assert.equal(e.agent_id, null);
+});
+
+// #228 in --team skill-agents: the role's APPROVED is checked the same way. Its Stop is sent back once with
+// the drift, and the role stays the acting one; after that the word is recorded as REJECTED.
+test('#228 FR-001: the spec-gatekeeper role\'s APPROVED is sent back once, then recorded as REJECTED with the drift', () => {
+  const { dir } = driftRepo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.\n\nAPPROVED');
+  const first = stopRole(dir);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.ok(hasRole(dir), 'the role still acts');
+  assert.equal(endsRec(dir), null);
+  const second = stopRole(dir, { stop_hook_active: true });
+  assert.ok(!decided(second));
+  assert.match(msg(second), /recorded as REJECTED/);
+  const e = endsRec(dir);
+  assert.equal(e.word, 'REJECTED');
+  assert.equal(e.claimed, 'APPROVED');
+  assert.equal(e.role, 'spec-gatekeeper');
+  assert.ok(!hasRole(dir));
 });
 
 // #185: the gatekeeper's report and the orchestrator's hand-over can share one response, so the word is

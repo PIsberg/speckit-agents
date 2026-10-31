@@ -14,7 +14,7 @@
 //
 // Any other argument is refused before anything is written.
 //
-// What gets installed: eight subagents, three skills, seven role skills (speckit-role-<role>), one hook script, and settings.json gates
+// What gets installed: eight subagents, three skills, seven role skills (speckit-role-<role>), one hook script with its drift check, and settings.json gates
 // (PreToolUse, UserPromptExpansion, and SubagentStart for the eight roles to record start and inject project context).
 //
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
@@ -38,6 +38,8 @@ import { fileURLToPath } from 'node:url';
 const SRC = path.dirname(fileURLToPath(import.meta.url));
 const MARKER = 'speckit-agents: managed by install.mjs';
 const HOOK_FILE = 'speckit-team.mjs';
+// The drift check the hook loads from beside itself at spec-gatekeeper's APPROVED (#228).
+const DRIFT_FILE = 'speckit-drift.mjs';
 const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 // settings.json gates for the main session. Agent-scoped hooks live in each agent's frontmatter.
 const SETTINGS_GATES = [
@@ -151,6 +153,7 @@ function files() {
     { src: 'skills/speckit-patch/SKILL.md', dst: path.join(claudeDir, 'skills', 'speckit-patch', 'SKILL.md') },
     ...ROLE_SKILLS.map((role) => ({ src: `agents/${role}.md`, dst: path.join(claudeDir, 'skills', `speckit-role-${role}`, 'SKILL.md'), role })),
     { src: `hooks/${HOOK_FILE}`, dst: path.join(claudeDir, 'hooks', HOOK_FILE) },
+    { src: `hooks/${DRIFT_FILE}`, dst: path.join(claudeDir, 'hooks', DRIFT_FILE) },
   ];
 }
 

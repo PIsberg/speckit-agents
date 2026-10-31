@@ -75,7 +75,7 @@ const PROTECTED = [
 ];
 // Only in the speckit-agents repository itself (recognised by isOwnRepo).
 const OWN_SOURCES = [
-  [/^hooks\/speckit-team\.mjs$/i, "the agent team's own sources"],
+  [/^hooks\/speckit-(team|drift)\.mjs$/i, "the agent team's own sources"],
   [/^agents\/[^/]+\.md$/i, "the agent team's own sources"],
   [/^skills\/[^/]+\/SKILL\.md$/i, "the agent team's own sources"],
   [/^install\.mjs$/i, "the agent team's own sources"],
@@ -221,6 +221,24 @@ function repoDirs() {
 const [root, commonDir] = repoDirs();
 if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecKit();
 inSpecKitRepo = true;
+
+// #228: the drift check, a second file beside this script, loaded only by the modes that can close
+// spec-gatekeeper's report: `ends --record`, and `gate` and `lane role`, which close a skill-agents role.
+// Loaded here, inside a Spec Kit repo, so no other repo pays for it. A missing or broken file is kept as
+// the error, and APPROVED is then recorded with a message that the check did not run (constitution II).
+const driftModule = (mode === 'ends' && args[0] === '--record') || mode === 'gate' || (mode === 'lane' && args[0] === 'role')
+  ? await import(new URL('./speckit-drift.mjs', import.meta.url).href).catch((e) => e) : null;
+// The active feature's drift: { problems }, or { failed } when the check could not run.
+function driftOf(feat) {
+  if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
+  try { return { problems: driftModule.drift(root, { feature: feat }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+}
+const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: tasks.md cites requirements that no test file of their `
+  + `task holds (the drift check; test-writer puts each ID in a test's name or a comment):\n${problems.join('\n')}\n`
+  + 'A requirement no test holds cannot be approved, whatever argument covers it. Report each as a rejection reason '
+  + '(owner: test-writer, who adds the test, or the ID to the test that already covers it) and end with REJECTED.';
+const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
+  + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
 // The valid project names under .specify/projects/, sorted; symlinked entries are not projects.
 function projectNames() {
@@ -612,6 +630,15 @@ function recordReport(rec, last = null, where = 'stop') {
     return;
   }
   if (!feat) { addNote(`speckit-team: the spec-gatekeeper role's ${word} was not recorded: no active feature.`); return; }
+  // #228, as for the agent: sent back once at Stop (the role stays the acting one), then recorded as REJECTED.
+  const drifted = word === 'APPROVED' ? driftOf(feat) : null;
+  if (drifted?.problems?.length) {
+    if (where === 'stop' && !input.stop_hook_active) block(driftRefusal('the spec-gatekeeper role', drifted.problems));
+    writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: null, role: rec.role });
+    addNote(`speckit-team: the spec-gatekeeper role's APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}`);
+    return;
+  }
+  if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
 }
 
@@ -1007,12 +1034,27 @@ if (mode === 'ends') {
   if (ok && fs.existsSync(ok)) process.exit(0);
   const word = lastWord(reportText(viaHandback));
   if (words.includes(word)) {
-    if (ok) writeJson(ok, {});
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
     // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
     // test-writer's RED after a REJECTED would otherwise read as the gatekeeper's word.
     const feat = record && feature();
-    if (feat) writeJson(endsFile(feat), { word, feature: feat, at: new Date().toISOString(), agent_id: agentId });
+    const at = new Date().toISOString();
+    // #228: APPROVED is refused, at every hand-back and once at Stop, while the drift check finds a cited
+    // requirement no test holds. REJECTED always goes through, so the agent is never gagged.
+    const drifted = feat && word === 'APPROVED' ? driftOf(feat) : null;
+    // --record is spec-gatekeeper's, whatever agent_type says.
+    const gk = str(input.agent_type) ?? 'spec-gatekeeper';
+    if (drifted?.problems?.length) {
+      const why = driftRefusal(gk, drifted.problems);
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+      if (ok) writeJson(ok, {});
+      writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: agentId });
+      emit({ systemMessage: `speckit-team: ${gk}'s APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}` });
+    }
+    if (ok) writeJson(ok, {});
+    if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
+    if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `

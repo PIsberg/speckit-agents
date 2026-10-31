@@ -21,7 +21,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `agents/*.md`: the eight subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`, `project`.
+  `ends`, `start`, `lane`, `patch`, `project`. `hooks/speckit-drift.mjs`: the drift check, installed
+  beside it and loaded at spec-gatekeeper's `APPROVED` (#228); `tools/drift.mjs` is its command line.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
 - `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates seven from
@@ -46,7 +47,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 512 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 519 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.
@@ -83,7 +84,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Twins, each held by `test/board-mod.test.mjs`: `fingerprint()` in the hook and in
   `mods/speckit-board/hooks/model.ts` (also pinned in the mod's `model.test.ts`); the mod's
   `ROLE_COLOR` and each `agents/*.md` `color:` line; its `MAX_RED` and the hook's; its `WORDS` and the
-  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `TEST_PATTERNS` in the hook and in `tools/drift.mjs`, held by `test/drift.test.mjs`. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
+  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `TEST_PATTERNS` in the hook and in `hooks/speckit-drift.mjs`, held by `test/drift.test.mjs`. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
   in the hook and in `install.mjs`, which writes the exact allow rule for the hook's export line (#122,
   #123), held by `test/hook-patch.test.mjs`. A change to the line adds the old rule to
   `OLD_NO_NETWORK_RULES` in `install.mjs`, so a reinstall replaces it.

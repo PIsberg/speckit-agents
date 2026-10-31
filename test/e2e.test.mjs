@@ -691,6 +691,21 @@ test("spec-gatekeeper's report must end in APPROVED or REJECTED, and the word is
   assert.equal(state(s, 'ends', '001-x.json').word, 'APPROVED', story(r));
 });
 
+// #228: the installed hook loads the installed drift check beside it, and the gatekeeper's APPROVED on a
+// cited requirement no test holds comes back to it with the drift line; its REJECTED is then recorded.
+test("#228: spec-gatekeeper's APPROVED is refused while a ticked test task's FR is in none of its test files", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  s.write('specs/001-x/tasks.md', '- [X] T001 Test FR-006 in `test/a.test.js`\n');
+  s.write('test/a.test.js', "test('each file imports only its own module', () => {});\n");
+  git(s.repo, 'add', '-A'); git(s.repo, 'commit', '-qm', 'tests');
+  const r = await session(s, {
+    [MAIN]: [agent('spec-gatekeeper', 'e2e gatekeeper')],
+    'e2e gatekeeper': [say('FR-006: each test file imports only its own module.\nAPPROVED'), say('FR-006 has no test (owner: test-writer).\nREJECTED')],
+  });
+  assert.match(shown(r.requests['e2e gatekeeper'][1]), /T001: FR-006 is in none of test\/a\.test\.js/, story(r));
+  assert.equal(state(s, 'ends', '001-x.json').word, 'REJECTED', story(r));
+});
+
 test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED, BLOCKED or FIXED", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);
