@@ -164,6 +164,24 @@ developer's work.
 It exists only while the last `patch` call was an end check that accepted the run. Its consumer is
 `/speckit-patch` (contracts/commands-and-files.md); it carries paths and counts only.
 
+### Undo record (#213)
+
+`<git dir>/speckit-team/patch-undo.json`, written by every end check that gets past the protected
+and commit refusals, accepted or not, and removed by every `patch` call:
+
+```json
+{ "key": "<agent_id or session_id>", "sha": "<start commit>",
+  "undo": "git restore --source=<start commit> --staged --worktree -- 'src/greet.js' && rm -f -- 'test/greet.test.js'",
+  "at": "<ISO 8601>" }
+```
+
+`undo` takes back `patcher`'s changes and nothing else: the files of the accepted record's `files`
+that are not new, restored from the start commit (one the start commit lacks is removed), then the
+new ones deleted, each path single-quoted for a POSIX shell. `null` when `patcher` changed nothing.
+The stopped and `FAILED` messages end with the same command, but a `SubagentStop` message reaches only
+`patcher`'s transcript, so `/speckit-patch` reads this file. The hook never runs it; the skill offers
+it and runs it only on the developer's explicit yes.
+
 The hook never runs a git command that changes the repo; it reads with `rev-parse`, `diff`,
 `ls-files` and `cat-file` only. The only files it writes or removes are its own records under the
 git directory.

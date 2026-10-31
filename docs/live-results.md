@@ -95,6 +95,22 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, the fast track's undo command (#213), on the owner's subscription</summary>
+
+Setup: the same scratch repo as the scope check below, with the team of branch `fix/patch-undo-213`
+installed into its `.claude/`, folder trusted for the run. `claude -p '/speckit-patch add forty
+exported constants c1 to c40 to src/greet.js, one per line, each equal to its number'` on
+`--model haiku`, `acceptEdits`, `patcher` on its own `model:` line. Forty lines is over the 30-line
+budget, so the run must commit nothing.
+
+| What | Result |
+|---|---|
+| First run, the command only in the end check's message | `patcher` reported `ESCALATE`, nothing was committed. The over-budget message with "To undo only patcher's changes, run: git restore --source=... -- 'src/greet.js' 'test/greet.test.js'" was in `patcher`'s transcript as a `hook_system_message` and nowhere in the main session's, whose report offered no undo. $0.054. The command moved to `patch-undo.json`. |
+| Second run, with `patch-undo.json` | The main session ran `cat .git/speckit-team/patch-undo.json` and its report gave the restore command for `src/greet.js` and `test/greet.test.js`, with the sha shortened to 7 characters; it ran nothing, and both files were still changed afterwards. It reported the run `FAILED` for a changed team file, comparing the start record's SHA-256 hashes with `git hash-object` output: it could not see the over-budget message either ([#221](https://github.com/PIsberg/speckit-agents/issues/221)). $0.060. |
+
+</details>
+
+<details>
 <summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, scope on Bash (#209, #210), on the owner's subscription</summary>
 
 Setup: a scratch Spec Kit repo (feature `specs/001-x`, a recorded audit PASS) with the team of

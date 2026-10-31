@@ -818,6 +818,56 @@ test('patch end: protected file changed with fs blocks stop and denies handback,
   noStop(stop(dir), 'after restore');
 });
 
+// #213: a run that fails left patcher's changes in the working tree with no way back but by hand, among
+// the developer's own uncommitted work. The end check now names the commands that undo patcher's
+// changes and nothing else; it runs none of them, and the skill asks before it does.
+const undoOf = (text) => /run: (.+?)\. Ask the developer first/.exec(text ?? '')?.[1] ?? null;
+const undoFile = (dir) => path.join(stateDir(dir), 'patch-undo.json');
+const undoRecord = (dir) => (fs.existsSync(undoFile(dir)) ? JSON.parse(fs.readFileSync(undoFile(dir), 'utf8')) : null);
+const quotedArgs = (cmd) => [...cmd.matchAll(/'((?:[^']|'\\'')*)'/g)].map((m) => m[1].replace(/'\\''/g, "'"));
+test('patch end (#213): a stopped run names the commands that undo only its own changes, and they restore the start', () => {
+  const r = fresh({ 'src/a.js': nl(40, 'a'), 'src/b.js': nl(5, 'b'), 'src/gone.js': nl(3, 'g') });
+  const { dir } = r;
+  git(dir, 'config', 'core.autocrlf', 'false'); // a global autocrlf would check the restored bytes out with CRLF
+  put(dir, 'src/b.js', `${nl(5, 'b')}mine\n`); put(dir, 'src/mine.js', 'my own work\n');
+  begin(dir);
+  edit(dir, 'src/a.js', 0, 40); put(dir, "src/new it's.js", nl(3, 'n')); fs.rmSync(path.join(dir, 'src/gone.js'));
+  put(dir, 'src/staged.js', 'x\n'); git(dir, 'add', 'src/staged.js');
+  const out = stop(dir);
+  assert.match(msg(out), /fast track stopped/);
+  const undo = undoRecord(dir)?.undo;
+  assert.ok(undo, 'patch-undo.json holds the command: the main session never sees a SubagentStop message');
+  assert.equal(undoOf(msg(out)), undo, 'the message names the same command');
+  assert.equal(undoRecord(dir).sha, startSha(dir));
+  assert.match(undo, new RegExp(`^git restore --source=${startSha(dir)} --staged --worktree -- `));
+  assert.ok(!/mine\.js|src\/b\.js/.test(undo), 'files uncommitted before the run are left alone');
+  assert.deepEqual(fs.readFileSync(path.join(dir, 'src/a.js'), 'utf8') === nl(40, 'a'), false, 'control: a.js was changed');
+  const [restore, remove] = undo.split(' && ');
+  execFileSync('git', ['restore', `--source=${startSha(dir)}`, '--staged', '--worktree', '--', ...quotedArgs(restore)], { cwd: dir });
+  for (const rel of quotedArgs(remove)) fs.rmSync(path.join(dir, rel), { force: true });
+  assert.equal(fs.readFileSync(path.join(dir, 'src/a.js'), 'utf8'), nl(40, 'a'));
+  assert.equal(fs.readFileSync(path.join(dir, 'src/gone.js'), 'utf8'), nl(3, 'g'));
+  for (const rel of ["src/new it's.js", 'src/staged.js']) assert.ok(!fs.existsSync(path.join(dir, rel)), `${rel} removed`);
+  assert.equal(fs.readFileSync(path.join(dir, 'src/b.js'), 'utf8'), `${nl(5, 'b')}mine\n`, 'the developer\'s change to b.js is kept');
+  assert.equal(fs.readFileSync(path.join(dir, 'src/mine.js'), 'utf8'), 'my own work\n', 'the developer\'s new file is kept');
+  assert.equal(git(dir, 'status', '--short').split('\n').filter(Boolean).sort().join('|'), ' M src/b.js|?? src/mine.js');
+});
+
+test('patch end (#213): an accepted run writes the undo record too, one that changed nothing records null, and the next call removes it', () => {
+  const { dir } = fresh({ 'src/a.js': nl(10, 'a') });
+  begin(dir);
+  edit(dir, 'src/a.js', 0, 2);
+  noStop(stop(dir));
+  assert.ok(record(dir), 'accepted');
+  assert.equal(undoRecord(dir).undo, `git restore --source=${startSha(dir)} --staged --worktree -- 'src/a.js'`);
+  patchTool(dir, 'Read', { file_path: path.join(dir, 'src/a.js') });
+  assert.equal(undoRecord(dir), null, 'a later call removes it');
+  const second = fresh();
+  begin(second.dir);
+  noStop(stop(second.dir));
+  assert.equal(undoRecord(second.dir).undo, null);
+});
+
 // #72: the command deny reads a command's text, so a push it cannot read (a script the agent wrote, a
 // string built at run time) went unseen until the skill's own push failed. The start record keeps the
 // remote-tracking refs, and a change to them, which a push or a fetch makes however it was typed,

@@ -73,5 +73,13 @@ the PR link.
 - `ESCALATE`: say why, that the work is uncommitted in the working tree, and that `/speckit-team`
   is the way on. Never start `/speckit-team`.
 
+After a run that committed nothing, read `$(git rev-parse --git-dir)/speckit-team/patch-undo.json`.
+If its `sha` equals the start and its `undo` is not `null`, offer that command, the one that takes
+back `patcher`'s changes and nothing else: show it and ask whether to run it; run it exactly as
+given, only on an explicit yes. No file, another `sha` or `null`: say there is nothing to undo
+that way. Never undo any other way
+(`git stash`, `git reset --hard`, `git clean`, `git checkout .`): those take the developer's own
+uncommitted work too.
+
 ## 6. Merging
 Never merge.
