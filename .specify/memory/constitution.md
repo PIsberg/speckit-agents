@@ -1,5 +1,18 @@
 <!--
 Sync Impact Report
+- Version change: 1.4.0 -> 1.5.0 (MINOR, 2026-10-31)
+- Modified sections: Installation Constraints, the "cost nothing without .specify/" bullet: a settings
+  gate MAY also start one hook process after each Agent call (PostToolUse), which exits with no output
+  (98 ms median of 30 on Windows, Node 26, measured 2026-10-31). #231: a hook's systemMessage in a
+  subagent reaches only that subagent's transcript, so the relay entry hands it to the main session.
+  Proposed in PR for #231; the amendment stands only once the owner merges it.
+- Principles modified: none
+- Added sections: none
+- Removed sections: none
+- Templates: .specify/templates/plan-template.md (OK), spec-template.md (OK), tasks-template.md (OK)
+- Deferred TODOs: none
+
+Previous report (1.4.0):
 - Version change: 1.3.0 -> 1.4.0 (MINOR, 2026-10-31)
 - Principles modified: IV. Zero Runtime Dependencies: the Node floor for hooks, installer and tests
   rises from 18 to 22 (#223). Owner decision 2026-10-31: CI tests Node 22 only, and Node 18 and 20 are
@@ -142,7 +155,8 @@ failing test or a live run exposed.
   half install.
 - Installed components MUST cost nothing in repositories without `.specify/`: no blocking and no
   output. A settings gate MAY start one hook process per gated tool call or per start of a subagent
-  its matcher names, which exits with no output (148 ms measured on Windows).
+  its matcher names, which exits with no output (148 ms measured on Windows), and one more after each
+  Agent call, to relay what a subagent's hooks said to the main session (98 ms, #231).
 - `--uninstall` MUST remove every file and settings entry the installer added, and nothing else.
 
 ## Authoring Skills and Agents
@@ -186,4 +200,4 @@ Review criteria, checked by the reviewer and not counted as enforced:
   redefining a principle, MINOR for adding one, PATCH for wording. Each amendment updates the
   Sync Impact Report above.
 
-**Version**: 1.4.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-31
+**Version**: 1.5.0 | **Ratified**: 2026-10-06 | **Last Amended**: 2026-10-31

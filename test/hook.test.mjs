@@ -468,7 +468,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']];
 
 // #215: in a sandbox that denies reading ~/.gitconfig, git for Windows 2.56 fails every command ("fatal:
 // unknown error occurred while reading the configuration files"), not only warns. On the Linux and macOS
@@ -541,7 +541,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -906,9 +906,81 @@ test('ends without --record leaves the recorded word alone', () => {
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).word, 'REJECTED');
 });
 
+// #228: in the 2026-10-31 full run spec-gatekeeper approved FR-006, which T002 and T005 cited and no test
+// held, on the argument that each test file imports only its own module. The hook now runs the drift
+// check on the active feature at APPROVED and refuses it while a finished test task cites a requirement
+// none of its test files holds. REJECTED always goes through, so refusing every APPROVED never gags it.
+const DRIFT_TASKS = '- [X] T001 Test FR-001 in `test/a.test.mjs`\n- [X] T002 implement FR-001 in `src/a.mjs`\n';
+function driftRepo() {
+  const r = repo();
+  r.write(`${FEAT}/tasks.md`, DRIFT_TASKS);
+  r.write('test/a.test.mjs', "test('each module imports only itself', () => {});\n");
+  // Another feature's drift is not this feature's to fix.
+  r.write('specs/000-old/tasks.md', '- [X] T009 Test FR-004 in `test/old.test.mjs`\n');
+  r.write('test/old.test.mjs', '// nothing\n');
+  return commitAll(r, 'tests');
+}
+const GK = ['ends', '--record', 'APPROVED', 'REJECTED'];
+const endsWord = (dir) => readState(path.join(stateDir(dir), 'ends', '001-demo.json'));
+function readState(f) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } }
+
+test('#228 FR-001: spec-gatekeeper\'s APPROVED is refused at hand-back while a cited requirement has no test', () => {
+  const { dir, write: put } = driftRepo();
+  const send = (message, agent_id) => run(dir, GK, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  for (const id of ['gk1', 'gk1']) {
+    const out = send('| FR-001 | each test file imports only its own module | ok |\n\nAPPROVED', id);
+    assert.ok(denied(out), JSON.stringify(out));
+    const why = out.hookSpecificOutput.permissionDecisionReason;
+    assert.match(why, /specs\/001-demo\/tasks\.md T001: FR-001 is in none of test\/a\.test\.mjs/);
+    assert.match(why, /REJECTED/);
+    assert.doesNotMatch(why, /000-old|FR-004/, 'another feature is not named');
+  }
+  assert.equal(endsWord(dir), null, 'a refused APPROVED records nothing');
+  assert.equal(send('FR-001 has no test that would fail (owner: test-writer)\n\nREJECTED', 'gk1'), null);
+  assert.equal(endsWord(dir).word, 'REJECTED');
+  put('test/a.test.mjs', "test('FR-001 sum does not import capitalize', () => {});\n");
+  assert.equal(send('All covered.\n\nAPPROVED', 'gk2'), null, 'APPROVED goes through once the test holds the ID');
+  assert.equal(endsWord(dir).word, 'APPROVED');
+});
+
+test('#228 FR-001: at Stop the APPROVED is sent back once, then recorded as REJECTED with the drift', () => {
+  const { dir } = driftRepo();
+  const stop = (extra) => run(dir, GK, { hook_event_name: 'SubagentStop', agent_id: 'gk3', last_assistant_message: 'All covered.\n\nAPPROVED', ...extra });
+  const first = stop({});
+  assert.equal(first?.decision, 'block');
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.equal(endsWord(dir), null);
+  const second = stop({ stop_hook_active: true });
+  assert.ok(!decided(second), 'never blocks twice');
+  assert.match(msg(second), /spec-gatekeeper's APPROVED was recorded as REJECTED/);
+  assert.match(msg(second), /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  const e = endsWord(dir);
+  assert.equal(e.word, 'REJECTED');
+  assert.equal(e.claimed, 'APPROVED');
+  assert.deepEqual(e.drift, ['specs/001-demo/tasks.md T001: FR-001 is in none of test/a.test.mjs']);
+});
+
+// The check is a second file beside the hook. A hook installed without it must not let APPROVED through
+// in silence (constitution II): the word is recorded, and the message says the check did not run.
+test('#228: a hook without its drift module records APPROVED and says the check did not run', () => {
+  const { dir } = driftRepo();
+  const alone = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-')), 'speckit-team.mjs');
+  fs.copyFileSync(HOOK, alone);
+  const out = run(dir, GK, { hook_event_name: 'SubagentStop', agent_id: 'gk4', last_assistant_message: 'All covered.\n\nAPPROVED' }, alone);
+  assert.ok(!decided(out));
+  assert.match(msg(out), /drift check could not run/);
+  assert.equal(endsWord(dir).word, 'APPROVED');
+});
+
+// Non-gatekeeper uses of `ends` (test-writer's RED, patcher's DONE) never run the check.
+test('#228: ends without --record does not run the drift check', () => {
+  const { dir } = driftRepo();
+  assert.equal(run(dir, ['ends', 'APPROVED', 'RED'], { hook_event_name: 'SubagentStop', agent_id: 'tw9', last_assistant_message: 'x\nAPPROVED' }), null);
+});
+
 // --- 003 fast track: `scope protected` (T001; FR-007, FR-001, US3-1, US3-4, SC-003) ---
 const PROT = ['scope', 'protected'];
-const OWN = ['hooks/speckit-team.mjs', 'agents/implementer.md', 'skills/speckit-team/SKILL.md', 'install.mjs', 'package.json'];
+const OWN = ['hooks/speckit-team.mjs', 'hooks/speckit-drift.mjs', 'agents/implementer.md', 'skills/speckit-team/SKILL.md', 'install.mjs', 'package.json'];
 const caseInsensitiveFs = (dir) => fs.existsSync(path.join(dir, '.GIT'));
 // Asserts a deny that names the repo-relative path and /speckit-team, and that disk is unchanged.
 function assertProtected(dir, rel) {
@@ -927,7 +999,7 @@ function assertProtected(dir, rel) {
 function ownRepo() {
   const r = repo();
   r.write('package.json', '{"name":"speckit-agents"}');
-  for (const f of OWN.slice(0, 4)) r.write(f, 'x\n');
+  for (const f of OWN.slice(0, 5)) r.write(f, 'x\n');
   return commitAll(r, 'own');
 }
 
@@ -2593,6 +2665,30 @@ test('009 T025 FR-008 contract 6 step 2: the spec-gatekeeper role APPROVED is re
   assert.equal(e.agent_id, null);
 });
 
+// #228 in --team skill-agents: the role's APPROVED is checked the same way. Its Stop is sent back once with
+// the drift, and the role stays the acting one; after that the word is recorded as REJECTED.
+test('#228 FR-001: the spec-gatekeeper role\'s APPROVED is sent back once, then recorded as REJECTED with the drift', () => {
+  const { dir } = driftRepo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.\n\nAPPROVED');
+  const first = stopRole(dir);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.ok(hasRole(dir), 'the role still acts');
+  assert.equal(endsRec(dir), null);
+  const second = stopRole(dir, { stop_hook_active: true });
+  assert.ok(!decided(second));
+  assert.match(msg(second), /recorded as REJECTED/);
+  const e = endsRec(dir);
+  assert.equal(e.word, 'REJECTED');
+  assert.equal(e.claimed, 'APPROVED');
+  assert.equal(e.role, 'spec-gatekeeper');
+  assert.ok(!hasRole(dir));
+});
+
 // #185: the gatekeeper's report and the orchestrator's hand-over can share one response, so the word is
 // the response's last standalone APPROVED or REJECTED line, not its very last line.
 test('#185: a spec-gatekeeper word followed by hand-over text in the same response is recorded', () => {
@@ -2661,4 +2757,52 @@ test('009 T025 contract 6: last_assistant_message a number never crashes', () =>
   say(b.t, 'No findings.');
   stopRole(b.dir, { last_assistant_message: 'VERDICT: PASS' });
   assert.equal(verdictRec(b.dir)?.verdict, 'PASS', 'a string last message is read');
+});
+
+// --- #231: what a subagent's hooks say reaches the main session ---
+// A hook's systemMessage at SubagentStop lands in the subagent's own transcript and never in the main
+// session's (seen 2026-10-31 on 2.1.316): an out-of-lane file left behind, a lane check that could not
+// run, an APPROVED recorded as REJECTED. Under claude -p nobody saw them. The hook now keeps each message a
+// subagent's hook gives, by session, and the `relay` entry (settings.json, PostToolUse on Agent) hands them
+// to the main session as additionalContext once its Agent call returns.
+const relay = (dir, session_id, extra = {}) => run(dir, ['relay'], {
+  hook_event_name: 'PostToolUse', tool_name: 'Agent', session_id, tool_input: {}, tool_response: {}, ...extra,
+});
+const relayed = (out) => out?.hookSpecificOutput?.additionalContext ?? '';
+
+test('#231: a lane WARNING at a subagent\'s Stop reaches the main session once, after its Agent call', () => {
+  const { dir, write: w } = repo();
+  subagentStart(dir, 'a9', 'architect', { session_id: 's31' });
+  w('src/greet.js', 'export const greet = 1;\n');
+  assert.equal(laneOnly(dir, 'a9', ['specs/'], 'architect', { session_id: 's31' })?.decision, 'block');
+  const warn = laneOnly(dir, 'a9', ['specs/'], 'architect', { session_id: 's31', stop_hook_active: true });
+  assert.match(msg(warn), /WARNING: architect left changes outside its lane: src\/greet\.js/, 'the terminal still gets it');
+  assert.equal(relay(dir, 'another-session'), null, 'another session gets nothing');
+  const out = relay(dir, 's31');
+  assert.equal(out?.hookSpecificOutput?.hookEventName, 'PostToolUse');
+  assert.match(relayed(out), /architect: WARNING: architect left changes outside its lane: src\/greet\.js/);
+  assert.ok(!decided(out), 'never a decision');
+  assert.equal(relay(dir, 's31'), null, 'handed over once');
+});
+
+test('#231: a verdict at a hand-back and an APPROVED recorded as REJECTED are relayed too; the main session\'s own Stop is not', () => {
+  const { dir } = driftRepo();
+  handback(dir, 'verdict', 'All good.\n\nVERDICT: PASS', { agent_type: 'spec-auditor', session_id: 's32' });
+  const gk = { hook_event_name: 'SubagentStop', agent_id: 'gk31', agent_type: 'spec-gatekeeper', session_id: 's32', last_assistant_message: 'ok\n\nAPPROVED' };
+  run(dir, GK, gk);
+  run(dir, GK, { ...gk, stop_hook_active: true });
+  const text = relayed(relay(dir, 's32'));
+  assert.match(text, /spec-auditor: spec-auditor recorded VERDICT: PASS for specs\/001-demo/);
+  assert.match(text, /spec-gatekeeper: speckit-team: spec-gatekeeper's APPROVED was recorded as REJECTED: .*FR-001 is in none of test\/a\.test\.mjs/);
+  assert.ok(text.indexOf('spec-auditor:') < text.indexOf('spec-gatekeeper:'), 'in the order they were given');
+  run(dir, ['verdict'], { hook_event_name: 'Stop', session_id: 's33', last_assistant_message: 'VERDICT: PASS' });
+  assert.equal(relay(dir, 's33'), null, 'a main-session message is not a subagent\'s');
+});
+
+test('#231: relay says nothing outside a Spec Kit repo, on another tool, or without a usable session', () => {
+  const { dir: plain } = repo({ speckit: false });
+  assert.equal(relay(plain, 's34'), null);
+  const { dir } = repo();
+  assert.equal(run(dir, ['relay'], { hook_event_name: 'PostToolUse', tool_name: 'Bash', session_id: 's34' }), null);
+  for (const session_id of [undefined, 7, '../x']) assert.ok(!decided(relay(dir, session_id)), String(session_id));
 });

@@ -12,6 +12,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `docs/live-results.md`: what was seen in a real session, by date.
 - `docs/CHANGELOG.md`: every commit by day, written by `node tools/changelog.mjs`; regenerate it as a
   PR's last commit (a chain's last PR), never edit it by hand.
+- `docs/rules.md`: every rule of the skills and agents and what holds it: hook, script, pinned text, or
+  nothing. A section added, changed or dropped fails `test/rules.test.mjs` until its entry is reviewed.
 - `docs/architecture.md`: pipeline overview, security-reviewer dual-gate lifecycle, and diagram prompt.
 - `.specify/memory/constitution.md`: the rules every change is held to (tests first, guardrails never
   fail silently, docs in the same change).
@@ -21,7 +23,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `agents/*.md`: the eight subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`, `project`.
+  `ends`, `start`, `lane`, `patch`, `relay`, `project`, `check`. `hooks/speckit-drift.mjs`: the drift check, installed
+  beside it and loaded at spec-gatekeeper's `APPROVED` (#228); `tools/drift.mjs` is its command line.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
 - `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates seven from
@@ -46,7 +49,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 512 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 535 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.
@@ -69,7 +72,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Skill and agent authoring limits (line budgets, description length, no model name in a body, no colliding
   descriptions) are held by `test/skills.test.mjs`; the rest are review criteria in the constitution.
 - Every file the installer writes keeps the `speckit-agents: managed by install.mjs` marker line;
-  install and uninstall tell their own files from the user's by it.
+  install and uninstall tell their own files from the user's by it. The installer stamps the build after
+  it (#230); `buildOf()` in `install.mjs` and in the hook are twins, held by `test/install.test.mjs`.
 - A new hook command goes in an agent's frontmatter or `SETTINGS_GATES` in `install.mjs`, and in the
   README's guardrail table.
 - Hooks fail open when they crash. Any change that can make the script throw needs a test.
@@ -83,7 +87,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - Twins, each held by `test/board-mod.test.mjs`: `fingerprint()` in the hook and in
   `mods/speckit-board/hooks/model.ts` (also pinned in the mod's `model.test.ts`); the mod's
   `ROLE_COLOR` and each `agents/*.md` `color:` line; its `MAX_RED` and the hook's; its `WORDS` and the
-  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `TEST_PATTERNS` in the hook and in `tools/drift.mjs`, held by `test/drift.test.mjs`. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
+  words test-writer and spec-gatekeeper pass to `ends`. Change both halves. Also `TEST_PATTERNS` in the hook and in `hooks/speckit-drift.mjs`, held by `test/drift.test.mjs`. Also `NO_NETWORK` and `NO_FORGE_LOGIN`
   in the hook and in `install.mjs`, which writes the exact allow rule for the hook's export line (#122,
   #123), held by `test/hook-patch.test.mjs`. A change to the line adds the old rule to
   `OLD_NO_NETWORK_RULES` in `install.mjs`, so a reinstall replaces it.

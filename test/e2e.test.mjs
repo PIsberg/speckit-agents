@@ -691,6 +691,45 @@ test("spec-gatekeeper's report must end in APPROVED or REJECTED, and the word is
   assert.equal(state(s, 'ends', '001-x.json').word, 'APPROVED', story(r));
 });
 
+// #228: the installed hook loads the installed drift check beside it, and the gatekeeper's APPROVED on a
+// cited requirement no test holds comes back to it with the drift line; its REJECTED is then recorded.
+test("#228: spec-gatekeeper's APPROVED is refused while a ticked test task's FR is in none of its test files", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  s.write('specs/001-x/tasks.md', '- [X] T001 Test FR-006 in `test/a.test.js`\n');
+  s.write('test/a.test.js', "test('each file imports only its own module', () => {});\n");
+  git(s.repo, 'add', '-A'); git(s.repo, 'commit', '-qm', 'tests');
+  const r = await session(s, {
+    [MAIN]: [agent('spec-gatekeeper', 'e2e gatekeeper')],
+    'e2e gatekeeper': [say('FR-006: each test file imports only its own module.\nAPPROVED'), say('FR-006 has no test (owner: test-writer).\nREJECTED')],
+  });
+  assert.match(shown(r.requests['e2e gatekeeper'][1]), /T001: FR-006 is in none of test\/a\.test\.js/, story(r));
+  assert.equal(state(s, 'ends', '001-x.json').word, 'REJECTED', story(r));
+});
+
+// #230: with the team in the config dir and in the repo's .claude/, of different builds, a typed
+// /speckit-patch runs the personal skill (#175, seen on 2.1.310 and 2.1.316), and the check its first step
+// runs names both installs and exits 1. The first request shows which skill Claude Code expanded.
+test('#230: a personal install shadows a project one of another build, and the skill\'s check stops the run', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  const project = path.join(s.repo, '.claude');
+  execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', project], { stdio: 'ignore' });
+  const STAMP = /(speckit-agents: managed by install\.mjs \(speckit-agents \S+, build )[0-9a-f]{12}\)/;
+  for (const rel of ['skills/speckit-patch/SKILL.md', 'hooks/speckit-team.mjs', 'agents/patcher.md']) {
+    const f = path.join(project, ...rel.split('/'));
+    fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(STAMP, '$1ffffffffffff)'));
+  }
+  const fwd = (p) => p.split(path.sep).join('/');
+  const personalHook = fwd(s.hook);
+  const r = await session(s, { [MAIN]: [call('Bash', { command: `node "${personalHook}" check`, description: 'Check the team' })] },
+    { prompt: `/speckit-patch ${MAIN} rename x` });
+  const first = shown(r.requests[MAIN][0]);
+  assert.ok(first.includes(`node "${personalHook}" check`), `the personal skill was expanded:\n${story(r)}`);
+  assert.ok(!first.includes(fwd(path.join(project, 'hooks', 'speckit-team.mjs'))), 'not the project one');
+  const out = lastResult(r.requests[MAIN][1]);
+  assert.match(out, /speckit-team: check: two installs of the team/, story(r));
+  assert.ok(out.includes(fwd(project)), out);
+});
+
 test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED, BLOCKED or FIXED", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);
@@ -954,6 +993,18 @@ test("product-owner's and architect's Stop: the lane check catches a file writte
   assert.ok(fs.existsSync(path.join(s.repo, 'arch.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e architect'][2]), /Lane check: architect changed files outside its lane: arch\.js\./, story(r));
   assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
+});
+
+// #231: the WARNING at product-owner's second Stop went to its own transcript only. The settings.json
+// PostToolUse entry on Agent now hands it to the main session, whose next request carries it.
+test("#231: an out-of-lane file a subagent leaves behind is named in the main session's next request", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('product-owner', 'e2e product-owner'), say('done')],
+    'e2e product-owner': [unseenWrite('owner.js'), say('Spec written.\nREADY FOR PLAN'), say('Spec written.\nREADY FOR PLAN')],
+  });
+  assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
+  assert.match(shown(r.requests[MAIN][1]), /product-owner: WARNING: product-owner left changes outside its lane: owner\.js/, story(r));
 });
 
 // --team noagents: Claude Code hands the typed /speckit-team to the UserPromptExpansion gate, which

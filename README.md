@@ -154,7 +154,9 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `skills/speckit-triage/SKILL.md` | the advisory `/speckit-triage` command: suggests which of the two to use, runs nothing |
 | `skills/speckit-role-<role>/SKILL.md` | seven role skills, one per team role, generated from `agents/<role>.md` for [`--team skill-agents`](#running-the-roles-as-skills---team-skill-agents); `user-invocable: false`, so only that mode calls them |
 | `hooks/speckit-team.mjs` | every guardrail |
-| `settings.json` | three hook entries merged in (`PreToolUse`, `UserPromptExpansion`, and `SubagentStart` for the eight agents to record start and inject project context), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
+| `hooks/speckit-agents.install.json` | what the installer added (for `--uninstall`), and the version and build it stamped on every file it wrote ([#230](https://github.com/PIsberg/speckit-agents/issues/230)) |
+| `hooks/speckit-drift.mjs` | the drift check the hook runs at spec-gatekeeper's `APPROVED` ([#228](https://github.com/PIsberg/speckit-agents/issues/228)); [`tools/drift.mjs`](#checking-old-features-for-drift) runs the same file |
+| `settings.json` | four hook entries merged in (`PreToolUse`, `UserPromptExpansion`, `SubagentStart` for the eight agents to record start and inject project context, and `PostToolUse` on `Agent` to relay what a subagent's hooks said, [#231](https://github.com/PIsberg/speckit-agents/issues/231)), and one allow rule for the exact line the fast track puts before `patcher`'s commands ([What the hooks stop](#what-the-hooks-stop)); your other settings, hooks and permissions are kept |
 
 #### Installer options
 
@@ -903,6 +905,12 @@ on a stopped run and checks that the tree is back at the start with your own cha
 
 #### What is prompt text, and what was verified
 
+For the whole team, every rule of every skill and agent and what holds it (a hook, a script the skill
+runs, a test that pins the text, or nothing) is in [docs/rules.md](docs/rules.md), with the
+text-only rules whose breach leaves no trace listed first ([#232](https://github.com/PIsberg/speckit-agents/issues/232)).
+`test/rules.test.mjs` fails when a section of a skill or agent is added, changed or dropped without
+its entry there. For the fast track:
+
 No hook can tell which command is a repo's test suite or whether it passed. These are rules in
 [`agents/patcher.md`](agents/patcher.md) and
 [`skills/speckit-patch/SKILL.md`](skills/speckit-patch/SKILL.md), not hooks: no PR unless the
@@ -1037,7 +1045,9 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
 | `start` | `settings.json`: `SubagentStart` of the eight agents | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all eight when a project is active (007); never decides |
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
-| `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); records the accepted word |
+| `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
+| `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
+| `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
 | `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
 
@@ -1170,9 +1180,10 @@ Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#cu
 ### State
 
 Verdicts, retry counts, the gatekeeper's last word and per-agent start points live in
-`$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature,
+`$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, where
+an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `drift` fields,
 `agents/`, `team/`: one small record per session that launched a team role or typed
-`--team noagents`). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+`--team noagents`, and `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
@@ -1496,26 +1507,27 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 512 tests:
+`npm test` runs 535 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 162 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 170 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 74 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 116 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 125 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 54 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 57 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 11 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 22 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
+| [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
 
 The unit suites prove the logic but cannot prove that Claude Code fires a hook, which is where all
@@ -1598,7 +1610,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 41
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 44
   tests fire every hook entry the installer writes: each agent's scope rule (on a write tool and
   on Bash), both gates, every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1625,8 +1637,14 @@ need no login and cost nothing.
   the environment, and gh stops for lack of one with no prompt, because the line empties the token
   variables; without the hook it uses the token and tries to connect
   ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
+  In one, the team is installed both in the config dir and in the repo's `.claude/`, of different
+  builds: a typed `/speckit-patch` expands the personal skill, and the `check` its first step runs
+  names both installs and exits 1 ([#230](https://github.com/PIsberg/speckit-agents/issues/230)).
+  In another, product-owner leaves a file outside its lane after the lane check sent it back once, and
+  the main session's next request names the file: the `PostToolUse` relay on `Agent` handed it over
+  ([#231](https://github.com/PIsberg/speckit-agents/issues/231)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 41
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 44
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
@@ -1848,6 +1866,27 @@ same check passed once the folder was trusted ([Live results](docs/live-results.
 skill also shadows the project's copy of the same name, trusted or not
 ([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
 
+`/speckit-team` and `/speckit-patch` now stop on all of this before anything runs
+([#230](https://github.com/PIsberg/speckit-agents/issues/230)). The installer stamps every file it
+writes with the checkout's version and build (a hash of `agents/`, `skills/`, `hooks/`,
+`install.mjs` and `package.json`) on its marker line, and records the build in
+`hooks/speckit-agents.install.json`. Each skill's first step runs `node "<hook>" check`, which exits 1,
+and the skill stops, naming the paths, when:
+
+- the install mixes builds (a file left from another checkout);
+- a second install of another build exists, in your config dir (`CLAUDE_CONFIG_DIR`, else `~/.claude`)
+  or in the repo's `.claude/`: the run could take its skill from one and its agents from the other.
+  Remove one with `node install.mjs --claude-dir <dir> --uninstall`, or install the same checkout into
+  both;
+- the install is the repo's `.claude/`, and your `.claude.json` (beside `CLAUDE_CONFIG_DIR`'s
+  contents, else in your home) trusts neither the repo nor a folder above it.
+
+It prints a `note:` line and goes on for a second install of the same build, a `.claude.json` that is
+not JSON, and, in a speckit-agents checkout, an install that is not this checkout's build (run
+`node install.mjs`). Verified by `test/install.test.mjs` on throwaway installs, and by an e2e case in
+which Claude Code runs the personal skill over the project's and its check stops the run. Not
+verified: that Claude Code counts a trusted folder above the repo as trust for it, as the check does.
+
 If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git for Windows
 2.56 fails every command (`fatal: unknown error occurred while reading the configuration files`;
 on the Linux and macOS CI runners git read the repository under a mode-000 `~/.gitconfig` without
@@ -2061,7 +2100,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   no feature, the same ID of another feature in the same test file still hides drift, so no problems
   reported is not proof that every requirement is still tested. A test task is told from a docs task
   by its opening words ("Tests in", "Contract test for"), so a test task worded otherwise is not
-  checked at all.
+  checked at all. The same holds for the check at spec-gatekeeper's `APPROVED`, which also sees only
+  requirements a test task cites: an FR no task cites, or one whose ID a test names without testing
+  it, still rests on the gatekeeper's own trace.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2302,7 +2343,12 @@ line), and one test-writer, relaunched 3 minutes after the last, read its whole 
 
 spec-gatekeeper checks a feature once, before its PR. Later changes can drop or move the tests it
 traced, and nothing looks again. `tools/drift.mjs` does, for every feature under `specs/`, with no
-model and no tokens:
+model and no tokens. The check itself is `hooks/speckit-drift.mjs`, which the installer puts beside
+the hook: at spec-gatekeeper's `APPROVED` the hook runs it on the active feature alone and refuses
+the word while it reports a problem ([#228](https://github.com/PIsberg/speckit-agents/issues/228)).
+In the full run of 2026-10-31 the gate approved FR-006, which two tasks cited and no test held,
+on the argument that each test file imports only its own module. A hook installed without the file
+records `APPROVED` and says the check did not run.
 
 ```sh
 node tools/drift.mjs <repo>

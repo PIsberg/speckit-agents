@@ -29,6 +29,11 @@
 //                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
 //   project <name> [--init] Not a hook: the skills run it from Bash. Prints the project's block (feature 007) or one
 //                           refusal line, exit 0 or 1; --init creates .specify/projects/<name>/ with a starter file
+//   relay                   PostToolUse of Agent in the main session: hands it what the hooks said inside its
+//                           subagents (kept under notices/ as they said it), as additionalContext; never a decision
+//   check                   Not a hook: the pipeline skills' first step (#230). Exit 1 when the team that would run
+//                           is not this install alone (mixed builds, a second install of another build, a project
+//                           install in a folder Claude Code has not trusted); `note:` lines otherwise
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -75,7 +80,7 @@ const PROTECTED = [
 ];
 // Only in the speckit-agents repository itself (recognised by isOwnRepo).
 const OWN_SOURCES = [
-  [/^hooks\/speckit-team\.mjs$/i, "the agent team's own sources"],
+  [/^hooks\/speckit-(team|drift)\.mjs$/i, "the agent team's own sources"],
   [/^agents\/[^/]+\.md$/i, "the agent team's own sources"],
   [/^skills\/[^/]+\/SKILL\.md$/i, "the agent team's own sources"],
   [/^install\.mjs$/i, "the agent team's own sources"],
@@ -99,14 +104,15 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
   + 'Put reference documents (API docs, style guides, domain notes) beside it as knowledge files.\n';
 
 const [mode, ...args] = process.argv.slice(2);
-// `project` is run by the skills from Bash, not by Claude Code: it answers on stdout with exit 0 or 1,
-// written synchronously, since a pipe on Windows drops what is still queued at process.exit.
+// `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
+// exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
+const CLI = mode === 'project' || mode === 'check';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
-const projectRefuse = (why) => projectSay(`speckit-team: project: ${why}`, 1);
+const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
 // a crashed hook is a non-blocking error, and the action would go through with nobody told. The
-// project mode reads no stdin: run from Bash, it may be held open and never end.
-const raw = mode === 'project' ? '{}' : (() => { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } })();
+// CLI modes read no stdin: run from Bash, it may be held open and never end.
+const raw = CLI ? '{}' : (() => { try { return fs.readFileSync(0, 'utf8'); } catch { return ''; } })();
 let input = {};
 let inputProblem = null;
 try {
@@ -130,7 +136,7 @@ const agentKey = keyOf(agentId);
 // through becomes no decision plus a visible message; outside one it stays silent.
 let inSpecKitRepo = false;
 process.on('uncaughtException', (e) => {
-  if (mode === 'project') projectRefuse(`internal error (${e?.message ?? e}).`);
+  if (CLI) projectRefuse(`internal error (${e?.message ?? e}).`);
   if (inSpecKitRepo) {
     process.stdout.write(JSON.stringify({ systemMessage: `speckit-team: ${mode} hit an internal error (${e?.message ?? e}); no decision made.` }));
   }
@@ -146,6 +152,7 @@ const WIRED = {
   lane: ['SubagentStop', 'Stop'],
   start: ['SubagentStart'],
   patch: ['PreToolUse', 'SubagentStop', 'Stop'],
+  relay: ['PostToolUse'],
 };
 const who = input.agent_type || 'the main session';
 
@@ -163,8 +170,11 @@ const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } cat
 // A message a role-skill step passes on with whatever the hook decides next (contract section 8).
 let note = null;
 const addNote = (m) => { note = [note, m].filter(Boolean).join('\n'); };
+// #231: set once the state folder is known, for a hook running in a subagent (see keepNotice below).
+let keepNotice = null;
 const emit = (obj) => {
   const say = [note, obj.systemMessage].filter(Boolean).join('\n');
+  if (say && keepNotice) keepNotice(say);
   process.stdout.write(JSON.stringify(say ? { ...obj, systemMessage: say } : obj));
   process.exit(0);
 };
@@ -190,7 +200,7 @@ function specifyAbove(dir) {
   }
 }
 // Every hook mode stays silent outside a Spec Kit repo; the project mode is asked a question and says no.
-const notSpecKit = () => (mode === 'project' ? projectRefuse('no .specify/ in this repository.') : process.exit(0));
+const notSpecKit = () => (CLI ? projectRefuse('no .specify/ in this repository.') : process.exit(0));
 const specDir = specifyAbove(cwd);
 if (!specDir) notSpecKit();
 // One git process for the work tree's root and the git directory every worktree shares.
@@ -215,12 +225,30 @@ function repoDirs() {
   if ('out' in r) return lines(r.out.trim());
   if (/not a git repository/i.test(r.err) && !(typeof specDir === 'string' && fs.existsSync(path.join(specDir, '.git')))) return [];
   const why = r.err.trim().split(/\r?\n/).filter(Boolean).pop() || 'git failed';
-  if (mode === 'project') projectRefuse(`git could not read the repository here (${why}).`);
+  if (CLI) projectRefuse(`git could not read the repository here (${why}).`);
   return emit({ systemMessage: `speckit-team: ${mode} could not read the git repository here (${why}); no decision made.` });
 }
 const [root, commonDir] = repoDirs();
 if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecKit();
 inSpecKitRepo = true;
+
+// #228: the drift check, a second file beside this script, loaded only by the modes that can close
+// spec-gatekeeper's report: `ends --record`, and `gate` and `lane role`, which close a skill-agents role.
+// Loaded here, inside a Spec Kit repo, so no other repo pays for it. A missing or broken file is kept as
+// the error, and APPROVED is then recorded with a message that the check did not run (constitution II).
+const driftModule = (mode === 'ends' && args[0] === '--record') || mode === 'gate' || (mode === 'lane' && args[0] === 'role')
+  ? await import(new URL('./speckit-drift.mjs', import.meta.url).href).catch((e) => e) : null;
+// The active feature's drift: { problems }, or { failed } when the check could not run.
+function driftOf(feat) {
+  if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
+  try { return { problems: driftModule.drift(root, { feature: feat }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+}
+const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: tasks.md cites requirements that no test file of their `
+  + `task holds (the drift check; test-writer puts each ID in a test's name or a comment):\n${problems.join('\n')}\n`
+  + 'A requirement no test holds cannot be approved, whatever argument covers it. Report each as a rejection reason '
+  + '(owner: test-writer, who adds the test, or the ID to the test that already covers it) and end with REJECTED.';
+const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
+  + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
 // The valid project names under .specify/projects/, sorted; symlinked entries are not projects.
 function projectNames() {
@@ -426,6 +454,34 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
 const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
+
+// #231: a hook's systemMessage in a subagent lands in that subagent's transcript only, and under claude -p
+// nobody sees it: an out-of-lane file left behind, a lane check that could not run, an APPROVED recorded
+// as REJECTED. So each one is also kept under notices/, by the session the subagent's input names (the
+// main session's), and `relay`, on the main session's PostToolUse of Agent, hands them over once.
+const noticeFile = (sessionId) => path.join(stateDir, 'notices', `${sessionId}.jsonl`);
+const noticeSession = str(input.session_id);
+if (agentId && noticeSession && SESSION_ID.test(noticeSession) && mode !== 'relay') {
+  keepNotice = (text) => {
+    try {
+      fs.mkdirSync(path.dirname(noticeFile(noticeSession)), { recursive: true });
+      fs.appendFileSync(noticeFile(noticeSession), `${JSON.stringify({ agent: str(input.agent_type) ?? 'an agent', at: new Date().toISOString(), text: text.slice(0, 2000) })}\n`);
+    } catch { /* the terminal still shows it */ }
+  };
+}
+if (mode === 'relay') {
+  if (input.tool_name !== 'Agent' || !noticeSession || !SESSION_ID.test(noticeSession)) process.exit(0);
+  // Taken by renaming first, so a notice a parallel agent adds meanwhile goes to the next relay, not nowhere.
+  const taken = `${noticeFile(noticeSession)}.${process.pid}`;
+  try { fs.renameSync(noticeFile(noticeSession), taken); } catch { process.exit(0); }
+  const rows = lines(readOr(taken, '')).flatMap((l) => {
+    try { const r = JSON.parse(l); return typeof r?.text === 'string' ? [`- ${r.agent}: ${r.text}`] : []; } catch { return []; }
+  });
+  fs.rmSync(taken, { force: true });
+  if (!rows.length) process.exit(0);
+  emit({ hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext:
+    `speckit-team: the team's hooks said this to the agents that just ran; it reached only their transcripts, so act on it here:\n${rows.join('\n')}` } });
+}
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
 // 009: the role acting in a skill-agents request's main session (data-model.md).
 const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
@@ -612,6 +668,15 @@ function recordReport(rec, last = null, where = 'stop') {
     return;
   }
   if (!feat) { addNote(`speckit-team: the spec-gatekeeper role's ${word} was not recorded: no active feature.`); return; }
+  // #228, as for the agent: sent back once at Stop (the role stays the acting one), then recorded as REJECTED.
+  const drifted = word === 'APPROVED' ? driftOf(feat) : null;
+  if (drifted?.problems?.length) {
+    if (where === 'stop' && !input.stop_hook_active) block(driftRefusal('the spec-gatekeeper role', drifted.problems));
+    writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: null, role: rec.role });
+    addNote(`speckit-team: the spec-gatekeeper role's APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}`);
+    return;
+  }
+  if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
 }
 
@@ -744,6 +809,94 @@ function laneProblem(actor, ruleArgs, abs, shown, viaBash) {
 }
 // A Bash command scope judges after the shell reader is defined, further down (#209, #210).
 let scopeBash = null;
+
+// #230: `check`, the first step of /speckit-team and /speckit-patch, run from Bash. Is the team that would
+// run this install alone? Exit 1, which the skills stop on, when the install mixes builds, when a second
+// install of another build exists (a personal skill shadows a project one of the same name, #175, so a run
+// can take its skill from one and its agents from the other), or when this is a project install in a
+// folder Claude Code has not trusted (it skips the frontmatter hooks of agents from such a folder). A
+// `note:` line, exit 0, for a second install of the same build, a trust file it cannot read, and, in a
+// speckit-agents checkout, an install that is not this checkout.
+const STAMP = /speckit-agents: managed by install\.mjs \(speckit-agents (\S+), build ([0-9a-f]{12})\)/;
+// The build install.mjs stamps for a checkout at `dir`. Twin: buildOf() in install.mjs, held equal by
+// test/install.test.mjs.
+function buildOf(dir) {
+  const h = createHash('sha256');
+  const list = (d, keep) => { try { return fs.readdirSync(path.join(dir, d)).filter(keep).sort().map((n) => `${d}/${n}`); } catch { return []; } };
+  const files = [...list('agents', (n) => n.endsWith('.md')), ...list('skills', (n) => !n.startsWith('.')).map((d) => `${d}/SKILL.md`),
+    ...list('hooks', (n) => n.endsWith('.mjs')), 'install.mjs', 'package.json'];
+  for (const f of files) {
+    let text = '<missing>';
+    try { text = fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n'); } catch { /* counted as missing */ }
+    h.update(`${f}\0${text}\0`);
+  }
+  return h.digest('hex').slice(0, 12);
+}
+// The files of an install folder that carry the marker, each with its build (null: no stamp).
+function installAt(dir) {
+  const ls = (d) => { try { return fs.readdirSync(path.join(dir, d)); } catch { return []; } };
+  const rels = [...ls('agents').filter((n) => n.endsWith('.md')).map((n) => `agents/${n}`),
+    ...ls('skills').map((n) => `skills/${n}/SKILL.md`), ...ls('hooks').filter((n) => n.endsWith('.mjs')).map((n) => `hooks/${n}`)];
+  return rels.flatMap((rel) => {
+    const text = readOr(path.join(dir, rel), '');
+    return text.includes('speckit-agents: managed by install.mjs') ? [{ rel, build: STAMP.exec(text)?.[2] ?? null }] : [];
+  });
+}
+const fwdPath = (p) => p.split(path.sep).join('/');
+// Whether Claude Code has trusted `dir` or a folder above it: true, false, or null when its file is unreadable.
+function trusted(dir) {
+  const conf = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json');
+  const text = readOr(conf, undefined);
+  if (text === undefined) return { ok: false, conf };
+  let projects;
+  try { projects = JSON.parse(text)?.projects ?? {}; } catch { return { ok: null, conf }; }
+  const norm = (p) => { const f = fwdPath(p).replace(/\/+$/, ''); return process.platform === 'win32' ? f.toLowerCase() : f; };
+  const accepted = new Set(Object.entries(projects).filter(([, v]) => v?.hasTrustDialogAccepted === true).map(([k]) => norm(k)));
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    if (accepted.has(norm(d))) return { ok: true, conf };
+    if (path.dirname(d) === d) return { ok: false, conf };
+  }
+}
+if (mode === 'check') {
+  const self = STAMP.exec(readOr(fileURLToPath(import.meta.url), ''));
+  if (!self) projectRefuse('this hook is not an installed copy (it carries no build stamp). Install the team with node install.mjs and run the skill from it.');
+  const [, version, build] = self;
+  const here = fwdPath(TEAM_DIR);
+  const problems = []; const notes = [];
+  const other = installAt(TEAM_DIR).filter((f) => f.build !== build);
+  if (other.length) {
+    problems.push(`${here} mixes builds: its hook is build ${build}, but ${other.map((f) => `${f.rel} is ${f.build ? `build ${f.build}` : 'unstamped'}`).join(', ')}. `
+      + `Reinstall from one checkout: node install.mjs --claude-dir "${here}".`);
+  }
+  const personal = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
+  const project = path.join(root, '.claude');
+  for (const dir of [personal, project].filter((d) => canonical(d) !== canonical(TEAM_DIR))) {
+    const files = installAt(dir);
+    if (!files.length) continue;
+    const builds = [...new Set(files.map((f) => f.build ?? 'unstamped'))];
+    const two = `two installs of the team: ${here} (build ${build}) and ${fwdPath(dir)} (${builds.map((b) => (b === 'unstamped' ? b : `build ${b}`)).join(', ')})`;
+    if (builds.length === 1 && builds[0] === build) notes.push(`note: ${two}, the same build; a personal skill is the one Claude Code runs.`);
+    else {
+      problems.push(`${two}. Claude Code takes a personal skill over a project one of the same name (#175), so a run can take its skill `
+        + `from one and its agents from the other. Remove one (node install.mjs --claude-dir "${fwdPath(dir)}" --uninstall), or install the same checkout into both.`);
+    }
+  }
+  if (canonical(project) === canonical(TEAM_DIR)) {
+    const t = trusted(root);
+    if (t.ok === false) {
+      problems.push(`the team is installed in ${here}, and Claude Code has not trusted ${fwdPath(root)} or a folder above it (${fwdPath(t.conf)}): `
+        + 'it skips the frontmatter hooks of agents from a folder it has not trusted, so their guardrails would not run. '
+        + `Open Claude Code in ${fwdPath(root)} once and accept the trust dialog.`);
+    }
+    if (t.ok === null) notes.push(`note: could not tell whether Claude Code trusts ${fwdPath(root)}: ${fwdPath(t.conf)} is not JSON. Untrusted, the agents' frontmatter hooks do not run.`);
+  }
+  if (isOwnRepo('HEAD')) {
+    const mine = buildOf(root);
+    if (mine !== build) notes.push(`note: the installed team is build ${build}, not this checkout's (build ${mine}): run node install.mjs to run what is checked out.`);
+  }
+  if (problems.length) projectSay(problems.map((p) => `speckit-team: check: ${p}`).join('\n'), 1);
+  projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes].join('\n'), 0);
+}
 
 if (mode === 'scope') {
   const ti = input.tool_input || {};
@@ -1007,12 +1160,27 @@ if (mode === 'ends') {
   if (ok && fs.existsSync(ok)) process.exit(0);
   const word = lastWord(reportText(viaHandback));
   if (words.includes(word)) {
-    if (ok) writeJson(ok, {});
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
     // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
     // test-writer's RED after a REJECTED would otherwise read as the gatekeeper's word.
     const feat = record && feature();
-    if (feat) writeJson(endsFile(feat), { word, feature: feat, at: new Date().toISOString(), agent_id: agentId });
+    const at = new Date().toISOString();
+    // #228: APPROVED is refused, at every hand-back and once at Stop, while the drift check finds a cited
+    // requirement no test holds. REJECTED always goes through, so the agent is never gagged.
+    const drifted = feat && word === 'APPROVED' ? driftOf(feat) : null;
+    // --record is spec-gatekeeper's, whatever agent_type says.
+    const gk = str(input.agent_type) ?? 'spec-gatekeeper';
+    if (drifted?.problems?.length) {
+      const why = driftRefusal(gk, drifted.problems);
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+      if (ok) writeJson(ok, {});
+      writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: agentId });
+      emit({ systemMessage: `speckit-team: ${gk}'s APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}` });
+    }
+    if (ok) writeJson(ok, {});
+    if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
+    if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
