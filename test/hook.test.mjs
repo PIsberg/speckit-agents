@@ -470,8 +470,9 @@ function runRaw(dir, args, text) {
 }
 const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
 
-// #215: in a sandbox that denies reading ~/.gitconfig, git 2.56 fails every command ("fatal: unknown
-// error occurred while reading the configuration files"), not only warns. The hook's first git call
+// #215: in a sandbox that denies reading ~/.gitconfig, git for Windows 2.56 fails every command ("fatal:
+// unknown error occurred while reading the configuration files"), not only warns. On the Linux and macOS
+// CI runners git reads the repo under a mode-000 ~/.gitconfig without even a warning (2026-10-31). The hook's first git call
 // then found no repo, and every mode let the action through in silence: an implementer's Write to a
 // test went through. The hook now reads the repo without the global config when git cannot read it.
 function unreadableGlobalConfig() {
@@ -488,11 +489,13 @@ const runEnv = (dir, args, payload, env) => {
   assert.equal(r.status, 0, r.stderr);
   return r.stdout ? JSON.parse(r.stdout) : null;
 };
-test('#215: a global git config git cannot read changes no decision', () => {
+test('#215: a global git config git cannot read changes no decision', (t) => {
   const { dir } = repo();
   const env = unreadableGlobalConfig();
   const plain = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, env, encoding: 'utf8' });
-  assert.notEqual(plain.status, 0, `precondition: git itself fails under this HOME (${plain.stderr})`);
+  // Where git fails here, this is the bug's case; where it does not, the decisions must still hold.
+  if (process.platform === 'win32') assert.notEqual(plain.status, 0, `precondition: git itself fails under this HOME (${plain.stderr})`);
+  t.diagnostic(`git ${plain.status === 0 ? 'reads the repo' : 'fails'} under an unreadable global config on ${process.platform}`);
   const writeTest = { hook_event_name: 'PreToolUse', tool_name: 'Write', agent_type: 'implementer', tool_input: { file_path: path.join(dir, 'src/test/java/AppTest.java') } };
   const out = runEnv(dir, ['scope', 'no-tests'], writeTest, env);
   assert.ok(denied(out), `the same deny as with a readable config: ${JSON.stringify(out)}`);

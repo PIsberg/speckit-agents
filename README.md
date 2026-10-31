@@ -1848,9 +1848,11 @@ same check passed once the folder was trusted ([Live results](docs/live-results.
 skill also shadows the project's copy of the same name, trusted or not
 ([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
 
-If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git 2.56 fails
-every command (`fatal: unknown error occurred while reading the configuration files`), and the
-hooks once took that for "no repository" and let everything through in silence. They now read the
+If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git for Windows
+2.56 fails every command (`fatal: unknown error occurred while reading the configuration files`;
+on the Linux and macOS CI runners git read the repository under a mode-000 `~/.gitconfig` without
+even a warning), and the hooks once took that for "no repository" and let everything through in
+silence. They now read the
 repository without the global and system config then (`GIT_CONFIG_GLOBAL=NUL` on Windows,
 `/dev/null` elsewhere, and `GIT_CONFIG_NOSYSTEM=1`), which git could not use anyway. A Spec Kit
 folder with a `.git` beside its `.specify/` that git still cannot read gives
