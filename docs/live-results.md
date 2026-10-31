@@ -95,6 +95,23 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, scope on Bash (#209, #210), on the owner's subscription</summary>
+
+Setup: a scratch Spec Kit repo (feature `specs/001-x`, a recorded audit PASS) with the team of
+branch `fix/bash-scope-209-210` installed into its `.claude/` (`node install.mjs --claude-dir
+<repo>/.claude`), the owner's user-level team still the one from `main`. One `claude -p` on
+`--model haiku`, `acceptEdits`, `--allowedTools "Bash Read Agent"`, asking the main session to launch
+spec-gatekeeper (to run `echo notes > notes.md`, then `git status --short`) and implementer (to run
+`echo 1 > test/other.test.js`), both in the foreground, agents on their own `model:` lines.
+
+| What | Result |
+|---|---|
+| The folder not trusted | Both writes went through: `notes.md` and `test/other.test.js` were created, and neither agent saw a hook. stderr: `Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted.` The launches did not get this branch's agents; the user-level ones from `main` have no Bash `scope` entry. $0.063. |
+| Trusted (`hasTrustDialogAccepted` set for the run and removed after it, as `tools/full-run.mjs --login` does) | spec-gatekeeper's write denied: `PreToolUse:Bash hook error: spec-gatekeeper is a read-only role and writes no files: the command writes notes.md. ...`; its `git status --short` ran. implementer's denied: `PreToolUse:Bash hook error: implementer may not change tests: test/other.test.js is part of the executable spec. ...`. Neither file existed afterwards. $0.036. |
+
+</details>
+
+<details>
 <summary><b>2026-10-30</b>: Claude Code 2.1.314, Windows 11, one full run on Spec Kit 1.2.5, on the owner's subscription</summary>
 
 Setup: `node tools/full-run.mjs --login` from commit `c468c7c`, whose vendored Spec Kit files are a

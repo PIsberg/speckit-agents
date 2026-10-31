@@ -10,7 +10,7 @@ skills:
   - speckit-clarify
 hooks:
   PreToolUse:
-    - matcher: "Write|Edit|MultiEdit|NotebookEdit"
+    - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"
       hooks:
         - type: command
           command: 'node "{{HOOK}}" scope only specs/ .specify/feature.json'
