@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/versions.test.mjs")
+// Run: npm test (or node tools/test.mjs test/versions.test.mjs)
 // Every tool version lives in one place, so a Dependabot pull request changes it everywhere at once
 // and is never red because a second copy lags behind. eslint and typescript are package.json's
 // devDependencies, which CI and the pre-commit hook run from node_modules; Claude Code's CI version is

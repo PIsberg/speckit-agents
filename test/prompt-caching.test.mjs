@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/prompt-caching.test.mjs")
+// Run: npm test (or node tools/test.mjs test/prompt-caching.test.mjs)
 // The one part of the prompt cache this repository controls: Claude Code sends an agent's tools in
 // its `tools:` frontmatter order ahead of its system prompt (pinned in test/e2e.test.mjs), so agents
 // with one capability declare one line and share that prefix. Everything after it, the agent's body

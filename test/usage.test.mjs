@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/usage.test.mjs)
 // tools/usage.mjs reads a session transcript the way Claude Code 2.1.29x writes it. The transcript
 // here is synthetic, shaped like the 2026-10-07 /speckit-team runs: one API response split over
 // several lines, a background launch with its "waiting" response, and a foreground launch.

@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/skills.test.mjs)
 // What the installed skills (the 3 user ones and the 7 generated role skills) must satisfy by their text
 // alone, no model: descriptions that do not collide (#188) and the authoring rules that can be checked (#189).
 // agent-skills (addyosmani/agent-skills) runs a free lexical collision check in CI; this is ours.

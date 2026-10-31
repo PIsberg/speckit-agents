@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/*.test.mjs")
+// Run: npm test (or node tools/test.mjs test/changelog.test.mjs)
 // tools/changelog.mjs writes docs/CHANGELOG.md from the git history. CI clones one commit deep, so the
 // generator is checked on a scratch repo, and the committed file only against itself.
 import { test } from 'node:test';

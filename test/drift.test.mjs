@@ -1,4 +1,4 @@
-// Run: npm test (or node --test "test/drift.test.mjs")
+// Run: npm test (or node tools/test.mjs test/drift.test.mjs)
 // tools/drift.mjs checks every finished feature's test tasks against the tests as they are now: a
 // test file a task names that is gone, or a requirement ID the task cites that its test files no
 // longer hold. No model: test-writer puts each cited ID in a test's name or a comment, so text is
