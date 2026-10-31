@@ -1894,7 +1894,8 @@ test('#230: check passes for one install and names it', () => {
   assert.equal(install(cfg).status, 0);
   const r = check(cfg, specRepo(), cfg);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, new RegExp(`^speckit-team: check: ok, speckit-agents ${VERSION.replace(/\./g, '\\.')} build [0-9a-f]{12} in `));
+  assert.ok(r.stdout.startsWith(`speckit-team: check: ok, speckit-agents ${VERSION} build `), r.stdout);
+  assert.match(r.stdout, /^speckit-team: check: ok, speckit-agents \S+ build [0-9a-f]{12} in /);
   assert.doesNotMatch(r.stdout, /note:/);
 });
 
