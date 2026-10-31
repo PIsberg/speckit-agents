@@ -1704,8 +1704,26 @@ function restoreAllowed(command, start, m) {
   return paths.length > 0 && paths.every((p) => entry(p, false));
 }
 
+// #213: the commands that undo patcher's changes since `sha` and nothing else: measure() leaves out
+// protected files (the end check makes patcher restore those) and files uncommitted at the start, which
+// hold the developer's own work. A path the start commit lacks is removed by git restore too. Single
+// quotes for a POSIX shell, the Bash tool's. Kept in patch-undo.json and named in the failure messages;
+// the hook never runs them, and the skill asks first. null: none.
+const shellQuote = (p) => `'${p.replace(/'/g, "'\\''")}'`;
+function undoCommand(sha, m) {
+  const tracked = m.changed.filter((rel) => !m.untracked.includes(rel));
+  return [
+    tracked.length ? `git restore --source=${sha} --staged --worktree -- ${tracked.map(shellQuote).join(' ')}` : null,
+    m.untracked.length ? `rm -f -- ${m.untracked.map(shellQuote).join(' ')}` : null,
+  ].filter(Boolean).join(' && ') || null;
+}
+const undoSentence = (sha, m) => {
+  const undo = undoCommand(sha, m);
+  return undo ? ` To undo only patcher's changes, run: ${undo}. Ask the developer first: it discards them.` : '';
+};
+
 // The end of a fast-track run (contracts/hook-cli.md "End of run"). Exits.
-function endCheck(start, viaHandback, key, acceptedFile) {
+function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   const s12 = start.sha.slice(0, 12);
   let m;
   try { m = measure(start); } catch (e) {
@@ -1721,25 +1739,31 @@ function endCheck(start, viaHandback, key, acceptedFile) {
     refuse(`Fast track: ${who} committed (${m.lines} lines in ${m.files} files since ${s12}). The fast track never commits; /speckit-patch commits after this check. `
       + `Run git reset --soft ${s12} so the work stays uncommitted, then finish.`);
   }
+  // #213: what takes the run back, for the skill to offer. A SubagentStop message reaches only patcher's own
+  // transcript, never the main session, so the command goes in a file next to the accepted record.
+  writeJson(undoFile, { key, sha: start.sha, undo: undoCommand(start.sha, m), at: new Date().toISOString() });
   const team = teamChanged(start.team);
   if (team.length) {
     emit({ systemMessage: `fast track FAILED: installed agent team files changed during the run: ${team.map((t) => `${TEAM_DIR}/${t}`).join(', ')}. `
       + 'The fast track cannot restore them, and cannot tell a change patcher made from a setting Claude Code or you saved. '
       + 'The end check did not accept the run, so /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
-      + 'Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.' });
+      + 'Check those files (if an agent, hook or skill file changed, reinstall the team with node install.mjs from the speckit-agents checkout), then run the change again.'
+      + undoSentence(start.sha, m) });
   }
   // A push cannot be taken back by the agent, so this fails the run rather than blocking the stop.
   const moved = remotesChanged(start.remotes);
   if (moved.length) {
     emit({ systemMessage: `fast track FAILED: remote-tracking refs changed during the run: ${moved.join(', ')}. `
       + 'A push or a fetch happened, which the fast track never does, so the end check did not accept the run: /speckit-patch commits nothing and opens no pull request; the work is uncommitted in the working tree. '
-      + 'Check the remote for a pushed branch or a pull request before you run the change again.' });
+      + 'Check the remote for a pushed branch or a pull request before you run the change again.'
+      + undoSentence(start.sha, m) });
   }
   if (m.lines > PATCH_LINES || m.files > PATCH_FILES || m.binary.length || m.dirtyTouched.length) {
     emit({ systemMessage: `fast track stopped: ${m.lines} changed production lines in ${m.files} files (limit ${PATCH_LINES} lines, ${PATCH_FILES} files)`
       + (m.binary.length ? `; binary production files: ${m.binary.join(', ')}` : '')
       + (m.dirtyTouched.length ? `; changed although they had uncommitted changes when the run started: ${m.dirtyTouched.join(', ')}` : '')
-      + '. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.' });
+      + '. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.'
+      + undoSentence(start.sha, m) });
   }
   writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });
   emit({ systemMessage: `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.` });
@@ -1789,9 +1813,11 @@ function letThrough() {
 }
 
 if (mode === 'patch') {
-  // Every call removes the accepted record: it stands only while the last call was an accepting end check.
+  // Every call removes the accepted record and the undo record: each stands only while the last call was an end check.
   const acceptedFile = path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json');
+  const undoFile = path.join(path.dirname(acceptedFile), 'patch-undo.json');
   fs.rmSync(acceptedFile, { force: true });
+  fs.rmSync(undoFile, { force: true });
   const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
   const isEnd = viaHandback || event !== 'PreToolUse';
   const key = keyOf(agentId ?? str(input.session_id));
@@ -1822,7 +1848,7 @@ if (mode === 'patch') {
     deny(`Fast track: the budget cannot be measured: ${bad} (as committed at ${start.sha.slice(0, 12)}). `
       + 'Report this to the user, who fixes and commits the file, then starts a new run.');
   }
-  if (isEnd) endCheck(start, viaHandback, key, acceptedFile);
+  if (isEnd) endCheck(start, viaHandback, key, acceptedFile, undoFile);
   const moved = remotesChanged(start.remotes);
   if (moved.length) {
     deny(`Fast track: remote-tracking refs changed during the run: ${moved.join(', ')}. A push or a fetch happened, which the fast track never does. `

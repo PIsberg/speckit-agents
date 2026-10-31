@@ -143,6 +143,20 @@ test("installed speckit-patch skill checks the remote-tracking refs and the dirt
   assert.match(checks, /dirty in step 1[^.]*`files`[^.]*`untracked`/, 'a file dirty at the start is in neither list');
 });
 
+// #213: a failed run left patcher's changes among the developer's uncommitted work. The hook names the
+// command that undoes only patcher's changes; the skill offers it and runs it only on an explicit yes.
+test("#213: speckit-patch offers the hook's undo command after a failed run, and runs it only on an explicit yes", () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8'));
+  const report = text.slice(text.indexOf('## 5.'), text.indexOf('## 6.'));
+  // A SubagentStop message reaches only patcher's transcript (live, 2026-10-31): the skill reads the file.
+  assert.match(report, /speckit-team\/patch-undo\.json/, 'reads the undo record');
+  assert.match(report, /`sha` equals the start and its `undo` is not `null`/, 'only the record of this run');
+  assert.match(report, /only on an explicit yes/);
+  for (const cmd of ['git stash', 'git reset --hard', 'git clean', 'git checkout .']) assert.ok(report.includes(`\`${cmd}\``), `names ${cmd} as forbidden`);
+});
+
 // #73, live check L3: patcher wrote 86 lines in one Bash call, made no further tool call, so the budget
 // deny never reached it, and it reported DONE. A last tool call before the report meets that deny.
 test('installed patcher checks the tree once more before reporting, so an over-budget run ends ESCALATE', () => {
