@@ -130,7 +130,7 @@ function roleSkill(role, agentText) {
     'user-invocable: false',
     'hooks:',
     '  PreToolUse:',
-    '    - matcher: "Write|Edit|MultiEdit|NotebookEdit"',
+    '    - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"',
     '      hooks:',
     '        - type: command',
     `          command: '${hookCommand('scope role')}'`,

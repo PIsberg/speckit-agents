@@ -32,6 +32,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -665,12 +666,69 @@ function lastAssistantText() {
   return '';
 }
 
+// Why `actor` under `ruleArgs` may not write the file at `abs` (named `shown`), or null when it may.
+// Through Bash (#209) a read-only role may still write outside the repo, as a check's log in a temp folder.
+function laneProblem(actor, ruleArgs, abs, shown, viaBash) {
+  // Verdicts and retry counts live in the git dir; an agent that could write there could reset its own
+  // limit. Checked before the outside-the-repo exit: a linked worktree's state is in the main checkout.
+  if (inGitDir(abs)) {
+    return `${actor} may not write ${shown}: the git directory holds the team's guardrail state (verdicts, retry counts). `
+      + 'Report what you need instead; only the user resets that state.';
+  }
+  if (ruleArgs[0] === 'protected' && isTeamFile(abs)) {
+    return `${actor} may not write ${shown}: it belongs to the installed agent team (its hook, agents, skills or settings). `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.';
+  }
+  if (ruleArgs[0] === 'none' && !viaBash) return `${actor} is a read-only role and writes no files. Report what should change instead.`;
+  const rel = repoRel(abs);
+  if (rel === null) return null;
+  if (ruleArgs[0] === 'none') return `${actor} is a read-only role and writes no files: the command writes ${rel}. Report what should change instead.`;
+  const [rule, ...prefixes] = ruleArgs;
+  const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
+  if (why) {
+    // Name the path as the caller wrote it; matching used the case the disk reports.
+    const typed = path.relative(path.resolve(root), abs).split(path.sep).join('/');
+    const named = typed && !typed.startsWith('..') && !path.isAbsolute(typed) ? typed : rel;
+    return `${actor} may not write ${named}: it is a protected path (${why}). The fast track does not change it. `
+      + 'Stop and report ESCALATE; the developer uses /speckit-team.';
+  }
+  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
+    return `${actor} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
+      + 'Report this to the user, who fixes the file; do not edit it yourself.';
+  }
+  if (rule === 'only' && !inPrefixes(prefixes, rel)) {
+    return `${actor} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
+      + 'Tests belong to test-writer and production code to implementer: report what should change instead.';
+  }
+  if (rule === 'tests' && !inLane('tests', rel)) {
+    if (SPECKIT_CONFIG.test(rel)) {
+      return `${actor} may not write ${rel}: .specify/ holds Spec Kit's config or a project's files, not a test. Report what should change instead.`;
+    }
+    return `${actor} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
+      + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.';
+  }
+  if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
+    return `${actor} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
+      + 'Report what should change instead.';
+  }
+  if (rule === 'no-tests' && !inLane('no-tests', rel)) {
+    return `${actor} may not change tests: ${rel} is part of the executable spec. `
+      + 'If the test is wrong, stop and report it with evidence so test-writer or the human can fix it.';
+  }
+  return null;
+}
+// A Bash command scope judges after the shell reader is defined, further down (#209, #210).
+let scopeBash = null;
+
 if (mode === 'scope') {
   const ti = input.tool_input || {};
-  const given = ti.file_path ?? ti.notebook_path;
+  const viaBash = input.tool_name === 'Bash';
+  const given = viaBash ? ti.command : ti.file_path ?? ti.notebook_path;
   if (given === undefined || given === null || given === '') process.exit(0);
+  // patcher's Bash calls are patch mode's to judge, with the fast track's own rules.
+  if (viaBash && args[0] === 'protected') process.exit(0);
   const file = str(given);
-  if (!file) noDecision(`tool_input.file_path is ${Array.isArray(given) ? 'an array' : typeof given}, not a path`);
+  if (!file) noDecision(`tool_input.${viaBash ? 'command' : 'file_path'} is ${Array.isArray(given) ? 'an array' : typeof given}, not a ${viaBash ? 'command' : 'path'}`);
   // 009: `scope role` holds the main session to the acting role skill's lane (contract section 5).
   let ruleArgs = args;
   let actor = who;
@@ -687,53 +745,12 @@ if (mode === 'scope') {
     ruleArgs = ROLE_LANES[rec.role];
     actor = rec.role;
   }
-  const target = path.resolve(cwd, file);
-  // Verdicts and retry counts live in the git dir; an agent that could write there could reset its own
-  // limit. Checked before the outside-the-repo exit: a linked worktree's state is in the main checkout.
-  if (inGitDir(target)) {
-    deny(`${actor} may not write ${file}: the git directory holds the team's guardrail state (verdicts, retry counts). `
-      + 'Report what you need instead; only the user resets that state.');
+  if (viaBash) scopeBash = { command: file, actor, ruleArgs };
+  else {
+    const why = laneProblem(actor, ruleArgs, path.resolve(cwd, file), file, false);
+    if (why) deny(why);
+    process.exit(0);
   }
-  if (args[0] === 'protected' && isTeamFile(target)) {
-    deny(`${actor} may not write ${file}: it belongs to the installed agent team (its hook, agents, skills or settings). `
-      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
-  }
-  if (ruleArgs[0] === 'none') deny(`${actor} is a read-only role and writes no files. Report what should change instead.`);
-  const rel = repoRel(file);
-  if (rel === null) process.exit(0);
-  const [rule, ...prefixes] = ruleArgs;
-  const why = rule === 'protected' ? isProtected(rel, 'HEAD') : null;
-  if (why) {
-    // Name the path as the caller wrote it; matching used the case the disk reports.
-    const typed = path.relative(path.resolve(root), target).split(path.sep).join('/');
-    const shown = typed && !typed.startsWith('..') && !path.isAbsolute(typed) ? typed : rel;
-    deny(`${actor} may not write ${shown}: it is a protected path (${why}). The fast track does not change it. `
-      + 'Stop and report ESCALATE; the developer uses /speckit-team.');
-  }
-  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
-    deny(`${actor} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
-      + 'Report this to the user, who fixes the file; do not edit it yourself.');
-  }
-  if (rule === 'only' && !inPrefixes(prefixes, rel)) {
-    deny(`${actor} may only write ${prefixes.join(', ')}; ${rel} is outside that lane. `
-      + 'Tests belong to test-writer and production code to implementer: report what should change instead.');
-  }
-  if (rule === 'tests' && !inLane('tests', rel)) {
-    if (SPECKIT_CONFIG.test(rel)) {
-      deny(`${actor} may not write ${rel}: .specify/ holds Spec Kit's config or a project's files, not a test. Report what should change instead.`);
-    }
-    deny(`${actor} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
-      + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.');
-  }
-  if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
-    deny(`${actor} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
-      + 'Report what should change instead.');
-  }
-  if (rule === 'no-tests' && !inLane('no-tests', rel)) {
-    deny(`${actor} may not change tests: ${rel} is part of the executable spec. `
-      + 'If the test is wrong, stop and report it with evidence so test-writer or the human can fix it.');
-  }
-  process.exit(0);
 }
 
 if (mode === 'gate') {
@@ -1210,10 +1227,14 @@ function balanced(src, i, openCh, closeCh) {
 // this reading does not compute. Where git's subcommand or a program word would be, it is denied.
 const DYN = '\u0004';
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
-function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}) {
+// `withWrites` (#209, #210, for scope on Bash) also reads what the command writes: each simple command
+// carries its redirection targets as `writes`, a here-document's body is text unless a shell reads it,
+// a # comment is skipped, and > inside [[ ]] or (( )) compares. Off, the reading is as it always was.
+function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}, withWrites = false) {
   // Too deep to read is not read as harmless: the caller denies the command (fail closed).
   if (depth > 8) throw new Error('nested more than 8 levels deep');
   const cmds = []; const vars = { ...inherit }; let cur = []; let word = null; let braces = 0;
+  let curWrites = []; let heredocs = []; let lineStart = 0;
   const record = (name, value) => { vars[name] = value; if (assigned) (assigned[name] ??= new Set()).add(value); };
   // IFS unset is the shell's default, so an unquoted ${IFS} splits words (git${IFS}push).
   const value = (name) => (pin && pin.name === name ? pin.value : vars[name] ?? (name === 'IFS' ? ' \t\n' : undefined));
@@ -1226,14 +1247,15 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
   };
   // Text the shell runs as a command (a substitution, sh -c, eval, a here-string to a shell) is
   // read as commands of its own, with the variables known at that point.
-  const sub = (inner) => { cmds.push(...shellCommands(inner, pin, assigned, depth + 1, vars)); };
+  const sub = (inner) => { cmds.push(...shellCommands(inner, pin, assigned, depth + 1, vars, withWrites)); };
   // A word's text as the shell expands it, joined, for text that is run again.
   const expanded = (text) => shellCommands(text, pin, null, depth + 1, vars).flat().join(' ');
   const end = () => {
     push();
     const done = cur; cur = [];
+    if (curWrites.length) { done.writes = curWrites; curWrites = []; }
     if (done[0] === 'for' && done[2] === 'in') for (const v of done.slice(3)) record(done[1], v);
-    if (done.length) cmds.push(done);
+    if (done.length || done.writes) cmds.push(done);
     const shellAt = done.findIndex((w, k) => SHELLS.has(program(w)) && /^-[a-z]*c[a-z]*$/i.test(done[k + 1] ?? ''));
     if (shellAt >= 0 && done[shellAt + 2] !== undefined) sub(done[shellAt + 2]);
     const evalAt = done.indexOf('eval');
@@ -1278,6 +1300,34 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
     if (c && /[#?$!-]/.test(c)) { add('0'); return i + 2; }
     add('$'); return i + 1;
   };
+  // The bodies of the here-documents opened on the line that ended before src[from]; returns where the
+  // next line starts. A body a shell on that line reads is commands; any other is text, whose $(...)
+  // and `...` still run unless the delimiter was quoted.
+  const hereBodies = (from) => {
+    let j = from;
+    const toShell = cmds.slice(lineStart).some((cmd) => cmd.length && SHELLS.has(program(cmd[0])));
+    for (const h of heredocs) {
+      const bodyStart = j; let bodyEnd = src.length;
+      while (j < src.length) {
+        const e = src.indexOf('\n', j);
+        const line = src.slice(j, e < 0 ? undefined : e).replace(/\r$/, '');
+        const next = e < 0 ? src.length : e + 1;
+        if ((h.strip ? line.replace(/^\t+/, '') : line) === h.delim) { bodyEnd = j; j = next; break; }
+        j = next;
+      }
+      const body = src.slice(bodyStart, bodyEnd);
+      if (toShell) sub(body);
+      else if (!h.quoted) {
+        for (let k = 0; k < body.length; k++) {
+          if (body[k] === '\\') { k++; continue; }
+          if (body[k] === '$' && body[k + 1] === '(' && body[k + 2] !== '(') { const [inner, after] = balanced(body, k + 1, '(', ')'); sub(inner); k = after - 1; }
+          if (body[k] === '`') { const e = body.indexOf('`', k + 1); sub(body.slice(k + 1, e < 0 ? undefined : e)); k = e < 0 ? body.length : e; }
+        }
+      }
+    }
+    heredocs = [];
+    return j;
+  };
   let i = 0;
   while (i < src.length) {
     const c = src[i];
@@ -1297,12 +1347,17 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
       i++; continue;
     }
     if (c === '$' || c === '`') { i = dollar(i, false); continue; }
+    if (withWrites && c === '#' && word === null) { const e = src.indexOf('\n', i); i = e < 0 ? src.length : e; continue; }
+    if (withWrites && c === '(' && src[i + 1] === '(' && word === null && !cur.length) { end(); i = balanced(src, i, '(', ')')[1]; continue; }
+    if (withWrites && (c === '<' || c === '>') && cur[0] === '[[') { add(c); i++; continue; }
     if (c === '<' || c === '>' || (c === '&' && src[i + 1] === '>')) {
       if ((c === '<' || c === '>') && src[i + 1] === '(') { const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); i = after; continue; }
       if (word !== null && /^\d+$/.test(word)) word = null; else push();
       let k = i; while (k < src.length && /[<>&|]/.test(src[k])) k++;
       const op = src.slice(i, k);
       if (op.endsWith('&') && /[\d-]/.test(src[k] ?? '')) { i = k + 1; continue; }
+      const strip = withWrites && op === '<<' && src[k] === '-';
+      if (strip) k++;
       while (k < src.length && /[ \t]/.test(src[k])) k++;
       // The target: one word, quotes kept together. A here-string may be a script for a shell.
       const from = k;
@@ -1310,6 +1365,11 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
         if (src[k] === "'" || src[k] === '"') { const e = src.indexOf(src[k], k + 1); k = e < 0 ? src.length : e + 1; } else k++;
       }
       if (op === '<<<') sub(expanded(src.slice(from, k)));
+      if (withWrites && op.includes('>')) curWrites.push(expanded(src.slice(from, k)));
+      if (withWrites && op === '<<') {
+        const raw = src.slice(from, k);
+        heredocs.push({ delim: raw.replace(/['"\\]/g, ''), quoted: /['"\\]/.test(raw), strip });
+      }
       i = k; continue;
     }
     // An array assignment, a=(git push): its words are its value, as "${a[@]}" gives them back.
@@ -1318,6 +1378,7 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
       record(word.replace(/\+?=$/, ''), shellCommands(inner, pin, null, depth + 1, vars).flat().join(' '));
       word = null; i = after; continue;
     }
+    if (c === '\n' && withWrites) { end(); i = hereBodies(i + 1); lineStart = cmds.length; continue; }
     if (c === '\n' || c === ';' || c === '&' || c === '|' || c === '(' || c === ')') { end(); i++; continue; }
     if (/\s/.test(c)) { push(); i++; continue; }
     if ((c === '{' || c === '}') && word === null && /[\s;]/.test(src[i + 1] ?? ' ')) { end(); i++; continue; }
@@ -1337,6 +1398,185 @@ function readings(command) {
   const pins = Object.entries(assigned).flatMap(([name, values]) => [...values].map((v) => ({ name, value: v })));
   if (pins.length > 64) throw new Error(`more than 64 assigned values (${pins.length})`);
   return [first, ...pins.map((p) => shellCommands(command, p))].map((cmds) => cmds.flatMap((c) => [...c, SEP]));
+}
+
+// #209, #210: what a Bash command writes, before it runs. The targets of its redirections, and of the
+// commands that create, change or delete the files they name (rm, mv, cp, ln, install, touch, mkdir,
+// truncate, shred, tee, sed -i, perl -i, dd of=, git rm, mv, restore and checkout of paths), resolved
+// against the folder a cd or git -C before them moved to. `unknown` is a target only the run can tell
+// (a variable, a substitution, a cd into one, xargs or find feeding a writer); `tree` a git command that
+// changes the working tree or the history as a whole. Not a shell: what an interpreter writes (node -e,
+// python -c, a package script) is not seen, and the lane check at Stop is still the line for the lanes.
+const PREFIX_PROGRAMS = new Set(['sudo', 'doas', 'env', 'command', 'builtin', 'exec', 'nohup', 'nice', 'time', 'timeout', 'stdbuf']);
+const EVERY_ARG = new Set(['rm', 'rmdir', 'unlink', 'touch', 'mkdir', 'truncate', 'shred', 'tee']);
+const TO_DEST = new Set(['cp', 'ln', 'install', 'mv']);
+const VALUE_OPTIONS = { touch: ['-d', '-t', '-r'], mkdir: ['-m'], truncate: ['-s', '-r'], shred: ['-n', '-s'],
+  install: ['-m', '-o', '-g', '-S'], cp: ['-S'], ln: ['-S'], mv: ['-S'] };
+const GIT_TREE = new Set(['add', 'am', 'apply', 'branch', 'checkout', 'cherry-pick', 'clean', 'clone', 'commit', 'commit-tree', 'fetch',
+  'filter-branch', 'gc', 'init', 'merge', 'notes', 'prune', 'pull', 'push', 'rebase', 'replace', 'reset', 'revert', 'stash', 'submodule',
+  'switch', 'symbolic-ref', 'tag', 'update-index', 'update-ref', 'worktree']);
+// The forms of those that only read.
+function gitReadsOnly(sub, a) {
+  const pos = a.filter((w) => !w.startsWith('-'));
+  if (sub === 'branch') return !a.some((w) => /^-[dDmMcCfu]$|^--(delete|move|copy|force|set-upstream-to|unset-upstream|edit-description|track)/.test(w))
+    && (!pos.length || a.some((w) => /^(-l|--list|-a|--all|-r|--remotes|--contains|--no-contains|--merged|--no-merged|--points-at)$/.test(w)));
+  if (sub === 'tag') return !a.some((w) => /^-[dafsmuF]$|^--(delete|annotate|force|sign|message|file)/.test(w))
+    && (!pos.length || a.some((w) => /^(-l|--list|--contains|--no-contains|--merged|--no-merged|--points-at)$/.test(w)));
+  if (sub === 'stash') return ['list', 'show'].includes(a[0]);
+  if (sub === 'apply') return a.some((w) => /^--(check|stat|numstat|summary)$/.test(w)) && !a.includes('--apply');
+  if (sub === 'worktree') return a[0] === 'list';
+  if (sub === 'submodule') return !a.length || ['status', 'summary'].includes(a[0]);
+  if (sub === 'notes') return !a.length || ['list', 'show'].includes(a[0]);
+  return false;
+}
+function positionals(a, valueOptions = []) {
+  const pos = []; let options = true;
+  for (let k = 0; k < a.length; k++) {
+    if (options && a[k] === '--') { options = false; continue; }
+    if (options && a[k].startsWith('-') && a[k] !== '-') { if (valueOptions.includes(a[k])) k++; continue; }
+    pos.push(a[k]);
+  }
+  return pos;
+}
+// The words after sudo, env NAME=value, nohup and the other programs that only run the next one.
+function unprefixed(words) {
+  let k = 0;
+  while (k < words.length && PREFIX_PROGRAMS.has(program(words[k]))) {
+    const p = program(words[k++]);
+    while (k < words.length && (words[k].startsWith('-') || (p === 'env' && /^[A-Za-z_]\w*=/.test(words[k])))) {
+      const valued = (p === 'sudo' && /^-[ugCDhpRrTt]$/.test(words[k])) || (p === 'nice' && words[k] === '-n') || (p === 'env' && /^-[uSC]$/.test(words[k]));
+      k += valued ? 2 : 1;
+    }
+    if (p === 'timeout' && k < words.length) k++;
+  }
+  return words.slice(k);
+}
+// sed -i and perl -i: the files they rewrite. The first operand is the script unless -e or -f gave one.
+function inPlaceFiles(prog, a) {
+  let inPlace = false; let script = false; const pos = []; let options = true;
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (options && w === '--') { options = false; continue; }
+    if (options && w.startsWith('--')) {
+      if (/^--in-place(=|$)/.test(w)) inPlace = true;
+      if (/^--(expression|file)(=|$)/.test(w)) { script = true; if (!w.includes('=')) k++; }
+      continue;
+    }
+    if (options && w.startsWith('-') && w.length > 1) {
+      for (let c = 1; c < w.length; c++) {
+        if (w[c] === 'i') { inPlace = true; break; }
+        if ((prog === 'sed' ? 'ef' : 'eE').includes(w[c])) { script = true; if (c === w.length - 1) k++; break; }
+        if (prog === 'sed' && w[c] === 'l') { if (c === w.length - 1) k++; break; }
+        if (prog === 'perl' && 'IMmx0lCdD'.includes(w[c])) break;
+      }
+      continue;
+    }
+    pos.push(w);
+  }
+  return inPlace ? (script ? pos : pos.slice(1)) : [];
+}
+const writesUnseen = (words) => {
+  const w = unprefixed(words); const p = program(w[0] ?? '');
+  return EVERY_ARG.has(p) || TO_DEST.has(p) || p === 'git' || (p === 'dd' && w.some((x) => x.startsWith('of=')))
+    || ((p === 'sed' || p === 'perl') && w.some((x) => /^-[a-zA-Z]*i|^--in-place/.test(x)));
+};
+function bashWrites(command) {
+  const found = { targets: [], unknown: [], tree: [] };
+  let dir = cwd;
+  const shown = (w) => w.replaceAll(DYN, '$(...)');
+  const at = (w, base = dir) => {
+    if (w.includes(DYN)) { found.unknown.push(shown(w)); return; }
+    if (/^\/dev\//.test(w) || /^nul$/i.test(w)) return;
+    if (base === null && !path.isAbsolute(w)) { found.unknown.push(w); return; }
+    found.targets.push({ abs: path.resolve(base, w), shown: w });
+  };
+  const isDir = (w) => dir !== null && !w.includes(DYN) && (() => { try { return fs.statSync(path.resolve(dir, w)).isDirectory(); } catch { return false; } })();
+  const exists = (w, base) => base !== null && !w.includes(DYN) && fs.existsSync(path.resolve(base, w));
+  for (const cmd of shellCommands(command, null, null, 0, {}, true)) {
+    for (const t of cmd.writes ?? []) at(t);
+    const words = unprefixed(cmd);
+    if (!words.length) continue;
+    const prog = program(words[0]); const a = words.slice(1);
+    if (prog === 'cd' || prog === 'pushd') {
+      const d = positionals(a)[0];
+      if (d === undefined) dir = os.homedir();
+      else dir = d === '-' || d.includes(DYN) || (dir === null && !path.isAbsolute(d)) ? null : path.resolve(dir, d);
+    } else if (prog === 'popd') dir = null;
+    else if (EVERY_ARG.has(prog)) positionals(a, VALUE_OPTIONS[prog]).forEach((w) => at(w));
+    else if (TO_DEST.has(prog)) {
+      let into = null;
+      a.forEach((w, k) => {
+        if (w === '-t') into = a[k + 1] ?? null;
+        else if (w.startsWith('--target-directory=')) into = w.slice(19);
+        else if (/^-t./.test(w)) into = w.slice(2);
+      });
+      const pos = positionals(a, [...(VALUE_OPTIONS[prog] ?? []), '-t']);
+      const sources = into === null ? pos.slice(0, -1) : pos;
+      const dest = into ?? pos.at(-1);
+      if (dest === undefined) continue;
+      if (prog === 'mv') sources.forEach((w) => at(w));
+      if (prog === 'ln' && !sources.length && into === null) at(path.basename(dest));
+      else if (into !== null || sources.length > 1 || dest.endsWith('/') || isDir(dest)) sources.forEach((s) => at(path.join(dest, path.basename(s))));
+      else at(dest);
+    } else if (prog === 'sed' || prog === 'perl') inPlaceFiles(prog, a).forEach((w) => at(w));
+    else if (prog === 'dd') a.filter((w) => w.startsWith('of=')).forEach((w) => at(w.slice(3)));
+    else if (prog === 'xargs' || prog === 'find') {
+      const rest = prog === 'xargs' ? a.slice(a.findIndex((w) => !w.startsWith('-'))) : a.slice(a.findIndex((w) => /^-(exec|execdir|ok|okdir)$/.test(w)) + 1);
+      if ((prog === 'find' && a.includes('-delete')) || ((prog === 'xargs' || a.some((w) => /^-(exec|execdir|ok|okdir)$/.test(w))) && writesUnseen(rest))) {
+        found.unknown.push(`what ${prog} hands to ${rest[0] ?? 'it'}`);
+      }
+    } else if (prog === 'git') {
+      let k = 1; let base = dir;
+      while (k < words.length && words[k].startsWith('-')) {
+        if (words[k] === '-C') { const d = words[k + 1]; base = d === undefined || d.includes(DYN) || base === null ? null : path.resolve(base, d); }
+        k += GIT_OPTIONS_WITH_VALUE.has(words[k]) ? 2 : 1;
+      }
+      const sub = words[k]; const ga = words.slice(k + 1);
+      if (sub === undefined) continue;
+      if (sub.includes(DYN)) found.unknown.push(`git ${shown(sub)}`);
+      else if (sub === 'rm' || sub === 'mv') positionals(ga).forEach((w) => at(w, base));
+      else if (sub === 'restore') {
+        if (ga.some((w) => w.startsWith('--pathspec-from-file'))) found.unknown.push('git restore --pathspec-from-file');
+        positionals(ga, ['-s', '--source']).forEach((w) => at(w, base));
+      } else if (sub === 'checkout' && !ga.some((w) => /^(-b|-B|--orphan|--detach)$/.test(w))) {
+        const sep = ga.indexOf('--');
+        const pos = sep >= 0 ? ga.slice(sep + 1) : positionals(ga);
+        const paths = sep >= 0 ? pos : pos.filter((w) => w.includes(DYN) || exists(w, base));
+        paths.forEach((w) => at(w, base));
+        if (sep < 0 && paths.length < pos.length) found.tree.push(`git ${shown(words.slice(1).join(' '))}`);
+      } else if (GIT_TREE.has(sub) && !gitReadsOnly(sub, ga)) found.tree.push(`git ${shown(words.slice(1).join(' '))}`);
+    }
+  }
+  return found;
+}
+
+// scope on a Bash call (#209, #210): every target the command writes is judged as a Write to it would be.
+// A read-only role is also denied a target only the run can tell and a git command that changes the
+// tree; a writing role is not, since its lane check at Stop still sees what the command did.
+if (scopeBash) {
+  const { command, actor, ruleArgs } = scopeBash;
+  let found;
+  try { found = bashWrites(command); } catch (e) {
+    deny(`${actor} may not run this command: it is too involved to read (${e.message}), so what it writes cannot be checked against its lane. Write it more simply.`);
+  }
+  // A file git ignores (a test log, a coverage report) is no change the lane check would see either.
+  // The git directory is never exempt. Only a path inside the repo reaches git's argument list, after --.
+  const ignored = (abs) => {
+    const rel = repoRel(abs);
+    return rel !== null && !inGitDir(abs) && git(root, 'check-ignore', '-q', '--', rel) !== null;
+  };
+  for (const t of found.targets) {
+    const why = laneProblem(actor, ruleArgs, t.abs, t.shown, true);
+    if (why && !ignored(t.abs)) deny(`${why} (The Bash command writes it; the hook read the command and did not run it.)`);
+  }
+  if (ruleArgs[0] === 'none' && found.unknown.length) {
+    deny(`${actor} is a read-only role and writes no files: this command writes to ${found.unknown[0]}, which only the run can tell. `
+      + 'Run it without the write, or report what should change instead.');
+  }
+  if (ruleArgs[0] === 'none' && found.tree.length) {
+    deny(`${actor} is a read-only role and writes no files: \`${found.tree[0]}\` changes the working tree or the history. Report what should change instead.`);
+  }
+  process.exit(0);
 }
 // Words, with only a command separator (; & | newline) as a boundary between them: anything else the
 // shell drops or substitutes, such as `` or $(...), still leaves git next to its subcommand.

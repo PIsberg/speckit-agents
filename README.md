@@ -39,8 +39,9 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
   test-writer and implementer build test-first, spec-gatekeeper checks the result. Each one's
   phase instructions are Spec Kit's own skill. ([The team](#the-team))
 - **Lanes are hooks, not requests.** A `Write` or `Edit` outside an agent's lane is denied before
-  the file exists, and the denial tells the agent whose lane it is in; a change test-writer or
-  implementer makes through Bash is caught when it stops. ([Guardrails](#guardrails),
+  the file exists, and so is a Bash command that writes there (`>`, `rm`, `sed -i`,
+  `git checkout --`); the denial tells the agent whose lane it is in. A change made through Bash
+  that the hook cannot read, such as a script's own writes, is caught when the agent stops. ([Guardrails](#guardrails),
   [The lane check](#the-lane-check))
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
@@ -493,7 +494,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 | Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Retry limit | nothing | the skill counts 3 `RESULT: RED` in a row itself; the hook does not |
 | Context | nothing | every role sees this conversation, with the session's `CLAUDE.md`, on the session's model; read-only roles lose the `omitClaudeMd` isolation |
-| Tool list | a read-only role's Write and Edit are denied | each agent's tool list: a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked |
+| Tool list | a read-only role's Write and Edit are denied, and so is a Bash command that writes in the repo | each agent's tool list: a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked |
 
 **What was verified how.** Verified live (Claude Code 2.1.310, 2026-10-25): the start message, an
 audit denial of a `speckit-role-test-writer` call with no audit, and a Write outside architect's lane
@@ -993,14 +994,15 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 
 | Mode | Wired to | What it stops |
 |---|---|---|
-| `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing outside their prefixes |
+| `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | writing outside their prefixes, with a write tool or a Bash command that names the file ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)) |
 | `scope tests` | test-writer: same | writing production code, or Spec Kit and project paths under `.specify/` |
 | `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
 | `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, and no accepted record unless the run is within budget |
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
-| every `scope` rule | all five writing agents | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
-| `scope role` | `--team skill-agents`: each role skill's frontmatter, PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | the acting role writing outside its lane (the same rule as its agent's `scope`, a twin of `ROLE_LANES`), or any write by a read-only role |
+| `scope none` | spec-auditor, spec-gatekeeper, security-reviewer: PreToolUse `Bash` | a Bash command that writes a file in the repo, writes to a path only the run can tell, or changes the working tree or the history with git (`checkout`, `stash`, `reset`, `add`, `commit` and the like); checks, tests and writes outside the repo pass ([#209](https://github.com/PIsberg/speckit-agents/issues/209)) |
+| every `scope` rule | all five writing agents, and the three read-only ones on Bash | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
+| `scope role` | `--team skill-agents`: each role skill's frontmatter, PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | the acting role writing outside its lane (the same rule as its agent's `scope`, a twin of `ROLE_LANES`), or any write by a read-only role, through a write tool or Bash as `scope none` reads it |
 | `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; records spec-auditor's verdict and spec-gatekeeper's word from its messages, the next Skill call's first `args` line and the Stop's last message |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
@@ -1027,6 +1029,37 @@ symlinks, Windows junctions and 8.3 short names before they are compared. Paths 
 are not the rule's business. Until 2026-10-08 the comparison used the path as given, so a repo
 reached by another name (macOS's `/var` is `/private/var`, a short-named Windows profile such as
 `C:\Users\RUNNER~1`) made every file look outside it, and every lane let the write through.
+
+#### What a scope rule reads in a Bash command
+
+Until [#210](https://github.com/PIsberg/speckit-agents/issues/210) a writing agent's Bash write was
+seen only by the [lane check](#the-lane-check) when it stopped, after the file had changed, and the
+read-only agents' Bash was not checked at all ([#209](https://github.com/PIsberg/speckit-agents/issues/209)).
+Now every team agent's `scope` hook also runs on Bash, reads the command the way the fast track's
+`patch` mode does (quotes, variables, `sh -c` and `eval` strings, substitutions), and judges each
+file it writes as it would judge a `Write` of that file, before anything runs:
+
+- the target of every `>`, `>>`, `&>` and `<>` redirection, apart from `/dev/null` and the other
+  devices and a descriptor such as `2>&1`;
+- the operands of `rm`, `rmdir`, `unlink`, `touch`, `mkdir`, `truncate`, `shred` and `tee`, both
+  ends of `mv`, the destination of `cp`, `ln` and `install` (or `-t`'s folder), the files of
+  `sed -i` and `perl -i`, and `dd of=`;
+- `git rm`, `git mv`, `git restore` and `git checkout` of paths (`--`, or a name that exists);
+- after `cd`, `pushd` or `git -C`, paths from that folder; `sudo`, `env`, `nohup` and the like
+  before a program are skipped.
+
+A here-document's body is text, unless a shell on its line reads it, and a `#` comment is skipped.
+A file git ignores (a test log, a coverage report) passes, because the lane check leaves it out too;
+the git directory never does.
+For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`) and a
+git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
+still diffs what the command did. The read-only agents have no lane check, so `scope none` denies
+both, and allows every write outside the repo, such as a test log in a temp folder. A command it
+cannot finish reading (nested more than 8 levels) is denied. It is still not a shell: what an
+interpreter writes (`node -e`, `python -c`, a package script) is not seen, which is why the lane
+check stays. Each Bash call of a team agent starts one more hook process: 64 ms in a Spec Kit repo
+for a command with a `cd`, a pipe, a `tee` and a `sed -i`, and 45 ms outside one (mean of 20 runs
+each, p90 68 ms and 49 ms, Windows, 2026-10-31).
 
 ### The audit gate
 
@@ -1084,8 +1117,9 @@ gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-
 
 ### The lane check
 
-The write hooks see `Write` and `Edit`, but an agent can also change files with `sed -i` through
-Bash. So on the first tool call, the gate records the agent's starting commit and the files
+The write hooks see `Write`, `Edit` and the writes a Bash command names
+([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)), but a
+script or an interpreter run through Bash can change files no command names. So on the first tool call, the gate records the agent's starting commit and the files
 already dirty. When the agent stops, `lane` diffs everything since then, committed or not, and
 blocks the stop if any changed file is outside the lane. The agent is told which files to restore.
 Files that were dirty before the agent started are ignored. If the agent stops a second time with
@@ -1438,18 +1472,18 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 491 tests:
+`npm test` runs 497 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 157 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 160 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 71 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 113 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
+| [`test/install.test.mjs`](test/install.test.mjs) | 114 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 51 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 53 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 10 | `tools/drift.mjs` on throwaway repos: a test file gone, a cited FR ID gone, examples, SC IDs and docs tasks skipped, the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 6 | that every version is pinned in one place: `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
@@ -1532,9 +1566,9 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 38
-  tests fire every hook entry the installer writes: each writing agent's scope rule, both gates,
-  every lane check (product-owner's and architect's `lane only` from the `start` entry's record
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 40
+  tests fire every hook entry the installer writes: each agent's scope rule (on a write tool and
+  on Bash), both gates, every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
   `SubagentHandback` tool Claude Code gives a subagent in auto mode), the `Skill|Agent` gate in
   `settings.json`, and its `UserPromptExpansion` gate on a typed `/speckit-team --team noagents`,
@@ -1560,7 +1594,7 @@ need no login and cost nothing.
   variables; without the hook it uses the token and tries to connect
   ([#138](https://github.com/PIsberg/speckit-agents/issues/138)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 38
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 40
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
@@ -1987,14 +2021,17 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   a main session that ignores the skill can relaunch past 3. The start notice and the final report say so.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
-- **Read-only isn't airtight.** spec-auditor and spec-gatekeeper have no Write or Edit tools,
-  but Bash could still write a file. Likewise the git-directory guard stops `Write` and `Edit`
-  (in any spelling Windows folds together, through symlinks, and from a linked worktree), not `rm`
-  through Bash.
-- **product-owner's and architect's Bash writes are caught when they stop, not before.** Their
-  `scope only` rule denies a `Write` or `Edit` outside their prefixes before it runs; a file written
-  through Bash is caught by the [lane check](#the-lane-check) at their Stop, which sends them back to
-  restore it.
+- **Read-only isn't airtight.** spec-auditor, spec-gatekeeper and security-reviewer have no Write
+  or Edit tools, and `scope none` denies the Bash writes it can read, but a script or an interpreter
+  (`node -e`, `python -c`, a package script) can still write a file, and no lane check runs at their
+  Stop to see it. Likewise the git-directory guard stops `Write`, `Edit` and a Bash command that
+  names a file there (in any spelling Windows folds together, through symlinks, and from a linked
+  worktree), not a script's own writes.
+- **A Bash write the hook cannot read is caught when the agent stops, not before.** The `scope`
+  rules deny the files a Bash command names
+  ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)); a file
+  written some other way through Bash is caught by the [lane check](#the-lane-check) at the Stop of
+  product-owner, architect, test-writer and implementer, which sends them back to restore it.
 - **Subagents can't ask you questions.** product-owner returns its questions, and the main
   session asks them.
 - **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will

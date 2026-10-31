@@ -13,6 +13,10 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" ends "VERDICT: PASS" "VERDICT: FAIL"'
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: 'node "{{HOOK}}" scope none'
   Stop:
     - hooks:
         - type: command

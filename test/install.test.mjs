@@ -346,6 +346,31 @@ test('installed product-owner and architect write files with the tools their hoo
   assert.match(skill.slice(skill.indexOf('## Handoffs'), skill.indexOf('## Pace')), /`SubagentHandback`/);
 });
 
+// #209, #210: a Bash write was seen only at Stop for the writing agents, and never for the read-only
+// ones. Every team agent's scope hook now also runs on Bash; the read-only three get `scope none`.
+test('#209 #210: every team agent with Bash runs its scope hook on Bash, and the role skills do too', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  const expected = { 'product-owner': 'only specs/ .specify/feature.json', architect: 'only specs/ CLAUDE.md', 'test-writer': 'tests',
+    implementer: 'no-tests', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
+  for (const [a, rule] of Object.entries(expected)) {
+    const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n');
+    const fm = text.slice(0, text.indexOf('\n---', 4));
+    const entry = new RegExp(`- matcher: "([^"]+)"\\n\\s+hooks:\\n\\s+- type: command\\n\\s+command: 'node "${hookPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" scope ${rule}'`).exec(fm);
+    assert.ok(entry, `${a}: a scope ${rule} entry`);
+    assert.ok(entry[1].split('|').includes('Bash'), `${a}: its scope matcher "${entry[1]}" covers Bash`);
+    assert.ok(fm.indexOf(entry[0]) > fm.indexOf('PreToolUse:') && (fm.indexOf('  Stop:') < 0 || fm.indexOf(entry[0]) < fm.indexOf('  Stop:')), `${a}: at PreToolUse`);
+    if (rule === 'none') assert.match(fm, /^disallowedTools:.*\bWrite\b/m, `${a}: scope none only for an agent that cannot write`);
+  }
+  const patcher = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
+  assert.match(patcher, /- matcher: "Write\|Edit\|MultiEdit\|NotebookEdit"\r?\n\s+hooks:\r?\n\s+- type: command\r?\n\s+command: '.*" scope protected'/, 'patcher\'s Bash stays with patch mode');
+  for (const role of Object.keys(expected)) {
+    const skill = fs.readFileSync(path.join(dir, 'skills', `speckit-role-${role}`, 'SKILL.md'), 'utf8');
+    assert.match(skill, /- matcher: "Write\|Edit\|MultiEdit\|NotebookEdit\|Bash"\r?\n\s+hooks:\r?\n\s+- type: command\r?\n\s+command: '.*" scope role'/, `speckit-role-${role}`);
+  }
+});
+
 // #88: a file product-owner or architect writes through Bash was never checked. The settings.json
 // SubagentStart entry records where each starts, and the Stop's `lane only` holds the agent to exactly
 // the prefixes its scope rule allows: the two lists are one fact, kept in two places.
@@ -1557,7 +1582,7 @@ test('009 T001 FR-013 FR-012 contract 2: install writes speckit-role-<role> for 
     assert.match(head, /^user-invocable: false$/m, role);
     assert.ok(head.includes(`node "${hookPath}" scope role`), `${role}: scope role command with the installed hook path`);
     assert.ok(head.includes(`node "${hookPath}" lane role`), `${role}: lane role command with the installed hook path`);
-    assert.match(head, /matcher: "Write\|Edit\|MultiEdit\|NotebookEdit"/, role);
+    assert.match(head, /matcher: "Write\|Edit\|MultiEdit\|NotebookEdit\|Bash"/, role);
     assert.match(head, /^\s*PreToolUse:/m, role);
     assert.match(head, /^\s*Stop:/m, role);
     for (const key of ['context', 'agent', 'model', 'allowed-tools']) {

@@ -15,7 +15,7 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" ends RED BLOCKED FIXED'
-    - matcher: "Write|Edit|MultiEdit|NotebookEdit"
+    - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"
       hooks:
         - type: command
           command: 'node "{{HOOK}}" scope tests'

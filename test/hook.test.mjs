@@ -144,6 +144,161 @@ test('an invalid .specify/test-paths line closes the test lanes and names the li
   assert.match(out?.systemMessage ?? '', /lane check could not run.*test-paths line 3/);
 });
 
+// #210: a write through Bash was only caught by the lane check at Stop, after the file had changed.
+// scope now reads a Bash command's write targets and judges each one as it judges a Write.
+const bash = (dir, args, command, extra = {}) => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, ...extra,
+});
+const whyDenied = (out) => out?.hookSpecificOutput?.permissionDecisionReason ?? '';
+
+test('scope on Bash (#210): a write outside the lane is denied before it runs, wherever the command puts it', () => {
+  const { dir, write: w } = repo();
+  w('test/a.test.js', 'test("a");\n');
+  const impl = ['scope', 'no-tests'];
+  for (const command of [
+    'echo x > test/a.test.js',
+    'echo x >>test/a.test.js',
+    'npm test &> src/test/java/AppTest.java',
+    'echo x | tee -a test/a.test.js',
+    'rm -f test/a.test.js',
+    'mv src/main/App.java test/App.test.js',
+    'cp -r src/main/App.java src/test/java/AppTest.java',
+    'cp -t test src/main/App.java',
+    'ln -sf ../src/main/App.java test/link.test.js',
+    'touch test/new.test.js',
+    'mkdir -p test/more && echo ok',
+    "sed -i 's/a/b/' test/a.test.js",
+    "sed -i.bak -e 's/a/b/' test/a.test.js",
+    "perl -pi -e 's/a/b/' test/a.test.js",
+    'dd if=/dev/zero of=test/a.test.js count=1',
+    'truncate -s 0 test/a.test.js',
+    'cd test && echo x > a.test.js',
+    'cd src/test && rm java/AppTest.java',
+    'git rm -q test/a.test.js',
+    'git checkout -- test/a.test.js',
+    'git restore --source=HEAD~1 test/a.test.js',
+    'git mv test/a.test.js test/b.test.js',
+    'echo x > "test/$(echo a).test.js" ; echo x > test/"a".test.js',
+    'sudo rm test/a.test.js',
+    'env -i FOO=1 rm test/a.test.js',
+    "bash -c 'echo x > test/a.test.js'",
+    "bash <<'EOF'\nrm test/a.test.js\nEOF",
+    'echo x > .specify/feature.json',
+  ]) {
+    const out = bash(dir, impl, command, { agent_type: 'implementer' });
+    assert.ok(denied(out), `implementer: ${command}`);
+    assert.match(whyDenied(out), /^implementer may not (change tests: \S+ is part of the executable spec|write \.specify\/feature\.json)/, command);
+  }
+  assert.match(whyDenied(bash(dir, impl, 'echo x > test/a.test.js', { agent_type: 'implementer' })), /test\/a\.test\.js/, 'the denial names the file');
+
+  for (const command of [
+    'npm test',
+    'npm test > ../outside-repo.log 2>&1',
+    'npm test 2>&1 | tail -5',
+    'ls > /dev/null 2>&1 && cat test/a.test.js',
+    'echo x > src/main/Other.java && sed -i s/x/y/ src/main/Other.java',
+    'mkdir -p src/main/util && touch src/main/util/Util.java',
+    'cp test/a.test.js ../outside-copy.js',
+    'git diff -- test/ && git status && git log -1 -- test/a.test.js',
+    'git checkout main',
+    "cat > src/main/Gen.java <<'EOF'\nrm test/a.test.js\necho x > test/b.test.js\nEOF",
+    'cat > src/main/Gen2.java <<EOF\nrm test/a.test.js\nEOF',
+    "printf '%s' 'a > test/a.test.js'",
+    'grep -rn "> test/a.test.js" src || true',
+    'echo x > "$OUT"',
+  ]) {
+    assert.equal(bash(dir, impl, command, { agent_type: 'implementer' }), null, `implementer: ${command}`);
+  }
+
+  const tw = ['scope', 'tests'];
+  assert.ok(denied(bash(dir, tw, 'echo x > src/main/App.java', { agent_type: 'test-writer' })), 'test-writer: production code');
+  assert.match(whyDenied(bash(dir, tw, 'echo x > src/main/App.java', { agent_type: 'test-writer' })), /test-writer writes only test files and ticks tasks\.md; src\/main\/App\.java is production code/);
+  assert.equal(bash(dir, tw, "echo x > test/b.test.js && sed -i 's/- \\[ \\]/- [X]/' specs/001-demo/tasks.md", { agent_type: 'test-writer' }), null, 'test-writer: its own lane');
+
+  const arch = ['scope', 'only', 'specs/', 'CLAUDE.md'];
+  assert.ok(denied(bash(dir, arch, 'echo x > src/x.js', { agent_type: 'architect' })), 'architect: outside its prefixes');
+  assert.match(whyDenied(bash(dir, arch, 'echo x > src/x.js', { agent_type: 'architect' })), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/);
+  assert.equal(bash(dir, arch, `echo x >> ${FEAT}/plan.md && echo y > CLAUDE.md`, { agent_type: 'architect' }), null, 'architect: its prefixes');
+
+  for (const args of [impl, tw, arch]) {
+    const out = bash(dir, args, 'echo 0 > .git/speckit-team/retries/001-demo.json');
+    assert.ok(denied(out), `${args.join(' ')}: the git directory`);
+    assert.match(whyDenied(out), /guardrail state/);
+  }
+  assert.equal(bash(dir, ['scope', 'protected'], 'echo x > .github/workflows/ci.yml'), null, 'patcher\'s Bash is patch mode\'s business, not scope\'s');
+  assert.ok(!fs.existsSync(path.join(dir, 'src', 'main', 'Other.java')), 'the hook only reads the command, it never runs it');
+});
+
+// #209: spec-auditor, spec-gatekeeper and security-reviewer have no Write or Edit, but Bash could still
+// change the repo, and no lane check runs at their Stop.
+test('scope none on Bash (#209): a read-only agent runs checks but writes nothing in the repo', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  for (const command of [
+    'npm test',
+    'node --test 2>&1 | tail -20',
+    'git status --short && git diff HEAD -- src && git log --oneline -5',
+    'git branch --show-current && git rev-parse HEAD',
+    `grep -rn "FR-001" ${FEAT} src > /dev/null; echo $?`,
+    'npm test > ../outside-repo.log 2>&1; tail -5 ../outside-repo.log',
+    "cat <<'EOF'\nrm -rf src\nEOF",
+  ]) {
+    assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, command);
+  }
+  for (const command of [
+    'echo notes > notes.md',
+    `rm ${FEAT}/plan.md`,
+    `sed -i 's/- \\[ \\]/- [X]/' ${FEAT}/tasks.md`,
+    'touch src/main/New.java',
+    'git checkout main',
+    'git switch -c other',
+    'git stash',
+    'git reset --hard HEAD~1',
+    'git clean -fd',
+    'git add -A && git commit -m wip',
+    'git apply fix.patch',
+    'rm $(git ls-files)',
+    'echo x > "$OUT"',
+    'cd src && echo x > y',
+  ]) {
+    const out = bash(dir, ro, command, { agent_type: 'spec-gatekeeper' });
+    assert.ok(denied(out), command);
+    assert.match(whyDenied(out), /^spec-gatekeeper is a read-only role and writes no files/, command);
+  }
+  assert.equal(bash(dir, ro, 'echo x > ../outside-repo.txt', { agent_type: 'spec-auditor' }), null, 'outside the repo is not its business');
+  // A file git ignores is no change the lane check would see either: a test log, a coverage report.
+  fs.writeFileSync(path.join(dir, '.gitignore'), '*.log\ncoverage/\n');
+  for (const command of ['npm test > test.log 2>&1', 'npx c8 npm test > coverage/summary.txt']) {
+    assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, `ignored: ${command}`);
+    assert.equal(bash(dir, ['scope', 'tests'], command, { agent_type: 'test-writer' }), null, `ignored, test-writer: ${command}`);
+  }
+  assert.ok(denied(bash(dir, ro, 'npm test > test.txt', { agent_type: 'spec-gatekeeper' })), 'control: a file git does not ignore');
+  assert.ok(denied(bash(dir, ro, 'echo 0 > .git/x.log', { agent_type: 'spec-gatekeeper' })), 'the git directory is never exempt');
+  assert.ok(denied(bash(dir, ro, 'echo 0 > .git/speckit-team/verdicts/x.json', { agent_type: 'spec-auditor' })), 'the git directory');
+  const deep = `${'$('.repeat(10)}git status${')'.repeat(10)}`;
+  assert.ok(denied(bash(dir, ro, deep, { agent_type: 'spec-auditor' })), 'a command too deep to read is denied, not waved through');
+  assert.equal(bash(dir, ['scope', 'no-tests'], 'npm test', { tool_input: {} }), null, 'no command, no decision');
+  assert.match(msg(run(dir, ro, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: ['rm', 'x'] } })), /tool_input\.command is (an array|object)/);
+});
+
+test('scope role on Bash (#209, #210): the acting role skill is held to its lane through Bash too', () => {
+  const { dir } = repo();
+  const roleBash = (command) => bash(dir, ['scope', 'role'], command, { session_id: 's1' });
+  const put = (role) => {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+    fs.mkdirSync(path.join(stateDir(dir), 'role'), { recursive: true });
+    fs.writeFileSync(path.join(stateDir(dir), 'role', 's1.json'), JSON.stringify({
+      session_id: 's1', role, sha, dirty: [], transcript: null, offset: 0, feature: FEAT, fingerprint: null, at: new Date().toISOString(),
+    }));
+  };
+  put('implementer');
+  assert.ok(denied(roleBash('echo x > test/a.test.js')), 'implementer role: a test');
+  assert.equal(roleBash('echo x > src/main/B.java'), null, 'implementer role: production code');
+  put('spec-gatekeeper');
+  assert.match(whyDenied(roleBash('echo x > notes.md')), /^spec-gatekeeper is a read-only role and writes no files/);
+  assert.equal(roleBash('npm test 2>&1 | tail -3'), null, 'spec-gatekeeper role: a check');
+});
+
 test('gate blocks implementation until a PASS verdict on the current artifacts', () => {
   const { dir, write: w } = repo();
   const tool = { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} };

@@ -161,6 +161,12 @@ test('an edit to spec.md after the PASS stops /speckit-implement again', { skip:
 const MAIN = 'e2e main session';
 const say = (text) => ({ text });
 const call = (name, input) => ({ name, input });
+// A write the scope hook cannot see (#210 reads redirections and file commands, not what node -e does),
+// so it reaches the check after it: the lane check at Stop, or a verdict on since-changed files.
+const unseenWrite = (rel, text = '1', append = false) => call('Bash', {
+  command: `node -e "const fs=require('fs');fs.mkdirSync(require('path').dirname('${rel}'),{recursive:true});fs.${append ? 'appendFileSync' : 'writeFileSync'}('${rel}','${text}')"`,
+  description: 'Write a file',
+});
 const agent = (type, marker) => call('Agent', { description: type, subagent_type: type, prompt: `${marker}: go`, run_in_background: false });
 
 const textOf = (c) => (typeof c === 'string' ? c : Array.isArray(c) ? c.filter((p) => p?.type === 'text').map((p) => p.text).join('\n') : '');
@@ -525,13 +531,36 @@ test('implementer may not change tests, and its lane check catches a test writte
     [MAIN]: [agent('implementer', 'e2e implementer')],
     'e2e implementer': [
       call('Write', { file_path: path.join(s.repo, 'test', 'greet.test.js'), content: 'test.skip("greet");\n' }),
-      call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a file' }),
+      unseenWrite('test/other.test.js'),
       say('T004 passes.\nRESULT: GREEN'),
     ],
   });
   assert.match(lastResult(r.requests['e2e implementer'][1]), /implementer may not change tests: test\/greet\.test\.js is part of the executable spec/, story(r));
   assert.ok(fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e implementer'][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
+});
+
+// #209, #210: the scope hooks now also run on Bash and read what the command writes before it runs.
+// With SPECKIT_E2E_NO_HOOK=1 every write goes through and every assertion on a denial fails.
+test('#209 #210: a Bash write outside the lane is denied before it runs, for a writing agent and a read-only one', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [agent('implementer', 'e2e implementer'), agent('spec-gatekeeper', 'e2e gatekeeper'), agent('architect', 'e2e architect')],
+    'e2e implementer': [call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a test' }), say('T001 passes.\nRESULT: GREEN')],
+    'e2e gatekeeper': [
+      call('Bash', { command: 'echo notes > notes.md', description: 'Write notes' }),
+      call('Bash', { command: 'git status --short', description: 'Status' }),
+      say('FR-001 has no test.\nREJECTED'),
+    ],
+    'e2e architect': [call('Bash', { command: 'echo 1 > arch.js', description: 'Write code' }), say('Plan written.')],
+  });
+  assert.ok(lastResultIsError(r.requests['e2e implementer'][1]), story(r));
+  assert.match(lastResult(r.requests['e2e implementer'][1]), /implementer may not change tests: test\/other\.test\.js is part of the executable spec/, story(r));
+  assert.match(lastResult(r.requests['e2e gatekeeper'][1]), /spec-gatekeeper is a read-only role and writes no files: the command writes notes\.md/, story(r));
+  assert.ok(!lastResultIsError(r.requests['e2e gatekeeper'][2]), `a read-only check was denied:\n${story(r)}`);
+  assert.match(lastResult(r.requests['e2e architect'][1]), /architect may only write specs\/, CLAUDE\.md; arch\.js is outside that lane/, story(r));
+  for (const f of ['test/other.test.js', 'notes.md', 'arch.js']) assert.ok(!fs.existsSync(path.join(s.repo, f)), `${f}: the Bash call ran`);
 });
 
 test("reports through SubagentHandback: implementer's is counted, spec-gatekeeper's must end in its word", { skip: noClaude, timeout: 120_000 }, async () => {
@@ -591,7 +620,7 @@ test("spec-auditor's verdict is not recorded when the files changed after its fi
   assert.equal(recorded.verdict, 'PASS', story(first));
   const second = await session(s, {
     [MAIN]: [agent('spec-auditor', 'e2e auditor')],
-    'e2e auditor': [call('Bash', { command: 'echo "FR-002 added mid-audit." >> specs/001-x/spec.md', description: 'Edit the spec' }), say('No findings.\nVERDICT: FAIL')],
+    'e2e auditor': [unseenWrite('specs/001-x/spec.md', 'FR-002 added mid-audit.', true), say('No findings.\nVERDICT: FAIL')],
   });
   assert.match(fs.readFileSync(spec(s), 'utf8'), /FR-002/, `the Bash call never ran:\n${story(second)}`);
   assert.deepEqual(state(s, 'verdicts', '001-x.json'), recorded, `the stale FAIL replaced the PASS:\n${story(second)}`);
@@ -667,7 +696,7 @@ test("test-writer's Stop: the lane check catches production code written through
   recordPass(s);
   const r = await session(s, {
     [MAIN]: [agent('test-writer', 'e2e test-writer')],
-    'e2e test-writer': [call('Bash', { command: 'echo 1 > prod.js', description: 'Write a file' }), say('T001 fails on its assertion.')],
+    'e2e test-writer': [unseenWrite('prod.js'), say('T001 fails on its assertion.')],
   });
   assert.ok(fs.existsSync(path.join(s.repo, 'prod.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e test-writer'][2]), /Lane check: test-writer changed files outside its lane: prod\.js/, story(r));
@@ -919,8 +948,8 @@ test("product-owner's and architect's Stop: the lane check catches a file writte
   const s = setup();
   const r = await session(s, {
     [MAIN]: [agent('architect', 'e2e architect'), agent('product-owner', 'e2e product-owner')],
-    'e2e architect': [call('Bash', { command: 'echo 1 > arch.js', description: 'Write a file' }), say('Plan written.')],
-    'e2e product-owner': [call('Bash', { command: 'echo 1 > owner.js', description: 'Write a file' }), say('Spec written.\nREADY FOR PLAN')],
+    'e2e architect': [unseenWrite('arch.js'), say('Plan written.')],
+    'e2e product-owner': [unseenWrite('owner.js'), say('Spec written.\nREADY FOR PLAN')],
   });
   assert.ok(fs.existsSync(path.join(s.repo, 'arch.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e architect'][2]), /Lane check: architect changed files outside its lane: arch\.js\./, story(r));
@@ -1086,11 +1115,21 @@ test("009 T011 FR-008 US3-6 contract 5 and 8: a role skill's lane holds in the s
   assert.ok(!fs.existsSync(recFile) || JSON.parse(fs.readFileSync(recFile, 'utf8')).role !== 'architect', 'the ended architect record is gone');
 });
 
+test('#209 #210: under a role skill the scope hook reads Bash too: implementer may not write a test through it', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [roleSkill('implementer'), call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a test' }), say('implemented')],
+  }, { prompt: SA_PROMPT });
+  assert.match(lastResult(r.requests[MAIN][2]), /implementer may not change tests: test\/other\.test\.js is part of the executable spec/, story(r));
+  assert.ok(!fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call ran:\n${story(r)}`);
+});
+
 test("009 T014 FR-008 US3-6 contract 6: a test written through Bash under the implementer skill blocks the Stop with the lane check", { skip: noClaude, timeout: 240_000 }, async () => {
   const s = setup();
   recordPass(s);
   const r = await session(s, {
-    [MAIN]: [roleSkill('implementer'), call('Bash', { command: 'mkdir -p test && echo 1 > test/other.test.js', description: 'Write a file' }), say('implemented')],
+    [MAIN]: [roleSkill('implementer'), unseenWrite('test/other.test.js'), say('implemented')],
   }, { prompt: SA_PROMPT });
   assert.ok(fs.existsSync(path.join(s.repo, 'test', 'other.test.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests[MAIN][3]), /Lane check: implementer changed files outside its lane: test\/other\.test\.js/, story(r));
