@@ -1496,11 +1496,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 509 tests:
+`npm test` runs 511 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 160 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 162 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 74 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 116 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
@@ -1842,7 +1842,21 @@ rather than your user directory, Claude Code skips their frontmatter hooks until
 been trusted, and says so only in the debug log: `Skipping frontmatter hooks for agent
 'implementer': the folder its definition file came from is not trusted`. Open Claude Code in that
 folder once and accept the trust dialog. Seen on Claude Code 2.1.292, where the scratch repo's
-implementer ran Bash with no audit recorded and the gate never fired.
+implementer ran Bash with no audit recorded and the gate never fired. On Claude Code 2.1.316 a live
+check of 2026-10-31 in an untrusted folder saw none of the project agents' new hooks fire, and the
+same check passed once the folder was trusted ([Live results](docs/live-results.md)). A personal
+skill also shadows the project's copy of the same name, trusted or not
+([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
+
+If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git 2.56 fails
+every command (`fatal: unknown error occurred while reading the configuration files`), and the
+hooks once took that for "no repository" and let everything through in silence. They now read the
+repository without the global and system config then (`GIT_CONFIG_GLOBAL=NUL` on Windows,
+`/dev/null` elsewhere, and `GIT_CONFIG_NOSYSTEM=1`), which git could not use anyway. A Spec Kit
+folder with a `.git` beside its `.specify/` that git still cannot read gives
+`speckit-team: <mode> could not read the git repository here (...); no decision made.` instead of
+silence ([#215](https://github.com/PIsberg/speckit-agents/issues/215)). An unreadable global ignore
+file only warns, on stderr, which the hooks never parse.
 
 ### An agent cannot report back, or a verdict is never recorded
 

@@ -470,6 +470,48 @@ function runRaw(dir, args, text) {
 }
 const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch']];
 
+// #215: in a sandbox that denies reading ~/.gitconfig, git 2.56 fails every command ("fatal: unknown
+// error occurred while reading the configuration files"), not only warns. The hook's first git call
+// then found no repo, and every mode let the action through in silence: an implementer's Write to a
+// test went through. The hook now reads the repo without the global config when git cannot read it.
+function unreadableGlobalConfig() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'skhome-'));
+  const file = path.join(home, '.gitconfig');
+  // Windows: a folder where the file should be, which git cannot open; elsewhere a file no one may read.
+  if (process.platform === 'win32') fs.mkdirSync(file); else { fs.writeFileSync(file, '[user]\n\tname = x\n'); fs.chmodSync(file, 0o000); }
+  const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, '.config') };
+  delete env.GIT_CONFIG_GLOBAL;
+  return env;
+}
+const runEnv = (dir, args, payload, env) => {
+  const r = spawnSync(process.execPath, [HOOK, ...args], { input: JSON.stringify({ cwd: dir, ...payload }), encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stderr);
+  return r.stdout ? JSON.parse(r.stdout) : null;
+};
+test('#215: a global git config git cannot read changes no decision', () => {
+  const { dir } = repo();
+  const env = unreadableGlobalConfig();
+  const plain = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: dir, env, encoding: 'utf8' });
+  assert.notEqual(plain.status, 0, `precondition: git itself fails under this HOME (${plain.stderr})`);
+  const writeTest = { hook_event_name: 'PreToolUse', tool_name: 'Write', agent_type: 'implementer', tool_input: { file_path: path.join(dir, 'src/test/java/AppTest.java') } };
+  const out = runEnv(dir, ['scope', 'no-tests'], writeTest, env);
+  assert.ok(denied(out), `the same deny as with a readable config: ${JSON.stringify(out)}`);
+  assert.equal(runEnv(dir, ['scope', 'no-tests'], { ...writeTest, tool_input: { file_path: path.join(dir, 'src/main/App.java') } }, env), null, 'and the same allow');
+  const gate = runEnv(dir, ['gate'], { hook_event_name: 'UserPromptExpansion', command_name: 'speckit-implement' }, env);
+  assert.equal(gate?.decision, 'block', `the audit gate holds: ${JSON.stringify(gate)}`);
+});
+
+test('#215: when git cannot read the repo at all inside a Spec Kit folder, the hook says so instead of staying silent', () => {
+  const { dir } = repo();
+  // A git dir git refuses: HEAD is not a ref, so every command fails, as a damaged or unreadable repo does.
+  fs.writeFileSync(path.join(dir, '.git', 'HEAD'), 'not a ref\n');
+  const out = runEnv(dir, ['scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'src/test/java/AppTest.java') } }, process.env);
+  assert.match(out?.systemMessage ?? '', /^speckit-team: scope could not read the git repository here \(.+\); no decision made\.$/, JSON.stringify(out));
+  const { dir: plain } = repo({ speckit: false });
+  fs.writeFileSync(path.join(plain, '.git', 'HEAD'), 'not a ref\n');
+  assert.equal(runEnv(plain, ['scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(plain, 'x') } }, process.env), null, 'outside a Spec Kit folder it stays silent');
+});
+
 test('malformed input never crashes a hook: no decision, and the user is told', () => {
   // A crashed hook is a non-blocking error: Claude Code lets the action through and says nothing.
   // `scope protected` and `patch` are in MODES for 003 FR-011.
