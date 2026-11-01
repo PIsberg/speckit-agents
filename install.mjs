@@ -140,7 +140,7 @@ function remove(file) {
 
 // The role skills of /speckit-team --team skill-agents: one per team role, generated from the agent file.
 const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher');
-const ROLE_PREAMBLE = `You act as the <role> role inline in this session, for /speckit-team --team skill-agents. Your inputs are $ARGUMENTS and the files they name. There is no SubagentHandback here: your report is a message of yours whose last line is the one your Report section names, after which the orchestrating skill goes on. A skill the text below says is preloaded you invoke with the Skill tool. Launch no agent. The hook holds you to the <role> lane until the next role skill or the end of the turn.
+const ROLE_PREAMBLE = `You act as the <role> role inline in this session, for /speckit-team --team skill-agents. Your inputs are $ARGUMENTS and the files they name. There is no SubagentHandback here: your report is text of yours whose last line is the one your Report section names, and the orchestrating skill goes on after it in the same response, with its next call, unless its step says Stop. A skill the text below says is preloaded you invoke with the Skill tool. Launch no agent. The hook holds you to the <role> lane until the next role skill or the end of the turn.
 
 `;
 function roleSkill(role, agentText) {

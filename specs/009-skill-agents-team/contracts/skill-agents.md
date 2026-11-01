@@ -53,9 +53,9 @@ hooks:
 - `<hook path>` is the installed hook's quoted, absolute, forward-slash path, as in the agents.
 - The preamble is one fixed text in `install.mjs` with `<role>` filled in. It says: you act as the
   `<role>` role inline in this session for `/speckit-team --team skill-agents`; your inputs are
-  `$ARGUMENTS` and the files they name; there is no SubagentHandback, so your report is a message of
-  yours whose last line is the one your Report section names, after which the orchestrating skill goes
-  on; a skill the text says is preloaded you invoke with the Skill tool; launch no agent; the hook holds
+  `$ARGUMENTS` and the files they name; there is no SubagentHandback, so your report is text of yours
+  whose last line is the one your Report section names, and the orchestrating skill goes on after it
+  in the same response, with its next call, unless its step says Stop (#261); a skill the text says is preloaded you invoke with the Skill tool; launch no agent; the hook holds
   you to `<role>`'s lane until the next role skill or the end of the turn.
 - Install, rerun (no change), `--force`, collision refusal and `--uninstall` treat them as the other
   skills: by the marker line, removing the `speckit-role-<role>/` folder (FR-009).
@@ -136,6 +136,15 @@ the main session's role stays acting; its own Stop closes it (#177).
      and the hand-over can share one response, and text after the word would hide it (#185).
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
+4. Hand-on, at Stop only, after steps 1 to 3 and unless `stop_hook_active` (#261): the role's last
+   text (`last_assistant_message`, else the last text of the transcript after `offset`) ending a report
+   the skill goes on from, with no Stop in between, is sent back with `block`: `speckit-team: the <role>
+   role's report ends <word>, where /speckit-team has no Stop. Go on with the next step in this turn.`
+   The words: spec-auditor's last `VERDICT:` line `PASS`; test-writer's last line that is one of `RED`,
+   `BLOCKED`, `FIXED` being `RED`; implementer's last line that is one of `RESULT: STUB`, `RESULT:
+   GREEN`, `RESULT: RED` being one of the first two. Every other ending may go to the user and is let
+   through. Without it the run waits for the user there, where in agents mode the report returns as a
+   tool result and the main session goes on in the same turn.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
 says so only when that holds no verdict or word. So does a transcript that could not be read when the role
