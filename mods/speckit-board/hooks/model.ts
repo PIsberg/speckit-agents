@@ -346,13 +346,13 @@ function idleStep(head: SpeckitPhase): string {
 // `/speckit-board status`: the board as text, for a session without the pane (a headless run) and for
 // the model, which reads a command's answer as well.
 export function boardText(b: SpeckitBoard, running: readonly { type: string; startedAt: number }[], now: number, stats?: StatsView): string {
-  void stats
   const lines = [
     statusLine(b) ?? '',
     b.phases.map(p => `${GLYPH[p.state]} ${p.id}`).join(' '),
     `next: ${nextStep(b, running.map(a => a.type)).text}`,
   ]
   if (running.length && !b.isStandalone) lines.push(`running: ${running.map(a => `${a.type} ${since(now - a.startedAt)}`).join(', ')}`)
+  if (stats) lines.push(`stats: ${statItems(stats).map(x => x.text).join(' ')}`)
   return lines.join('\n')
 }
 
@@ -406,11 +406,11 @@ export function bandLayout(
   b: SpeckitBoard, running: readonly { type: string; startedAt: number }[], now: number, cols: number,
   stats?: StatsView,
 ): BandItem[] {
-  void stats
   const head = current(b.phases)
   const named = head ?? b.phases.at(-1)
   const done = b.tasks.filter(t => t.isDone).length
-  const layout = (v: BandVariant): BandItem[] => {
+  const all = stats ? statItems(stats) : []
+  const layout = (v: BandVariant, parts: readonly StatPart[] = []): BandItem[] => {
     const items: BandItem[] = [{ kind: 'feature', text: `◆ ${b.feature}` }]
     for (const p of b.phases) {
       if (v.names === 'only-head' && p !== named) continue
@@ -423,6 +423,8 @@ export function bandLayout(
       items.push({ kind: 'count', text: `${done}/${b.tasks.length}` })
     }
     if (b.red > 0 && !b.isStandalone) items.push({ kind: 'red', text: `RED ${b.red}/${b.maxRed}`, isLimit: b.red >= b.maxRed })
+    const shown = all.filter(x => parts.includes(x.part))
+    if (shown.length) items.push({ kind: 'sep', text: '│' }, ...shown)
     const [first, ...others] = b.isStandalone ? [] : running
     if (first) {
       const spin = spinnerAt(now)
@@ -436,7 +438,14 @@ export function bandLayout(
     if (v.isHideShown) items.push({ kind: 'button', text: '[ hide ]', key: 'hide', label: 'hide' })
     return items
   }
-  const layouts = VARIANTS.map(layout)
+  // contracts/stats-text.md "Band", D5: the stats shed (tokens, cost bar, cost) on the richest variant
+  // first, then the context alone while the variants shed, the last one bare. Without a view, as before.
+  const [richest, ...narrower] = VARIANTS
+  const layouts = !stats || !richest ? VARIANTS.map(v => layout(v)) : [
+    layout(richest, ['context', 'tokens', 'cost', 'costbar']), layout(richest, ['context', 'cost', 'costbar']),
+    layout(richest, ['context', 'cost']), layout(richest, ['context']),
+    ...narrower.map(v => layout(v, ['context'])), layout(narrower.at(-1) ?? richest),
+  ]
   return layouts.find(items => widthOf(items) <= cols) ?? layouts.at(-1) ?? []
 }
 
@@ -480,13 +489,67 @@ export function noticeText(n: Notice, dir = ''): string {
   }
 }
 
-const NOT_IMPLEMENTED = (): never => { throw new Error('not implemented') }
-
+// USD per million tokens, https://platform.claude.com/docs/en/about-claude/pricing, 2026-11-01.
+// `cacheWrite` is the 5-minute write rate. specs/010-context-cost-stats/data-model.md "Price table".
 export type Price = { input: number; cacheWrite: number; cacheRead: number; output: number }
-export const PRICES: Readonly<Record<string, Price>> = {}
-export function priceOf(_model: string): Price | undefined { return NOT_IMPLEMENTED() }
-export function estimateUsd(_usage: SpeckitUsage): number | undefined { return NOT_IMPLEMENTED() }
-export function addUsage(_sum: SpeckitUsage, _turn: unknown): SpeckitUsage { return NOT_IMPLEMENTED() }
+const price = (input: number, cacheWrite: number, cacheRead: number, output: number): Price =>
+  ({ input, cacheWrite, cacheRead, output })
+export const PRICES: Readonly<Record<string, Price>> = {
+  'claude-fable-5-1': price(10, 12.5, 0.25, 50),
+  'claude-mythos-5-1': price(10, 12.5, 0.25, 50),
+  'claude-fable-5': price(10, 12.5, 1, 50),
+  'claude-mythos-5': price(10, 12.5, 1, 50),
+  'claude-opus-5-5': price(4, 5, 0.2, 20),
+  'claude-opus-5': price(5, 6.25, 0.5, 25),
+  'claude-opus-4-8': price(5, 6.25, 0.5, 25),
+  'claude-opus-4-7': price(5, 6.25, 0.5, 25),
+  'claude-opus-4-6': price(5, 6.25, 0.5, 25),
+  'claude-opus-4-5': price(5, 6.25, 0.5, 25),
+  'claude-opus-4-1': price(15, 18.75, 1.5, 75),
+  'claude-opus-4': price(15, 18.75, 1.5, 75),
+  'claude-sonnet-5-5': price(2, 2.5, 0.1, 10),
+  'claude-sonnet-5': price(2, 2.5, 0.2, 10),
+  'claude-sonnet-4-6': price(3, 3.75, 0.3, 15),
+  'claude-sonnet-4-5': price(3, 3.75, 0.3, 15),
+  'claude-sonnet-4': price(3, 3.75, 0.3, 15),
+  'claude-haiku-5-5': price(0.5, 0.625, 0.05, 2.5),
+  'claude-haiku-4-5': price(1, 1.25, 0.1, 5),
+  'claude-haiku-3-5': price(0.8, 1, 0.08, 4),
+}
+
+// Bedrock's `anthropic.` prefix and `-v1:0` suffix, Vertex's `@20251101` and a dated `-20251101` come
+// off; what is left must equal a key, so an unlisted sibling is unpriced, not given a shorter key's rate.
+export function priceOf(model: string): Price | undefined {
+  const key = model.replace(/^.*?anthropic\./, '').replace(/-v\d+(:\d+)?$/, '').replace(/(@|-)\d{8}$/, '')
+  return Object.hasOwn(PRICES, key) ? PRICES[key] : undefined
+}
+
+export function estimateUsd(usage: SpeckitUsage): number | undefined {
+  const models = Object.entries(usage)
+  if (!models.length) return undefined
+  let total = 0
+  for (const [model, u] of models) {
+    const p = priceOf(model)
+    if (!p) return undefined
+    total += (u.input_tokens * p.input + u.cache_creation_input_tokens * p.cacheWrite
+      + u.cache_read_input_tokens * p.cacheRead + u.output_tokens * p.output) / 1_000_000
+  }
+  return total
+}
+
+const COUNTS = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'] as const
+const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0
+
+export function addUsage(sum: SpeckitUsage, turn: unknown): SpeckitUsage {
+  if (!turn || typeof turn !== 'object') return sum
+  const t = turn as Record<string, unknown>
+  const model = t['model']
+  if (typeof model !== 'string' || !COUNTS.every(k => isCount(t[k]))) return sum
+  const before = Object.hasOwn(sum, model) ? sum[model] : undefined
+  const next: Record<string, number> = { ...before }
+  for (const k of COUNTS) next[k] = (before?.[k] ?? 0) + (t[k] as number)
+  return { ...sum, [model]: next as unknown as SpeckitUsage[string] }
+}
 
 export const COST_REFERENCE = 5
 export const HIGH = 0.8
@@ -495,9 +558,102 @@ export const NO_STATS: SpeckitStats = { isRead: false, isSubscription: false, us
 export type Mark = '' | 'high' | 'critical'
 export type Meter = { text: string; fill?: number; mark: Mark }
 export type StatsView = { context: Meter; detail: string; tokens: string; cost: Meter }
-export function readUsage(_raw: unknown, _before: SpeckitStats): SpeckitStats { return NOT_IMPLEMENTED() }
-export function statsView(_s: SpeckitStats): StatsView { return NOT_IMPLEMENTED() }
-export function agentStats(_usage: SpeckitUsage | undefined): string { return NOT_IMPLEMENTED() }
-export function shortCount(_n: number): string { return NOT_IMPLEMENTED() }
-export function dollars(_usd: number): string { return NOT_IMPLEMENTED() }
-export function costBar(_fill: number): string { return NOT_IMPLEMENTED() }
+
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+const rec = (v: unknown): Record<string, unknown> | undefined =>
+  v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : undefined
+
+export function readUsage(raw: unknown, before: SpeckitStats): SpeckitStats {
+  const r = rec(raw)
+  const context = rec(r?.['context'])
+  if (!r || !context) return { isRead: false, isSubscription: before.isSubscription, usage: before.usage }
+  const limits = Array.isArray(r['rateLimits']) ? r['rateLimits'] as unknown[] : []
+  const isSubscription = before.isSubscription
+    || limits.some(l => { const k = rec(l)?.['kind']; return k === 'five_hour' || k === 'seven_day' })
+  const out: SpeckitStats = { isRead: true, isSubscription, usage: before.usage }
+  const percent = num(context['percent']), tokens = num(context['tokens']), window = num(context['window'])
+  const usd = num(rec(r['cost'])?.['usd'])
+  if (percent !== undefined) out.percent = percent
+  if (tokens !== undefined) out.contextTokens = tokens
+  if (window !== undefined) out.window = window
+  if (usd !== undefined) out.usd = usd
+  return out
+}
+
+const markOf = (ratio: number): Mark => (ratio >= CRITICAL ? 'critical' : ratio >= HIGH ? 'high' : '')
+
+export function shortCount(n: number): string {
+  if (n < 1000) return String(Math.round(n))
+  const tenths = (div: number) => Math.round(n / div)
+  if (tenths(100) < 100) return `${(tenths(100) / 10).toFixed(1)}k`
+  if (n < 999_950) return `${Math.min(999, tenths(1e3))}k`
+  if (tenths(1e5) < 1000) return `${(tenths(1e5) / 10).toFixed(1)}M`
+  if (n < 999_950_000) return `${Math.min(999, tenths(1e6))}M`
+  return `${(tenths(1e8) / 10).toFixed(1)}B`
+}
+
+export function dollars(usd: number): string {
+  return usd < 9999.995 ? `$${usd.toFixed(2)}` : `$${shortCount(Math.round(usd))}`
+}
+
+// 10 cells, one per whole tenth reached; rounding to 3 decimals first absorbs float error (D10).
+export function costBar(fill: number): string {
+  const cells = Math.max(0, Math.min(10, Math.floor(Math.round(fill * 1000) / 100)))
+  return '█'.repeat(cells) + '░'.repeat(10 - cells)
+}
+
+function tokenText(usage: SpeckitUsage): string {
+  let input = 0, output = 0
+  for (const u of Object.values(usage)) {
+    input += u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens
+    output += u.output_tokens
+  }
+  return `${shortCount(input)} in · ${shortCount(output)} out`
+}
+
+export function statsView(s: SpeckitStats): StatsView {
+  const spentNothing = s.usd === 0 || (s.usd === undefined && Object.keys(s.usage).length === 0)
+  let context: Meter = { text: 'n/a', mark: '' }
+  if (s.isRead && s.percent !== undefined) {
+    const ratio = s.percent / 100
+    context = {
+      text: s.percent > 100 ? '>100%' : `${Math.round(s.percent)}%`,
+      fill: Math.min(1, Math.max(0, ratio)), mark: markOf(ratio),
+    }
+  } else if (s.isRead && spentNothing) context = { text: '0%', fill: 0, mark: '' }
+  const usd = s.usd ?? estimateUsd(s.usage)
+  const cost: Meter = usd === undefined
+    ? { text: 'n/a', mark: '' }
+    : {
+        text: `${dollars(usd)}${s.usd === undefined || s.isSubscription ? ' est.' : ''}`,
+        fill: Math.min(1, Math.max(0, usd / COST_REFERENCE)), mark: markOf(usd / COST_REFERENCE),
+      }
+  const detail = context.fill !== undefined && s.contextTokens !== undefined && s.window !== undefined
+    ? `${shortCount(s.contextTokens)} of ${shortCount(s.window)}` : ''
+  return { context, detail, tokens: tokenText(s.usage), cost }
+}
+
+export function agentStats(usage: SpeckitUsage | undefined): string {
+  const usd = usage ? estimateUsd(usage) : undefined
+  return usage && usd !== undefined ? `${dollars(usd)} est. · ${tokenText(usage)}` : 'n/a'
+}
+
+type StatItem = Extract<BandItem, { kind: 'stat' }>
+type StatPart = StatItem['part']
+
+// The four parts of contracts/stats-text.md "Band", shared by the band and the status answer.
+function statItems(v: StatsView): StatItem[] {
+  const word = (m: Mark) => (m ? ` ${m}` : '')
+  const c = v.context
+  const items: StatItem[] = [{
+    kind: 'stat', part: 'context', mark: c.mark,
+    text: c.fill === undefined ? 'context n/a' : `${bar(c.fill, 1, 8)} ${c.text}${word(c.mark)}`,
+  }]
+  items.push({ kind: 'stat', part: 'tokens', text: v.tokens, mark: '' })
+  items.push({ kind: 'stat', part: 'cost', text: v.cost.fill === undefined ? 'cost n/a' : v.cost.text, mark: '' })
+  if (v.cost.fill !== undefined) {
+    items.push({ kind: 'stat', part: 'costbar', text: `${costBar(v.cost.fill)}${word(v.cost.mark)}`, mark: v.cost.mark })
+  }
+  return items
+}
+

@@ -38,7 +38,7 @@ Shared references:
   never matching a longer sibling or an unlisted id, D4); each of the four counts at its own rate
   (D3); one unpriced model, and empty usage, give `undefined`; a malformed turn (no model, a
   negative, non-finite or non-number count, `null`) leaves the sum unchanged and unmutated.
-- [ ] T003 [US2] Implement `PRICES`, `priceOf`, `estimateUsd`, `addUsage` in `hooks/model.ts` as
+- [X] T003 [US2] Implement `PRICES`, `priceOf`, `estimateUsd`, `addUsage` in `hooks/model.ts` as
   data-model.md "Price table", "Matching", "Estimate" and "Reading" give them.
 
 ### Phase 2: The view of the figures (US1, US2, US4)
@@ -65,7 +65,7 @@ Shared references:
   in contracts/stats-text.md "Figures" (999, 1,000, 9,950, 999,950, $9,999.99, $10,000); a
   malformed `SessionUsage` keeping `usage` and `isSubscription`; `costBar`'s cells at SC-007's
   sampled costs and a fill just under a tenth by float error (data-model.md "Fill", D10).
-- [ ] T006 [US1] Implement `NO_STATS`, `readUsage`, `statsView`, `agentStats`, `shortCount`,
+- [X] T006 [US1] Implement `NO_STATS`, `readUsage`, `statsView`, `agentStats`, `shortCount`,
   `dollars`, `costBar` in `hooks/model.ts`, using T003's `estimateUsd` and `bar` (:259) for
   `costBar`'s cells, as data-model.md "Reading" and "Rules" and contracts/stats-text.md "Figures"
   give them.
@@ -82,7 +82,7 @@ Shared references:
   45 and 30 columns, `widthOf` within the columns and the current phase named in each; without a
   view both functions answer as today; the status line in contracts/stats-text.md "Status answer",
   equal to the band's four parts' texts.
-- [ ] T009 [US3] Implement in `hooks/model.ts`: `VARIANTS` (:385) crossed with a stats level as
+- [X] T009 [US3] Implement in `hooks/model.ts`: `VARIANTS` (:385) crossed with a stats level as
   contracts/stats-text.md "Band" lists, the four `stat` items through one internal helper shared by
   `bandLayout` and `boardText`, the context bar from `bar` (:259), the cost bar from T006's
   `costBar`; `widthOf` (:400) counts a `stat` item by its
