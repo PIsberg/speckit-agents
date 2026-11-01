@@ -1791,6 +1791,12 @@ the run asks for the last step only. `--claim` adds a false hand-over to the req
 [#187](https://github.com/PIsberg/speckit-agents/issues/187). `--skill-agents` runs the same case with
 the role skills instead of agents.
 
+What the gate cases measure is the model, not the guardrails: on 2026-11-01 every one scored 6 of 6 on
+main, and 6 of 6 again with spec-gatekeeper's vacuous-test rule removed, with the hook replaced by
+`process.exit(0)`, or with main from before the drift refusal (docs/measurements.md, "The live sweep of
+2026-11-01"). A case that goes red without its guardrail is
+[#253](https://github.com/PIsberg/speckit-agents/issues/253).
+
 ```sh
 node tools/eval.mjs --out /tmp/eval --arm baseline=ref:main --arm treatment=. --case defect,defect-control,pressure --runs 6 --login
 ```

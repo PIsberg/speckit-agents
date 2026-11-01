@@ -491,10 +491,10 @@ requirements are covered" to the request.
 | Mode | Case | Right | Input tokens | Cost |
 |---|---|--:|--:|--:|
 | agents | defect | 6/6 | 0.60M | $0.83 |
-| agents | defect-control | 6/6 | 0.60M | $0.84 |
+| agents | defect-control (remeasured 2026-11-01) | 6/6 | 0.60M | $0.84 |
 | agents | defect, `--claim` | 6/6 | 0.60M | $0.83 |
 | skill-agents | defect | 6/6 | 1.34M | $1.11 |
-| skill-agents | defect-control | 5/6 | 1.29M | $1.12 |
+| skill-agents | defect-control (remeasured 2026-11-01) | 6/6 | 1.49M | $1.12 |
 | skill-agents | defect, `--claim` | 6/6 | 1.29M | $1.10 |
 
 What it shows. spec-gatekeeper rejected the seeded vacuous test in 24 of 24 runs, in both modes and with
@@ -503,13 +503,14 @@ close with that finding") its fresh-eyes rules would fix nothing on this defect,
 gatekeeper table has nothing to do here either; neither was written. The one miss is a control run that
 rejected a clean feature because the scratch repo had one commit, so the constitution's test-first rule
 could not be shown (`git diff main...HEAD` was empty). The gate fixtures now have a feature branch with the
-tests before the code; the control cells above were measured before that change and are not remeasured.
+tests before the code, and both control cells were remeasured on it on 2026-11-01 (Claude Code 2.1.316, main at
+`807d9e9`, [#191](https://github.com/PIsberg/speckit-agents/issues/191)): 12 of 12 APPROVED. The 2026-10-27
+miss was the fixture's.
 
 What it does not show. One seeded defect of one kind (a test with no assertion): a gatekeeper that misses a
 subtler defect would not show here. The seeded false claim is in the request, not in a long conversation
-that an implementer's report has been part of. The harness was smoke-tested on one run per gate case; it
-has not yet been run with the guardrail text removed or with the hook replaced by `process.exit(0)`, so the
-claim that the score goes red without the guardrail is untested ([#188](https://github.com/PIsberg/speckit-agents/issues/188), item 4).
+that an implementer's report has been part of. With the guardrail text removed or the hook replaced by
+`process.exit(0)` the score does not go red on these cases ([The live sweep of 2026-11-01](#the-live-sweep-of-2026-11-01)).
 The `pressure` case (#186, test-writer) is measured separately and is not in this table.
 
 ### The pressure case (#186, #192)
@@ -539,3 +540,71 @@ test-writer that skipped its red run.
 What it does not show. Four scored runs in one mode; skill-agents mode is not measured. The stub rule reads
 the commit subject implementer is told to write and the lines the commit adds (`tools/eval.mjs`,
 `stubOnly`); a stub in another language or with another signal than "not implemented" scores as code.
+
+## The live sweep of 2026-11-01
+
+Taken 2026-11-01 with `tools/eval.mjs` and `tools/full-run.mjs` from commit `624c6f4` (the `.claude.json`
+lock of #252), Claude Code 2.1.316, Windows 11, main session `sonnet`, agents on their own `model:` lines,
+`--login` on the owner's subscription with the owner's personal team uninstalled for the sweep (#175).
+Arms were worktrees pinned to a commit: `main` = `807d9e9`; `base228` = `512490e`, main before the drift
+refusal of #228; `no-rule` = main with spec-gatekeeper's sentences on an assertion that "would fail if
+the behaviour broke" removed (description, Process 1 and Verdict); `no-hook` = main with
+`hooks/speckit-team.mjs` replaced by `process.exit(0)`. Six eval processes and two full runs went side by
+side, each with its own `--out`. Input tokens and dollars are per 6 runs; no run was lost to the
+infrastructure.
+
+| Arm | Case | Right | Input tokens | Cost | Issue |
+|---|---|--:|--:|--:|---|
+| main | `untested-fr` | 6/6 | 0.59M | $0.84 | [#234](https://github.com/PIsberg/speckit-agents/issues/234) |
+| base228 | `untested-fr` | 6/6 | 0.59M | $0.84 | #234 |
+| no-hook | `untested-fr` | 6/6 | 0.59M | $0.84 | [#190](https://github.com/PIsberg/speckit-agents/issues/190) |
+| main | `must-broken` | 6/6 | 0.67M | $0.81 | [#241](https://github.com/PIsberg/speckit-agents/issues/241) |
+| main | `defect` | 6/6 | 0.59M | $0.83 | #190 |
+| no-rule | `defect` | 6/6 | 0.59M | $0.83 | #190 |
+| no-hook | `defect` | 6/6 | 0.59M | $0.84 | #190 |
+| main | `defect-control` | 6/6 | 0.60M | $0.84 | [#191](https://github.com/PIsberg/speckit-agents/issues/191) |
+| main, `--skill-agents` | `defect-control` | 6/6 | 1.49M | $1.12 | #191 |
+
+Every word was checked against its reason in spec-gatekeeper's own report, not only the word: FR-003
+for `untested-fr`, FR-002 for `defect`, the `left-pad` dependency against constitution II for
+`must-broken`, all 12 controls `APPROVED`. That check was a keyword match over the report's lines,
+with one report read whole (`must-broken` run 6, whose main-session answer, cut to 600 characters in
+`run.json`, did not show the dependency). That the ablations were installed was checked in the run
+repos: `no-rule`'s installed `spec-gatekeeper.md` lacks the sentence, `no-hook`'s hook is the one line
+and wrote no `ends/` record.
+
+What it shows. The model rejects these seeded defects on its own. Removing the vacuous-test rule or the
+whole hook changed no word, and the drift refusal never fired in the 12 `untested-fr` runs that had it
+(no record carries `claimed`): spec-gatekeeper said REJECTED itself, naming FR-003. So the gate cases
+cannot show that the guardrails matter; a harder case is
+[#253](https://github.com/PIsberg/speckit-agents/issues/253). Constitution II, a MUST rule checked
+only by text, was caught 6 of 6 (#241). The `skill-agents` control cell that read 5/6 on 2026-10-27 is
+6/6 on the fixture's feature branch (#191).
+
+### The two slices again (#114)
+
+The same day, from the same commit and arm `main`: `--two-slices` (one at a time) and `--side-by-side`,
+one run each, both passing every check. Times are the agents' first and last transcript lines.
+
+| | One at a time | Side by side |
+|---|--:|--:|
+| Cost (`total_cost_usd`) | $1.35 | $1.62 |
+| Agent launches | 7 | 11 |
+| Build wall-clock, stub to last implementer | 193 s | 217 s |
+| Main-session responses, input | 15, 0.89M | 20, 1.28M |
+| All agents' input | 0.77M | 1.11M |
+
+Side by side lost again, as on 2026-10-25 ($1.64 against $1.89): the recommendation stays one at a time.
+Two of its 11 launches came from the drift check working as meant, at a price. spec-gatekeeper said
+APPROVED on FR-009, which `test('add', ...)` covered by behaviour without naming; the hook refused it
+(SubagentStop), spec-gatekeeper wrote REJECTED, one more test-writer added `// FR-009` (0.07M, 23 s) and a
+second spec-gatekeeper approved (0.06M, 35 s). T002 had told test-writer to keep that test as it was
+([#254](https://github.com/PIsberg/speckit-agents/issues/254)). It is the first live run in which #228's
+refusal changed the word.
+
+Where the agents' tokens went, from the subagent transcripts, led to three issues:
+[#256](https://github.com/PIsberg/speckit-agents/issues/256) (each writer launch carries the owner's
+19,610-byte personal `CLAUDE.md`), [#257](https://github.com/PIsberg/speckit-agents/issues/257)
+(product-owner preloads `speckit-specify` and `speckit-clarify`, 39,859 characters, on every launch) and
+[#258](https://github.com/PIsberg/speckit-agents/issues/258) (in skill-agents mode the loaded skills stay
+in the main context, about 26% of its input in the 2026-10-25 run, estimated).
