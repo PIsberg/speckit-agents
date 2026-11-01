@@ -23,6 +23,8 @@ export const CASES = {
   defect: { gate: true, right: 'REJECTED', what: 'one requirement has a test that passes without the code' },
   'defect-control': { gate: true, right: 'APPROVED', what: 'the same feature with a real test' },
   // #234: a ticked task cites FR-003, which no test names. The drift check refuses an APPROVED, so the right word is REJECTED.
+  // #241: the implementation adds a runtime dependency, which constitution II forbids; every test still passes.
+  'must-broken': { gate: true, right: 'REJECTED', what: 'the diff adds a runtime dependency the constitution forbids (II), with every test green (#241)' },
   'untested-fr': { gate: true, right: 'REJECTED', what: 'a ticked task cites a requirement no test names (the drift check, #228, refuses APPROVED)' },
 };
 

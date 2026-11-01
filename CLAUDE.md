@@ -42,14 +42,14 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key);
   `--login` runs it on your own Claude Code login instead of a key, `--case` picks a scored case
-  (`pressure`, `defect`, `defect-control`, `untested-fr`; `tools/eval.mjs` repeats them per arm and counts right answers, #188), `--side-by-side` builds two `[P]`
+  (`pressure`, `defect`, `defect-control`, `untested-fr`, `must-broken`; `tools/eval.mjs` repeats them per arm and counts right answers, #188), `--side-by-side` builds two `[P]`
   slices side by side (#114), `--two-slices` the same request one at a time.
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").
 - `.claude/settings.json`: `CLAUDE_CODE_FORK_SUBAGENT=0`, so the team's agents run in the foreground
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 541 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 542 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one.

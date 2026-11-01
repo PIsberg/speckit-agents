@@ -3,7 +3,7 @@
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
 //   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
-//                         [--case clean|pressure|defect|defect-control|untested-fr] [--claim] [--team-root <checkout>]
+//                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken] [--claim] [--team-root <checkout>]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -79,7 +79,7 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
     // constitution's rules against it; with one commit it rejected a clean feature, 1 run in 12, 2026-10-27).
     // The defect case swaps in the test that passes without the code.
     git(repo, 'checkout', '-q', '-b', '001-sum');
-    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && !f.split(path.sep).includes('untested') && path.basename(f) !== 'math.js' });
+    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && !f.split(path.sep).includes('untested') && !f.split(path.sep).includes('must-broken') && path.basename(f) !== 'math.js' });
     // #234: the untested-fr case swaps in a spec and tasks that cite FR-003, which no test names.
     if (name === 'untested-fr') fs.cpSync(path.join(FIXTURE, 'gate', 'untested', 'specs'), path.join(repo, 'specs'), { recursive: true });
     if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
@@ -87,6 +87,8 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'spec, plan, tasks and failing tests for sum()');
     fs.copyFileSync(path.join(FIXTURE, 'gate', 'src', 'math.js'), path.join(repo, 'src', 'math.js'));
+    // #241: must-broken adds a runtime dependency to package.json, which constitution II forbids; the tests stay green.
+    if (name === 'must-broken') fs.copyFileSync(path.join(FIXTURE, 'gate', 'must-broken', 'package.json'), path.join(repo, 'package.json'));
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'implement sum()');
   }
