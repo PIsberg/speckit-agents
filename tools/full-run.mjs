@@ -256,9 +256,11 @@ function withConfLock(confFile, fn) {
   const lock = `${confFile}.lock`;
   for (const until = Date.now() + 30_000; ;) {
     try { fs.mkdirSync(lock); break; } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-      try { if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch { continue; }
-      if (Date.now() > until) throw new Error(`${lock} held for 30 s; remove it if no run is going`, { cause: e });
+      // #262: on Windows a lock folder another process is removing refuses mkdir with EPERM (or EACCES),
+      // not EEXIST: it is still held. The limit comes first, so a folder that stays unwritable ends too.
+      if (!['EEXIST', 'EPERM', 'EACCES'].includes(e.code)) throw e;
+      if (Date.now() > until) throw new Error(`${lock} could not be taken for 30 s (${e.code}); remove it if no run is going`, { cause: e });
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch { /* gone or going: try again */ }
       sleep(20 + Math.random() * 30);
     }
   }

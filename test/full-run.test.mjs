@@ -186,6 +186,29 @@ test('full run: runs started together each keep their trust entry, as tools/eval
   assert.equal(fs.existsSync(`${conf}.lock`), false, 'the lock is released');
 });
 
+// #262: on Windows a mkdir of the lock folder while another process is removing it fails with EPERM, not
+// EEXIST (seen: 4 of 384 children in 48 sets of 8 started together; CI windows-latest on main after #252).
+// That is the lock being held, so the run waits for it instead of stopping.
+test('full run: an EPERM or EACCES taking the lock is waited out like a held lock (#262)', () => {
+  for (const code of ['EPERM', 'EACCES']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+    const conf = path.join(dir, '.claude.json');
+    fs.writeFileSync(conf, JSON.stringify({ projects: {} }));
+    const real = fs.mkdirSync;
+    let refused = 0;
+    fs.mkdirSync = (p, ...rest) => {
+      if (p === `${conf}.lock` && refused < 2) { refused++; throw Object.assign(new Error(`${code}: operation not permitted, mkdir '${p}'`), { code }); }
+      return real(p, ...rest);
+    };
+    try {
+      trustFolder(conf, path.join(dir, 'repo'));
+    } finally { fs.mkdirSync = real; }
+    assert.equal(refused, 2, code);
+    assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(conf, 'utf8')).projects), [path.join(dir, 'repo').split(path.sep).join('/')], code);
+    assert.equal(fs.existsSync(`${conf}.lock`), false, `${code}: the lock is released`);
+  }
+});
+
 test('full run: a .claude.json that does not parse is never overwritten, so a half-written file cannot cost the user their config', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
   const conf = path.join(dir, '.claude.json');
