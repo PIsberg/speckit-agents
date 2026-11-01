@@ -3,9 +3,10 @@ import { expect, test } from 'claude-code/testing'
 import {
   TEAM, ancestors, bandLayout, boardText, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
   noticeText, statusLine, taskSections, teamRole, toneOf,
+  NO_STATS, addUsage, agentStats, costBar, dollars, estimateUsd, priceOf, readUsage, shortCount, statsView,
 } from '../hooks/model'
-import type { BandItem, BoardInputs } from '../hooks/model'
-import type { SpeckitBoard } from '../types'
+import type { BandItem, BoardInputs, Mark } from '../hooks/model'
+import type { SpeckitBoard, SpeckitStats, SpeckitUsage } from '../types'
 
 test('fingerprint matches speckit-team.mjs byte for byte', async () => {
   // 2cb0d7cc9eddc2be is what the hook's own createHash code gives for these inputs:
@@ -429,3 +430,328 @@ for (const st of FILES) {
     })
   }
 }
+
+// ---- 010-context-cost-stats ----
+
+const use = (input: number, output = 0, write = 0, read = 0) =>
+  ({ input_tokens: input, output_tokens: output, cache_creation_input_tokens: write, cache_read_input_tokens: read })
+const usageOf = (model: string, u: ReturnType<typeof use>) => ({ [model]: u }) as unknown as SpeckitUsage
+const M = 1_000_000
+
+// FR-004, D4: dated, Bedrock and Vertex ids take the listed key; an unlisted sibling is unpriced.
+test('010 priceOf matches a listed key exactly after dropping the id decorations (FR-004, D4)', () => {
+  const opus45 = { input: 5, cacheWrite: 6.25, cacheRead: 0.5, output: 25 }
+  expect(priceOf('claude-opus-4-5')).toEqual(opus45)
+  expect(priceOf('claude-opus-4-5-20251101')).toEqual(opus45)
+  expect(priceOf('anthropic.claude-opus-4-5-20251101-v1:0')).toEqual(opus45)
+  expect(priceOf('anthropic.claude-opus-4-5-v2')).toEqual(opus45)
+  expect(priceOf('claude-opus-4-5@20251101')).toEqual(opus45)
+  expect(priceOf('claude-opus-4')).toEqual({ input: 15, cacheWrite: 18.75, cacheRead: 1.5, output: 75 })
+  expect(priceOf('claude-opus-4-9')).toBeUndefined()
+  expect(priceOf('claude-opus-4-5-fast')).toBeUndefined()
+  expect(priceOf('claude-opus')).toBeUndefined()
+  expect(priceOf('gpt-5')).toBeUndefined()
+  expect(priceOf('')).toBeUndefined()
+  expect(priceOf('claude-sonnet-5-5')).toEqual({ input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10 })
+  expect(priceOf('claude-haiku-3-5')).toEqual({ input: 0.8, cacheWrite: 1, cacheRead: 0.08, output: 4 })
+})
+
+test('010 estimateUsd prices each of the four counts at its own rate (FR-004, D3)', () => {
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(M))) ?? NaN) - 5)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, M))) ?? NaN) - 25)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, 0, M))) ?? NaN) - 6.25)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, 0, 0, M))) ?? NaN) - 0.5)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5-20251101', use(M, M, M, M))) ?? NaN) - 36.75)).toBeLessThan(0.005)
+  const two = { ...usageOf('claude-opus-4-5', use(M)), ...usageOf('claude-haiku-4-5', use(0, M)) }
+  expect(Math.abs((estimateUsd(two) ?? NaN) - 10)).toBeLessThan(0.005)
+})
+
+test('010 estimateUsd gives undefined for empty usage and for any unpriced model (edge case, SC-004)', () => {
+  expect(estimateUsd({})).toBeUndefined()
+  expect(estimateUsd(usageOf('claude-mystery-9', use(M)))).toBeUndefined()
+  const mixed = { ...usageOf('claude-opus-4-5', use(M)), ...usageOf('claude-mystery-9', use(1)) }
+  expect(estimateUsd(mixed)).toBeUndefined()
+})
+
+test('010 addUsage sums a turn per model and never mutates or accepts a malformed turn (SC-004)', () => {
+  const first = addUsage({}, { model: 'm1', ...use(1, 2, 3, 4) })
+  expect(first['m1']).toMatchObject(use(1, 2, 3, 4))
+  const sum = addUsage(first, { model: 'm1', ...use(10, 20, 30, 40) })
+  expect(sum['m1']).toMatchObject(use(11, 22, 33, 44))
+  expect(first['m1']).toMatchObject(use(1, 2, 3, 4))
+  expect(addUsage(sum, { model: 'm2', ...use(5) })['m2']).toMatchObject(use(5, 0, 0, 0))
+  const frozen = Object.freeze({ ...first })
+  for (const bad of [
+    null, undefined, 'x', 7, [], {}, { ...use(1) }, { model: 3, ...use(1) },
+    { model: 'm', ...use(-1) }, { model: 'm', ...use(Number.NaN) }, { model: 'm', ...use(Infinity) },
+    { model: 'm', ...use(1), output_tokens: '2' }, { model: 'm', input_tokens: 1 },
+  ]) {
+    expect(addUsage(frozen, bad)).toEqual(frozen)
+  }
+  expect(first['m1']).toMatchObject(use(1, 2, 3, 4))
+})
+
+const READ = {
+  context: { percent: 50, tokens: 100_000, window: 200_000 }, cost: { usd: 2.5 }, rateLimits: [] as { kind: string }[],
+}
+const apiKey = (over: Partial<SpeckitStats> = {}): SpeckitStats =>
+  ({ isRead: true, percent: 50, contextTokens: 100_000, window: 200_000, usd: 2.5, isSubscription: false, usage: {}, ...over })
+
+test('010 readUsage reads a SessionUsage and keeps usage and the subscription flag (US1, FR-004, D1)', () => {
+  const before: SpeckitStats = { ...NO_STATS, usage: usageOf('claude-opus-4-5', use(1)) }
+  expect(readUsage(READ, before)).toEqual({
+    isRead: true, percent: 50, contextTokens: 100_000, window: 200_000, usd: 2.5, isSubscription: false, usage: before.usage,
+  })
+  expect(readUsage({ ...READ, rateLimits: [{ kind: 'five_hour' }] }, before).isSubscription).toBe(true)
+  expect(readUsage({ ...READ, rateLimits: [{ kind: 'seven_day' }] }, before).isSubscription).toBe(true)
+  // A gateway's spend_limit alone is not a subscription (D1).
+  expect(readUsage({ ...READ, rateLimits: [{ kind: 'spend_limit' }] }, before).isSubscription).toBe(false)
+  // Once seen, kept.
+  expect(readUsage(READ, { ...before, isSubscription: true }).isSubscription).toBe(true)
+  const noCost = readUsage({ context: READ.context }, before)
+  expect(noCost.isRead).toBe(true)
+  expect(noCost.usd).toBeUndefined()
+})
+
+test('010 readUsage on anything unusable clears the figures but keeps usage and isSubscription (SC-004)', () => {
+  const before = apiKey({ isSubscription: true, usage: usageOf('claude-opus-4-5', use(7)) })
+  for (const raw of [undefined, null, new Error('rejected'), 'x', 5, []]) {
+    const s = readUsage(raw, before)
+    expect(s.isRead).toBe(false)
+    expect([s.percent, s.contextTokens, s.window, s.usd]).toEqual([undefined, undefined, undefined, undefined])
+    expect(s.usage).toEqual(before.usage)
+    expect(s.isSubscription).toBe(true)
+  }
+  // A field of the wrong type reads as absent.
+  const odd = readUsage({ context: { percent: '50', tokens: 1, window: 2 }, cost: { usd: 1 } }, NO_STATS)
+  expect(odd.percent).toBeUndefined()
+  expect(odd.usd).toBe(1)
+})
+
+test('010 shortCount and dollars keep to their bounds (contracts/stats-text.md "Figures")', () => {
+  const counts: [number, string][] = [
+    [0, '0'], [999, '999'], [1_000, '1.0k'], [9_900, '9.9k'], [9_950, '10k'], [45_000, '45k'], [999_000, '999k'],
+    [999_949, '999k'], [999_950, '1.0M'], [1_200_000, '1.2M'], [99_900_000, '99.9M'], [99_950_000, '100M'],
+    [120_000_000, '120M'], [999_950_000, '1.0B'], [1_200_000_000, '1.2B'],
+  ]
+  for (const [n, text] of counts) expect(shortCount(n)).toBe(text)
+  const money: [number, string][] = [
+    [0, '$0.00'], [0.78, '$0.78'], [2.5, '$2.50'], [9, '$9.00'], [9_999.99, '$9999.99'], [10_000, '$10k'], [1_200_000, '$1.2M'],
+  ]
+  for (const [n, text] of money) expect(dollars(n)).toBe(text)
+})
+
+// SC-007, D10: one cell per whole tenth, fill rounded to 3 decimals then floored.
+test('010 costBar draws 10 cells, one per whole tenth reached (SC-007, D10)', () => {
+  expect(costBar(0)).toBe('░░░░░░░░░░')
+  expect(costBar(2.5 / 5)).toBe('█████░░░░░')
+  expect(costBar(4 / 5)).toBe('████████░░')
+  expect(costBar(4.75 / 5)).toBe('█████████░')
+  expect(costBar(1)).toBe('██████████')
+  expect(costBar(0.1 - 1e-12)).toBe('█░░░░░░░░░')
+  expect(costBar(0.3 - 1e-15)).toBe('███░░░░░░░')
+  expect(costBar(0.0994)).toBe('░░░░░░░░░░')
+  expect(costBar(0.999)).toBe('█████████░')
+})
+
+test('010 statsView of a known session: context, tokens and an API-key cost as reported (US1-1, US2-1, US2-4, FR-001, FR-003)', () => {
+  const v = statsView(apiKey({ usd: 0.78, usage: usageOf('claude-sonnet-4-5', use(1_000_000, 45_000, 100_000, 100_000)) }))
+  expect(v.context.text).toBe('50%')
+  expect(Math.abs((v.context.fill ?? NaN) - 0.5)).toBeLessThan(0.005)
+  expect(v.context.mark).toBe('')
+  expect(v.detail).toBe('100k of 200k')
+  expect(v.tokens).toBe('1.2M in · 45k out')
+  expect(v.cost.text).toBe('$0.78')
+  expect(Math.abs((v.cost.fill ?? NaN) - 0.156)).toBeLessThan(5e-11)
+  expect(v.cost.mark).toBe('')
+})
+
+test('010 statsView marks context and cost on the uncapped ratio, with the fill capped (US1-2, US2-7, US2-8, FR-002, FR-013, SC-001, SC-007)', () => {
+  const ctx = (percent: number) => statsView(apiKey({ percent })).context
+  expect(ctx(79).mark).toBe('')
+  expect(ctx(80).mark).toBe('high')
+  expect(ctx(94).mark).toBe('high')
+  expect(ctx(95).mark).toBe('critical')
+  expect(ctx(100)).toMatchObject({ text: '100%', fill: 1, mark: 'critical' })
+  expect(ctx(130)).toMatchObject({ text: '>100%', fill: 1, mark: 'critical' })
+  for (const [percent, expected] of [[0, 0], [50, 0.5], [80, 0.8], [95, 0.95], [100, 1]] as const) {
+    expect(Math.abs((ctx(percent).fill ?? -1) - expected)).toBeLessThanOrEqual(0.01)
+  }
+  const cost = (usd: number) => statsView(apiKey({ usd })).cost
+  const sampled: [number, number, string, Mark][] = [
+    [0, 0, '$0.00', ''], [2.5, 0.5, '$2.50', ''], [4, 0.8, '$4.00', 'high'], [4.75, 0.95, '$4.75', 'critical'],
+    [5, 1, '$5.00', 'critical'], [9, 1, '$9.00', 'critical'],
+  ]
+  for (const [usd, fill, text, mark] of sampled) {
+    expect(cost(usd).text).toBe(text)
+    expect(cost(usd).mark).toBe(mark)
+    expect(Math.abs((cost(usd).fill ?? NaN) - fill)).toBeLessThan(5e-11)
+  }
+})
+
+test('010 statsView: a fresh session reads 0%, an unknown context reads n/a (US1-3, US1-4)', () => {
+  expect(statsView(apiKey({ percent: undefined, contextTokens: undefined, window: undefined, usd: 0 })).context)
+    .toMatchObject({ text: '0%', fill: 0, mark: '' })
+  expect(statsView({ isRead: true, isSubscription: false, usage: {} }).context).toMatchObject({ text: '0%', fill: 0 })
+  const spent = statsView(apiKey({ percent: undefined, contextTokens: undefined, window: undefined, usd: 1.2 }))
+  expect(spent.context.text).toBe('n/a')
+  expect(spent.context.fill).toBeUndefined()
+  expect(spent.detail).toBe('')
+  const unread = statsView(NO_STATS)
+  expect(unread.context).toMatchObject({ text: 'n/a', mark: '' })
+  expect(unread.context.fill).toBeUndefined()
+  expect(unread.cost).toMatchObject({ text: 'n/a', mark: '' })
+  expect(unread.cost.fill).toBeUndefined()
+  expect(unread.tokens).toBe('0 in · 0 out')
+  const spentByUsage = statsView({ isRead: true, isSubscription: false, usage: usageOf('claude-opus-4-5', use(10)) })
+  expect(spentByUsage.context.text).toBe('n/a')
+})
+
+test('010 statsView cost: est. on a subscription, an estimate when none is reported, n/a when unpriced (US2-3, US2-4, US2-5, US2-9, FR-004, SC-006)', () => {
+  const sub = statsView(apiKey({ usd: 0.78, isSubscription: true }))
+  expect(sub.cost.text).toBe('$0.78 est.')
+  expect(statsView(apiKey({ usd: 0, isSubscription: true })).cost.text).toBe('$0.00 est.')
+  // Reported wins over any estimate.
+  expect(statsView(apiKey({ usd: 0.5, usage: usageOf('claude-sonnet-4-5', use(M)) })).cost.text).toBe('$0.50')
+  // No reported cost: the tokens at list price, marked.
+  const est = statsView({ isRead: false, isSubscription: false, usage: usageOf('claude-sonnet-4-5', use(100_000)) })
+  expect(est.cost.text).toBe('$0.30 est.')
+  expect(Math.abs((est.cost.fill ?? NaN) - 0.06)).toBeLessThan(0.005)
+  const estNoCost = statsView(apiKey({ usd: undefined, usage: usageOf('claude-sonnet-4-5', use(100_000)) }))
+  expect(estNoCost.cost.text).toBe('$0.30 est.')
+  // Unknown price: n/a, never $0.00.
+  const none = statsView(apiKey({ usd: undefined, usage: usageOf('claude-mystery-9', use(M)) }))
+  expect(none.cost.text).toBe('n/a')
+  expect(none.cost.fill).toBeUndefined()
+  // An estimate fills and marks its bar like a reported cost (US2-9, SC-007).
+  const big = statsView({ isRead: false, isSubscription: false, usage: usageOf('claude-sonnet-4-5', use(0, 300_000)) })
+  expect(big.cost.text).toBe('$4.50 est.')
+  expect(big.cost.mark).toBe('high')
+})
+
+test('010 agentStats: tokens and an always-estimated cost, n/a without usage or a price (US4-2, US4-3, FR-007, D2)', () => {
+  expect(agentStats(usageOf('claude-sonnet-4-5', use(M)))).toBe('$3.00 est. · 1.0M in · 0 out')
+  expect(agentStats(usageOf('claude-sonnet-4-5', use(0, 40_000, 0, 1_200_000)))).toBe('$0.96 est. · 1.2M in · 40k out')
+  expect(agentStats(undefined)).toBe('n/a')
+  expect(agentStats({})).toBe('n/a')
+  expect(agentStats(usageOf('claude-mystery-9', use(M)))).toBe('n/a')
+})
+
+// ---- band and status text ----
+
+const full = () => statsView(apiKey({ isSubscription: true, usage: usageOf('claude-sonnet-4-5', use(1_200_000, 45_000)) }))
+const statParts = (items: readonly BandItem[]) =>
+  items.flatMap(x => (x.kind === 'stat' ? [x.part] : []))
+const statItem = (items: readonly BandItem[], part: string) =>
+  items.find((x): x is Extract<BandItem, { kind: 'stat' }> => x.kind === 'stat' && x.part === part)
+
+test('010 the band carries the four stat parts after the task count and RED, before the agent and buttons (US3-2, FR-001, FR-003, FR-013)', () => {
+  const b = board({ tasks: SLICE, red: 1 })
+  const items = bandLayout(b, [{ type: 'implementer', startedAt: 0 }], 0, 220, full())
+  expect(statParts(items)).toEqual(['context', 'tokens', 'cost', 'costbar'])
+  expect(statItem(items, 'context')).toMatchObject({ text: '████░░░░ 50%', mark: '' })
+  expect(statItem(items, 'tokens')?.text).toBe('1.2M in · 45k out')
+  expect(statItem(items, 'cost')?.text).toBe('$2.50 est.')
+  expect(statItem(items, 'costbar')).toMatchObject({ text: '█████░░░░░', mark: '' })
+  const at = (pred: (x: BandItem) => boolean) => items.findIndex(pred)
+  const first = at(x => x.kind === 'stat')
+  expect(items[first - 1]).toEqual({ kind: 'sep', text: '│' })
+  expect(at(x => x.kind === 'red')).toBeLessThan(first - 1)
+  expect(at(x => x.kind === 'count')).toBeLessThan(first - 1)
+  expect(at(x => x.kind === 'agent')).toBeGreaterThan(at(x => x.kind === 'stat' && x.part === 'costbar'))
+  expect(at(x => x.kind === 'button')).toBeGreaterThan(at(x => x.kind === 'agent'))
+  expect(widthOf(items)).toBeLessThanOrEqual(220)
+})
+
+test('010 band stat texts carry the mark as a word, and unknown figures read n/a with no cost bar (US1-2, US1-4, US2-7, US2-8, FR-002, FR-013)', () => {
+  const b = board({ tasks: SLICE })
+  const crit = bandLayout(b, [], 0, 220, statsView(apiKey({ percent: 96, usd: 4.75 })))
+  expect(statItem(crit, 'context')).toMatchObject({ text: '████████ 96% critical', mark: 'critical' })
+  expect(statItem(crit, 'costbar')).toMatchObject({ text: '█████████░ critical', mark: 'critical' })
+  const high = bandLayout(b, [], 0, 220, statsView(apiKey({ percent: 85, usd: 4 })))
+  expect(statItem(high, 'context')).toMatchObject({ text: '███████░ 85% high', mark: 'high' })
+  expect(statItem(high, 'costbar')).toMatchObject({ text: '████████░░ high', mark: 'high' })
+  const unknown = bandLayout(b, [], 0, 220, statsView(NO_STATS))
+  expect(statItem(unknown, 'context')?.text).toBe('context n/a')
+  expect(statItem(unknown, 'cost')?.text).toBe('cost n/a')
+  expect(statParts(unknown)).toEqual(['context', 'tokens', 'cost'])
+  const zero = bandLayout(b, [], 0, 220, statsView(apiKey({ percent: undefined, usd: 0 })))
+  expect(statItem(zero, 'context')?.text).toBe('░░░░░░░░ 0%')
+})
+
+// contracts/stats-text.md "Band", D5, FR-008, SC-005.
+test('010 the band sheds tokens, then the cost bar, then the cost, keeping the context longest and one row (FR-008, SC-005, D5)', () => {
+  const ladder = [
+    ['context', 'tokens', 'cost', 'costbar'], ['context', 'cost', 'costbar'], ['context', 'cost'], ['context'], [],
+  ]
+  for (const running of [[], [{ type: 'implementer', startedAt: 0 }]]) {
+    const b = board({ tasks: SLICE, red: 1 })
+    const narrowest = widthOf(bandLayout(b, running, 0, 30, full()))
+    let rung = 0
+    let held = ''
+    for (let cols = 220; cols >= 30; cols--) {
+      const items = bandLayout(b, running, 0, cols, full())
+      const parts = statParts(items)
+      const at = ladder.findIndex(l => l.join() === parts.join())
+      expect(at).toBeGreaterThanOrEqual(0)
+      // A button goes only after the context (004 L3), so a narrower set of buttons may show it again.
+      const buttons = items.filter(x => x.kind === 'button').map(x => x.text).join()
+      if (buttons === held) expect(at).toBeGreaterThanOrEqual(rung)
+      rung = at
+      held = buttons
+      if (cols >= narrowest) expect(widthOf(items)).toBeLessThanOrEqual(cols)
+      expect(phaseTexts(items)).toContain('◐ build')
+      expect(items.map(x => x.text)).toContain('RED 1/3')
+    }
+  }
+  const b = board({ tasks: SLICE, red: 1 })
+  for (const cols of [135, 100, 80, 60, 45]) {
+    const items = bandLayout(b, [], 0, cols, full())
+    expect(widthOf(items)).toBeLessThanOrEqual(cols)
+    // At 80 and 60 the context gives way to the buttons the band shows without it (004 L3).
+    expect(statParts(items).includes('context')).toBe(![80, 60].includes(cols))
+    expect(phaseTexts(items)).toContain('◐ build')
+  }
+  // 60 columns: tokens gone, and the existing items still named.
+  expect(statParts(bandLayout(b, [], 0, 60, full()))).not.toContain('tokens')
+  expect(statParts(bandLayout(b, [], 0, 30, full()))).toEqual([])
+  expect(bandLayout(b, [], 0, 135, full()).some(x => x.kind === 'button')).toBe(true)
+})
+
+// 004's quickstart L3: beside a docked pane (72 columns in CI's live-board run) the band showed
+// [ board ] [ clear ] [ hide ]; the context bar took [ hide ]'s room (#265). The buttons win (D5).
+test('010 the stats never cost the band a button (004 L3, FR-008, D5)', () => {
+  const buttons = (items: readonly BandItem[]) => items.filter(x => x.kind === 'button').map(x => x.text)
+  for (const b of [board({ tasks: SLICE }), board({ tasks: SLICE, red: 1 })]) {
+    for (const running of [[], [{ type: 'implementer', startedAt: 0 }]]) {
+      for (let cols = 30; cols <= 220; cols++) {
+        expect(buttons(bandLayout(b, running, 0, cols, full()))).toEqual(buttons(bandLayout(b, running, 0, cols)))
+      }
+    }
+  }
+  expect(buttons(bandLayout(board({ tasks: SLICE }), [], 0, 72, full()))).toEqual(['[ board ]', '[ clear ]', '[ hide ]'])
+})
+
+test('010 the band shows the stats in standalone mode too (FR-009)', () => {
+  const b = { ...board({ tasks: SLICE }), isStandalone: true }
+  expect(statParts(bandLayout(b, [], 0, 220, full()))).toEqual(['context', 'tokens', 'cost', 'costbar'])
+})
+
+test('010 the status answer ends with a stats line equal to the band\'s four parts (US3-1, FR-005, FR-012)', () => {
+  const b = board({ tasks: SLICE })
+  const lines = boardText(b, [], 0, full()).split('\n')
+  expect(lines).toHaveLength(4)
+  expect(lines[3]).toBe('stats: ████░░░░ 50% 1.2M in · 45k out $2.50 est. █████░░░░░')
+  const parts = bandLayout(b, [], 0, 400, full()).filter(x => x.kind === 'stat').map(x => x.text)
+  expect(lines[3]).toBe(`stats: ${parts.join(' ')}`)
+  // After next: and running:.
+  const running = boardText(b, [{ type: 'implementer', startedAt: 0 }], 5_000, full()).split('\n')
+  expect(running.at(-1)).toBe(lines[3])
+  expect(running.at(-2)).toContain('running: implementer 5s')
+  // Unknown figures.
+  expect(boardText(b, [], 0, statsView(NO_STATS)).split('\n').at(-1)).toBe('stats: context n/a 0 in · 0 out cost n/a')
+  // Standalone: still there.
+  expect(boardText({ ...b, isStandalone: true }, [], 0, full()).split('\n').at(-1)).toBe(lines[3])
+  // Without a view: as today.
+  expect(boardText(b, [], 0).split('\n')).toHaveLength(3)
+})

@@ -40,6 +40,19 @@ Taken over since the issue was filed: spec-gatekeeper's APPROVED on a cited FR n
 refused by a hook (#228), the undo offer and the cause of a failed fast-track run come from the hook's
 end record (#213, #221), and what a subagent's hooks say at its Stop reaches the main session (#231).
 
+## Board stats
+
+The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each is held by a unit test in `mods/speckit-board/tests/`.
+
+| Rule | What holds it |
+|---|---|
+| Band, pane and `status` draw the same figures from one `statsView()` | `board.test.tsx`: "the pane draws the context and cost rows" |
+| A read that fails, is empty or is malformed shows `n/a` and changes no count | `board.test.tsx`: "a refused, empty or malformed read" |
+| One `session.usage` read at a time; a read that never answers blocks neither a turn nor the start | `board.test.tsx`: "a session.usage read that never answers" |
+| A refused `stats` write is toasted once until a write succeeds | `board.test.tsx`: "a refused stats write" |
+| No store entry and no file is written by the stats | `board.test.tsx`: "writes no store entry and no file" |
+| An unpriced model gives `cost n/a` with no bar | `model.test.ts`: "statsView cost" |
+
 ## skills/speckit-team/SKILL.md
 
 ### skills/speckit-team/SKILL.md: (opening)

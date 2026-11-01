@@ -25,7 +25,28 @@ export type SpeckitBoard = {
   isStandalone?: boolean
 }
 
+// Token counts summed per model id, as `turn.complete`'s `usage` reports them.
+export type SpeckitModelUsage = {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens: number
+  cache_read_input_tokens: number
+}
+
+export type SpeckitUsage = Record<string, SpeckitModelUsage>
+
+export type SpeckitStats = {
+  isRead: boolean
+  percent?: number
+  contextTokens?: number
+  window?: number
+  usd?: number
+  isSubscription: boolean
+  usage: SpeckitUsage
+}
+
 export type SpeckitAgent = {
+  usage?: SpeckitUsage
   id: string
   type: string
   // What the Agent call said the task was, from Claude Code's agent list; absent on an agent recorded
@@ -59,6 +80,8 @@ declare module 'claude-code' {
       // Features a team agent started on in this session, each as `teamKey` of its repository and
       // folder (#97); they get the team view (D1-A).
       teamFeatures: string[]
+      // The session's context, tokens and cost, as the band, the pane and the status answer show them.
+      stats: SpeckitStats
     }
   }
 }

@@ -1,9 +1,10 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState } from '../types'
+import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState, SpeckitStats } from '../types'
 import {
   COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, wordColor, bandLayout, bar, boardText, current,
+  NO_STATS, addUsage, agentStats, costBar, COST_REFERENCE, dollars, readUsage, statsView,
   derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
   ancestors, clearFailedText, clearText, noticeText, roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
 } from './model'
@@ -22,6 +23,8 @@ const isCleared = atom({ plugin: 'speckit-board', key: 'isCleared' } as const, f
 // Features a team agent started on in this session (D1-A); clear does not touch it.
 const teamFeatures = atom({ plugin: 'speckit-board', key: 'teamFeatures' } as const, [])
 const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
+// The session's context, tokens and cost (010); session state, never stored.
+const stats = atom({ plugin: 'speckit-board', key: 'stats' } as const, NO_STATS)
 
 // `stateDir` is the team hook's record folder, which only a git repository has.
 type Repo = { root: string; stateDir?: string }
@@ -223,11 +226,47 @@ async function settleEnded($: EngineInterface) {
   await keepTicking($)
 }
 
+// When the read now pending started; null when none is. One read at a time (FR-010).
+let pendingSince: number | null = null
+// A refused stats write is toasted once, until a write succeeds (constitution III).
+let isStatsRefusalToasted = false
+
+async function writeStats($: EngineInterface, change: (s: SpeckitStats) => SpeckitStats) {
+  try {
+    await update($, stats, change)
+    isStatsRefusalToasted = false
+  } catch (err) {
+    if (isStatsRefusalToasted) return
+    isStatsRefusalToasted = true
+    $.ui.toast(`board could not update the stats: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
+// Reads the session's usage into the stats atom. Never throws and is not awaited by the events: a read
+// that does not answer blocks neither the turn nor the prompt. A read pending for a poll or longer
+// shows "context n/a" until it answers.
+async function measure($: EngineInterface) {
+  try {
+    const now = await $.clock.now()
+    if (pendingSince !== null) {
+      if (now - pendingSince >= POLL_MS) await writeStats($, s => readUsage(undefined, s))
+      return
+    }
+    pendingSince = now
+    try {
+      let raw: unknown
+      try { raw = await $.session.usage() } catch { raw = undefined }
+      await writeStats($, s => readUsage(raw, s))
+    } finally { pendingSince = null }
+  } catch { /* the engine refused a call while unloading; the next poll reads again */ }
+}
+
 // A finished agent's "2m ago" changes with no file or agent changing, so the poll redraws while
 // there are agent rows; keepTicking's one-second ticker is for the spinners.
 async function poll($: EngineInterface) {
   await settleEnded($)
   await refresh($)
+  void measure($)
   if ((await read($, agents)).length) $.ui.invalidate('ui.render')
 }
 
@@ -240,9 +279,9 @@ function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: 
   // The cleared pane: its title, its line and the buttons.
   if (isClearedNow) return 5
   const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
-  if (b.isStandalone) return 2 + b.phases.length + 1 + taskCount + 3
+  if (b.isStandalone) return 2 + b.phases.length + 3 + 1 + taskCount + 3
   const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
-  return 2 + b.phases.length + teamRows + 1 + taskCount + 4
+  return 2 + b.phases.length + 3 + teamRows + 1 + taskCount + 4
 }
 
 // Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
@@ -312,6 +351,8 @@ export const register: Register = on => {
     // Without a Spec Kit folder it stays quiet; every command says why (N-1).
     if (!repo) return next(e)
     await refresh($)
+    pendingSince = null
+    void measure($)
     // Nothing awaits the poll: one still running when the mod reloads or unloads has its calls
     // refused, and the next poll, if there is one, reads everything again.
     $.clock.every(POLL_MS, () => { poll($).catch(() => undefined) })
@@ -342,7 +383,7 @@ export const register: Register = on => {
     if (arg === 'status') {
       const b = await read($, board)
       const running = (await read($, agents)).filter(a => a.isRunning)
-      return { text: b ? boardText(b, running, await $.clock.now()) : await read($, notice) }
+      return { text: b ? boardText(b, running, await $.clock.now(), statsView(await read($, stats))) : await read($, notice) }
     }
     const opened = await openPane($)
     return { text: opened.isPlaced ? 'pane opened.' : 'widen the terminal to see the pane.' }
@@ -402,6 +443,19 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    if (repo) {
+      const turnUsage = (e as { usage?: unknown }).usage
+      const agentId = (e as { agentId?: string }).agentId
+      void (async () => {
+        await writeStats($, s => ({ ...s, usage: addUsage(s.usage, turnUsage) }))
+        if (agentId) {
+          try {
+            await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, usage: addUsage(a.usage ?? {}, turnUsage) } : a)))
+          } catch { /* the row keeps its figures; the session total is kept */ }
+        }
+        await measure($)
+      })().catch(() => undefined)
+    }
     await refresh($)
     return next(e)
   })
@@ -411,7 +465,7 @@ export const register: Register = on => {
     if (!b || e.props.hasSurvey || !(await isBandDrawn($))) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const running = (await read($, agents)).filter(a => a.isRunning)
-    const items = bandLayout(b, running, await $.clock.now(), e.props.bodyColumns)
+    const items = bandLayout(b, running, await $.clock.now(), e.props.bodyColumns, statsView(await read($, stats)))
 
     // bandLayout leaves out what does not fit the row; the wrap is for a feature name wider than it counts.
     return (
@@ -423,6 +477,7 @@ export const register: Register = on => {
             case 'sep': return <Text dimColor>{item.text}</Text>
             case 'bar': return <Text color="success">{item.text}</Text>
             case 'count': return <Text>{item.text}</Text>
+            case 'stat': return <Text color={item.mark === 'critical' ? 'error' : item.mark === 'high' ? 'warning' : 'claude'}>{item.text}</Text>
             case 'red': return <Text color={item.isLimit ? 'error' : 'warning'}>{item.text}</Text>
             case 'agent':
               return (
@@ -482,6 +537,9 @@ export const register: Register = on => {
     // Running agents first, then the latest started; the state keeps more than the pane draws.
     const rows = [...team].reverse().sort((x, y) => Number(y.isRunning) - Number(x.isRunning))
     const barWidth = Math.max(6, Math.min(24, e.props.bodyColumns - 30))
+    const view = statsView(await read($, stats))
+    const markColor = (m: string) => (m === 'critical' ? 'error' : m === 'high' ? 'warning' : 'claude')
+    const word = (m: string) => (m ? ` ${m}` : '')
     // A note that says something is wrong is drawn in the color of its glyph, the rest dim.
     const noteColor = (state: SpeckitPhaseState) => (state === 'failed' || state === 'stale' || state === 'blocked' ? COLOR[state] : undefined)
     // tasks.md text: the story tag dim, `code` as Claude Code draws inline code.
@@ -529,6 +587,23 @@ export const register: Register = on => {
           })}
         </Box>
 
+        {/* The session's context and cost: one state, the band's and the status answer's figures. */}
+        <Box flexDirection="column">
+          <Box flexDirection="row" columnGap={1}>
+            <Box width={8} flexShrink={0}><Text>context</Text></Box>
+            {view.context.fill !== undefined && <Text color={markColor(view.context.mark)}>{bar(view.context.fill, 1, barWidth)}</Text>}
+            <Text color={view.context.fill !== undefined ? markColor(view.context.mark) : undefined}>{view.context.text}{word(view.context.mark)}</Text>
+            {view.detail !== '' && <Text dimColor>· {view.detail}</Text>}
+          </Box>
+          <Box flexDirection="row" columnGap={1}>
+            <Box width={8} flexShrink={0}><Text>cost</Text></Box>
+            {view.cost.fill !== undefined && <Text color={markColor(view.cost.mark)}>{costBar(view.cost.fill)}{word(view.cost.mark)}</Text>}
+            <Text>{view.cost.text}</Text>
+            {view.cost.fill !== undefined && <Text dimColor>of {dollars(COST_REFERENCE)}</Text>}
+            <Text dimColor>· {view.tokens}</Text>
+          </Box>
+        </Box>
+
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         {!b.isStandalone && <Box flexDirection="column">
           <Text bold>Team</Text>
@@ -552,6 +627,7 @@ export const register: Register = on => {
                       : `took ${since(a.endedAt - a.startedAt)} · ${since(now - a.endedAt)} ago${asked}`}
                   </Text>
                 </Box>
+                {!a.isRunning && <Box flexShrink={0}><Text>{agentStats(a.usage)}</Text></Box>}
               </Box>
             )
           })}
