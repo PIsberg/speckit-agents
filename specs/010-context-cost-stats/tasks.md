@@ -32,7 +32,7 @@ Shared references:
   `export function priceOf(model: string): Price | undefined`,
   `export function estimateUsd(usage: SpeckitUsage): number | undefined`,
   `export function addUsage(sum: SpeckitUsage, turn: unknown): SpeckitUsage`.
-- [ ] T002 [US2] Tests in `tests/model.test.ts` for `priceOf`, `estimateUsd`, `addUsage`: FR-004, the
+- [X] T002 [US2] Tests in `tests/model.test.ts` for `priceOf`, `estimateUsd`, `addUsage`: FR-004, the
   edge case "token counts present but the model is unknown", SC-004. Not settled by the spec: the
   matching and the rows of data-model.md "Price table" (a dated, a Bedrock and a Vertex id; a key
   never matching a longer sibling or an unlisted id, D4); each of the four counts at its own rate
@@ -55,7 +55,7 @@ Shared references:
   `export function agentStats(usage: SpeckitUsage | undefined): string`,
   `export function shortCount(n: number): string`, `export function dollars(usd: number): string`,
   `export function costBar(fill: number): string` (D10).
-- [ ] T005 [US1] Tests in `tests/model.test.ts` for `readUsage`, `statsView`, `agentStats`,
+- [X] T005 [US1] Tests in `tests/model.test.ts` for `readUsage`, `statsView`, `agentStats`,
   `shortCount`, `dollars`, `costBar`: US1-1 to US1-4, US2-1, US2-3 to US2-9, US4-2, US4-3, FR-001 to FR-004,
   FR-007, FR-013, SC-001, SC-004, SC-006, SC-007, and the edge cases on above 100%, compaction,
   zero cost and large numbers. Not settled by the spec: the `0%` rule and the
@@ -76,7 +76,7 @@ Shared references:
   `| { kind: 'stat'; part: 'context' | 'tokens' | 'cost' | 'costbar'; text: string; mark: Mark }`;
   `bandLayout(b, running, now, cols, stats?: StatsView)` (:403) and
   `boardText(b, running, now, stats?: StatsView)` (:348) take the view as an optional last argument.
-- [ ] T008 [US3] Tests in `tests/model.test.ts` for `bandLayout` and `boardText` with a view from
+- [X] T008 [US3] Tests in `tests/model.test.ts` for `bandLayout` and `boardText` with a view from
   `statsView`: US3-2, FR-001, FR-005, FR-008, FR-012, FR-013, SC-005. Not settled by the spec: the
   parts' place and the 12-step shedding in contracts/stats-text.md "Band" (D5), at 135, 100, 80, 60,
   45 and 30 columns, `widthOf` within the columns and the current phase named in each; without a
