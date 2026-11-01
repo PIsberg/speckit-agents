@@ -35,15 +35,21 @@ After the task count and `RED n/3`, before the agent at work and the buttons, as
 
 Drawn in the bar's color: no mark `claude`, `high` `warning`, `critical` `error`.
 
-**Shedding (D5)**: `bandLayout` tries, richest first, the band's 8 existing variants crossed with a
-stats level, and draws the first that fits:
+**Shedding (D5, revised 2026-11-01)**: `bandLayout` tries, richest first, the band's 8 existing
+variants crossed with a stats level, and draws the first that fits:
 
 1. existing variant 1 with the four parts;
 2. variant 1 without `tokens`;
 3. variant 1 without `tokens` and `costbar`;
-4. variant 1 with `context` alone;
-5. to 11. existing variants 2 to 8, each with `context` alone;
-12. existing variant 8 without stats.
+4. to 7. existing variants 1 to 4 (all three buttons), each with `context` alone;
+8. to 11. existing variants 1 to 4 without stats;
+12. variant 5 (`board`, `clear`) with `context` alone; 13. variant 5 without stats;
+14. variant 6 (`board`) with `context` alone; 15. variant 6 without stats;
+16. and 17. variants 7 and 8 (no buttons) with `context` alone; 18. and 19. the same without stats.
+
+The context goes before a button does: at every width the band shows the buttons it shows without a
+view (004's quickstart L3: beside a docked pane, 72 columns in CI, `[ board ] [ clear ] [ hide ]`).
+So the context can come back after a button drops.
 
 Without a view, `bandLayout` tries the 8 existing variants alone, as today.
 

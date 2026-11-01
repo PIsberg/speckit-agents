@@ -83,8 +83,9 @@ work is two state updates and one `$.session.usage()` read, none started while o
 - **Callers keep working**: `bandLayout()` and `boardText()` take the view as an optional last argument;
   without it they answer exactly as today (FR-012). `register.tsx` always passes it.
 - SC-003 is a hand check (`quickstart.md`, D9). CI's `live-board` job still runs
-  `tools/live-board.mjs`, whose L3 (all three band buttons at 140 columns) holds because the stats
-  give way first (D5).
+  `tools/live-board.mjs`, whose L3 (all three band buttons at 140 columns) holds because the context
+  goes before any button (D5, revised). Under D5-A as first answered it did not: the band beside the
+  docked pane is 72 columns, not 140, and the context item took `[ hide ]`'s room (PR #265's CI).
 
 ## Project Structure
 
@@ -200,7 +201,13 @@ copies Anthropic's pricing page (fetched 2026-11-01): 20 rows, four rates each.
 
 ### D5: Where do the stats give way on a short band?
 
-Answer (2026-11-01): A, as recommended
+Answer (2026-11-01): A, as recommended. Revised the same day (owner, PR #265): the buttons win. Under
+A the context item took `[ hide ]`'s room beside a docked pane (72 columns), and 004's quickstart L3
+failed in CI's `live-board` job. Now the stats shed as in A, then each set of buttons is tried with the
+context and then bare before a button drops, so the stats never change the band's buttons
+(contracts/stats-text.md "Band", 19 steps). The context still outlasts the phase names, the task bar
+and the other phases' glyphs while the buttons hold, and comes back once they are gone.
+FR-008 says so.
 
 FR-008 orders the stats among themselves, not against the band's own items (phase names, task bar,
 buttons).

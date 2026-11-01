@@ -78,7 +78,7 @@ Shared references:
   `boardText(b, running, now, stats?: StatsView)` (:348) take the view as an optional last argument.
 - [X] T008 [US3] Tests in `tests/model.test.ts` for `bandLayout` and `boardText` with a view from
   `statsView`: US3-2, FR-001, FR-005, FR-008, FR-012, FR-013, SC-005. Not settled by the spec: the
-  parts' place and the 12-step shedding in contracts/stats-text.md "Band" (D5), at 135, 100, 80, 60,
+  parts' place and the shedding in contracts/stats-text.md "Band" (D5, 19 steps since its revision), at 135, 100, 80, 60,
   45 and 30 columns, `widthOf` within the columns and the current phase named in each; without a
   view both functions answer as today; the status line in contracts/stats-text.md "Status answer",
   equal to the band's four parts' texts.

@@ -1366,7 +1366,9 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
   and a cost bar against $5.00. ` high` follows a figure from 80% and ` critical` from 95%; an
   unknown figure reads `context n/a` or `cost n/a`, with no bar. A cost the session does not report is
   estimated from the model's list price and marked `est.`, as is any cost on a subscription. On a short
-  row the band drops the tokens, then the cost bar, then the cost, and keeps the context longest.
+  row the band drops the tokens, then the cost bar, then the cost. The context goes before a button
+  does and after the band's other items, so the stats never cost the band a button: beside a docked
+  pane it shows `[ board ] [ clear ] [ hide ]` and no context bar, which the pane shows anyway.
   The pane has two rows after the phases, `context` and `cost`, and each ended team agent's row ends
   with its own estimated cost and tokens (`n/a` without usage). The figures are read, never stored.
 - **With Spec Kit alone** (no team agent has run in the repo), the view has four phases, `spec`,
@@ -1494,7 +1496,7 @@ installs can still remove it.
 
 The stats are held by the mod's unit tests; the hand check in `specs/010-context-cost-stats/quickstart.md` has not been run.
 
-**Automated.** `claude plugin validate` and `claude plugin test` (164 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (165 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
@@ -1536,7 +1538,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 176 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 126 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 164 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |

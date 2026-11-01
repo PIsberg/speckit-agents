@@ -439,12 +439,16 @@ export function bandLayout(
     return items
   }
   // contracts/stats-text.md "Band", D5: the stats shed (tokens, cost bar, cost) on the richest variant
-  // first, then the context alone while the variants shed, the last one bare. Without a view, as before.
-  const [richest, ...narrower] = VARIANTS
+  // first. Then, for each set of buttons, its variants with the context alone, then the same variants
+  // bare: the context goes before a button does (004's L3 beside a docked pane, #265). Without a view,
+  // as before.
+  const buttons = (v: BandVariant) => `${v.isBoardShown}${v.isClearShown}${v.isHideShown}`
+  const sets = [...new Set(VARIANTS.map(buttons))].map(k => VARIANTS.filter(v => buttons(v) === k))
+  const [richest] = VARIANTS
   const layouts = !stats || !richest ? VARIANTS.map(v => layout(v)) : [
     layout(richest, ['context', 'tokens', 'cost', 'costbar']), layout(richest, ['context', 'cost', 'costbar']),
-    layout(richest, ['context', 'cost']), layout(richest, ['context']),
-    ...narrower.map(v => layout(v, ['context'])), layout(narrower.at(-1) ?? richest),
+    layout(richest, ['context', 'cost']),
+    ...sets.flatMap(set => [...set.map(v => layout(v, ['context'])), ...set.map(v => layout(v))]),
   ]
   return layouts.find(items => widthOf(items) <= cols) ?? layouts.at(-1) ?? []
 }

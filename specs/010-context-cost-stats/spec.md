@@ -18,6 +18,7 @@
 - Q: Are the 80% and 95% marks configurable? → A: no, fixed.
 - Q: What does the band show for cost when the login reports none (subscription)? → A: not `n/a`: estimate the cost from the token counts and the model's list price and mark it plainly as an estimate (`est.`), so it is never read as a billed figure. `n/a` stays only where no estimate can be made (for example an unknown model with no price).
 - Q: Should there be a total cost bar beside the context bar, and what is its full mark? → A: yes (the user asked for it, 2026-11-01). The user chose the recommended default (2026-11-01): the bar is full at a fixed reference of $5.00 for the session, not configurable, with the same 80% and 95% marks as the context bar. Not a budget: nothing stops or alerts.
+- Q: Beside a docked pane the band is about 72 columns, and the context bar took the room of `[ hide ]` (004's quickstart L3 failed in CI, PR #265). Which wins, the context bar or a button? → A: the buttons (owner, 2026-11-01): the context goes before any button, so the band keeps the buttons it shows without the stats; the docked pane shows the context and cost itself.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -116,7 +117,7 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 - **FR-005**: The band, the pane and the status answer MUST show the same percentage, token counts, cost and cost-bar fill for the same state.
 - **FR-006**: The figures MUST refresh without a user command: context use and cost within the board's 4-second poll and after every turn, token counts after every turn of the session and of each agent's run.
 - **FR-007**: The pane MUST show, for each team agent that has run, its own tokens and its cost estimated from them at list price and marked `est.` (the session reports no cost per agent); other unknown figures show `n/a`.
-- **FR-008**: On a terminal of 60 columns the band MUST keep its existing line count and drop, in order, the token counts, then the cost bar, then the cost figure, before any of its existing items; the context bar is dropped last, only where the band's narrowest form does not fit with it.
+- **FR-008**: On a terminal of 60 columns the band MUST keep its existing line count and drop, in order, the token counts, then the cost bar, then the cost figure, before any of its existing items; the context bar goes before any of the band's buttons and after its other existing items, so at every width the band shows the buttons it shows without the stats.
 - **FR-009**: The stats MUST work in standalone mode (no team) and in team mode, and MUST not appear where the board is not shown.
 - **FR-010**: Reading and drawing the figures MUST not make a model or network call, and a failure to read them MUST NOT block or delay the prompt.
 - **FR-011**: The stats MUST be read-only: they do not change the retry, gate or phase state of any run.
