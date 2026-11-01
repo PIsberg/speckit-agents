@@ -105,7 +105,9 @@ Shared references:
   write succeeds, as "a refused isCleared write is toasted" does (constitution III); a malformed turn
   usage changes no count; no `storeWrites` and no `fs.write` from the
   stats; no `.specify/` gives the notice and no `stats:` line. Update the pins on a whole status
-  answer (:1267, :1328, :1338) by the `stats:` line alone (D7).
+  answer (:1267, :1328, :1338) by the `stats:` line alone (D7), and in "the band names the current
+  phase at any width" (:151-164) only :160, from 4 bare `✓` to none: at 70 columns the context item
+  displaces the other phases' glyphs (D5, D11); :158, :159 and :161 stay.
 - [ ] T011 [US1] Implement in `hooks/register.tsx`, and in `types/index.d.ts` `PluginState
   ['speckit-board']` gains `stats: SpeckitStats`:
   `const stats = atom({ plugin: 'speckit-board', key: 'stats' } as const, NO_STATS)` beside the
@@ -145,7 +147,10 @@ Shared references:
   draws" (:1355) the band's stats parts and their shedding (D5), the pane's two rows and the agent
   figures; "Commands" (:1400) the `status` row names the `stats:` line; "Where it reads its state"
   (:1414) `$.session.usage()` and `turn.complete`; "Verified" (:1484): the stats are held by the mod's
-  unit tests, and quickstart.md's hand check is not run; "Known limits" (:2085): tokens count from
+  unit tests, and quickstart.md's hand check is not run; the mod's test count, `132 tests` in
+  "Verified" (:1486) and `its own 132 tests` in "Test suite"'s `test/board-mod.test.mjs` row (:1528),
+  set to the count `claude plugin test mods/speckit-board` reports once T002, T005, T008, T010 and
+  T012's tests are in (no test holds it); "Known limits" (:2085): tokens count from
   the mod's load (D3), the price table's date and its 5-minute cache-write and Haiku 5.5 rates (D4),
   an agent's cost always an estimate (D2), a subscription's cost marked `est.` (D1).
   `docs/rules.md`: a `## Board stats` section, a table of the stats' rules and the tests that hold

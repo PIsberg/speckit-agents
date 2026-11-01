@@ -120,7 +120,7 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 - **FR-009**: The stats MUST work in standalone mode (no team) and in team mode, and MUST not appear where the board is not shown.
 - **FR-010**: Reading and drawing the figures MUST not make a model or network call, and a failure to read them MUST NOT block or delay the prompt.
 - **FR-011**: The stats MUST be read-only: they do not change the retry, gate or phase state of any run.
-- **FR-012**: The README's board section and `docs/rules.md` MUST describe the stats, and the board's existing tests MUST keep passing with the stats present; a test that pins the pane's height or the whole status answer changes by the stats' rows or line alone.
+- **FR-012**: The README's board section and `docs/rules.md` MUST describe the stats, and the board's existing tests MUST keep passing with the stats present; a test that pins the pane's height or the whole status answer changes by the stats' rows or line alone, and one that counts the band's other phases' glyphs at a width where the context item displaces them changes by that count alone.
 
 ### Key Entities
 

@@ -54,7 +54,7 @@ below).
 | IV. Plugin API only, no runtime dependency | T003, T006, T009, T011, T013 | `$.session.usage()` and `turn.complete` only, present in 2.1.293 (Technical Context) |
 | V. Public contracts change additively, listed in the README | T009, T014 | `/speckit-board status` gains a last line; no event is emitted, so no schema version applies |
 | VII. Every supported platform | T010, T012 | no platform code; the mod's tests run on all three in CI |
-| VIII. README and CLAUDE.md describe it; docs say what was verified live | T014 | board section, Known limits, Verified; CLAUDE.md's mod line |
+| VIII. README and CLAUDE.md describe it; docs say what was verified live | T014 | board section, Known limits, Verified; the mod's `claude plugin test` count (132 today, README.md "Verified" and "Test suite") as the run reports it with T002, T005, T008, T010, T012's tests; CLAUDE.md's mod line |
 
 Not applicable: II's live check of hook wiring (no new `on()` entry: T011 reuses the `turn.complete`
 hook and the 4 s poll); VI (no event emitted, nothing stored; T010 checks no store or file write);
@@ -319,3 +319,32 @@ SC-007's 1 pp.
   reference), drawn to the bar's nearest cell, and the text `$2.50`.
   Spec: FR-005: The band, the pane and the status answer MUST show the same percentage, token counts,
   cost and cost-bar fill for the same state, the fill read before a bar rounds it to its cells.
+
+### D11: At 70 columns, does the context item or the other phases' glyphs give way?
+
+Answer (2026-11-01): A, as recommended
+
+`tests/board.test.tsx` "the band names the current phase at any width" (:151-164) mounts the band at
+70 columns with `implementer` running and `RED 1/3`, and :160 expects 4 bare `✓`. That state's
+existing variant 7 is 61 columns; the context item (`│`, `context n/a`, their gaps) makes it 75, so
+under D5-A the band falls to `only-head` with the context item (63) and draws no bare `✓` (audit
+H1). D7-A lets no such assertion change, so D5-A and FR-012 cannot both hold.
+
+- **A (recommended)**: keep D5-A as the owner answered it; :160 changes from 4 bare `✓` to none and
+  nothing else in the test does: `◐ build` named (:158), `✓ spec` absent (:159) and the agent's text
+  (:161) hold, so the test still checks what its title says. Beside a docked pane, while an agent
+  runs, the band keeps the context bar (FR-001) and names only the current phase. Changes T010.
+  Spec: FR-012: The README's board section and `docs/rules.md` MUST describe the stats, and the
+  board's existing tests MUST keep passing with the stats present; a test that pins the pane's
+  height or the whole status answer changes by the stats' rows or line alone, and one that counts the
+  band's other phases' glyphs at a width where the context item displaces them changes by that count
+  alone.
+- **B**: the context item gives way after the buttons and before the other phases' glyphs:
+  contracts/stats-text.md "Band" steps 5 to 10 are existing variants 2 to 7 with `context` alone, 11
+  is variant 7 without stats, 12 variant 8 without stats (still 12 variants), and `only-head` never
+  carries the context item. The test holds unchanged; in its state the band shows no context bar from
+  61 to 74 columns, the width beside a docked pane, whenever an agent runs, which FR-001 then no
+  longer covers there. Changes T008, T009, contracts/stats-text.md "Band", D5's record.
+  Spec: FR-008: On a terminal of 60 columns the band MUST keep its existing line count and drop, in
+  order, the token counts, then the cost bar, then the cost figure, before any of its existing items;
+  the context bar is dropped after the band's buttons and before the other phases' glyphs.
