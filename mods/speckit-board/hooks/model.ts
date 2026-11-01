@@ -1,7 +1,7 @@
 // Pure logic of the board: no `$`, so tests import it directly.
 // The state files and their rules mirror hooks/speckit-team.mjs; test/board-mod.test.mjs checks
 // the fingerprint below matches it byte for byte, or every audit would read stale.
-import type { SpeckitBoard, SpeckitPhase, SpeckitPhaseId, SpeckitPhaseState, SpeckitTask } from '../types'
+import type { SpeckitBoard, SpeckitPhase, SpeckitPhaseId, SpeckitPhaseState, SpeckitStats, SpeckitTask, SpeckitUsage } from '../types'
 
 export const MAX_RED = 3
 export const MISSING = '<missing>'
@@ -345,7 +345,8 @@ function idleStep(head: SpeckitPhase): string {
 
 // `/speckit-board status`: the board as text, for a session without the pane (a headless run) and for
 // the model, which reads a command's answer as well.
-export function boardText(b: SpeckitBoard, running: readonly { type: string; startedAt: number }[], now: number): string {
+export function boardText(b: SpeckitBoard, running: readonly { type: string; startedAt: number }[], now: number, stats?: StatsView): string {
+  void stats
   const lines = [
     statusLine(b) ?? '',
     b.phases.map(p => `${GLYPH[p.state]} ${p.id}`).join(' '),
@@ -374,6 +375,7 @@ export type BandItem =
   | { kind: 'red'; text: string; isLimit: boolean }
   // `room`: the columns it is laid out in, its running time counted as wide as `59m 59s`.
   | { kind: 'agent'; text: string; spin: string; role: string; rest: string; room: number }
+  | { kind: 'stat'; part: 'context' | 'tokens' | 'cost' | 'costbar'; text: string; mark: Mark }
   | { kind: 'button'; text: string; key: 'board' | 'clear' | 'hide'; label: string }
 
 type BandVariant = { names: 'all' | 'head' | 'only-head'; bar: number; isHideShown: boolean; isClearShown: boolean; isBoardShown: boolean }
@@ -402,7 +404,9 @@ const widthOf = (items: readonly BandItem[]): number =>
 
 export function bandLayout(
   b: SpeckitBoard, running: readonly { type: string; startedAt: number }[], now: number, cols: number,
+  stats?: StatsView,
 ): BandItem[] {
+  void stats
   const head = current(b.phases)
   const named = head ?? b.phases.at(-1)
   const done = b.tasks.filter(t => t.isDone).length
@@ -475,3 +479,25 @@ export function noticeText(n: Notice, dir = ''): string {
     case 'no-folder': return `${dir}, the active feature in .specify/feature.json, does not exist: /speckit-specify <idea> starts one.`
   }
 }
+
+const NOT_IMPLEMENTED = (): never => { throw new Error('not implemented') }
+
+export type Price = { input: number; cacheWrite: number; cacheRead: number; output: number }
+export const PRICES: Readonly<Record<string, Price>> = {}
+export function priceOf(_model: string): Price | undefined { return NOT_IMPLEMENTED() }
+export function estimateUsd(_usage: SpeckitUsage): number | undefined { return NOT_IMPLEMENTED() }
+export function addUsage(_sum: SpeckitUsage, _turn: unknown): SpeckitUsage { return NOT_IMPLEMENTED() }
+
+export const COST_REFERENCE = 5
+export const HIGH = 0.8
+export const CRITICAL = 0.95
+export const NO_STATS: SpeckitStats = { isRead: false, isSubscription: false, usage: {} }
+export type Mark = '' | 'high' | 'critical'
+export type Meter = { text: string; fill?: number; mark: Mark }
+export type StatsView = { context: Meter; detail: string; tokens: string; cost: Meter }
+export function readUsage(_raw: unknown, _before: SpeckitStats): SpeckitStats { return NOT_IMPLEMENTED() }
+export function statsView(_s: SpeckitStats): StatsView { return NOT_IMPLEMENTED() }
+export function agentStats(_usage: SpeckitUsage | undefined): string { return NOT_IMPLEMENTED() }
+export function shortCount(_n: number): string { return NOT_IMPLEMENTED() }
+export function dollars(_usd: number): string { return NOT_IMPLEMENTED() }
+export function costBar(_fill: number): string { return NOT_IMPLEMENTED() }

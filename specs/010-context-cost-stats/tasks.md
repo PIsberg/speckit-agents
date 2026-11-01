@@ -25,7 +25,7 @@ Shared references:
 
 ### Phase 1: Prices and the estimate (US2)
 
-- [ ] T001 [US2] Stub in `types/index.d.ts`: `export type SpeckitUsage = Record<string, ModelUsage>`
+- [X] T001 [US2] Stub in `types/index.d.ts`: `export type SpeckitUsage = Record<string, ModelUsage>`
   (`import type { ModelUsage } from 'claude-code'`). Stub in `hooks/model.ts`:
   `export type Price = { input: number; cacheWrite: number; cacheRead: number; output: number }`,
   `export const PRICES: Readonly<Record<string, Price>> = {}`,
@@ -43,7 +43,7 @@ Shared references:
 
 ### Phase 2: The view of the figures (US1, US2, US4)
 
-- [ ] T004 [US1] Stub in `types/index.d.ts`: `SpeckitStats` as data-model.md "Types";
+- [X] T004 [US1] Stub in `types/index.d.ts`: `SpeckitStats` as data-model.md "Types";
   `SpeckitAgent` gains `usage?: SpeckitUsage`. Stub in `hooks/model.ts`: `export const
   COST_REFERENCE = 5`, `HIGH = 0.8`, `CRITICAL = 0.95`, `export const NO_STATS: SpeckitStats`,
   `export type Mark = '' | 'high' | 'critical'`,
@@ -72,7 +72,7 @@ Shared references:
 
 ### Phase 3: Band and status text (US3)
 
-- [ ] T007 [US3] Stub in `hooks/model.ts`: `BandItem` (:371) gains
+- [X] T007 [US3] Stub in `hooks/model.ts`: `BandItem` (:371) gains
   `| { kind: 'stat'; part: 'context' | 'tokens' | 'cost' | 'costbar'; text: string; mark: Mark }`;
   `bandLayout(b, running, now, cols, stats?: StatsView)` (:403) and
   `boardText(b, running, now, stats?: StatsView)` (:348) take the view as an optional last argument.

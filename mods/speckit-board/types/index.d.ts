@@ -1,3 +1,5 @@
+import type { ModelUsage } from 'claude-code'
+
 export type SpeckitPhaseId = 'spec' | 'plan' | 'tasks' | 'audit' | 'build' | 'verify'
 
 export type SpeckitPhaseState = 'done' | 'active' | 'todo' | 'blocked' | 'failed' | 'stale'
@@ -25,7 +27,21 @@ export type SpeckitBoard = {
   isStandalone?: boolean
 }
 
+// Token counts summed per model id, as `turn.complete`'s `usage` reports them.
+export type SpeckitUsage = Record<string, ModelUsage>
+
+export type SpeckitStats = {
+  isRead: boolean
+  percent?: number
+  contextTokens?: number
+  window?: number
+  usd?: number
+  isSubscription: boolean
+  usage: SpeckitUsage
+}
+
 export type SpeckitAgent = {
+  usage?: SpeckitUsage
   id: string
   type: string
   // What the Agent call said the task was, from Claude Code's agent list; absent on an agent recorded
