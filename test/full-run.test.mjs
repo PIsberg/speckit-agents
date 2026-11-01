@@ -166,6 +166,26 @@ test('full run: folder trust is added for the run, and its undo removes only tha
   assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
 });
 
+test('full run: runs started together each keep their trust entry, as tools/eval.mjs runs in parallel need', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: {} }));
+  // Eight processes that wait for the same instant, then each trust 25 repos of their own: on 2026-11-01
+  // eight eval processes started at once left 3 of 8 entries, the rest lost to each other's read-modify-write.
+  const at = Date.now() + 1500;
+  const mod = new URL('../tools/full-run.mjs', import.meta.url).href;
+  const repos = Array.from({ length: 8 }, (_, i) => path.join(dir, `run${i}`));
+  const all = repos.flatMap((r) => Array.from({ length: 25 }, (_, j) => path.join(r, `repo${j}`)));
+  const code = `const m = await import(${JSON.stringify(mod)}); while (Date.now() < ${at}); for (let j = 0; j < 25; j++) m.trustFolder(process.argv[1], process.argv[2] + '/repo' + j);`;
+  const { spawn } = await import('node:child_process');
+  const codes = await Promise.all(repos.map((r) => new Promise((done) => spawn(process.execPath, ['--input-type=module', '-e', code, conf, r]).on('exit', done))));
+  assert.deepEqual(codes, repos.map(() => 0));
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.deepEqual(Object.keys(after.projects).sort(), all.map((r) => r.split(path.sep).join('/')).sort(), 'every run kept its entry');
+  assert.equal(after.numStartups, 4);
+  assert.equal(fs.existsSync(`${conf}.lock`), false, 'the lock is released');
+});
+
 test('full run: a .claude.json that does not parse is never overwritten, so a half-written file cannot cost the user their config', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
   const conf = path.join(dir, '.claude.json');

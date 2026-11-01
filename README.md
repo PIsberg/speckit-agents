@@ -1736,7 +1736,11 @@ and stays out of the feature's commits (`.git/info/exclude`), and the repo is tr
 `.claude.json` for the run only, the one entry removed again after the last turn. A `.claude.json`
 that does not parse, as Claude Code leaves it for a moment while it rewrites the file, is read again
 for up to two seconds and then left as it is, the run stopping before any model call: it is never
-replaced by a file holding only the trust entry, which would cost you the rest of your config. Your own
+replaced by a file holding only the trust entry, which would cost you the rest of your config. Each
+change to the file takes `.claude.json.lock` (proper-lockfile's folder lock, which Claude Code bundles),
+so `tools/eval.mjs` processes started side by side keep each other's trust entries: without it, eight
+started at once on 2026-11-01 left 3 of 8, and the other five would have run without the agents' hooks.
+Your own
 `CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
 the settings gates of a team you installed fire beside the scratch repo's. Skills are the exception
 to the override: a personal skill wins over a project one of the same name, so the run refuses to
