@@ -166,6 +166,48 @@ test('full run: folder trust is added for the run, and its undo removes only tha
   assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
 });
 
+test('full run: runs started together each keep their trust entry, as tools/eval.mjs runs in parallel need', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: {} }));
+  // Eight processes that wait for the same instant, then each trust 25 repos of their own: on 2026-11-01
+  // eight eval processes started at once left 3 of 8 entries, the rest lost to each other's read-modify-write.
+  const at = Date.now() + 1500;
+  const mod = new URL('../tools/full-run.mjs', import.meta.url).href;
+  const repos = Array.from({ length: 8 }, (_, i) => path.join(dir, `run${i}`));
+  const all = repos.flatMap((r) => Array.from({ length: 25 }, (_, j) => path.join(r, `repo${j}`)));
+  const code = `const m = await import(${JSON.stringify(mod)}); while (Date.now() < ${at}); for (let j = 0; j < 25; j++) m.trustFolder(process.argv[1], process.argv[2] + '/repo' + j);`;
+  const { spawn } = await import('node:child_process');
+  const codes = await Promise.all(repos.map((r) => new Promise((done) => spawn(process.execPath, ['--input-type=module', '-e', code, conf, r]).on('exit', done))));
+  assert.deepEqual(codes, repos.map(() => 0));
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.deepEqual(Object.keys(after.projects).sort(), all.map((r) => r.split(path.sep).join('/')).sort(), 'every run kept its entry');
+  assert.equal(after.numStartups, 4);
+  assert.equal(fs.existsSync(`${conf}.lock`), false, 'the lock is released');
+});
+
+test('full run: a .claude.json that does not parse is never overwritten, so a half-written file cannot cost the user their config', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'scratch', 'repo');
+  // What a read sees while Claude Code is rewriting the file: the start of the user's config, cut off.
+  const torn = '{"numStartups": 4, "projects": {"C:/other": {"hasTrust';
+  fs.writeFileSync(conf, torn);
+  assert.throws(() => trustFolder(conf, repo, { retries: 2, waitMs: 1 }), /does not parse/);
+  assert.equal(fs.readFileSync(conf, 'utf8'), torn, 'the file is left as it was');
+  // A file that parses again on a later read is trusted as usual, the user's keys kept.
+  let reads = 0;
+  const read = () => (++reads < 2 ? torn : JSON.stringify({ numStartups: 4 }));
+  trustFolder(conf, repo, { retries: 3, waitMs: 1, read });
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.equal(after.numStartups, 4);
+  assert.equal(after.projects[repo.split(path.sep).join('/')].hasTrustDialogAccepted, true);
+  // No file at all is a fresh config, not a torn one.
+  fs.rmSync(conf);
+  trustFolder(conf, repo)();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects, {});
+});
+
 test('full run: without an API key it stops before writing anything and names --login', () => {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-nokey-')), 'run');
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'));

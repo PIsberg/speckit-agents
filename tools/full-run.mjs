@@ -233,21 +233,61 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
 // The run's failures: why it stopped early comes first, since the checks after it judge a run cut short.
 export const runFailures = (failures, stopped) => (stopped ? [stopped, ...failures] : [...failures]);
 
+// A .claude.json that exists but does not parse is one Claude Code is rewriting (it does so throughout a
+// session, and more often with several runs going at once): read it again after a pause, and throw rather
+// than treat it as empty, since writing over it would replace the user's whole config with one entry.
+// A missing file is a fresh config. `read` is for the tests.
+function readConf(confFile, { retries = 20, waitMs = 100, read = () => fs.readFileSync(confFile, 'utf8') } = {}) {
+  for (let i = 0; ; i++) {
+    let text;
+    try { text = read(); } catch (e) { if (e.code === 'ENOENT') return {}; throw e; }
+    try { return JSON.parse(text); } catch {
+      if (i >= retries) throw new Error(`${confFile} does not parse after ${retries + 1} reads; left as it is`);
+      sleep(waitMs);
+    }
+  }
+}
+
+// One read-modify-write of the .claude.json at a time: runs started together (tools/eval.mjs processes side
+// by side) otherwise drop each other's trust entries, and an untrusted repo runs without the agents' hooks.
+// The lock is proper-lockfile's, which Claude Code bundles: a `<file>.lock` folder, stale after 10 s.
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function withConfLock(confFile, fn) {
+  const lock = `${confFile}.lock`;
+  for (const until = Date.now() + 30_000; ;) {
+    try { fs.mkdirSync(lock); break; } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > 10_000) { fs.rmSync(lock, { recursive: true, force: true }); continue; } } catch { continue; }
+      if (Date.now() > until) throw new Error(`${lock} held for 30 s; remove it if no run is going`, { cause: e });
+      sleep(20 + Math.random() * 30);
+    }
+  }
+  try { return fn(); } finally { fs.rmSync(lock, { recursive: true, force: true }); }
+}
+
 // Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
 // (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
 // Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
-export function trustFolder(confFile, repo) {
+export function trustFolder(confFile, repo, opts = {}) {
   const key = repo.split(path.sep).join('/');
-  const conf = readJson(confFile) ?? {};
-  if (conf.projects?.[key]?.hasTrustDialogAccepted) return () => {};
-  conf.hasCompletedOnboarding = true;
-  (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
-  fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
+  const added = withConfLock(confFile, () => {
+    const conf = readConf(confFile, opts);
+    if (conf.projects?.[key]?.hasTrustDialogAccepted) return false;
+    conf.hasCompletedOnboarding = true;
+    (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
+    fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
+    return true;
+  });
+  if (!added) return () => {};
   return () => {
-    const now = readJson(confFile);
-    if (!now?.projects?.[key]) return;
-    delete now.projects[key];
-    fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
+    try {
+      withConfLock(confFile, () => {
+        const now = readConf(confFile, opts);
+        if (!now?.projects?.[key]) return;
+        delete now.projects[key];
+        fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
+      });
+    } catch (e) { console.error(`full-run: trust for ${key} left in place: ${e.message}`); }
   };
 }
 
