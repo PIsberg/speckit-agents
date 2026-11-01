@@ -457,13 +457,13 @@ test('010 priceOf matches a listed key exactly after dropping the id decorations
 })
 
 test('010 estimateUsd prices each of the four counts at its own rate (FR-004, D3)', () => {
-  expect(estimateUsd(usageOf('claude-opus-4-5', use(M)))).toBeCloseTo(5)
-  expect(estimateUsd(usageOf('claude-opus-4-5', use(0, M)))).toBeCloseTo(25)
-  expect(estimateUsd(usageOf('claude-opus-4-5', use(0, 0, M)))).toBeCloseTo(6.25)
-  expect(estimateUsd(usageOf('claude-opus-4-5', use(0, 0, 0, M)))).toBeCloseTo(0.5)
-  expect(estimateUsd(usageOf('claude-opus-4-5-20251101', use(M, M, M, M)))).toBeCloseTo(36.75)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(M))) ?? NaN) - 5)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, M))) ?? NaN) - 25)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, 0, M))) ?? NaN) - 6.25)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5', use(0, 0, 0, M))) ?? NaN) - 0.5)).toBeLessThan(0.005)
+  expect(Math.abs((estimateUsd(usageOf('claude-opus-4-5-20251101', use(M, M, M, M))) ?? NaN) - 36.75)).toBeLessThan(0.005)
   const two = { ...usageOf('claude-opus-4-5', use(M)), ...usageOf('claude-haiku-4-5', use(0, M)) }
-  expect(estimateUsd(two)).toBeCloseTo(10)
+  expect(Math.abs((estimateUsd(two) ?? NaN) - 10)).toBeLessThan(0.005)
 })
 
 test('010 estimateUsd gives undefined for empty usage and for any unpriced model (edge case, SC-004)', () => {
@@ -557,12 +557,12 @@ test('010 costBar draws 10 cells, one per whole tenth reached (SC-007, D10)', ()
 test('010 statsView of a known session: context, tokens and an API-key cost as reported (US1-1, US2-1, US2-4, FR-001, FR-003)', () => {
   const v = statsView(apiKey({ usd: 0.78, usage: usageOf('claude-sonnet-4-5', use(1_000_000, 45_000, 100_000, 100_000)) }))
   expect(v.context.text).toBe('50%')
-  expect(v.context.fill).toBeCloseTo(0.5)
+  expect(Math.abs((v.context.fill ?? NaN) - 0.5)).toBeLessThan(0.005)
   expect(v.context.mark).toBe('')
   expect(v.detail).toBe('100k of 200k')
   expect(v.tokens).toBe('1.2M in · 45k out')
   expect(v.cost.text).toBe('$0.78')
-  expect(v.cost.fill).toBeCloseTo(0.156, 10)
+  expect(Math.abs((v.cost.fill ?? NaN) - 0.156)).toBeLessThan(5e-11)
   expect(v.cost.mark).toBe('')
 })
 
@@ -585,7 +585,7 @@ test('010 statsView marks context and cost on the uncapped ratio, with the fill 
   for (const [usd, fill, text, mark] of sampled) {
     expect(cost(usd).text).toBe(text)
     expect(cost(usd).mark).toBe(mark)
-    expect(cost(usd).fill).toBeCloseTo(fill, 10)
+    expect(Math.abs((cost(usd).fill ?? NaN) - fill)).toBeLessThan(5e-11)
   }
 })
 
@@ -616,7 +616,7 @@ test('010 statsView cost: est. on a subscription, an estimate when none is repor
   // No reported cost: the tokens at list price, marked.
   const est = statsView({ isRead: false, isSubscription: false, usage: usageOf('claude-sonnet-4-5', use(100_000)) })
   expect(est.cost.text).toBe('$0.30 est.')
-  expect(est.cost.fill).toBeCloseTo(0.06)
+  expect(Math.abs((est.cost.fill ?? NaN) - 0.06)).toBeLessThan(0.005)
   const estNoCost = statsView(apiKey({ usd: undefined, usage: usageOf('claude-sonnet-4-5', use(100_000)) }))
   expect(estNoCost.cost.text).toBe('$0.30 est.')
   // Unknown price: n/a, never $0.00.
