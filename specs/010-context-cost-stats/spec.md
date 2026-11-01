@@ -51,7 +51,7 @@ The user sees, beside the bar, the tokens used and the money spent in this sessi
 1. **Given** a session with 1.2M input tokens, 45k output tokens and a cost of $0.78, **When** the band is drawn, **Then** it shows the tokens in a short form (`1.2M in`, `45k out`) and the cost as `$0.78`.
 2. **Given** a figure changes after a response, **When** the band next refreshes, **Then** it shows the new figure without the user running any command.
 3. **Given** the session reports no cost (for example a subscription login) and the model has a known list price, **When** the band is drawn, **Then** the cost is the token counts priced at that list price and is shown with the word `est.` (for example `$0.78 est.`), never as a bare billed-looking figure and never as `$0.00`.
-4. **Given** the session reports a cost, **When** the band is drawn, **Then** the reported cost is shown without `est.`, and no estimate replaces it.
+4. **Given** an API-key session reports a cost, **When** the band is drawn, **Then** the reported cost is shown without `est.`, and no estimate replaces it; on a subscription the same reported figure carries `est.`.
 5. **Given** the session reports no cost and the model has no known list price, **When** the band is drawn, **Then** the cost is shown as `n/a`, never as `$0.00`.
 6. **Given** a session whose cost is $2.50, **When** the band is drawn, **Then** beside the cost it shows a cost bar half filled (full at the $5.00 reference) and the text `$2.50`.
 7. **Given** the cost reaches 80% of the reference ($4.00), **When** the band is drawn, **Then** the cost bar is marked high in a way that is not colour alone, and critical at 95% ($4.75), as for the context bar.
@@ -89,7 +89,7 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 
 1. **Given** two agents finished with $0.10 and $0.40, **When** the pane is drawn, **Then** each row shows its own cost and the session total is not less than their sum.
 2. **Given** an agent's figures are unknown, **When** its row is drawn, **Then** it shows `n/a` and the other rows are unaffected.
-3. **Given** the session reports no cost and an agent's tokens and model price are known, **When** its row is drawn, **Then** its cost is estimated and marked `est.` in the same way as the session's.
+3. **Given** an agent's tokens and its model's price are known, **When** its row is drawn, **Then** its cost is estimated and marked `est.`, whether or not the session reports its own cost.
 
 ### Edge Cases
 
@@ -101,7 +101,7 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 - Estimated and reported costs in one session (for example some agents report, some do not): each figure carries its own `est.` mark; the session total carries `est.` if any part of it is estimated.
 - Cost of zero (nothing spent yet, reported as zero): the cost bar is empty at `$0.00`; this is a reported zero, not an unknown cost.
 - Very large numbers (over 999M tokens, over $9,999): shown in a short form that still fits the band.
-- A session resumed from an earlier one: figures are those the session reports; the board does not invent a total across sessions.
+- A session resumed from an earlier one: context and cost are those the session reports; token counts start at the board's load; the board does not invent a total across sessions.
 - Stats must not slow the prompt: drawing them adds no model call and no network call.
 
 ## Requirements *(mandatory)*
@@ -110,17 +110,17 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 
 - **FR-001**: The band above the prompt MUST show a progress bar of context used, with the percentage, whenever the board is shown.
 - **FR-002**: The bar MUST mark high use (at or above 80%) and critical use (at or above 95%) with a word or symbol as well as any colour.
-- **FR-003**: The band MUST show the session's input and output tokens in a short form (`k`, `M`) and its cost in dollars with two decimals.
-- **FR-004**: A cost the session reports MUST be shown as reported. When the session reports none, the cost MUST be estimated from the token counts and the model's list price and shown with the word `est.` beside it, and an estimate MUST never be shown without that mark. Any other unknown figure, and a cost with no reported value and no known price, MUST show as `n/a`, never as zero.
+- **FR-003**: The band MUST show the session's input tokens (uncached, cache-read and cache-written together) and output tokens, counted from the turns since the board loaded, in a short form (`k`, `M`), and its cost in dollars with two decimals.
+- **FR-004**: A cost the session reports MUST be shown as reported, and with the word `est.` beside it when the login is a subscription (the session reports a `five_hour` or `seven_day` rate-limit window), whose cost is priced, not billed. When the session reports none, the cost MUST be estimated from the token counts and the model's list price and shown with `est.`, and an estimate MUST never be shown without that mark. Any other unknown figure, and a cost with no reported value and no known price, MUST show as `n/a`, never as zero.
 - **FR-013**: Beside the cost the band MUST show a cost bar: full at a fixed reference of $5.00 for the session, filled in proportion to the cost (capped at full above it), and marked high at or above 80% and critical at or above 95% of the reference with a word or symbol as well as any colour. The bar is drawn from a reported or an estimated cost (the estimate keeps `est.`) and is omitted when the cost is `n/a`. The reference is a scale, not a budget: it stops and alerts nothing.
 - **FR-005**: The band, the pane and the status answer MUST show the same percentage, token counts, cost and cost-bar fill for the same state.
-- **FR-006**: The figures MUST refresh without a user command, at least after every model response.
-- **FR-007**: The pane MUST show, for each team agent that has run, its own tokens and cost; a cost is estimated and marked `est.` under FR-004, and other unknown figures show `n/a`.
-- **FR-008**: On a terminal of 60 columns the band MUST keep its existing line count and drop, in order, the token counts, then the cost bar, then the cost figure, before it drops the context bar.
+- **FR-006**: The figures MUST refresh without a user command: context use and cost within the board's 4-second poll and after every turn, token counts after every turn of the session and of each agent's run.
+- **FR-007**: The pane MUST show, for each team agent that has run, its own tokens and its cost estimated from them at list price and marked `est.` (the session reports no cost per agent); other unknown figures show `n/a`.
+- **FR-008**: On a terminal of 60 columns the band MUST keep its existing line count and drop, in order, the token counts, then the cost bar, then the cost figure, before any of its existing items; the context bar is dropped last, only where the band's narrowest form does not fit with it.
 - **FR-009**: The stats MUST work in standalone mode (no team) and in team mode, and MUST not appear where the board is not shown.
 - **FR-010**: Reading and drawing the figures MUST not make a model or network call, and a failure to read them MUST NOT block or delay the prompt.
 - **FR-011**: The stats MUST be read-only: they do not change the retry, gate or phase state of any run.
-- **FR-012**: The README's board section and `docs/rules.md` MUST describe the stats, and the board's existing tests MUST keep passing with the stats present.
+- **FR-012**: The README's board section and `docs/rules.md` MUST describe the stats, and the board's existing tests MUST keep passing with the stats present; a test that pins the pane's height or the whole status answer changes by the stats' rows or line alone.
 
 ### Key Entities
 
@@ -138,7 +138,7 @@ In a run with team agents, the pane shows each agent's tokens and cost next to i
 - **SC-003**: A user can read context used, tokens and cost from the band in one look, with no command typed (checked by reading the band alone in a recorded session).
 - **SC-004**: Drawing with unknown figures, missing figures and malformed figures produces no error and no blocked prompt in 100% of the sampled cases.
 - **SC-005**: At 60 columns the band is the same number of lines as before the feature in 100% of the sampled states.
-- **SC-006**: In every sampled state where the session reports no cost, the cost shown carries `est.` or is `n/a`; where it reports a cost, the figure equals the reported one and carries no `est.`, in 100% of the sampled states.
+- **SC-006**: In every sampled state where the session reports no cost or the login is a subscription, the cost shown carries `est.` or is `n/a`; where an API-key session reports a cost, the figure equals the reported one and carries no `est.`, in 100% of the sampled states.
 
 - **SC-007**: In the sampled costs ($0, $2.50, $4.00, $4.75, $5.00, $9.00), the cost bar's fill equals cost divided by $5.00 within 1 percentage point (capped at full), its mark is none, none, high, critical, critical, critical, and the same holds for an estimated cost, in 100% of the sampled states.
 

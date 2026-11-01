@@ -124,5 +124,5 @@ planned last. Read that plan only when you work on that feature.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/009-skill-agents-team/plan.md`
+`specs/010-context-cost-stats/plan.md`
 <!-- SPECKIT END -->
