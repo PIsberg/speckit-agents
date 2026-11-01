@@ -1518,13 +1518,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 545 tests:
+`npm test` runs 550 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 170 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 74 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 125 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 176 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 127 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -1534,7 +1534,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 16 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 25 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
