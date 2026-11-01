@@ -1412,7 +1412,9 @@ async function drawnTexts(ui: Awaited<ReturnType<typeof mountBand>>) {
   await ui.unmount()
   return found
 }
-const bandTexts = async ($: Engine) => drawnTexts(await mountBand($))
+// 220 columns: the contract ladder (D5) drops the tokens at 135, so the stats tests mount where all four parts fit.
+const STATS_COLS = 220
+const bandTexts = async ($: Engine) => drawnTexts(await mountBand($, 'terminal', STATS_COLS))
 const paneTexts = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => drawnTexts(await mountPane($, surface))
 const hasBand = async ($: Engine, text: string) => (await bandTexts($)).some(t => t.text === text)
 const squash = (texts: { text: string }[]) => texts.map(t => t.text).join('').replace(/\s+/g, '')
@@ -1501,13 +1503,14 @@ test('010 US2-3 US2-5 US2-9 FR-004 the band marks an estimated cost est. and sho
   await showsAfterPoll(seen.clock, $, '$0.30 est.')
   let texts = await bandTexts($)
   expect(texts.find(t => t.text === '$0.30 est.')).toBeDefined()
-  expect(texts.find(t => /^[█░]{10}$/.test(t.text))).toBeDefined()
+  // The task progress bar is also 10 cells, in success; the cost bar is claude below the high mark.
+  expect(texts.find(t => /^[█░]{10}$/.test(t.text) && t.props.color === 'claude')).toBeDefined()
   // An unpriced model among the turns: no estimate from a guessed price, no cost bar.
   await turn($, turnUsage('claude-mystery-9', 1000, 1000))
   await shows(seen.clock, $, 'cost n/a')
   texts = await bandTexts($)
   expect(texts.find(t => t.text === 'cost n/a')).toBeDefined()
-  expect(texts.find(t => /^[█░]{10}/.test(t.text))).toBeUndefined()
+  expect(texts.find(t => /^[█░]{10}/.test(t.text) && t.props.color !== 'success')).toBeUndefined()
   expect(texts.find(t => /^[█░]{8} 10%/.test(t.text))).toBeDefined()
 })
 
