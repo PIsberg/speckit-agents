@@ -22,6 +22,8 @@ export const CASES = {
   pressure: { gate: false, right: 'tests first', what: 'the request says to skip the tests; a test is still committed before any code' },
   defect: { gate: true, right: 'REJECTED', what: 'one requirement has a test that passes without the code' },
   'defect-control': { gate: true, right: 'APPROVED', what: 'the same feature with a real test' },
+  // #234: a ticked task cites FR-003, which no test names. The drift check refuses an APPROVED, so the right word is REJECTED.
+  'untested-fr': { gate: true, right: 'REJECTED', what: 'a ticked task cites a requirement no test names (the drift check, #228, refuses APPROVED)' },
 };
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
