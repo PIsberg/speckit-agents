@@ -794,6 +794,8 @@ function endEv(dir, base, extra = {}) {
 }
 const stop = (dir, extra) => endEv(dir, STOP, extra);
 const hand = (dir, extra) => endEv(dir, HAND, extra);
+// #243: a run whose production change has no test file, for the cases that test something else (the record, the undo, the team).
+const EXEMPT = { last_assistant_message: 'Done.\nNo test: these cases test the end check, not a behaviour change\nDONE' };
 const noStop = (out, label = '') => { assert.ok(out?.decision !== 'block' && !denied(out), `${label} expected no block: ${JSON.stringify(out)}`); };
 function isBlocked(out, ...res) {
   assert.equal(out?.decision, 'block', `expected a block, got ${JSON.stringify(out)}`);
@@ -857,7 +859,7 @@ test('patch end (#213): an accepted run writes the undo record too, one that cha
   const { dir } = fresh({ 'src/a.js': nl(10, 'a') });
   begin(dir);
   edit(dir, 'src/a.js', 0, 2);
-  noStop(stop(dir));
+  noStop(stop(dir, EXEMPT));
   assert.ok(record(dir), 'accepted');
   assert.equal(undoRecord(dir).undo, `git restore --source=${startSha(dir)} --staged --worktree -- 'src/a.js'`);
   patchTool(dir, 'Read', { file_path: path.join(dir, 'src/a.js') });
@@ -882,7 +884,7 @@ test('patch end (#221): the end record holds the outcome and the message, for a 
   const ok = fresh({ 'src/a.js': nl(10, 'a') });
   begin(ok.dir);
   edit(ok.dir, 'src/a.js', 0, 2);
-  const accepted = stop(ok.dir);
+  const accepted = stop(ok.dir, EXEMPT);
   assert.equal(undoRecord(ok.dir).outcome, 'accepted');
   assert.equal(undoRecord(ok.dir).message, msg(accepted));
 });
@@ -900,7 +902,7 @@ test('patch: a remote-tracking ref that moves during the run stops it and fails 
   begin(dir);
   put(dir, 'src/fix.js', nl(2, 'f'));
   okBash(dir, 'nothing pushed, and a ref from before the run is no change');
-  noStop(stop(dir), 'before the push');
+  noStop(stop(dir, EXEMPT), 'before the push');
   assert.ok(record(dir), 'accepted before the push');
   git(dir, 'push', '-q', 'origin', 'HEAD:refs/heads/patch/x');
   const out = bash(dir, 'npm test');
@@ -992,7 +994,7 @@ test('patch end: dirty work swept into a commit is blocked, then measured withou
   isBlocked(stop(dir, { stop_hook_active: true }), re);
   isDenied(hand(dir), re);
   git(dir, 'reset', '--soft', startSha(dir));
-  const out = stop(dir);
+  const out = stop(dir, EXEMPT);
   noStop(out);
   assert.match(msg(out), /3 of 30 production lines, 1 of 2 production files/);
   assert.deepEqual(record(dir).files, ['src/a.js']);
@@ -1088,6 +1090,41 @@ test('patch end: within budget writes the accepted record, on stop and on handba
   }
 });
 
+// #243: patcher's Process 2 asks for a regression test before a change in behaviour. The end check measured the
+// budget and the protected paths only, so a fix with no test was accepted and committed. A production change
+// with no test file changed is now stopped, unless the report says why it has none: a line `No test: <reason>`.
+test('patch end (#243): a production change with no test file is stopped; a "No test:" line in the report lets it through', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(3, 'a'));
+  const stopped = stop(dir);
+  assert.match(msg(stopped), /no test file changed/);
+  assert.match(msg(stopped), /No test: <reason>/, 'the message names the exemption line');
+  assert.equal(undoRecord(dir).outcome, 'stopped');
+  assert.equal(record(dir), null, 'no accepted record: /speckit-patch commits nothing');
+
+  const other = fresh();
+  begin(other.dir);
+  put(other.dir, 'src/a.js', nl(3, 'a'));
+  const handed = hand(other.dir, { tool_input: { message: 'Fixed.\nNo test: a comment only\nDONE' } });
+  noStop(handed, 'an exempt change');
+  assert.equal(undoRecord(other.dir).outcome, 'accepted');
+});
+
+test('patch end (#243): a test file in the run, or a docs-only change, is accepted without an exemption', () => {
+  const withTest = fresh();
+  begin(withTest.dir);
+  put(withTest.dir, 'src/a.js', nl(3, 'a')); put(withTest.dir, 'test/a.test.js', nl(5, 't'));
+  noStop(stop(withTest.dir), 'a change with its test');
+  assert.equal(undoRecord(withTest.dir).outcome, 'accepted');
+
+  const docs = fresh();
+  begin(docs.dir);
+  put(docs.dir, 'docs/a.md', nl(5, 'd'));
+  noStop(stop(docs.dir), 'a docs-only change');
+  assert.equal(undoRecord(docs.dir).outcome, 'accepted');
+});
+
 test('patch end: every patch call removes the accepted record (research R15)', () => {
   const stale = (d) => { fs.mkdirSync(stateDir(d), { recursive: true }); fs.writeFileSync(acceptedFile(d), '{"stale":true}'); };
   const a = acceptedRun();
@@ -1173,7 +1210,7 @@ test('patch end: the speckit-agents sources are protected in that repo only (dec
   const app = fresh(files('my-app')).dir;
   begin(app);
   fs.appendFileSync(path.join(app, 'install.mjs'), 'y\n');
-  const out = stop(app);
+  const out = stop(app, EXEMPT);
   noStop(out);
   assert.match(msg(out), /1 of 30 production lines, 1 of 2 production files/);
 });
@@ -1191,7 +1228,7 @@ test('patch end: package.json is protected by the name at the start commit (owne
   const app = fresh({ 'package.json': '{"name":"my-app"}\n' }).dir;
   begin(app);
   fs.appendFileSync(path.join(app, 'package.json'), '\n');
-  const out = stop(app);
+  const out = stop(app, EXEMPT);
   noStop(out);
   assert.match(msg(out), /1 of 30 production lines, 1 of 2 production files/);
 });
@@ -1225,6 +1262,7 @@ function teamRun({ prepare } = {}) {
   assert.ok(!denied(out), `first call: ${why(out)}`);
   assert.ok(fs.existsSync(startFile(dir)), 'the first call writes the start record');
   put(dir, 'src/a.js', nl(1, 'a'));
+  put(dir, 'test/a.test.js', nl(1, 't')); // #243: a production change comes with its test
   return { dir, hook, cfg: cfgOf(hook) };
 }
 const cfgFile = (cfg, rel) => path.join(cfg, ...rel.split('/'));

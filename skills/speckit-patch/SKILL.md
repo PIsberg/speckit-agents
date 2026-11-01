@@ -65,7 +65,7 @@ Otherwise:
 If a check fails, commit nothing and report the run as FAILED, say which check failed, and that
 the work is uncommitted in the working tree. A missing accepted record is such a check: its cause is
 the `outcome` (`stopped`, `failed`) and `message` of `$(git rev-parse --git-dir)/speckit-team/patch-undo.json`
-when its `sha` equals the start. Quote the message; never work a cause out from other files. No
+when its `sha` equals the start. Quote the message; never work a cause out from other files. A message that says no test file changed means the change needs its regression test, or the report's `No test:` line for a change with no behaviour; say so. No
 such record: say the end check left none.
 
 ## 5. Report

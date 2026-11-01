@@ -36,7 +36,6 @@ unseen too, but a breach costs tokens, not correctness, and `tools/usage.mjs` me
 | The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | #241 |
 | A contested finding goes to the user; the main session does not judge it | skill 3 | #242 |
 | After two audit FAILs, the findings go to the user | skill 3 | #242 |
-| A behaviour change on the fast track starts with a failing regression test | patcher Process 2 | #243 |
 
 Taken over since the issue was filed: spec-gatekeeper's APPROVED on a cited FR no test holds is
 refused by a hook (#228), the undo offer and the cause of a failed fast-track run come from the hook's
@@ -176,11 +175,11 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 - One patcher, foreground, the change and at most a `Project:` line. text.
 
 ### skills/speckit-patch/SKILL.md: 4. Commit
-<!-- fingerprint: ce021983 -->
+<!-- fingerprint: 29d78884 -->
 - Commit only when every check holds (hook hash, start, branch, accepted record, refs, dirty files). pinned; the accepted record is hook `patch`.
 - An empty `files` commits nothing. pinned.
 - Add and commit by path, never `git add -A` or `-a`; push without `--force`. pinned.
-- A missing record's cause is the end record's `outcome` and `message`, quoted. script (hook `patch` writes it), pinned (#221).
+- A missing record's cause is the end record's `outcome` and `message`, quoted. script (hook `patch` writes it), pinned (#221). A message that names no test file says the change needs its test or the `No test:` line: the same message, pinned by `test/install.test.mjs` (#243).
 
 ### skills/speckit-patch/SKILL.md: 5. Report
 <!-- fingerprint: 97caf9c6 -->
@@ -412,9 +411,9 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 - No `specs/` artifacts. text.
 
 ### agents/patcher.md: Process
-<!-- fingerprint: 40da77ef -->
+<!-- fingerprint: a29a0566 -->
 - Files dirty at the start are not yours. hook `patch` (denies a write to one, stops the run if one changes).
-- A regression test first for a behaviour change. text, unseen (#243).
+- A regression test first for a behaviour change. text: whether the test fails first is not checked. hook `patch`: the end check stops a run that changes production lines with no test file changed, unless the report has a `No test: <reason>` line (#243).
 - Move files with `git mv`. text; a plain `mv` costs budget, which the hook counts.
 - Run the tests; a Bash `timeout` that covers it. pinned.
 - Restore only by naming the file. hook `patch` (denies a wholesale restore).
@@ -427,5 +426,6 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 - Not the protected paths; 30 production lines and 2 files. hook `scope protected`, `patch`.
 
 ### agents/patcher.md: Report
-<!-- fingerprint: 4a03afa8 -->
+<!-- fingerprint: c5918333 -->
 - `DONE`, `FAILED` or `ESCALATE` last. hook `ends`.
+- A change with production lines and no test file gives its reason in a `No test: <reason>` line. hook `patch` reads it at the end check (#243).

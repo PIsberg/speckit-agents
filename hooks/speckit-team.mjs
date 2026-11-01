@@ -26,7 +26,7 @@
 //                           or it runs a history/remote command or a wholesale restore; run a Bash command it lets
 //                           through with git's network transports off (in bypassPermissions, or where the installed
 //                           settings.json allows the export line); SubagentHandback, SubagentStop and
-//                           Stop: the end check (protected files, commits, the installed team's hashes, budget) and the accepted record
+//                           Stop: the end check (protected files, commits, the installed team's hashes, budget, a production change with no test unless the report says `No test:`) and the accepted record
 //   project <name> [--init] Not a hook: the skills run it from Bash. Prints the project's block (feature 007) or one
 //                           refusal line, exit 0 or 1; --init creates .specify/projects/<name>/ with a starter file
 //   relay                   PostToolUse of Agent in the main session: hands it what the hooks said inside its
@@ -1946,6 +1946,9 @@ const undoSentence = (sha, m) => {
 };
 
 // The end of a fast-track run (contracts/hook-cli.md "End of run"). Exits.
+// #243: the exemption line of patcher's report for a production change with no test (twin: agents/patcher.md, the skill).
+const NO_TEST_LINE = /^[\s*>#-]*No test:[ \t]*\S/im;
+
 function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   const s12 = start.sha.slice(0, 12);
   let m;
@@ -1990,6 +1993,16 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
       + (m.binary.length ? `; binary production files: ${m.binary.join(', ')}` : '')
       + (m.dirtyTouched.length ? `; changed although they had uncommitted changes when the run started: ${m.dirtyTouched.join(', ')}` : '')
       + '. Nothing was committed; the work is uncommitted in the working tree. Use /speckit-team for this change.'
+      + undoSentence(start.sha, m));
+  }
+  // #243: a change in behaviour comes with its regression test (patcher's Process 2). The hook cannot tell a
+  // behaviour change from a typo, so a production change with no test file in the run is stopped, unless the
+  // report says why it has none: a line `No test: <reason>`. A docs-only change has no production lines to check.
+  const tests = testsAt(start.sha);
+  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !NO_TEST_LINE.test(reportText(viaHandback))) {
+    end('stopped', `fast track stopped: ${m.lines} changed production lines and no test file changed. A change in behaviour needs a regression test, shown failing. `
+      + 'If the change has no behaviour (a typo, a comment, a config value), the report says so in a line `No test: <reason>`. '
+      + 'Nothing was committed; the work is uncommitted in the working tree. Write the test or add that line, then run the change again.'
       + undoSentence(start.sha, m));
   }
   writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });

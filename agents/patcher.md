@@ -38,7 +38,8 @@ the build file for the test command. No `specs/` artifacts.
    hook denies a write to one and stops the run if one changes. You work on the branch
    `/speckit-patch` created.
 2. For a change in behaviour, write a regression test first and show it failing. Typos, comments,
-   docs and config values with no behaviour are exempt.
+   docs and config values with no behaviour are exempt. A run that changes production lines with no
+   test file changed is stopped at its end, unless the report has the line `No test: <reason>`.
 3. Make the change. Move or rename a file only with `git mv`: a plain `mv` counts as a deleted and
    a new file against the budget.
 4. Run the existing tests and check the command's own exit status. Give the run a Bash `timeout`
@@ -61,5 +62,6 @@ production file. A hook enforces both. When a hook stops you for the budget, rep
 
 ## Report
 At most 10 lines: files changed, the size, the exact test command and its result stated as
-passed, failed, skipped or not run. The last line is exactly `DONE` (tests passed), `FAILED` or
+passed, failed, skipped or not run. A change with production lines and no test file says why in a
+line `No test: <reason>` (a typo, a comment, a config value). The last line is exactly `DONE` (tests passed), `FAILED` or
 `ESCALATE`.
