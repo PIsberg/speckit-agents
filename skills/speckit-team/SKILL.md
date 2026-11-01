@@ -283,7 +283,10 @@ revision that records the ruling (architect under `## Decisions`, product-owner 
 `## Clarifications`), so the next audit does not raise it again; send it in the message that carries
 the other fixes.
 MEDIUM and LOW findings are accepted: do not route them, and list them once at hand-over.
-After two FAILs, hand the findings to the user. A PASS is voided by any later edit to spec, plan, tasks
+After two FAILs, hand the findings to the user. The hook refuses a third spec-auditor launch until the user
+says to go on: ask with AskUserQuestion (audit again, or stop and fix the spec), and only on a yes run the
+`audit --approve` command the refusal names, then launch the audit again.
+A PASS is voided by any later edit to spec, plan, tasks
 or constitution, but not by ticking task checkboxes: the hook ignores checkbox state, so ticks made
 while building never call for a re-audit.
 

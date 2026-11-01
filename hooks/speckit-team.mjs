@@ -106,7 +106,7 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
 const [mode, ...args] = process.argv.slice(2);
 // `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
 // exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
-const CLI = mode === 'project' || mode === 'check';
+const CLI = mode === 'project' || mode === 'check' || mode === 'audit';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
 const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -446,6 +446,10 @@ const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(f
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
+// #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
+const AUDIT_FAIL_LIMIT = 2;
+const auditFile = (feat) => path.join(stateDir, 'audit', `${path.basename(feat)}.json`);
+const auditRecord = (feat) => { const a = readState(auditFile(feat)); return a && typeof a === 'object' ? a : {}; };
 // REDs count only against the plan and tasks they were made on: a revision starts from zero.
 const redCount = (r, feat) => (r && r.fingerprint === fingerprint(feat) && Array.isArray(r.red) ? r.red.length : 0);
 const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, JSON.stringify(obj, null, 1)); };
@@ -961,13 +965,14 @@ if (mode === 'gate') {
   // Reporting back is not work. Gating SubagentHandback leaves a blocked agent unable to say so.
   if (event === 'PreToolUse' && input.tool_name === 'SubagentHandback') process.exit(0);
   if (event === 'PreToolUse' && input.tool_name === 'Agent') {
-    // Never a decision: only the team and project records change, and only at the main session's launch
+    // Never a decision, but one: only the team and project records change, and only at the main session's launch
     // of a team role (or patcher, for the project). A subagent's Agent call (#102) and a launch of any
-    // other agent (#103) change nothing.
+    // other agent (#103) change nothing. The exception is the third spec-auditor launch after two FAILs (#242).
     const id = str(input.session_id);
     const role = str(input.tool_input?.subagent_type)?.toLowerCase();
     if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
+    if (role === 'spec-auditor') holdAudit(feature());
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
     let projectNote = null;
     const named = parseProject(input.tool_input.prompt);
@@ -1060,6 +1065,30 @@ if (mode === 'gate') {
   process.exit(0);
 }
 
+// #242: after two spec-auditor FAILs in a row, the main session's next launch of it is refused until the user
+// says to go on. The count is per feature and a PASS clears it. `audit --approve` is run by the skill only on
+// the user's yes, and spends the approval on one launch. The hook refuses; it cannot tell the user's yes from a model's.
+if (mode === 'audit') {
+  const feat = feature();
+  if (!feat || args.length !== 1 || args[0] !== '--approve') {
+    fs.writeSync(1, `speckit-team: audit: ${feat ? 'the only argument is --approve' : 'no feature is active'}\n`);
+    process.exit(1);
+  }
+  writeJson(auditFile(feat), { ...auditRecord(feat), feature: feat, approved: true, at: new Date().toISOString() });
+  fs.writeSync(1, `speckit-team: the next spec-auditor launch for ${feat} may run, once.\n`);
+  process.exit(0);
+}
+// Called at a main-session launch of spec-auditor (the gate mode's Agent branch): refuses the launch after
+// AUDIT_FAIL_LIMIT FAILs in a row, unless an approval is waiting, which it spends. Otherwise it changes nothing.
+function holdAudit(feat) {
+  if (!feat) return;
+  const a = auditRecord(feat);
+  if (!(Number(a.fails) >= AUDIT_FAIL_LIMIT)) return;
+  if (a.approved) { writeJson(auditFile(feat), { ...a, approved: false }); return; }
+  deny(`speckit-team: spec-auditor has reported VERDICT: FAIL ${a.fails} times in a row on ${feat}, so a further audit is refused until the user says to go on. `
+    + `Ask the user (AskUserQuestion): audit again, or stop and fix the spec first. Only on a yes, run node "${process.argv[1]}" audit --approve, then launch the audit again. A PASS clears the count.`);
+}
+
 if (mode === 'verdict') {
   // The auditor's first tool call records the files it starts from: a verdict is about the files it
   // read, and one that finishes after they changed would stamp itself on files nobody audited (#77).
@@ -1105,6 +1134,9 @@ if (mode === 'verdict') {
   writeJson(verdictFile(feat), {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
+  // #242: FAILs in a row, per feature. A PASS clears the count; a FAIL spends any approval.
+  if (verdict === 'PASS') fs.rmSync(auditFile(feat), { force: true });
+  else writeJson(auditFile(feat), { feature: feat, fails: (Number(auditRecord(feat).fails) || 0) + 1, approved: false, at: new Date().toISOString() });
   emit({ systemMessage: `spec-auditor recorded VERDICT: ${verdict} for ${feat}` });
 }
 

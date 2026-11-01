@@ -1042,7 +1042,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it only records the launch's `Team:` line, and on a typed `/speckit-team` it only starts a new team record (`noagents`, or none); it never decides on either |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it only records the launch's `Team:` line, and on a typed `/speckit-team` it only starts a new team record (`noagents`, or none); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
@@ -1125,6 +1125,13 @@ starts when you type `/speckit-team`, which removes the session's record. Typed 
 `/speckit-team --team noagents`, it records that no agent runs, and that is the only record a typed
 `/speckit-implement` or Claude's `speckit-implement` call reads: they pass without an audit until
 your next `/speckit-team` or a launch of a team role.
+
+Two `VERDICT: FAIL`s in a row on one feature (a PASS clears the count) stop the next spec-auditor launch:
+the hook refuses it and names the command that lets one audit through, `audit --approve`. The skill runs
+that command only after you answer yes to AskUserQuestion, and the approval covers one launch. The
+count and the approval are kept under `audit/` in the state directory. The hook cannot tell your yes
+from a model's: that part is the skill's rule, and the contest half of #242 is still open
+([#242](https://github.com/PIsberg/speckit-agents/issues/242)).
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
 `feature_directory` may be relative to the repo or absolute; either way it must name a folder
@@ -1510,7 +1517,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 539 tests:
+`npm test` runs 540 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
