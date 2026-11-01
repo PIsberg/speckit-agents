@@ -92,7 +92,7 @@ Shared references:
 
 ### Phase 4: Band and status answer, read from the session (US1, US2, US3)
 
-- [ ] T010 [US1] Tests in `tests/board.test.tsx`: US1-1, US1-3, US1-4, US2-1, US2-2, US3-1 (band and
+- [X] T010 [US1] Tests in `tests/board.test.tsx`: US1-1, US1-3, US1-4, US2-1, US2-2, US3-1 (band and
   status), US3-3, US3-4, FR-005, FR-006, FR-009, FR-010, FR-011, SC-004. Not settled by the spec: the
   world answers `session.usage` per test (a `SessionUsage`, a rejection, a promise that never
   settles) and is the bottom of `turn.complete` (`({ text: e.answer, ...(e.usage && { usage:
@@ -127,7 +127,7 @@ Shared references:
 
 ### Phase 5: The pane's stats and each agent's figures (US3, US4)
 
-- [ ] T012 [US4] Tests in `tests/board.test.tsx`: US3-1 (pane), US4-1 to US4-3, FR-005, FR-007,
+- [X] T012 [US4] Tests in `tests/board.test.tsx`: US3-1 (pane), US4-1 to US4-3, FR-005, FR-007,
   SC-002. Not settled by the spec: the two rows and the agent row text of contracts/stats-text.md
   "Pane", with figures equal to the band's and the status answer's in one state; an ended row's
   figures after its dim text, with `around`'s `then` unchanged; a running row none; a row with no

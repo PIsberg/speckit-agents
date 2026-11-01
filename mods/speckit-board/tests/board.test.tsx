@@ -20,6 +20,8 @@ const SPEC_FILES: Record<string, string> = {
   [`${FEATURE}/tasks.md`]: TASKS,
 }
 
+const DENIED = Symbol('denied')
+
 async function world(on: On, extra: Record<string, string> = {}, opts: { hasRecords?: boolean, store?: Record<string, unknown> } = {}) {
   const fp = await fingerprint(fingerprintFiles(FEATURE).map(path => ({ path, text: SPEC_FILES[path] ?? '<missing>' })))
   const files: Record<string, string> = {
@@ -75,6 +77,16 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
     const text = files[posix(e.path)]
     return text === undefined ? { deny: `ENOENT ${e.path}` } : { value: text }
   })
+  // What $.session.usage() answers, per test: a SessionUsage, DENIED, or a promise that settles later.
+  const usage = { answer: (): unknown => DENIED, reads: 0 }
+  on('session.usage', (async () => {
+    usage.reads++
+    const value = await usage.answer()
+    return value === DENIED ? { deny: 'no usage' } : { value }
+  }) as never)
+  // The bottom of turn.complete, as Claude Code's core answers it.
+  on('turn.complete', ((_$: unknown, e: { answer: string, usage?: unknown }) =>
+    ({ text: e.answer, ...(e.usage ? { usage: e.usage } : {}) })) as never)
   on('command.register', (_$, e) => { commands.push(e); return { value: { command: 'speckit-board' } } })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   // Stands for the engine's own band: empty.
@@ -85,7 +97,7 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
   on('ui.toast', (_$, e) => { toasts.push(e.text); return { value: undefined } })
   on('ui.status', (_$, e) => { status.push(e.text); return { value: undefined } })
   on('ui.open', (_$, e) => { opens.push(e); return { value: { isPlaced: true } } })
-  return { toasts, status, commands, opens, files, fp, clock, runs, denied, storeWrites, failures }
+  return { toasts, status, commands, opens, files, fp, clock, runs, denied, storeWrites, failures, usage }
 }
 
 // The poll runs off the clock unawaited, and advance() resolves once the event loop settles: on a
@@ -157,7 +169,7 @@ test('the band names the current phase at any width, and the team agent at work'
     const ui = await $.ui.mount({ plugin: 'speckit-board', surface, ...BAND, ...band(70) } as never)
     expect(await ui.find({ type: 'Text', text: '◐ build' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '✓ spec' })).toBeUndefined()
-    expect(await ui.findAll({ type: 'Text', text: /^✓$/ })).toHaveLength(4)
+    expect(await ui.findAll({ type: 'Text', text: /^✓$/ })).toHaveLength(0)
     expect((await ui.find({ type: 'Text', text: /implementer/ }))?.text).toBe('◐ implementer 0s')
     await ui.unmount()
   }
@@ -217,10 +229,10 @@ test('the pane asks for the rows it draws, and for more when it shows every task
   expect(await $.command.run({ command: 'speckit-board', args: '' } as never)).toMatchObject({ text: 'pane opened.' })
   // Header 2, the six phases, the team title and its empty row, the buttons, and the sections:
   // Phase 1 folded, Phase 2 with its two tasks; a blank row between the five parts.
-  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 6 + 2 + 1 + 4 + 4 })
+  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 6 + 3 + 2 + 1 + 4 + 4 })
   const ui = await $.ui.mount({ plugin: 'speckit-board', surface: 'terminal', ...PANE, ...pane } as never)
   await ui.press({ key: 'tasks' })
-  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 6 + 2 + 1 + 5 + 4 })
+  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 6 + 3 + 2 + 1 + 5 + 4 })
   await ui.unmount()
 })
 
@@ -532,7 +544,7 @@ test('/speckit-board status answers with the board as text', async ($, on) => {
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
   await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'implementer' } as never)
   expect(await $.command.run({ command: 'speckit-board', args: 'status' } as never)).toMatchObject({
-    text: '001-x · ◐ build (1/3) · RED 1/3\n✓ spec ✓ plan ✓ tasks ✓ audit ◐ build ○ verify\nnext: T002 Test greet\nrunning: implementer 0s',
+    text: '001-x · ◐ build (1/3) · RED 1/3\n✓ spec ✓ plan ✓ tasks ✓ audit ◐ build ○ verify\nnext: T002 Test greet\nrunning: implementer 0s\nstats: context n/a 0 in · 0 out cost n/a',
   })
 })
 
@@ -991,7 +1003,7 @@ test('SubagentStart after a clear toasts a refused isCleared write and goes on',
 // ---- 005-standalone-board: which view a feature gets (T005) ----
 
 const STATUS = ($: Engine) => $.command.run({ command: 'speckit-board', args: 'status' } as never) as Promise<{ text: string }>
-const STANDALONE_1_OF_3 = '001-x · ◐ build (1/3)\n✓ spec ✓ plan ✓ tasks ◐ build\nnext: T002 Test greet'
+const STANDALONE_1_OF_3 = '001-x · ◐ build (1/3)\n✓ spec ✓ plan ✓ tasks ◐ build\nnext: T002 Test greet\nstats: context n/a 0 in · 0 out cost n/a'
 const NO_RECORDS = { hasRecords: false }
 const start = ($: Engine) => $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
 
@@ -1030,7 +1042,7 @@ test('005 FR-007 a gatekeeper word in the plugin store alone selects the team vi
 test('005 FR-008 a feature with team records keeps the team view', async ($, on) => {
   await world(on)
   await start($)
-  expect((await STATUS($)).text).toBe('001-x · ◐ build (1/3) · RED 1/3\n✓ spec ✓ plan ✓ tasks ✓ audit ◐ build ○ verify\nnext: T002 Test greet')
+  expect((await STATUS($)).text).toBe('001-x · ◐ build (1/3) · RED 1/3\n✓ spec ✓ plan ✓ tasks ✓ audit ◐ build ○ verify\nnext: T002 Test greet\nstats: context n/a 0 in · 0 out cost n/a')
 })
 
 // US3-2, FR-007: per feature, not per repo
@@ -1042,7 +1054,7 @@ test('005 US3-2 a feature without records gets the standalone view though anothe
   seen.files[`${ROOT}/specs/002-y/spec.md`] = '**Status**: Approved'
   seen.files[`${ROOT}/specs/002-y/plan.md`] = '# Plan'
   await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)
-  expect((await STATUS($)).text).toBe('002-y · ○ tasks\n✓ spec ✓ plan ○ tasks ○ build\nnext: run /speckit-tasks')
+  expect((await STATUS($)).text).toBe('002-y · ○ tasks\n✓ spec ✓ plan ○ tasks ○ build\nnext: run /speckit-tasks\nstats: context n/a 0 in · 0 out cost n/a')
   seen.files[`${ROOT}/.specify/feature.json`] = JSON.stringify({ feature_directory: FEATURE })
   await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)
   expect((await STATUS($)).text).toMatch(/audit/)
@@ -1062,7 +1074,7 @@ test('005 D1-A FR-007 a team agent start turns a feature with no record to the t
   seen.files[`${ROOT}/.specify/feature.json`] = JSON.stringify({ feature_directory: 'specs/002-y' })
   seen.files[`${ROOT}/specs/002-y/spec.md`] = '**Status**: Draft'
   await $.command.run({ command: 'speckit-board', args: 'refresh' } as never)
-  expect((await STATUS($)).text).toBe('002-y · ◐ spec (draft)\n◐ spec ○ plan ○ tasks ○ build\nnext: review spec.md, then /speckit-plan')
+  expect((await STATUS($)).text).toBe('002-y · ◐ spec (draft)\n◐ spec ○ plan ○ tasks ○ build\nnext: review spec.md, then /speckit-plan\nstats: context n/a 0 in · 0 out cost n/a')
 })
 
 test('005 D1 the patcher of the fast track is not a team agent and does not select the team view', async ($, on) => {
@@ -1222,10 +1234,10 @@ test('005 FR-003 the standalone pane asks for the rows it draws, with no Team bl
   const seen = await world(on, {}, NO_RECORDS)
   await start($)
   expect(await $.command.run({ command: 'speckit-board', args: '' } as never)).toMatchObject({ text: 'pane opened.' })
-  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 4 + 1 + 4 + 3 })
+  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 4 + 3 + 1 + 4 + 3 })
   const ui = await mountPane($)
   await ui.press({ key: 'tasks' })
-  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 4 + 1 + 5 + 3 })
+  expect(seen.opens.at(-1)).toMatchObject({ id: 'speckit-board', rows: 2 + 4 + 3 + 1 + 5 + 3 })
   await ui.unmount()
 })
 
@@ -1265,7 +1277,7 @@ test('005 US4-2 FR-013 a Spec Kit folder that is not a git repo draws S-5 from t
   await $.session.start({ cwd: '/plain/sub', surface: 'terminal', isInteractive: true })
   expect(seen.status.at(-1)).toBe('001-x · ○ build (0/2)')
   expect((await cmd($, 'status')).text)
-    .toBe('001-x · ○ build (0/2)\n✓ spec ✓ plan ✓ tasks ○ build\nnext: /speckit-implement: T001 Create package.json')
+    .toBe('001-x · ○ build (0/2)\n✓ spec ✓ plan ✓ tasks ○ build\nnext: /speckit-implement: T001 Create package.json\nstats: context n/a 0 in · 0 out cost n/a')
   const ui = await mountPane($)
   expect(await ui.find({ type: 'Text', text: 'SPEC KIT · 001-x' })).toBeDefined()
   expect((await ui.find({ type: 'Text', text: /^next / }))?.text).toBe('next /speckit-implement: T001 Create package.json')
@@ -1325,7 +1337,7 @@ test('005 FR-011 D3-A a tasks.md that exists but cannot be read shows ✗ tasks 
   seen.denied.add(`${ROOT}/${FEATURE}/tasks.md`)
   await start($)
   expect(seen.status.at(-1)).toBe('001-x · ✗ tasks (unreadable)')
-  expect((await cmd($, 'status')).text).toBe('001-x · ✗ tasks (unreadable)\n✓ spec ✓ plan ✗ tasks ○ build\nnext: cannot read tasks.md')
+  expect((await cmd($, 'status')).text).toBe('001-x · ✗ tasks (unreadable)\n✓ spec ✓ plan ✗ tasks ○ build\nnext: cannot read tasks.md\nstats: context n/a 0 in · 0 out cost n/a')
   const ui = await mountPane($)
   const row = await around(ui, 'tasks')
   expect(row.before?.text).toBe('✗')
@@ -1335,7 +1347,7 @@ test('005 FR-011 D3-A a tasks.md that exists but cannot be read shows ✗ tasks 
   seen.denied.delete(`${ROOT}/${FEATURE}/tasks.md`)
   delete seen.files[`${ROOT}/${FEATURE}/tasks.md`]
   await cmd($, 'refresh')
-  expect((await cmd($, 'status')).text).toBe('001-x · ○ tasks\n✓ spec ✓ plan ○ tasks ○ build\nnext: run /speckit-tasks')
+  expect((await cmd($, 'status')).text).toBe('001-x · ○ tasks\n✓ spec ✓ plan ○ tasks ○ build\nnext: run /speckit-tasks\nstats: context n/a 0 in · 0 out cost n/a')
 })
 
 test('005 FR-011 D3-A a verdict file that exists but cannot be read selects the team view and shows ✗ audit (unreadable)', async ($, on) => {
@@ -1358,4 +1370,358 @@ test('005 FR-011 D3-A a verdict file that exists but cannot be read selects the 
   seen.files[`${ROOT}/.git/speckit-team/retries/001-x.json`] = JSON.stringify({ fingerprint: seen.fp, red: [] })
   await cmd($, 'refresh')
   expect((await cmd($, 'status')).text.split('\n')[1]).toBe('✓ spec ✓ plan ✓ tasks ○ audit ⊘ build ○ verify')
+})
+
+// ---- 010-context-cost-stats: the band, the status answer and the pane read $.session.usage() (T010, T012) ----
+
+type UsageOpts = { percent?: number, tokens?: number, usd?: number, isSub?: boolean }
+// A SessionUsage as Claude Code's core answers it: a cost only where the host keeps a ledger.
+const sessionUsage = (o: UsageOpts = {}) => ({
+  startedAt: 0,
+  context: { window: 200_000, ...(o.tokens === undefined ? {} : { tokens: o.tokens }), ...(o.percent === undefined ? {} : { percent: o.percent }) },
+  rateLimits: o.isSub ? [{ kind: 'five_hour' }] : [],
+  ...(o.usd === undefined ? {} : { cost: { usd: o.usd } }),
+})
+const turnUsage = (model: string, input: number, output: number, cacheRead = 0, cacheWrite = 0) => ({
+  model, input_tokens: input, output_tokens: output, cache_read_input_tokens: cacheRead, cache_creation_input_tokens: cacheWrite,
+})
+const turn = ($: Engine, usage?: unknown, agentId?: string) => $.turn.complete({
+  turnId: 't1', answer: 'ok', durationMs: 1, isAborted: false, reason: 'answer',
+  ...(usage ? { usage } : {}), ...(agentId ? { agentId } : {}),
+} as never)
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+// The reads and writes run unawaited off a hook or the clock: wait, bounded, for what the test expects.
+async function until(clock: MockClock, isThere: () => Promise<boolean>) {
+  for (let i = 0; i < 60 && !(await isThere()); i++) {
+    await clock.settle()
+    await sleep(10)
+  }
+}
+// Waits for a band text, and says so when it never comes.
+async function shows(clock: MockClock, $: Engine, text: string) {
+  await until(clock, () => hasBand($, text))
+  expect(await hasBand($, text), `the band shows "${text}"`).toBe(true)
+}
+async function showsAfterPoll(clock: MockClock, $: Engine, text: string) {
+  await clock.advance(POLL)
+  await shows(clock, $, text)
+}
+async function drawnTexts(ui: Awaited<ReturnType<typeof mountBand>>) {
+  const found = await ui.findAll({ type: 'Text' })
+  await ui.unmount()
+  return found
+}
+const bandTexts = async ($: Engine) => drawnTexts(await mountBand($))
+const paneTexts = async ($: Engine, surface: 'terminal' | 'desktop' = 'terminal') => drawnTexts(await mountPane($, surface))
+const hasBand = async ($: Engine, text: string) => (await bandTexts($)).some(t => t.text === text)
+const squash = (texts: { text: string }[]) => texts.map(t => t.text).join('').replace(/\s+/g, '')
+const POLL = 4000
+
+// US1-1, US2-1, US2-4, FR-001, FR-003, FR-011: the band's four parts after the task count and RED
+test('010 US1-1 US2-1 US2-4 FR-001 FR-003 FR-011 the band shows the session context, tokens and reported cost, and the status answer the same', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, tokens: 100_000, usd: 2.5 })
+  await start($)
+  await shows(seen.clock, $, '████░░░░ 50%')
+  const texts = await bandTexts($)
+  const at = (text: string) => texts.findIndex(t => t.text === text)
+  expect(texts[at('████░░░░ 50%')]?.props.color).toBe('claude')
+  const order = ['RED 1/3', '████░░░░ 50%', '0 in · 0 out', '$2.50', '█████░░░░░'].map(at)
+  expect(order.every(i => i >= 0)).toBe(true)
+  expect(order).toEqual([...order].sort((a, b) => a - b))
+
+  // Tokens count what the turns report, uncached, cache-read and cache-written together as in.
+  await turn($, turnUsage('claude-sonnet-5-5', 1_000_000, 45_000, 150_000, 50_000))
+  await shows(seen.clock, $, '1.2M in · 45k out')
+  expect(await hasBand($, '1.2M in · 45k out')).toBe(true)
+  const text = (await cmd($, 'status')).text
+  expect(text.split('\n').slice(0, 3).join('\n'))
+    .toBe('001-x · ◐ build (1/3) · RED 1/3\n✓ spec ✓ plan ✓ tasks ✓ audit ◐ build ○ verify\nnext: T002 Test greet')
+  expect(text.split('\n').at(-1)).toBe('stats: ████░░░░ 50% 1.2M in · 45k out $2.50 █████░░░░░')
+  // FR-011: read-only. No retry, gate or phase change; no store write.
+  expect(seen.status.at(-1)).toBe('001-x · ◐ build (1/3) · RED 1/3')
+  expect(seen.storeWrites).toEqual({ set: 0, delete: 0 })
+})
+
+// US1-2, US2-2, US2-7, US2-8, FR-002, FR-006, FR-013: marks as words, and a figure that follows the poll and the turn
+test('010 US1-2 US2-2 US2-7 US2-8 FR-002 FR-006 the band marks high and critical in words and takes a new figure after a turn and after the poll', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 20, tokens: 40_000, usd: 1 })
+  await start($)
+  await shows(seen.clock, $, '██░░░░░░ 20%')
+  // After a turn, with the clock still.
+  seen.usage.answer = () => sessionUsage({ percent: 85, tokens: 170_000, usd: 4 })
+  await turn($)
+  await shows(seen.clock, $, '███████░ 85% high')
+  let texts = await bandTexts($)
+  expect(texts.find(t => t.text === '███████░ 85% high')?.props.color).toBe('warning')
+  expect(texts.find(t => t.text === '████████░░ high')?.props.color).toBe('warning')
+  expect(texts.find(t => t.text === '$4.00')).toBeDefined()
+  // After the 4 s poll, with no turn.
+  seen.usage.answer = () => sessionUsage({ percent: 96, tokens: 192_000, usd: 4.75 })
+  await showsAfterPoll(seen.clock, $, '████████ 96% critical')
+  texts = await bandTexts($)
+  expect(texts.find(t => t.text === '████████ 96% critical')?.props.color).toBe('error')
+  expect(texts.find(t => t.text === '█████████░ critical')?.props.color).toBe('error')
+  // Over the reference: the bar full, the real amount, critical; context over 100 reads >100%.
+  seen.usage.answer = () => sessionUsage({ percent: 103, tokens: 206_000, usd: 7.25 })
+  await showsAfterPoll(seen.clock, $, '$7.25')
+  texts = await bandTexts($)
+  expect(texts.find(t => t.text === '██████████ critical')).toBeDefined()
+  expect(texts.find(t => t.text === '████████ >100% critical')).toBeDefined()
+})
+
+// US1-3, US1-4: a fresh session is 0%, an unknown context is n/a and the rest of the band is unchanged
+test('010 US1-3 US1-4 the band shows an empty bar at 0% for a fresh session and context n/a for an unknown one', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ usd: 0 })
+  await start($)
+  await shows(seen.clock, $, '░░░░░░░░ 0%')
+  expect(await hasBand($, '░░░░░░░░ 0%')).toBe(true)
+  seen.usage.answer = () => sessionUsage({ usd: 1.2 })
+  await showsAfterPoll(seen.clock, $, 'context n/a')
+  const texts = await bandTexts($)
+  expect(texts.find(t => t.text === 'context n/a')).toBeDefined()
+  expect(texts.filter(t => /^[█░]{8} /.test(t.text))).toEqual([])
+  for (const text of ['◐ build', 'RED 1/3', '$1.20']) expect(texts.find(t => t.text === text), text).toBeDefined()
+})
+
+// US2-3, US2-4, US2-5, US2-9, FR-004: est. where the cost is priced, n/a with no bar where it cannot be
+test('010 US2-3 US2-5 US2-9 FR-004 the band marks an estimated cost est. and shows n/a with no cost bar for an unpriced model', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  // A subscription reports a cost that is priced, not billed.
+  seen.usage.answer = () => sessionUsage({ percent: 10, usd: 0.78, isSub: true })
+  await start($)
+  await shows(seen.clock, $, '$0.78 est.')
+  expect(await hasBand($, '$0.78 est.')).toBe(true)
+  // No cost reported, a priced model: 100k in at $2 per million and 10k out at $10 is $0.30.
+  seen.usage.answer = () => sessionUsage({ percent: 10 })
+  await turn($, turnUsage('claude-sonnet-5-5', 100_000, 10_000))
+  await showsAfterPoll(seen.clock, $, '$0.30 est.')
+  let texts = await bandTexts($)
+  expect(texts.find(t => t.text === '$0.30 est.')).toBeDefined()
+  expect(texts.find(t => /^[█░]{10}$/.test(t.text))).toBeDefined()
+  // An unpriced model among the turns: no estimate from a guessed price, no cost bar.
+  await turn($, turnUsage('claude-mystery-9', 1000, 1000))
+  await shows(seen.clock, $, 'cost n/a')
+  texts = await bandTexts($)
+  expect(texts.find(t => t.text === 'cost n/a')).toBeDefined()
+  expect(texts.find(t => /^[█░]{10}/.test(t.text))).toBeUndefined()
+  expect(texts.find(t => /^[█░]{8} 10%/.test(t.text))).toBeDefined()
+})
+
+// SC-004, FR-010: unknown, missing and malformed figures change nothing but the figure
+test('010 SC-004 FR-010 a refused, empty or malformed read shows n/a and a malformed turn usage changes no count', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  const good = () => sessionUsage({ percent: 50, tokens: 100_000, usd: 2.5 })
+  seen.usage.answer = good
+  await start($)
+  await shows(seen.clock, $, '████░░░░ 50%')
+  const bads: unknown[] = [DENIED, undefined, null, 'x', 7, {}, { context: 'x', cost: 3, rateLimits: 'y' }, { context: { percent: '50', window: 'a' } }]
+  for (const bad of bads) {
+    seen.usage.answer = good
+    await showsAfterPoll(seen.clock, $, '████░░░░ 50%')
+    seen.usage.answer = () => bad
+    await showsAfterPoll(seen.clock, $, 'context n/a')
+    const texts = await bandTexts($)
+    expect(texts.find(t => t.text === 'context n/a'), String(bad)).toBeDefined()
+    expect(texts.find(t => t.text === 'RED 1/3'), String(bad)).toBeDefined()
+    expect((await cmd($, 'status')).text.split('\n').at(-1)).toMatch(/^stats: context n\/a /)
+  }
+  // Tokens: 1,000 + 150 + 50 in, 450 out. Malformed usage after it adds nothing.
+  seen.usage.answer = good
+  await turn($, turnUsage('claude-sonnet-5-5', 1000, 450, 150, 50))
+  await showsAfterPoll(seen.clock, $, '1.2k in · 450 out')
+  for (const bad of [{ model: 'm', input_tokens: -1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+    { model: 'm', input_tokens: 'x' }, { model: 3 }, 'x', {}]) await turn($, bad)
+  await seen.clock.settle()
+  await sleep(30)
+  expect(await hasBand($, '1.2k in · 450 out')).toBe(true)
+})
+
+// FR-010, constitution III: a read that does not answer blocks neither the turn nor the prompt
+test('010 FR-010 a session.usage read that never answers leaves turn.complete the bottom\'s, and a late answer is drawn after n/a', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, tokens: 100_000, usd: 2.5 })
+  await start($)
+  await shows(seen.clock, $, '████░░░░ 50%')
+  let release: (v: unknown) => void = () => undefined
+  seen.usage.answer = () => new Promise(r => { release = r })
+  const before = seen.usage.reads
+  await seen.clock.advance(POLL)
+  await until(seen.clock, async () => seen.usage.reads === before + 1)
+  const sent = turnUsage('claude-sonnet-5-5', 10, 5)
+  // With the read pending, the turn resolves with the bottom's answer and starts no second read.
+  expect(await turn($, sent)).toMatchObject({ text: 'ok', usage: sent })
+  expect(seen.usage.reads).toBe(before + 1)
+  // A read still pending a poll later shows context n/a, not the figure it held before.
+  await seen.clock.advance(POLL)
+  await shows(seen.clock, $, 'context n/a')
+  expect(await hasBand($, 'context n/a')).toBe(true)
+  expect(await hasBand($, '████░░░░ 50%')).toBe(false)
+  expect((await cmd($, 'status')).text.split('\n').at(-1)).toMatch(/^stats: context n\/a /)
+  expect(seen.usage.reads).toBe(before + 1)
+  // Its late answer is then drawn.
+  release(sessionUsage({ percent: 60, tokens: 120_000, usd: 3 }))
+  await shows(seen.clock, $, '█████░░░ 60%')
+  expect(await hasBand($, '█████░░░ 60%')).toBe(true)
+})
+
+// A read that never answers at session start must not hold the start either
+test('010 FR-010 session.start resolves with a read that never answers, and the band reads context n/a', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => new Promise(() => undefined)
+  await start($)
+  expect(seen.status.at(-1)).toBe('001-x · ◐ build (1/3) · RED 1/3')
+  expect(await hasBand($, 'context n/a')).toBe(true)
+  expect(await turn($, turnUsage('claude-sonnet-5-5', 10, 5))).toMatchObject({ text: 'ok' })
+})
+
+// Constitution III: a refused write is toasted once until a write succeeds
+test('010 constitution III a refused stats write, from the poll and from turn.complete, is toasted once until a write succeeds', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  const gate = denyState(on, 'stats')
+  gate.isArmed = true
+  let percent = 10
+  seen.usage.answer = () => sessionUsage({ percent: percent += 1, usd: 1 })
+  const refused = () => seen.toasts.filter(t => /^board could not update the stats: /.test(t))
+  const settled = async () => { await seen.clock.settle(); await sleep(40) }
+  await start($)
+  await settled()
+  expect(refused()).toHaveLength(1)
+  for (let i = 0; i < 3; i++) { await seen.clock.advance(POLL); await settled() }
+  await turn($, turnUsage('claude-sonnet-5-5', 10, 5))
+  await settled()
+  expect(refused()).toHaveLength(1)
+  // A write that succeeds re-arms the toast.
+  gate.isArmed = false
+  await seen.clock.advance(POLL)
+  await settled()
+  expect(refused()).toHaveLength(1)
+  gate.isArmed = true
+  for (let i = 0; i < 2; i++) { await seen.clock.advance(POLL); await settled() }
+  expect(refused()).toHaveLength(2)
+})
+
+// FR-010, FR-011: no store write, no file write from the stats
+test('010 FR-010 FR-011 reading and drawing the stats writes no store entry and no file', CLOCK_HEAVY, async ($, on) => {
+  const writes = recorders(on)
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, usd: 2.5 })
+  await start($)
+  await turn($, turnUsage('claude-sonnet-5-5', 10, 5))
+  await showsAfterPoll(seen.clock, $, '████░░░░ 50%')
+  await cmd($, 'status')
+  await paneTexts($)
+  expect(seen.storeWrites).toEqual({ set: 0, delete: 0 })
+  expect(writes['fs.write']).toBe(0)
+  expect(seen.status.at(-1)).toBe('001-x · ◐ build (1/3) · RED 1/3')
+})
+
+// US3-3, FR-009: where the board is not shown, the stats are not
+test('010 US3-3 FR-009 without .specify/ no stats are read, drawn or answered', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, usd: 2.5 })
+  await $.session.start({ cwd: '/nowhere/sub', surface: 'terminal', isInteractive: true })
+  await turn($, turnUsage('claude-sonnet-5-5', 10, 5))
+  await seen.clock.advance(POLL)
+  await seen.clock.settle()
+  expect(seen.usage.reads).toBe(0)
+  const text = (await cmd($, 'status')).text
+  expect(text).toBe(N1)
+  expect(text).not.toContain('stats:')
+  expect((await bandTexts($)).find(t => /in · .*out|%$/.test(t.text))).toBeUndefined()
+})
+
+// US3-4, FR-009: standalone, no team
+test('010 US3-4 FR-009 the stats show in the standalone band, pane and status answer', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on, {}, NO_RECORDS)
+  seen.usage.answer = () => sessionUsage({ percent: 50, tokens: 100_000, usd: 2.5 })
+  await start($)
+  await shows(seen.clock, $, '████░░░░ 50%')
+  expect(await hasBand($, '████░░░░ 50%')).toBe(true)
+  expect((await cmd($, 'status')).text.split('\n').at(-1)).toBe('stats: ████░░░░ 50% 0 in · 0 out $2.50 █████░░░░░')
+  expect(squash(await paneTexts($))).toMatch(/context[█░]+50%·100kof200k/)
+})
+
+// US3-1, FR-005, SC-002: one state, three places, the same figures; and the pane's two rows
+test('010 US3-1 FR-005 SC-002 the pane draws the context and cost rows with the band\'s and the status answer\'s figures', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, tokens: 100_000, usd: 2.5, isSub: true })
+  await start($)
+  await turn($, turnUsage('claude-sonnet-5-5', 1_000_000, 45_000, 150_000, 50_000))
+  await shows(seen.clock, $, '$2.50 est.')
+  await shows(seen.clock, $, '1.2M in · 45k out')
+  const status = (await cmd($, 'status')).text.split('\n').at(-1)
+  expect(status).toBe('stats: ████░░░░ 50% 1.2M in · 45k out $2.50 est. █████░░░░░')
+  const band = (await bandTexts($)).map(t => t.text)
+  for (const part of ['████░░░░ 50%', '1.2M in · 45k out', '$2.50 est.', '█████░░░░░']) expect(band, part).toContain(part)
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const flat = squash(await paneTexts($, surface))
+    const row = /context([█░]+)50%·100kof200k/.exec(flat)
+    expect(row, surface).not.toBeNull()
+    const cells = row![1]!
+    expect(Math.abs([...cells].filter(c => c === '█').length / cells.length - 0.5)).toBeLessThanOrEqual(0.5 / cells.length)
+    expect(flat).toContain('cost█████░░░░░$2.50est.of$5.00·1.2Min·45kout')
+  }
+  // The rows sit after the phases.
+  const all = (await paneTexts($)).map(t => t.text)
+  expect(all.findIndex(t => /^context/.test(t))).toBeGreaterThan(all.indexOf('verify'))
+})
+
+test('010 US3-1 SC-004 the pane reads n/a for an unknown figure, with no bar, and the cleared pane has no stats', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  await start($)
+  // The read is refused: the context is n/a. The cost is estimated at list price: 1M x $2 + 45k x $10 = $2.45.
+  await turn($, turnUsage('claude-sonnet-5-5', 1_000_000, 45_000))
+  await shows(seen.clock, $, '1.0M in · 45k out')
+  let flat = squash(await paneTexts($))
+  expect(flat).toContain('contextn/a')
+  expect(flat).toContain('cost████░░░░░░$2.45est.of$5.00·1.0Min·45kout')
+  // A turn on an unpriced model: no estimate, no cost bar, the counts as they were.
+  await turn($, turnUsage('claude-mystery-9', 0, 0))
+  await shows(seen.clock, $, 'cost n/a')
+  flat = squash(await paneTexts($))
+  expect(flat).toContain('costn/a·1.0Min·45kout')
+  expect(flat).not.toMatch(/costn\/a[█░]/)
+  await clearCmd($)
+  expect(squash(await paneTexts($))).not.toMatch(/context|cost/)
+})
+
+// US4-1, US4-2, US4-3, FR-007: an ended agent row gains its tokens and estimated cost; a running one nothing
+test('010 US4-1 US4-2 US4-3 FR-007 an ended team row ends with its own tokens and est. cost, a running row has none, and no usage reads n/a', CLOCK_HEAVY, async ($, on) => {
+  const seen = await world(on)
+  seen.usage.answer = () => sessionUsage({ percent: 50, usd: 2.5 })
+  on('agent.list', () => ({ value: [
+    { id: 't1', type: 'test-writer', description: 'Red tests for T002', status: 'running' },
+    { id: 'i1', type: 'implementer', description: 'Green T003 greet', status: 'running' },
+  ] satisfies AgentInfo[] }))
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await start($)
+  await $.classic.SubagentStart({ agent_id: 't1', agent_type: 'test-writer' } as never)
+  await $.classic.SubagentStart({ agent_id: 'i1', agent_type: 'implementer' } as never)
+  // 100k in at $2 per million and 20k out at $10 is $0.40; the agent's usage reaches its row by its id.
+  await turn($, turnUsage('claude-sonnet-5-5', 100_000, 20_000), 't1')
+  await shows(seen.clock, $, '100k in · 20k out')
+  // Running: the session reports its cost, so no figure of the pane carries an estimate yet.
+  expect((await paneTexts($)).find(t => /est\./.test(t.text))).toBeUndefined()
+  await $.classic.SubagentStop(stop('t1', 'test-writer', 'T002 fails on the stub\n\nRED'))
+  await $.classic.SubagentStop(stop('i1', 'implementer', 'greet still throws\nRESULT: RED'))
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'speckit-board', surface, ...PANE, ...pane } as never)
+    expect((await around(ui, 'test-writer')).then?.text).toBe('took 0s · 0s ago · Red tests for T002')
+    const texts = (await ui.findAll({ type: 'Text' })).map(x => x.text)
+    expect(texts[texts.indexOf('took 0s · 0s ago · Red tests for T002') + 1]).toBe('$0.40 est. · 100k in · 20k out')
+    // No usage: n/a, and the other row is unaffected.
+    expect(texts[texts.indexOf('took 0s · 0s ago · Green T003 greet') + 1]).toBe('n/a')
+    await ui.unmount()
+  }
+  // A turn that arrives after the agent has ended still reaches its row.
+  await turn($, turnUsage('claude-sonnet-5-5', 50_000, 0), 'i1')
+  await until(seen.clock, async () => (await paneTexts($)).some(t => t.text === '$0.10 est. · 50k in · 0 out'))
+  expect((await paneTexts($)).some(t => t.text === '$0.10 est. · 50k in · 0 out')).toBe(true)
+  // The session total is not less than the agents' sum.
+  expect(await hasBand($, '150k in · 20k out')).toBe(true)
 })
