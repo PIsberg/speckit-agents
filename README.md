@@ -1517,7 +1517,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 542 tests:
+`npm test` runs 544 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1535,7 +1535,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 14 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 22 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust, `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 24 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
