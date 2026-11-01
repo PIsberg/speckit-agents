@@ -53,9 +53,9 @@ hooks:
 - `<hook path>` is the installed hook's quoted, absolute, forward-slash path, as in the agents.
 - The preamble is one fixed text in `install.mjs` with `<role>` filled in. It says: you act as the
   `<role>` role inline in this session for `/speckit-team --team skill-agents`; your inputs are
-  `$ARGUMENTS` and the files they name; there is no SubagentHandback, so your report is text of yours
-  whose last line is the one your Report section names, and the orchestrating skill goes on after it
-  in the same response, with its next call, unless its step says Stop (#261); a skill the text says is preloaded you invoke with the Skill tool; launch no agent; the hook holds
+  `$ARGUMENTS` and the files they name; there is no SubagentHandback, so your report is a message of
+  yours whose last line is the one your Report section names, after which the orchestrating skill goes
+  on; a skill the text says is preloaded you invoke with the Skill tool; launch no agent; the hook holds
   you to `<role>`'s lane until the next role skill or the end of the turn.
 - Install, rerun (no change), `--force`, collision refusal and `--uninstall` treat them as the other
   skills: by the marker line, removing the `speckit-role-<role>/` folder (FR-009).

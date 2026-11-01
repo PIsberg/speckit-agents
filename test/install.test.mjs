@@ -1828,24 +1828,6 @@ test("009 T028 FR-008 plan D10: the installed ## Skill agents says the Skill cal
   assert.match(sec, /starts? its `?args`? with .{0,60}last line/i, 'args starts with the report last line');
 });
 
-// #261: a report with no call after it ends the turn, which holds the run where the skill has no Stop.
-// Two halves: the role preamble says the orchestrating skill goes on in the same response, and the skill
-// says where (a step without a Stop) and names the words whose Stop the hook sends back.
-test('#261: the role preamble and ## Skill agents put the next call in the response that ends the report', () => {
-  const dir = claudeDir();
-  assert.equal(install(dir).status, 0);
-  for (const role of TEAM_ORDER) {
-    const text = afterFrontmatter(fs.readFileSync(roleSkillPath(dir, role), 'utf8'));
-    const preamble = flat(text.split('\n\n')[0]);
-    assert.match(preamble, /goes on after it in the same response, with its next call, unless its step says Stop/, role);
-  }
-  const sec = flat(skillSection(teamSkill(), '## Skill agents'));
-  assert.match(sec, /one role Skill call per message, never two in one message/);
-  assert.doesNotMatch(sec, /one role per response/, 'a response may end one role and call the next');
-  assert.match(sec, /Where a step goes on without a \*\*Stop:\*\*, make its next call in the response that ends the report/);
-  for (const word of ['VERDICT: PASS', 'RESULT: STUB', 'RED', 'RESULT: GREEN']) assert.ok(sec.includes(`\`${word}\``), word);
-});
-
 test('009 T028 FR-008 FR-010 plan D10: README skill-agents section says the verdict and word are also read from the args line and the Stop last message', () => {
   const readme = repoText('README.md');
   const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);

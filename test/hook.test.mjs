@@ -2768,7 +2768,7 @@ test('#185: a spec-gatekeeper word followed by hand-over text in the same respon
 
 // #261: a role that ends its turn on a report /speckit-team goes on from (steps 3 to 5: no Stop there)
 // holds the run for the user. Its Stop is sent back once, after the lane check and the record are done.
-const HAND_ON_MSG = (role, word) => new RegExp(`^speckit-team: the ${role} role's report ends ${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, where /speckit-team has no Stop\\. Go on with the next step in this turn\\.`);
+const HAND_ON_MSG = (role, word) => new RegExp(`^speckit-team: the ${role} role's report ends ${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, where /speckit-team has no Stop\\. Go on with the next step in this turn\\.$`);
 test('#261: a role Stop on VERDICT: PASS, RESULT: STUB, RED or RESULT: GREEN is sent back once; the record is gone', () => {
   const cases = [
     ['spec-auditor', 'No findings.\n\nVERDICT: PASS', 'VERDICT: PASS'],

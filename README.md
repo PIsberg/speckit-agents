@@ -494,7 +494,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 | Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run; and, not observed either way, after a background task's notice, a compaction or a message typed mid-turn, if Claude Code gives it a new `prompt_id` (#184) |
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
 | Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
-| Hand-on | a role whose turn ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN`, where the skill has no Stop: its Stop is sent back once, so the run goes on without you (#261) | that the next call is in the response that ends the report: the skill and each role skill ask for it, and a Stop the hook sends back still costs one more response |
+| Hand-on | a role whose turn ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN`, where the skill has no Stop: its Stop is sent back once, so the run goes on without you (#261) | the response that Stop costs, which a typed "go on" would cost too: asking for the next call in the report's own response was tried and dropped, as in its one run the audit and the gatekeeper wrote no report ([measurements](docs/measurements.md#where-a-skill-agents-run-stops-261)) |
 | Retry limit | nothing | the skill counts 3 `RESULT: RED` in a row itself; the hook does not |
 | Context | nothing | every role sees this conversation, with the session's `CLAUDE.md`, on the session's model; read-only roles lose the `omitClaudeMd` isolation |
 | Tool list | a read-only role's Write and Edit are denied, and so is a Bash command that writes in the repo | each agent's tool list: a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked |
@@ -1518,13 +1518,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 550 tests:
+`npm test` runs 549 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 176 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 127 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 126 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

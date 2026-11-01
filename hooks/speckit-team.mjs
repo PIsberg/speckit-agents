@@ -716,8 +716,9 @@ function closeRole(rec, at, gate = null) {
     const word = handOnWord(rec);
     if (word) {
       drop();
-      block(`speckit-team: the ${rec.role} role's report ends ${word}, where /speckit-team has no Stop. Go on with the next step in this turn.`
-        + ' A report with no call after it ends the turn and holds the run for the user.');
+      // Only where to go: the report is already written. #261's run showed text asking for the next call
+      // in the report's own response cost the reports themselves (no audit report, no gatekeeper word).
+      block(`speckit-team: the ${rec.role} role's report ends ${word}, where /speckit-team has no Stop. Go on with the next step in this turn.`);
     }
   }
   return done();

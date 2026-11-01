@@ -430,6 +430,54 @@ Caveats:
   skill-agents run this branch was installed personally.
 - Whether `cost` includes subagent spend was not checked.
 
+## Where a skill-agents run stops (#261)
+
+Read on 2026-11-01 from the main transcript of the skill-agents run above, one response per message id.
+The run took 7 turns where the default run of the same request took 3 (the start, the spec stop and the
+plan stop): the turn also ended on spec-auditor's `VERDICT: PASS`, implementer's `RESULT: STUB`,
+test-writer's `RED` and implementer's `RESULT: GREEN`, where the skill has no Stop, and `tools/full-run.mjs`
+answered each with "Go on to the next step". An agent's report returns as a tool result and the main
+session goes on in the same turn; a role skill wrote its report as a response with no tool call, which ends
+the turn. The hook needed none of those Stops: it closes a role at the next role's Skill call, with the lane
+check and the verdict from the call's first `args` line (contract section 6).
+
+| The 4 resume responses | |
+|---|--:|
+| Context read from the cache | 388,196 tokens, 12% of the run's 3.16M input |
+| At Sonnet 5.5 list rates ($0.20 a million cache reads) | $0.078 |
+| Time from the turn's end to the next call | 11 s to 15 s each, about 50 s of the 308 s run |
+
+A feature of R rounds has 2 + 2R such stops. In an interactive session each one waits for the user, and a
+wait longer than the prompt cache's lifetime writes the context again: about 100k tokens, $0.25 at the
+5-minute write rate. At list rates the run's tokens come to $0.95 against the $0.78 it reported: cache reads
+65%, cache writes 24%, output at least 12% (the transcript undercounts output). Fewer responses, not shorter
+text, is where its cost is.
+
+The first fix asked for it in text: the role preamble and `## Skill agents` put the next call in the
+response that ends the report. One run with it on 2026-11-01, the same request through
+`tools/full-run.mjs --login --skill-agents`, Claude Code 2.1.316, Windows 11, main session `--model sonnet`:
+
+| | 2026-10-25, text before | 2026-11-01, next call in the report's response |
+|---|--:|--:|
+| Responses up to the hand-over | 38 | 34 |
+| Their cache reads | 3,070,932 | 2,649,621 |
+| Turns ended by the pipeline | 7 | 2 (spec stop, hand-over) |
+| spec-auditor | `speckit-analyze` loaded, 4 responses, a 1,567-character report | 2 responses, one `grep`, no report: `VERDICT: PASS` only in the next call's `args` |
+| spec-gatekeeper's word | `APPROVED` on its own line, recorded | only in a table cell of the hand-over: not recorded, so the run failed |
+| Plan stop | held | skipped (the harness's answer had approved "the spec, the plan and the tasks" in advance) |
+
+It saved 4 responses and 14% of the cache reads, and the reports went with them: the model read "the next
+call in the same response" as leave to skip the report. The cost after the hand-over, 7 more responses and
+$0.92 in all, is the owner's `CLAUDE.md` asking for a pull request in a scratch repo with no remote, not the
+team. One run each, so the loss is not shown to be caused by the text, but it is the loss the change was
+meant not to make.
+
+What it led to: the text was taken out again. What stays is `lane role` sending a Stop on one of those four
+words back once, with only where to go: the report is written by then, so the run goes on without the user
+and nothing is skipped, at the cost of the one response a typed "go on" costs too. In that run no role ended
+its turn on one of the words, so the send-back was never reached; `test/e2e.test.mjs` shows Claude Code
+delivers it and goes on, and no run with a real model has shown it yet.
+
 ## Baseline of the agent-skills lessons (#188, #186, #187)
 
 Taken 2026-10-27 with `tools/eval.mjs` on the unchanged prompts of this branch, before any prompt change,
