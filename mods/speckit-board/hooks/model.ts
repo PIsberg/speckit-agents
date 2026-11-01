@@ -570,8 +570,10 @@ export function readUsage(raw: unknown, before: SpeckitStats): SpeckitStats {
   const limits = Array.isArray(r['rateLimits']) ? r['rateLimits'] as unknown[] : []
   const isSubscription = before.isSubscription
     || limits.some(l => { const k = rec(l)?.['kind']; return k === 'five_hour' || k === 'seven_day' })
-  const out: SpeckitStats = { isRead: true, isSubscription, usage: before.usage }
   const percent = num(context['percent']), tokens = num(context['tokens']), window = num(context['window'])
+  // A context that states none of its figures is not a reading (SC-004).
+  if (percent === undefined && tokens === undefined && window === undefined) return { isRead: false, isSubscription, usage: before.usage }
+  const out: SpeckitStats = { isRead: true, isSubscription, usage: before.usage }
   const usd = num(rec(r['cost'])?.['usd'])
   if (percent !== undefined) out.percent = percent
   if (tokens !== undefined) out.contextTokens = tokens

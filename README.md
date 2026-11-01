@@ -1361,6 +1361,14 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
   drops, in this order, the other phases' names, the bar, the buttons and the other phases' glyphs.
   The current phase keeps its name. The buttons are `board`, `clear` and `hide`; on a short row
   they drop in the order `hide`, `clear`, `board`.
+- **The session's context, tokens and cost**, after the task count and `RED n/3`: a context bar and
+  its percentage (`████░░░░ 50%`), the tokens in and out (`1.2M in · 45k out`), the cost (`$2.50`)
+  and a cost bar against $5.00. ` high` follows a figure from 80% and ` critical` from 95%; an
+  unknown figure reads `context n/a` or `cost n/a`, with no bar. A cost the session does not report is
+  estimated from the model's list price and marked `est.`, as is any cost on a subscription. On a short
+  row the band drops the tokens, then the cost bar, then the cost, and keeps the context longest.
+  The pane has two rows after the phases, `context` and `cost`, and each ended team agent's row ends
+  with its own estimated cost and tokens (`n/a` without usage). The figures are read, never stored.
 - **With Spec Kit alone** (no team agent has run in the repo), the view has four phases, `spec`,
   `plan`, `tasks` and `build`, read from the feature's files: `spec.md` (draft or approved), `plan.md`,
   `tasks.md` and how many of its tasks are ticked. There is no audit or verify phase, no `RED n/3`,
@@ -1405,7 +1413,7 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 | `/speckit-board refresh` | re-reads the files; after a clear it brings the board and the band back, as the pane's `refresh` button does |
 | `/speckit-board band` | hides or shows the band |
 | `/speckit-board clear` | removes the finished agents' rows, as the `clear` button does. With no team agent running it also empties the pane (no phases, next step or tasks, only `refresh` and `close`) and removes the band; a running agent keeps its row, the pane and the band. The next team agent, or `refresh`, brings them back; the 4-second poll does not. It changes no file under `.git/speckit-team/`, no spec file, and not the status line |
-| `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work), which a headless `claude -p` prints as well and the model reads |
+| `/speckit-board status` | answers with the board as text (the status line, the phases, the next step, the agents at work, and a last `stats:` line with the band's stats), which a headless `claude -p` prints as well and the model reads |
 
 The command runs at once, also during a turn: with its agents in the foreground
 ([Foreground launches](#foreground-launches)), `/speckit-team` runs a whole pipeline in one turn,
@@ -1427,6 +1435,7 @@ It reads what the guardrails already keep, so it cannot disagree with the gate:
 - **Unreadable files.** A `spec.md`, `plan.md` or `tasks.md` that exists but cannot be read shows
   `✗` with the note `unreadable` on its phase and `cannot read <file>` as the next step, in both
   views.
+- **Usage.** `$.session.usage()`, read at the start, on the 4-second poll and after each turn (one read at a time), and each `turn.complete`'s `usage`, summed per model for the token counts, the estimate and each agent's row.
 - **Files.** `.specify/feature.json`, the feature's `spec.md`, `plan.md` and `tasks.md`, and the
   verdict, retry and gatekeeper files under `.git/speckit-team/` ([State](#state)).
 - **A current audit.** An audit counts as current only while the files' fingerprint matches the
@@ -1483,7 +1492,9 @@ installs can still remove it.
 
 ### Verified
 
-**Automated.** `claude plugin validate` and `claude plugin test` (132 tests, both run by `npm test`,
+The stats are held by the mod's unit tests; the hand check in `specs/010-context-cost-stats/quickstart.md` has not been run.
+
+**Automated.** `claude plugin validate` and `claude plugin test` (164 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
@@ -1525,7 +1536,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 176 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 126 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 132 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 164 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
@@ -2084,6 +2095,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
 
 ## Known limits
 
+- **Board stats.** Tokens count from the mod's load, not the session's start. The price table in `mods/speckit-board/hooks/model.ts` is dated 2026-11-01 and prices cache writes at the 5-minute rate and Haiku 5.5 at its own; a model not in it has no estimate. An agent's cost is always an estimate, and a subscription's cost is marked `est.`.
 - **Hooks fail open.** If Node is missing or the script cannot start, the action is allowed. The
   installer's smoke check, the [end-to-end tests](#end-to-end-tests) and the
   [live check](#live-check) above are the defences. Input the hook

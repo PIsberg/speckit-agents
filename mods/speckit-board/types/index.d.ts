@@ -75,6 +75,8 @@ declare module 'claude-code' {
       // Features a team agent started on in this session, each as `teamKey` of its repository and
       // folder (#97); they get the team view (D1-A).
       teamFeatures: string[]
+      // The session's context, tokens and cost, as the band, the pane and the status answer show them.
+      stats: SpeckitStats
     }
   }
 }

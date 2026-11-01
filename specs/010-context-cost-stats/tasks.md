@@ -143,7 +143,7 @@ Shared references:
 
 ### Phase 6: Docs (FR-012, constitution VIII)
 
-- [ ] T014 [P] [US3] Docs, repository root: `README.md` "Board mod (experimental)" (:1294): "What it
+- [X] T014 [P] [US3] Docs, repository root: `README.md` "Board mod (experimental)" (:1294): "What it
   draws" (:1355) the band's stats parts and their shedding (D5), the pane's two rows and the agent
   figures; "Commands" (:1400) the `status` row names the `stats:` line; "Where it reads its state"
   (:1414) `$.session.usage()` and `turn.complete`; "Verified" (:1484): the stats are held by the mod's

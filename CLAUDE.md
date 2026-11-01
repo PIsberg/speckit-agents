@@ -30,7 +30,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates seven from
   `agents/<role>.md` for `--team skill-agents`, with `scope role` and `lane role` in their frontmatter.
 - `install.mjs`: the installer; `setup.sh` and `setup.ps1` only check for Node and call it.
-- `mods/speckit-board/`: an experimental board mod, read in place through `claude plugin` with this
+- `mods/speckit-board/`: an experimental board mod (it also draws the session's context, tokens and cost), read in place through `claude plugin` with this
   checkout as the marketplace. A prototype retired once feature 001's view ships (owner decision,
   #11): build neither 001 nor 002 on it, and do not change 001's spec for it.
 - `tools/usage.mjs`: a session's input tokens from its transcript; measure a skill or agent change
