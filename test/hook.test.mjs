@@ -2766,6 +2766,82 @@ test('#185: a spec-gatekeeper word followed by hand-over text in the same respon
   assert.equal(endsRec(q.dir), null, 'a word inside a sentence is not a word line');
 });
 
+// #261: a role that ends its turn on a report /speckit-team goes on from (steps 3 to 5: no Stop there)
+// holds the run for the user. Its Stop is sent back once, after the lane check and the record are done.
+const HAND_ON_MSG = (role, word) => new RegExp(`^speckit-team: the ${role} role's report ends ${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}, where /speckit-team has no Stop\\. Go on with the next step in this turn\\.$`);
+test('#261: a role Stop on VERDICT: PASS, RESULT: STUB, RED or RESULT: GREEN is sent back once; the record is gone', () => {
+  const cases = [
+    ['spec-auditor', 'No findings.\n\nVERDICT: PASS', 'VERDICT: PASS'],
+    ['spec-auditor', '| x |\n\n**VERDICT: PASS**\n\nAudit passed; test-writer is next.', 'VERDICT: PASS'],
+    ['test-writer', 'T001 fails on the missing export.\n\nRED', 'RED'],
+    ['implementer', 'Stub committed.\n\nRESULT: STUB', 'RESULT: STUB'],
+    ['implementer', 'All 6 pass.\n\n`RESULT: GREEN`\n\nNext is spec-gatekeeper.', 'RESULT: GREEN'],
+  ];
+  for (const [role, last, word] of cases) {
+    const { dir } = repo();
+    skillAgentsTeam(dir);
+    putRole(dir, role);
+    const stop = stopRole(dir, { last_assistant_message: last });
+    assert.equal(stop?.decision, 'block', `${role} ${JSON.stringify(last)}: ${JSON.stringify(stop)}`);
+    assert.match(stop.reason, HAND_ON_MSG(role, word), role);
+    assert.ok(!hasRole(dir), `${role}: the record is removed, so the next role's Skill call starts clean`);
+    putRole(dir, role);
+    const again = stopRole(dir, { last_assistant_message: last, stop_hook_active: true });
+    assert.ok(!decided(again), `${role}: sent back once only: ${JSON.stringify(again)}`);
+    assert.ok(!hasRole(dir), role);
+  }
+});
+
+test('#261: the spec-auditor role\'s PASS read from the transcript sends its Stop back, and is recorded', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'No findings.\n\nVERDICT: PASS');
+  const stop = stopRole(dir);
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  assert.match(stop.reason, HAND_ON_MSG('spec-auditor', 'VERDICT: PASS'));
+  assert.equal(verdictRec(dir)?.verdict, 'PASS', 'recorded before it is sent back');
+});
+
+test('#261: a role Stop where the skill may go to the user is let through', () => {
+  const cases = [
+    ['product-owner', 'Questions below.\n\nREADY FOR PLAN'],
+    ['architect', 'Round 1: stub T002; red T001; green T002\n\nREADY FOR PLAN'],
+    ['spec-auditor', 'H1: plan contradicts FR-002.\n\nVERDICT: FAIL'],
+    ['spec-auditor', 'VERDICT: PASS\n\nOn re-reading, H1 holds.\n\nVERDICT: FAIL'],
+    ['test-writer', 'FR-004 cannot be expressed.\n\nBLOCKED'],
+    ['test-writer', 'Fixed the import.\n\nFIXED'],
+    ['test-writer', 'RED\n\nThen T003 turned out to need a fixture.\n\nBLOCKED'],
+    ['implementer', 'T002 still fails.\n\nRESULT: RED'],
+    ['implementer', 'Two tests are still RED in CI, working on it.'],
+    ['implementer', ''],
+  ];
+  for (const [role, last] of cases) {
+    const { dir } = repo();
+    skillAgentsTeam(dir);
+    putRole(dir, role);
+    const stop = stopRole(dir, last ? { last_assistant_message: last } : {});
+    assert.notEqual(stop?.decision, 'block', `${role} ${JSON.stringify(last)}: ${JSON.stringify(stop)}`);
+    assert.ok(!hasRole(dir), role);
+  }
+});
+
+test('#261: a role that ended with an earlier prompt, or wrote outside its lane, gets no hand-on block', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  putRole(dir, 'implementer', { prompt_id: 'p1' });
+  const ended = stopRole(dir, { prompt_id: 'p2', last_assistant_message: 'RESULT: GREEN' });
+  assert.ok(!decided(ended), JSON.stringify(ended));
+  assert.match(msg(ended), ENDED_MSG('implementer'));
+  // A lane violation blocks with the lane check's text, not this one.
+  const lane = repo();
+  skillAgentsTeam(lane.dir);
+  putRole(lane.dir, 'test-writer');
+  putFile(lane.dir, 'src/main/Impl.java');
+  const out = stopRole(lane.dir, { last_assistant_message: 'RED' });
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /^Lane check: test-writer/);
+  assert.doesNotMatch(out.reason, /Go on with the next step/);
+});
+
 test('009 T025 FR-008 contract 6 step 2: a spec-gatekeeper APPROVED as the first args line of the security-reviewer call is recorded', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);

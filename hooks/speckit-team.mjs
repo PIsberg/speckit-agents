@@ -712,7 +712,29 @@ function closeRole(rec, at, gate = null) {
       emit({ systemMessage: `WARNING: ${rec.role} left changes outside its lane: ${r.outside.join(', ')}` });
     }
   }
+  if (at === 'stop' && !input.stop_hook_active) {
+    const word = handOnWord(rec);
+    if (word) {
+      drop();
+      // Only where to go: the report is already written. #261's run showed text asking for the next call
+      // in the report's own response cost the reports themselves (no audit report, no gatekeeper word).
+      block(`speckit-team: the ${rec.role} role's report ends ${word}, where /speckit-team has no Stop. Go on with the next step in this turn.`);
+    }
+  }
   return done();
+}
+
+// #261: the report words /speckit-team goes on from without a Stop (steps 3 to 5), and every word each of
+// those roles may end on, so that a later word that may go to the user (BLOCKED after RED) wins.
+const HAND_ON = { 'test-writer': ['RED'], implementer: ['RESULT: STUB', 'RESULT: GREEN'] };
+const END_WORDS = { 'test-writer': ['RED', 'BLOCKED', 'FIXED'], implementer: ['RESULT: STUB', 'RESULT: GREEN', 'RESULT: RED'] };
+// The hand-on word the closing role's last message ends its report with, or null.
+function handOnWord(rec) {
+  const text = str(input.last_assistant_message) ?? roleTexts(rec.transcript, rec.offset)?.pop() ?? '';
+  if (rec.role === 'spec-auditor') return verdictIn(text) === 'PASS' ? 'VERDICT: PASS' : null;
+  if (!Object.hasOwn(HAND_ON, rec.role)) return null;
+  const word = text.split('\n').map(lastWord).reverse().find((w) => END_WORDS[rec.role].includes(w));
+  return HAND_ON[rec.role].includes(word) ? word : null;
 }
 
 // Two ways a report arrives: as the SubagentHandback tool's message (PreToolUse, the normal case in

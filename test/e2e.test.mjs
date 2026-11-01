@@ -1234,6 +1234,8 @@ test("009 T017 T026 FR-008 US3-5 plan D10 research R1: the auditor role's VERDIC
   const s2 = setup();
   const r2 = await session(s2, { [MAIN]: [roleSkill('spec-auditor'), say('No findings.\n\nVERDICT: PASS')] }, { prompt: SA_PROMPT });
   assert.equal(verdict(s2), 'PASS', story(r2));
+  // #261: a PASS is no Stop of /speckit-team, so that Stop is sent back once and the session goes on.
+  assert.match(shown(r2.requests[MAIN][2]), /the spec-auditor role's report ends VERDICT: PASS, where \/speckit-team has no Stop\. Go on with the next step in this turn\./, story(r2));
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.

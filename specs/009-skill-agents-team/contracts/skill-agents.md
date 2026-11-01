@@ -136,6 +136,15 @@ the main session's role stays acting; its own Stop closes it (#177).
      and the hand-over can share one response, and text after the word would hide it (#185).
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
+4. Hand-on, at Stop only, after steps 1 to 3 and unless `stop_hook_active` (#261): the role's last
+   text (`last_assistant_message`, else the last text of the transcript after `offset`) ending a report
+   the skill goes on from, with no Stop in between, is sent back with `block`: `speckit-team: the <role>
+   role's report ends <word>, where /speckit-team has no Stop. Go on with the next step in this turn.`
+   The words: spec-auditor's last `VERDICT:` line `PASS`; test-writer's last line that is one of `RED`,
+   `BLOCKED`, `FIXED` being `RED`; implementer's last line that is one of `RESULT: STUB`, `RESULT:
+   GREEN`, `RESULT: RED` being one of the first two. Every other ending may go to the user and is let
+   through. Without it the run waits for the user there, where in agents mode the report returns as a
+   tool result and the main session goes on in the same turn.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
 says so only when that holds no verdict or word. So does a transcript that could not be read when the role
