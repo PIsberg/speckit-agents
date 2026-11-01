@@ -1733,7 +1733,10 @@ ANTHROPIC_API_KEY=... node tools/full-run.mjs --out /tmp/full-run --model sonnet
 With `--login` instead of the key, the run uses your own Claude Code login (a subscription works):
 the team is installed into the scratch repo's `.claude/`, where it overrides the agents you installed
 and stays out of the feature's commits (`.git/info/exclude`), and the repo is trusted in your
-`.claude.json` for the run only, the one entry removed again after the last turn. Your own
+`.claude.json` for the run only, the one entry removed again after the last turn. A `.claude.json`
+that does not parse, as Claude Code leaves it for a moment while it rewrites the file, is read again
+for up to two seconds and then left as it is, the run stopping before any model call: it is never
+replaced by a file holding only the trust entry, which would cost you the rest of your config. Your own
 `CLAUDE.md`, settings and hooks load too, so the run is your sessions' conditions, not a clean room;
 the settings gates of a team you installed fire beside the scratch repo's. Skills are the exception
 to the override: a personal skill wins over a project one of the same name, so the run refuses to

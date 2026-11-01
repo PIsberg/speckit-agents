@@ -166,6 +166,28 @@ test('full run: folder trust is added for the run, and its undo removes only tha
   assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
 });
 
+test('full run: a .claude.json that does not parse is never overwritten, so a half-written file cannot cost the user their config', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'scratch', 'repo');
+  // What a read sees while Claude Code is rewriting the file: the start of the user's config, cut off.
+  const torn = '{"numStartups": 4, "projects": {"C:/other": {"hasTrust';
+  fs.writeFileSync(conf, torn);
+  assert.throws(() => trustFolder(conf, repo, { retries: 2, waitMs: 1 }), /does not parse/);
+  assert.equal(fs.readFileSync(conf, 'utf8'), torn, 'the file is left as it was');
+  // A file that parses again on a later read is trusted as usual, the user's keys kept.
+  let reads = 0;
+  const read = () => (++reads < 2 ? torn : JSON.stringify({ numStartups: 4 }));
+  trustFolder(conf, repo, { retries: 3, waitMs: 1, read });
+  const after = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.equal(after.numStartups, 4);
+  assert.equal(after.projects[repo.split(path.sep).join('/')].hasTrustDialogAccepted, true);
+  // No file at all is a fresh config, not a torn one.
+  fs.rmSync(conf);
+  trustFolder(conf, repo)();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects, {});
+});
+
 test('full run: without an API key it stops before writing anything and names --login', () => {
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-nokey-')), 'run');
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'ANTHROPIC_API_KEY'));

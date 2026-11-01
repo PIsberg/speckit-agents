@@ -233,18 +233,34 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
 // The run's failures: why it stopped early comes first, since the checks after it judge a run cut short.
 export const runFailures = (failures, stopped) => (stopped ? [stopped, ...failures] : [...failures]);
 
+// A .claude.json that exists but does not parse is one Claude Code is rewriting (it does so throughout a
+// session, and more often with several runs going at once): read it again after a pause, and throw rather
+// than treat it as empty, since writing over it would replace the user's whole config with one entry.
+// A missing file is a fresh config. `read` is for the tests.
+function readConf(confFile, { retries = 20, waitMs = 100, read = () => fs.readFileSync(confFile, 'utf8') } = {}) {
+  for (let i = 0; ; i++) {
+    let text;
+    try { text = read(); } catch (e) { if (e.code === 'ENOENT') return {}; throw e; }
+    try { return JSON.parse(text); } catch {
+      if (i >= retries) throw new Error(`${confFile} does not parse after ${retries + 1} reads; left as it is`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, waitMs);
+    }
+  }
+}
+
 // Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
 // (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
 // Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
-export function trustFolder(confFile, repo) {
+export function trustFolder(confFile, repo, opts = {}) {
   const key = repo.split(path.sep).join('/');
-  const conf = readJson(confFile) ?? {};
+  const conf = readConf(confFile, opts);
   if (conf.projects?.[key]?.hasTrustDialogAccepted) return () => {};
   conf.hasCompletedOnboarding = true;
   (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
   fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
   return () => {
-    const now = readJson(confFile);
+    let now;
+    try { now = readConf(confFile, opts); } catch (e) { console.error(`full-run: trust for ${key} left in place: ${e.message}`); return; }
     if (!now?.projects?.[key]) return;
     delete now.projects[key];
     fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
