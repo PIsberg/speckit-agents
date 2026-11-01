@@ -33,7 +33,7 @@ unseen too, but a breach costs tokens, not correctness, and `tools/usage.mjs` me
 | Rule | Where | What would hold it |
 |---|---|---|
 | A requirement no test task cites, or one a test names without testing it, still needs a real test | spec-gatekeeper Process 1 | #235 |
-| The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | #241 |
+| The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | scored case `must-broken` (#241): 6 of 6 REJECTED on 2026-11-01, a rate, not a hold |
 | A contested finding goes to the user; the main session does not judge it | skill 3 | #242 |
 
 Taken over since the issue was filed: spec-gatekeeper's APPROVED on a cited FR no test holds is
@@ -362,7 +362,7 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 - Every task ticked, `Unbuilt:` IDs skipped. pinned.
 - Run what CI runs; a skipped gate is not a passed one. text; the report shows a breach.
 - A Bash `timeout` that covers the run. pinned.
-- The constitution's MUST rules against the diff. text, unseen (#241).
+- The constitution's MUST rules against the diff. text, unseen; measured by the scored case `must-broken` (#241, 6 of 6 on 2026-11-01).
 
 ### agents/spec-gatekeeper.md: Verdict
 <!-- fingerprint: 28621ddb -->
