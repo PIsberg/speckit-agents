@@ -15,8 +15,10 @@ data-model.md "Rules".
 | cost | `$0.78`, `$0.78 est.`, `n/a` | `est.` per data-model.md "Rules" |
 | mark | ` high`, ` critical` | appended to the context figure and to the cost bar, per data-model.md "Marks" |
 
-A bar is `hooks/model.ts: bar(fill, 1, width)`, `█` filled and `░` empty, with the fill capped at 1.
-No bar is drawn for an `n/a` figure.
+A context bar is `hooks/model.ts: bar(fill, 1, width)`, `█` filled and `░` empty, with the fill
+capped at 1. The cost bar is `hooks/model.ts: costBar(fill)` (data-model.md "Fill", D10): 10 cells
+everywhere, `░░░░░░░░░░` at $0, `█████░░░░░` at $2.50, `████████░░` at $4.00, `█████████░` at $4.75,
+`██████████` from $5.00. No bar is drawn for an `n/a` figure.
 
 ## Band
 
@@ -29,7 +31,7 @@ After the task count and `RED n/3`, before the agent at work and the buttons, as
 | `context` | `<bar 8> <context><mark>`, e.g. `████░░░░ 50%`, `████████ 96% critical`; unknown: `context n/a` |
 | `tokens` | the tokens text |
 | `cost` | the cost text; unknown: `cost n/a` |
-| `costbar` | `<bar 5><mark>`, e.g. `███░░`, `█████ critical`; absent when the cost is `n/a` |
+| `costbar` | `<costBar><mark>`, e.g. `█████░░░░░`, `█████████░ critical`; absent when the cost is `n/a` |
 
 Drawn in the bar's color: no mark `claude`, `high` `warning`, `critical` `error`.
 
@@ -51,10 +53,10 @@ A last line, after `next:` and `running:`: `stats: ` and the texts of all four b
 above), joined by one space, the separator left out:
 
 ```text
-stats: ████░░░░ 50% 1.2M in · 45k out $2.50 est. ███░░
+stats: ████░░░░ 50% 1.2M in · 45k out $2.50 est. █████░░░░░
 ```
 
-(The bar is the band's, so the fill matches.) Without a view, `boardText` answers as today. A notice
+(The bars are the band's, so the fill matches.) Without a view, `boardText` answers as today. A notice
 (no board) gets no stats line.
 
 ## Pane
@@ -63,11 +65,12 @@ A block of two rows after the phases, before the Team section, in both views:
 
 ```text
 context ████████████░░░░░░░░░░░░ 50% · 100k of 200k
-cost    ██████████░░░░░░░░░░░░░░ $2.50 est. of $5.00 · 1.2M in · 45k out
+cost    █████░░░░░ $2.50 est. of $5.00 · 1.2M in · 45k out
 ```
 
-- The label is 8 columns wide; the bar takes the pane's existing `barWidth` (`register.tsx`, the Pane
-  hook); the mark follows the figure, as in the band.
+- The label is 8 columns wide; the context bar takes the pane's existing `barWidth` (`register.tsx`,
+  the Pane hook), the cost bar is the band's `costBar` (D10); the mark follows the figure, as in the
+  band.
 - ` · <contextTokens> of <window>` only when both are known. An unknown figure reads `n/a` after its
   label, with no bar (`cost    n/a · 1.2M in · 45k out`).
 - `paneRows` counts 3 more rows (the two and a blank), except in the cleared pane.

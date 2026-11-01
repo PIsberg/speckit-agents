@@ -50,7 +50,7 @@ below).
 |---|---|---|
 | I. Test-First: a test in `test/` under `npm test`, seen failing, asserting what a caller observes | T002, T005, T008, T010, T012 | each precedes its implementation; the mod's tests run under `npm test` through `test/board-mod.test.mjs`; they assert texts drawn, items laid out, the command's answer |
 | II. Hook entry points handle all input without throwing; a path that can throw has a test | T002, T005, T010 | malformed usage answers and turn usage, a rejecting `$.session.usage()` |
-| III. Observers never block; a failure is visible; overhead within a stated budget | T010, T011 | turn.complete's result unchanged and not delayed by a hanging read; a failed read shows `context n/a` in the band; budget below |
+| III. Observers never block; a failure is visible; overhead within a stated budget | T010, T011 | turn.complete's result unchanged and not delayed by a hanging read; a failed read, or one still pending a poll later, shows `context n/a` in the band; a refused `stats` write is toasted; budget below |
 | IV. Plugin API only, no runtime dependency | T003, T006, T009, T011, T013 | `$.session.usage()` and `turn.complete` only, present in 2.1.293 (Technical Context) |
 | V. Public contracts change additively, listed in the README | T009, T014 | `/speckit-board status` gains a last line; no event is emitted, so no schema version applies |
 | VII. Every supported platform | T010, T012 | no platform code; the mod's tests run on all three in CI |
@@ -64,7 +64,8 @@ the main session); Governance (no amendment).
 
 **Observer budget (III)**: 0 added per tool call (the stats hook no tool event). Per turn end, the
 `turn.complete` hook starts the stats work without awaiting it and returns `next(e)` as today; the
-work is two state updates and one `$.session.usage()` read, skipped while a read is pending (FR-010).
+work is two state updates and one `$.session.usage()` read, none started while one is pending
+(FR-010); a read pending for `POLL_MS` or longer counts as failed until it answers (III).
 
 ## Design
 
@@ -72,7 +73,10 @@ work is two state updates and one `$.session.usage()` read, skipped while a read
 - **Reading** (`hooks/register.tsx`): `measure($)` reads `$.session.usage()` into `stats` through
   `readUsage()`, unawaited, at session start, at every 4 s poll and after each `turn.complete` (D6);
   the `turn.complete` hook adds `e.usage` to the session's and, by `e.agentId`, to that team agent's
-  counts through `addUsage()` (D2, D3).
+  counts through `addUsage()` (D2, D3). A read that hangs or a `stats` write that is refused is
+  shown, not swallowed (constitution III; T011).
+- **Cost bar** (`hooks/model.ts: costBar`): one 10-cell text drawn in the band, the status answer and
+  the pane alike, so the drawn fill agrees in all three (FR-005, D10).
 - **Rules** (`hooks/model.ts: statsView`): context, tokens and cost as data-model.md "Rules" and D1;
   texts, bars, marks, the band's shedding (D5), the pane rows and the status line as
   `contracts/stats-text.md`.
@@ -276,3 +280,42 @@ SC-003 asks for the band read in a recorded session. No requirement asks for an 
   case in `test/live-board.test.mjs`: one more slice; its fake API reports a `claude-fake` model, so
   the cost reads as the CLI prices it.
 - **C**: also re-record `docs/media/board.png` with the stats: one more task, no test.
+
+### D10: How many cells does the cost bar draw, and how does it round?
+
+Answer (2026-11-01): A, as recommended
+
+`bar()` (`hooks/model.ts:259`) rounds to its cells, so a 5-cell band bar draws $2.50 as 3 of 5 and
+the pane's `barWidth` bar (6 to 24) as 12 of 24: US2-6's "half filled" fails in the band and FR-005's
+"same cost-bar fill" fails between band and pane. No cell count under 50 draws every cost within
+SC-007's 1 pp.
+
+- **A (recommended)**: one `costBar(fill)` of 10 cells, a cell for each whole tenth of the reference
+  reached (`fill` rounded to 3 decimals, then floored, so an estimate summing to 0.79999 draws 8),
+  drawn as the same text in the band, the status answer and the pane. Sampled costs draw 0, 5, 8, 9,
+  10 and 10 of 10: half at $2.50 (US2-6), full only at the reference (US2-8); $4.75 draws 9 (90%, 5 pp
+  under), so SC-007's 1 pp is the view's `fill`. The band's cost part grows from 5 to 10 columns plus
+  its mark, so it sheds 5 columns sooner (D5's order unchanged). The pane's cost row draws 10 cells
+  while its context row keeps `barWidth`. Changes T004, T005, T006, T009, T013;
+  contracts/stats-text.md "Figures", "Band", "Status answer", "Pane"; data-model.md "Fill".
+  Spec: FR-013: Beside the cost the band MUST show a cost bar of 10 cells, full at a fixed reference
+  of $5.00 for the session, one cell filled for each whole 10% of the reference the cost reaches (so
+  full only at or above it), and marked high at or above 80% and critical at or above 95% of the
+  reference with a word or symbol as well as any colour. The bar is drawn from a reported or an
+  estimated cost (the estimate keeps `est.`) and is omitted when the cost is `n/a`. The reference is a
+  scale, not a budget: it stops and alerts nothing.
+  Spec: SC-007: In the sampled costs ($0, $2.50, $4.00, $4.75, $5.00, $9.00), the cost bar's fill
+  (cost divided by $5.00, capped at full) is within 1 percentage point of that ratio, the bar draws
+  0, 5, 8, 9, 10 and 10 of its 10 cells, the same cells in the band, the pane and the status answer,
+  its mark is none, none, high, critical, critical, critical, and the same holds for an estimated
+  cost, in 100% of the sampled states.
+- **B**: one 20-cell bar through `bar()` as it rounds, in all three places. Sampled costs draw 0, 10,
+  16, 19, 20 and 20 of 20, exact, so no spec line changes. The band's cost part grows from 5 to 20
+  columns, so it sheds 15 columns sooner, and the pane's cost row draws 20 cells. Changes the same
+  tasks and files as A.
+- **C**: keep 5 band cells and the pane's `barWidth`, and measure the fill on the view only. $2.50
+  draws 3 of 5 in the band and 12 of 24 in the pane, so the drawn bars disagree. Changes no task.
+  Spec: US2-6: ... beside the cost it shows a cost bar whose fill is one half (full at the $5.00
+  reference), drawn to the bar's nearest cell, and the text `$2.50`.
+  Spec: FR-005: The band, the pane and the status answer MUST show the same percentage, token counts,
+  cost and cost-bar fill for the same state, the fill read before a bar rounds it to its cells.

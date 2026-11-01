@@ -53,19 +53,22 @@ Shared references:
   `export function readUsage(raw: unknown, before: SpeckitStats): SpeckitStats`,
   `export function statsView(s: SpeckitStats): StatsView`,
   `export function agentStats(usage: SpeckitUsage | undefined): string`,
-  `export function shortCount(n: number): string`, `export function dollars(usd: number): string`.
+  `export function shortCount(n: number): string`, `export function dollars(usd: number): string`,
+  `export function costBar(fill: number): string` (D10).
 - [ ] T005 [US1] Tests in `tests/model.test.ts` for `readUsage`, `statsView`, `agentStats`,
-  `shortCount`, `dollars`: US1-1 to US1-4, US2-1, US2-3 to US2-9, US4-2, US4-3, FR-001 to FR-004,
+  `shortCount`, `dollars`, `costBar`: US1-1 to US1-4, US2-1, US2-3 to US2-9, US4-2, US4-3, FR-001 to FR-004,
   FR-007, FR-013, SC-001, SC-004, SC-006, SC-007, and the edge cases on above 100%, compaction,
   zero cost and large numbers. Not settled by the spec: the `0%` rule and the
   `n/a` after spending (data-model.md "Rules"); a subscription's reported cost marked `est.` and a
   `spend_limit` window alone not (D1); an agent's cost always `est.` (D2); `fill` unrounded and
   capped, the mark on the uncapped ratio (data-model.md "Marks", "Fill"); the count and dollar bounds
   in contracts/stats-text.md "Figures" (999, 1,000, 9,950, 999,950, $9,999.99, $10,000); a
-  malformed `SessionUsage` keeping `usage` and `isSubscription`.
+  malformed `SessionUsage` keeping `usage` and `isSubscription`; `costBar`'s cells at SC-007's
+  sampled costs and a fill just under a tenth by float error (data-model.md "Fill", D10).
 - [ ] T006 [US1] Implement `NO_STATS`, `readUsage`, `statsView`, `agentStats`, `shortCount`,
-  `dollars` in `hooks/model.ts`, using T003's `estimateUsd`, as data-model.md "Reading" and "Rules"
-  and contracts/stats-text.md "Figures" give them.
+  `dollars`, `costBar` in `hooks/model.ts`, using T003's `estimateUsd` and `bar` (:259) for
+  `costBar`'s cells, as data-model.md "Reading" and "Rules" and contracts/stats-text.md "Figures"
+  give them.
 
 ### Phase 3: Band and status text (US3)
 
@@ -81,7 +84,8 @@ Shared references:
   equal to the band's four parts' texts.
 - [ ] T009 [US3] Implement in `hooks/model.ts`: `VARIANTS` (:385) crossed with a stats level as
   contracts/stats-text.md "Band" lists, the four `stat` items through one internal helper shared by
-  `bandLayout` and `boardText`, bars from `bar` (:259); `widthOf` (:400) counts a `stat` item by its
+  `bandLayout` and `boardText`, the context bar from `bar` (:259), the cost bar from T006's
+  `costBar`; `widthOf` (:400) counts a `stat` item by its
   text.
 
 ## Round 2: live figures in the band, the status answer and the pane (`hooks/register.tsx`)
@@ -95,18 +99,26 @@ Shared references:
   e.usage }) })`, as Claude Code's core answers it), raised with `$.turn.complete({ turnId, answer,
   durationMs, isAborted, reason: 'answer', usage, agentId })`; a new figure after the 4 s poll and
   after a turn (D6); with a never-settling read the `turn.complete` result is the bottom's and
-  resolves; a malformed turn usage changes no count; no `storeWrites` and no `fs.write` from the
+  resolves; a `session.usage` read still pending a poll (`POLL_MS`, register.tsx:12) later shows
+  `context n/a` in the band and the status answer, and its late answer is then drawn (constitution
+  III); a refused `stats` write, from the poll and from `turn.complete`, is toasted once until a
+  write succeeds, as "a refused isCleared write is toasted" does (constitution III); a malformed turn
+  usage changes no count; no `storeWrites` and no `fs.write` from the
   stats; no `.specify/` gives the notice and no `stats:` line. Update the pins on a whole status
   answer (:1267, :1328, :1338) by the `stats:` line alone (D7).
 - [ ] T011 [US1] Implement in `hooks/register.tsx`, and in `types/index.d.ts` `PluginState
   ['speckit-board']` gains `stats: SpeckitStats`:
   `const stats = atom({ plugin: 'speckit-board', key: 'stats' } as const, NO_STATS)` beside the
   atoms (:17-24); `measure($)`: `$.session.usage()` through `readUsage` into `stats` with
-  `update`, a rejection as `readUsage(undefined, s)`, skipped while a read is pending (FR-010);
-  started unawaited from `session.start` after `refresh` (:314), from `poll` (:228) and after each
-  turn; the `turn.complete` hook (:404), when `repo` is set, starts unawaited (`.catch(() =>
-  undefined)`) `addUsage` of `e.usage` into `stats.usage` and, where `e.agentId` is a row's `id` in
-  `agents`, into that row's `usage`, then `measure`, and returns `next(e)` as today; the band
+  `update`, a rejection as `readUsage(undefined, s)`; no second read while one is pending (FR-010),
+  but a call that finds one pending since `POLL_MS` (:12) or longer, by `$.clock.now()`, writes
+  `readUsage(undefined, s)` so the band shows `context n/a` until the read answers (constitution
+  III); started unawaited from `session.start` after `refresh` (:314), from `poll` (:228) and after
+  each turn; the `turn.complete` hook (:404), when `repo` is set, starts unawaited `addUsage` of
+  `e.usage` into `stats.usage` and, where `e.agentId` is a row's `id` in `agents`, into that row's
+  `usage`, then `measure`, and returns `next(e)` as today; a refused `stats` write there or in
+  `measure` is toasted (`board could not update the stats: <message>`, the form of :355-358) once
+  until a write succeeds, so a lasting refusal does not toast every 4 s; the band
   (:409) passes `statsView(await read($, stats))` to `bandLayout` and draws a `stat` item as a
   `Text` in its mark's color (contracts/stats-text.md "Band"); `/speckit-board status` (:345)
   passes it to `boardText`. No new `on()` entry (plan.md, Constitution Check II).
@@ -121,7 +133,8 @@ Shared references:
   (D2); the standalone pane shows the rows. Update the pane-row pins (:220, :223, :1225, :1228) by 3
   (D7).
 - [ ] T013 [US4] Implement in `hooks/register.tsx`: in the Pane hook (:447) the two stats rows after
-  the phases Box (:508-530), bars of the existing `barWidth` (:484); in each ended team row
+  the phases Box (:508-530), the context bar of the existing `barWidth` (:484), the cost bar
+  `hooks/model.ts: costBar` (D10); in each ended team row
   (:536-557), after the dim text's Box, a `flexShrink={0}` Box with `agentStats(a.usage)`;
   `paneRows` (:238) adds 3 in both views, not in the cleared pane; all per contracts/stats-text.md
   "Pane".

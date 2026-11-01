@@ -48,7 +48,9 @@ export type SpeckitStats = {
   0.95 `critical`, at or over 0.8 `high`, else none (`HIGH = 0.8`, `CRITICAL = 0.95`,
   `COST_REFERENCE = 5`, fixed).
 - **Fill**: the same ratio capped at 1; the view carries it unrounded, so SC-001 and SC-007 read it
-  exactly; a drawn bar rounds it to its cells.
+  exactly. The context bar rounds it to its cells (`bar`); the cost bar is `costBar(fill)`, 10 cells,
+  one per whole tenth reached (`fill` rounded to 3 decimals, then floored), the same text in the band,
+  the status answer and the pane (D10).
 - **Agent** (`agentStats`): tokens and `estimateUsd` of the agent's `usage`, always `est.` (D2); `n/a`
   without usage or with an unpriced model.
 
