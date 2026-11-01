@@ -108,7 +108,7 @@ Shared references:
   answer (:1267, :1328, :1338) by the `stats:` line alone (D7), and in "the band names the current
   phase at any width" (:151-164) only :160, from 4 bare `✓` to none: at 70 columns the context item
   displaces the other phases' glyphs (D5, D11); :158, :159 and :161 stay.
-- [ ] T011 [US1] Implement in `hooks/register.tsx`, and in `types/index.d.ts` `PluginState
+- [X] T011 [US1] Implement in `hooks/register.tsx`, and in `types/index.d.ts` `PluginState
   ['speckit-board']` gains `stats: SpeckitStats`:
   `const stats = atom({ plugin: 'speckit-board', key: 'stats' } as const, NO_STATS)` beside the
   atoms (:17-24); `measure($)`: `$.session.usage()` through `readUsage` into `stats` with
@@ -134,7 +134,7 @@ Shared references:
   usage `n/a`; agents from `finish` and `stop` with usage raised by `$.turn.complete({ agentId })`
   (D2); the standalone pane shows the rows. Update the pane-row pins (:220, :223, :1225, :1228) by 3
   (D7).
-- [ ] T013 [US4] Implement in `hooks/register.tsx`: in the Pane hook (:447) the two stats rows after
+- [X] T013 [US4] Implement in `hooks/register.tsx`: in the Pane hook (:447) the two stats rows after
   the phases Box (:508-530), the context bar of the existing `barWidth` (:484), the cost bar
   `hooks/model.ts: costBar` (D10); in each ended team row
   (:536-557), after the dim text's Box, a `flexShrink={0}` Box with `agentStats(a.usage)`;

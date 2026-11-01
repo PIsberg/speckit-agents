@@ -1,5 +1,3 @@
-import type { ModelUsage } from 'claude-code'
-
 export type SpeckitPhaseId = 'spec' | 'plan' | 'tasks' | 'audit' | 'build' | 'verify'
 
 export type SpeckitPhaseState = 'done' | 'active' | 'todo' | 'blocked' | 'failed' | 'stale'
@@ -28,7 +26,14 @@ export type SpeckitBoard = {
 }
 
 // Token counts summed per model id, as `turn.complete`'s `usage` reports them.
-export type SpeckitUsage = Record<string, ModelUsage>
+export type SpeckitModelUsage = {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens: number
+  cache_read_input_tokens: number
+}
+
+export type SpeckitUsage = Record<string, SpeckitModelUsage>
 
 export type SpeckitStats = {
   isRead: boolean
