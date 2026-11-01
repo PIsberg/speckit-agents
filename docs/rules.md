@@ -35,7 +35,6 @@ unseen too, but a breach costs tokens, not correctness, and `tools/usage.mjs` me
 | A requirement no test task cites, or one a test names without testing it, still needs a real test | spec-gatekeeper Process 1 | #235 |
 | The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | #241 |
 | A contested finding goes to the user; the main session does not judge it | skill 3 | #242 |
-| After two audit FAILs, the findings go to the user | skill 3 | #242 |
 
 Taken over since the issue was filed: spec-gatekeeper's APPROVED on a cited FR no test holds is
 refused by a hook (#228), the undo offer and the cause of a failed fast-track run come from the hook's
@@ -121,12 +120,12 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 - Ask once whether to build `[P]` slices side by side. pinned.
 
 ### skills/speckit-team/SKILL.md: 3. Audit: spec-auditor
-<!-- fingerprint: 58816031 -->
+<!-- fingerprint: 0ffcae43 -->
 - Commit the approved files with the launch. text.
 - CRITICAL and HIGH findings to their owner, or to the user when the owner is absent. pinned.
 - A contested finding goes to the user; do not judge it yourself. pinned, unseen (#242).
 - MEDIUM and LOW findings are listed at hand-over, not routed. text.
-- After two FAILs, the findings go to the user. text, unseen (#242).
+- After two FAILs, the findings go to the user. hook `gate`: a third spec-auditor launch is refused until `audit --approve`, which the skill runs only on the user's yes (#242). The yes itself is text: the hook cannot tell it from a model's.
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time

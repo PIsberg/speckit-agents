@@ -367,6 +367,29 @@ test('verdict demands a VERDICT line, once', () => {
   assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: '| x |\n\n**VERDICT: PASS**' }).systemMessage, /PASS/);
 });
 
+// #242: after two spec-auditor FAILs in a row, a third launch is refused until the user says to go on
+// (`audit --approve`, run by the skill on a yes, spends the approval on one launch). A PASS clears the count.
+test('verdict: a third spec-auditor launch after two FAILs is refused until --approve; a PASS clears the count', () => {
+  const { dir } = repo();
+  const audit = (verdict) => run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: `report\n\nVERDICT: ${verdict}` });
+  const launch = () => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: 'spec-auditor', prompt: 'audit the spec' } });
+  audit('FAIL');
+  assert.equal(denied(launch()), false, 'one FAIL: the next audit may run');
+  audit('FAIL');
+  assert.ok(denied(launch()), 'two FAILs in a row: the third launch is refused');
+  assert.match(launch().hookSpecificOutput.permissionDecisionReason, /audit --approve/, 'and the refusal says how the user lets it through');
+  const cli = spawnSync('node', [HOOK, 'audit', '--approve'], { cwd: dir, encoding: 'utf8' });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(denied(launch()), false, 'approved: one launch goes ahead');
+  assert.ok(denied(launch()), 'the approval is spent: the next launch is refused again');
+  audit('FAIL');
+  assert.ok(denied(launch()), 'a FAIL after the approval counts again');
+  audit('PASS');
+  assert.equal(denied(launch()), false, 'a PASS clears the count');
+  audit('FAIL');
+  assert.equal(denied(launch()), false, 'one FAIL after a PASS starts again at one');
+});
+
 // Subagents report through the SubagentHandback tool, so the report is its input, not the last
 // assistant message. Found live on 2026-10-06: the gate denied every handback (the agent could
 // not report at all) and spec-auditor's VERDICT never reached the verdict file.
