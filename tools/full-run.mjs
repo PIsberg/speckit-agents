@@ -3,7 +3,7 @@
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
 //   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
-//                         [--case clean|pressure|defect|defect-control] [--claim] [--team-root <checkout>]
+//                         [--case clean|pressure|defect|defect-control|untested-fr] [--claim] [--team-root <checkout>]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -79,7 +79,9 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
     // constitution's rules against it; with one commit it rejected a clean feature, 1 run in 12, 2026-10-27).
     // The defect case swaps in the test that passes without the code.
     git(repo, 'checkout', '-q', '-b', '001-sum');
-    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && path.basename(f) !== 'math.js' });
+    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && !f.split(path.sep).includes('untested') && path.basename(f) !== 'math.js' });
+    // #234: the untested-fr case swaps in a spec and tasks that cite FR-003, which no test names.
+    if (name === 'untested-fr') fs.cpSync(path.join(FIXTURE, 'gate', 'untested', 'specs'), path.join(repo, 'specs'), { recursive: true });
     if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
     fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
     git(repo, 'add', '-A');

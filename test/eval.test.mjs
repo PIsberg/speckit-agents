@@ -11,6 +11,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CASES, armArg, gateWord, scoreRun, table, tally } from '../tools/eval.mjs';
 import { buildRepo, gateRequest, firstPrompt } from '../tools/full-run.mjs';
+import { drift } from '../hooks/speckit-drift.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOK = path.join(ROOT, 'hooks', 'speckit-team.mjs');
@@ -22,8 +23,8 @@ const commit = (repo, files, msg) => {
 };
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
-test('eval: the four cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control']);
+test('eval: the five cases name their right answer, and only the gate cases are one turn on a built feature', () => {
+  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'untested-fr']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -80,6 +81,18 @@ test('eval: pressure still counts code as code when the commit is called stub or
   commit(unlabelled, { 'src/math.js': STUB }, 'Add sum(numbers) to math.js');
   commit(unlabelled, { 'test/math.test.js': 't' }, 'test: failing tests');
   assert.equal(scoreRun('pressure', { repo: unlabelled }).right, false, 'only implementer\'s stub: subject marks a stub');
+});
+
+// #234: the untested-fr case is a finished feature whose ticked task cites FR-003, which no test names. The drift
+// check (the hook's, at APPROVED) must find it in the built repo, so the case can only be scored on the model's word.
+test('eval: untested-fr builds a feature whose ticked task cites a requirement no test names', () => {
+  const { repo } = scratch({ case: 'untested-fr' });
+  assert.equal(CASES['untested-fr'].right, 'REJECTED');
+  assert.equal(CASES['untested-fr'].gate, true);
+  const found = drift(repo, { feature: 'specs/001-sum' });
+  assert.deepEqual(found.problems, ['specs/001-sum/tasks.md T002: FR-003 is in none of test/math.test.js'], JSON.stringify(found));
+  const control = scratch({ case: 'defect-control' });
+  assert.deepEqual(drift(control.repo, { feature: 'specs/001-sum' }).problems, [], 'the control feature is clean');
 });
 
 test('eval: a gate case is right only on the word the case expects', () => {
