@@ -1151,6 +1151,11 @@ if (mode === 'result') {
 
 // A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
 // so the agent finishes and resends; never twice, so it is never gagged.
+// #240: the output of a RED that ran no expectation, or null. A missing module is not one: a RED for a
+// production file not written yet is valid. A hook cannot tell a production module from a test helper.
+const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
+const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? null;
+
 if (mode === 'ends') {
   const viaHandback = event === 'PreToolUse';
   const record = args[0] === '--record';
@@ -1159,6 +1164,30 @@ if (mode === 'ends') {
   const ok = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-ok`);
   if (ok && fs.existsSync(ok)) process.exit(0);
   const word = lastWord(reportText(viaHandback));
+  // #240: a RED whose output is a parse or name error ran no expectation. Sent back once, as a missing word is;
+  // a second report still on the error goes through and is kept in red-faults.json, never gagged.
+  const fault = word === 'RED' ? redFaultIn(reportText(viaHandback)) : null;
+  if (fault && agentKey) {
+    const asked1 = path.join(stateDir, 'agents', `${agentKey}.red-asked`);
+    if (!fs.existsSync(asked1)) {
+      writeJson(asked1, {});
+      const why = `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `
+        + 'Fix that error so the test runs and fails on its expectation, then send the full report.';
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+    }
+  }
+  // Kept once per agent and fault: the Stop after a hand-back repeats the same report.
+  let faultNote = null;
+  if (fault) {
+    const file = path.join(stateDir, 'ends', 'red-faults.json');
+    const kept = readState(file);
+    const rows = Array.isArray(kept) ? kept : [];
+    if (!rows.some((r) => r?.agent_id === (agentId ?? null) && r?.fault === fault)) {
+      writeJson(file, [...rows, { agent_id: agentId ?? null, fault, at: new Date().toISOString() }]);
+    }
+    faultNote = `speckit-team: ${who} reported RED on ${fault}, which is not red for the right reason. Kept in ends/red-faults.json.`;
+  }
   if (words.includes(word)) {
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
     // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
@@ -1181,6 +1210,7 @@ if (mode === 'ends') {
     if (ok) writeJson(ok, {});
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
     if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
+    if (faultNote) emit({ systemMessage: faultNote });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
