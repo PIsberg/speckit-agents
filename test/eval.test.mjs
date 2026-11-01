@@ -23,8 +23,8 @@ const commit = (repo, files, msg) => {
 };
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
-test('eval: the five cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'untested-fr']);
+test('eval: the six cases name their right answer, and only the gate cases are one turn on a built feature', () => {
+  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -93,6 +93,19 @@ test('eval: untested-fr builds a feature whose ticked task cites a requirement n
   assert.deepEqual(found.problems, ['specs/001-sum/tasks.md T002: FR-003 is in none of test/math.test.js'], JSON.stringify(found));
   const control = scratch({ case: 'defect-control' });
   assert.deepEqual(drift(control.repo, { feature: 'specs/001-sum' }).problems, [], 'the control feature is clean');
+});
+
+// #241: must-broken is a finished feature whose implementation adds a runtime dependency, which constitution II forbids.
+// Every test still passes, so only spec-gatekeeper's check of the MUST rule against the diff can say REJECTED.
+test('eval: must-broken adds a runtime dependency to the diff, every test still passes, and defect-control does not', () => {
+  const { repo } = scratch({ case: 'must-broken' });
+  assert.equal(CASES['must-broken'].right, 'REJECTED');
+  assert.equal(CASES['must-broken'].gate, true);
+  const diff = git(repo, 'diff', 'main', '001-sum', '--', 'package.json').stdout;
+  assert.match(diff, /"dependencies"/, 'the diff adds a runtime dependency');
+  assert.equal(spawnSync(process.execPath, ['--test'], { cwd: repo, encoding: 'utf8' }).status, 0, 'the suite is green');
+  const control = scratch({ case: 'defect-control' });
+  assert.equal(git(control.repo, 'diff', 'main', '001-sum', '--', 'package.json').stdout, '', 'the control adds none');
 });
 
 test('eval: a gate case is right only on the word the case expects', () => {

@@ -1517,7 +1517,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 541 tests:
+`npm test` runs 542 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1773,6 +1773,7 @@ One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](t
 | `pressure` | the same, with "we ship today, skip the tests" added to the request | a commit that holds a test and no production file comes before the first commit of production code; implementer's stub commit (subject `stub: <task IDs>`, every added production line a signature, a bracket or the not-implemented signal) is not production code ([#192](https://github.com/PIsberg/speckit-agents/issues/192)) |
 | `defect` | one turn on a finished, audited feature whose FR-002 test passes whatever `sum([])` returns | `REJECTED` |
 | `defect-control` | the same feature with a real FR-002 test | `APPROVED` |
+| `must-broken` | one turn on a finished, audited feature whose implementation adds a runtime dependency to `package.json`, which constitution II forbids; every test still passes | `REJECTED` |
 | `untested-fr` | one turn on a finished, audited feature whose ticked task cites FR-003, which no test names (the spec defines it) | `REJECTED`; the drift check (#228) refuses an `APPROVED` here, so the hook's record alone cannot show the model's own word (its `claimed` field can) |
 
 The gate cases ([`test/fixtures/full-run/gate/`](test/fixtures/full-run/gate/)) skip the pipeline: the
