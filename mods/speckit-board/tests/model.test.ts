@@ -688,13 +688,17 @@ test('010 the band sheds tokens, then the cost bar, then the cost, keeping the c
     const b = board({ tasks: SLICE, red: 1 })
     const narrowest = widthOf(bandLayout(b, running, 0, 30, full()))
     let rung = 0
+    let held = ''
     for (let cols = 220; cols >= 30; cols--) {
       const items = bandLayout(b, running, 0, cols, full())
       const parts = statParts(items)
       const at = ladder.findIndex(l => l.join() === parts.join())
       expect(at).toBeGreaterThanOrEqual(0)
-      expect(at).toBeGreaterThanOrEqual(rung)
+      // A button goes only after the context (004 L3), so a narrower set of buttons may show it again.
+      const buttons = items.filter(x => x.kind === 'button').map(x => x.text).join()
+      if (buttons === held) expect(at).toBeGreaterThanOrEqual(rung)
       rung = at
+      held = buttons
       if (cols >= narrowest) expect(widthOf(items)).toBeLessThanOrEqual(cols)
       expect(phaseTexts(items)).toContain('◐ build')
       expect(items.map(x => x.text)).toContain('RED 1/3')
@@ -704,13 +708,28 @@ test('010 the band sheds tokens, then the cost bar, then the cost, keeping the c
   for (const cols of [135, 100, 80, 60, 45]) {
     const items = bandLayout(b, [], 0, cols, full())
     expect(widthOf(items)).toBeLessThanOrEqual(cols)
-    expect(statParts(items)).toContain('context')
+    // At 80 and 60 the context gives way to the buttons the band shows without it (004 L3).
+    expect(statParts(items).includes('context')).toBe(![80, 60].includes(cols))
     expect(phaseTexts(items)).toContain('◐ build')
   }
   // 60 columns: tokens gone, and the existing items still named.
   expect(statParts(bandLayout(b, [], 0, 60, full()))).not.toContain('tokens')
   expect(statParts(bandLayout(b, [], 0, 30, full()))).toEqual([])
   expect(bandLayout(b, [], 0, 135, full()).some(x => x.kind === 'button')).toBe(true)
+})
+
+// 004's quickstart L3: beside a docked pane (72 columns in CI's live-board run) the band showed
+// [ board ] [ clear ] [ hide ]; the context bar took [ hide ]'s room (#265). The buttons win (D5).
+test('010 the stats never cost the band a button (004 L3, FR-008, D5)', () => {
+  const buttons = (items: readonly BandItem[]) => items.filter(x => x.kind === 'button').map(x => x.text)
+  for (const b of [board({ tasks: SLICE }), board({ tasks: SLICE, red: 1 })]) {
+    for (const running of [[], [{ type: 'implementer', startedAt: 0 }]]) {
+      for (let cols = 30; cols <= 220; cols++) {
+        expect(buttons(bandLayout(b, running, 0, cols, full()))).toEqual(buttons(bandLayout(b, running, 0, cols)))
+      }
+    }
+  }
+  expect(buttons(bandLayout(board({ tasks: SLICE }), [], 0, 72, full()))).toEqual(['[ board ]', '[ clear ]', '[ hide ]'])
 })
 
 test('010 the band shows the stats in standalone mode too (FR-009)', () => {
