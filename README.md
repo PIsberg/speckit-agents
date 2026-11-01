@@ -352,7 +352,7 @@ Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so 
 into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
 not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 114 lines long,
 blank lines not counted; the architect's is the longest. `patcher` is the exception to the
-preloaded skill: it runs no Spec Kit phase, so its 32-line body carries the whole job.
+preloaded skill: it runs no Spec Kit phase, so its 34-line body carries the whole job.
 `test/install.test.mjs` counts them.
 
 ### Why the prompts are short
@@ -917,7 +917,10 @@ No hook can tell which command is a repo's test suite or whether it passed. Thes
 existing tests passed, reporting tests as passed, failed, skipped or not run, a regression test
 first for a change in behaviour, the skill's checks against its own notes before it commits, and
 never merging. The hook's part is that no accepted record exists unless the end check accepted the
-run.
+run. One of those rules has a hook behind it (#243): a run that changes production lines with no
+test file changed is stopped at the end, unless the report has a `No test: <reason>` line for a
+change with no behaviour (a typo, a comment, a config value). Whether a test that came with the
+change fails first is not checked.
 
 - **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](docs/live-results.md)):** one fix
   through to a commit by the main session on a branch the skill created, with the end check's
@@ -1030,7 +1033,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `scope tests` | test-writer: same | writing production code, or Spec Kit and project paths under `.specify/` |
 | `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
-| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, and no accepted record unless the run is within budget |
+| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, a production change with no test file unless the report has a `No test: <reason>` line (#243), and no accepted record unless the run is within budget |
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
 | `scope none` | spec-auditor, spec-gatekeeper, security-reviewer: PreToolUse `Bash` | a Bash command that writes a file in the repo, writes to a path only the run can tell, or changes the working tree or the history with git (`checkout`, `stash`, `reset`, `add`, `commit` and the like); checks, tests and writes outside the repo pass ([#209](https://github.com/PIsberg/speckit-agents/issues/209)) |
 | every `scope` rule | all five writing agents, and the three read-only ones on Bash | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
@@ -1507,7 +1510,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 536 tests:
+`npm test` runs 539 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|

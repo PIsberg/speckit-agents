@@ -123,6 +123,19 @@ test("installed patcher.md states the fast track's rules", () => {
   assert.doesNotMatch(text, /git switch -c/);
 });
 
+// #243: the exemption line is one phrase that patcher's report, the end check (hooks/speckit-team.mjs,
+// NO_TEST_LINE) and the skill's reading of the stop all share. Pinned here so a rename reaches all three.
+test('the fast track\'s "No test:" exemption is named by patcher.md and the speckit-patch skill (#243)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const patcher = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
+  assert.match(patcher, /`No test: <reason>`/);
+  const skill = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  assert.match(skill, /`No test:` line/);
+  const hook = fs.readFileSync(path.join(dir, 'hooks', 'speckit-team.mjs'), 'utf8');
+  assert.match(hook, /const NO_TEST_LINE = \/\^\[\\s\*>#-\]\*No test:/);
+});
+
 // 003 research R15, plan.md decisions 14 to 16, spec audit finding H1: the commit-after-the-check steps.
 test('installed speckit-patch skill commits only after the end check, and never on an empty record', () => {
   const dir = claudeDir();

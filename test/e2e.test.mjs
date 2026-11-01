@@ -743,6 +743,8 @@ test("test-writer's Stop: the lane check catches production code written through
 });
 
 // 003 fast track: patcher under `claude -p`. "The record" is .git/speckit-team/patch-accepted.json.
+// #243: a scripted patcher run changes production code with no test, so its report carries the exemption line.
+const FIXED_NO_TEST = 'Fixed.\nNo test: a hook fixture, not a behaviour change\nDONE';
 const wfile = (s, rel, content) => call('Write', { file_path: path.join(s.repo, ...rel.split('/')), content });
 const head = ({ repo }) => execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
 const record = (s) => state(s, 'patch-accepted.json');
@@ -751,7 +753,7 @@ test("patcher's scope hook denies a protected Write and allows a production one 
   const s = setup();
   const r = await session(s, {
     [MAIN]: [agent('patcher', 'e2e patcher')],
-    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say('Fixed.\nDONE')],
+    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say(FIXED_NO_TEST)],
   });
   assert.ok(lastResultIsError(r.requests['e2e patcher'][1]), story(r));
   assert.match(lastResult(r.requests['e2e patcher'][1]), /patcher may not write \.specify\/memory\/constitution\.md: it is a protected path/, story(r));
@@ -766,7 +768,7 @@ test('patcher may not commit; the end check still accepts its work (FR-005, SC-0
   const r = await session(s, {
     [MAIN]: [agent('patcher', 'e2e patcher')],
     'e2e patcher': [wfile(s, 'src/fix.js', 'export const fix = 1;\n'),
-      call('Bash', { command: 'git add -A && git commit -qm fix', description: 'Commit' }), say('Fixed.\nDONE')],
+      call('Bash', { command: 'git add -A && git commit -qm fix', description: 'Commit' }), say(FIXED_NO_TEST)],
   });
   assert.match(lastResult(r.requests['e2e patcher'][2]), /may not run git commit/, story(r));
   assert.equal(head(s), start, 'a commit went through');
@@ -818,7 +820,7 @@ test('with fork subagents on, as in an interactive session, patcher runs in the 
   const s = setup();
   const r = await session(s, {
     [MAIN]: [agent('patcher', 'e2e patcher')],
-    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say('Fixed.\nDONE')],
+    'e2e patcher': [wfile(s, '.specify/memory/constitution.md', 'changed\n'), wfile(s, 'src/fix.js', 'export const fix = 1;\n'), say(FIXED_NO_TEST)],
   }, { env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
   assert.equal(launch(r)?.is_backgrounded, true, story(r));
   assert.match(lastResult(r.requests['e2e patcher'][1]), /patcher may not write \.specify\/memory\/constitution\.md: it is a protected path/, story(r));
