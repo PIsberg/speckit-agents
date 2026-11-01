@@ -32,7 +32,6 @@ unseen too, but a breach costs tokens, not correctness, and `tools/usage.mjs` me
 
 | Rule | Where | What would hold it |
 |---|---|---|
-| A test that fails for the wrong reason (a syntax error, a missing import) is sent back, not counted red | skill 4-5 step 2, test-writer Process 2 | #240 |
 | A requirement no test task cites, or one a test names without testing it, still needs a real test | spec-gatekeeper Process 1 | #235 |
 | The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | #241 |
 | A contested finding goes to the user; the main session does not judge it | skill 3 | #242 |
@@ -302,7 +301,7 @@ end record (#213, #221), and what a subagent's hooks say at its Stop reaches the
 <!-- fingerprint: c6a45c12 -->
 - The repo's framework and style. text.
 - The FR or scenario ID in each test's name or a comment. hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228).
-- Red for the right reason, not a syntax error or a missing import. text, unseen (#240).
+- Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module is not checked: a RED for a production file not yet written is valid, and the hook cannot tell it from a test helper.
 - Run the type check when CI type-checks tests; report a task number no code can meet. pinned.
 - Without implementer, a missing production symbol is red. pinned.
 - Stop after 3 rounds on one test. text.

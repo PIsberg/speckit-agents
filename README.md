@@ -1048,7 +1048,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
-| `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word |
+| `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError`, a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240); a missing module is not checked, since a RED for a production file not yet written is valid |
 | `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The three
@@ -1507,7 +1507,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 535 tests:
+`npm test` runs 536 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|

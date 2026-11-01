@@ -882,6 +882,28 @@ test('ends: a test-writer report without RED or BLOCKED is sent back once', () =
   assert.equal(run(dir, ends, { hook_event_name: 'SubagentStop', last_assistant_message: 'done' })?.decision, 'block');
 });
 
+// #240: a RED whose output is a parse or name error did not run its expectations, so it is not red for the
+// right reason. It is sent back once, as the BLOCKED check is; a second report still carrying the error goes
+// through, but is kept in ends/red-faults.json, so the breach is not lost once implementer turns the suite green.
+// A missing module is not a fault: test-writer's RED for a production file not yet written is a valid one.
+test('ends: a RED that is a parse or name error is sent back once and then kept on record', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'RED', 'BLOCKED'];
+  const send = (message, agent_id) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const faults = path.join(stateDir(dir), 'ends', 'red-faults.json');
+  const broken = 'test/a.test.mjs:1 SyntaxError: Unexpected token \')\'\n\nRED';
+  assert.ok(denied(send(broken, 'tw1')), 'the first RED on a syntax error is sent back');
+  assert.equal(fs.existsSync(faults), false, 'a refused report records nothing');
+  const second = send(broken, 'tw1');
+  assert.equal(second?.hookSpecificOutput, undefined, 'the second report is not refused');
+  assert.match(second?.systemMessage ?? '', /not red for the right reason/, 'and is named');
+  assert.equal(JSON.parse(fs.readFileSync(faults, 'utf8'))[0].fault, 'SyntaxError');
+  assert.equal(send('test/a.test.mjs:3 FR-001 expected 3, got undefined\n\nRED', 'tw2'), null, 'a failing assertion passes at once');
+  assert.ok(denied(send('test/b.test.mjs:2 ReferenceError: sum is not defined\n\nRED', 'tw3')), 'a name error is a fault too');
+  assert.equal(send('test/c.test.mjs:9 Cannot find module ./src/sum.mjs\n\nRED', 'tw4'), null, 'a missing production module is a valid RED');
+  assert.equal(send('test/d.test.mjs:9 Cannot find module ./src/sum.mjs\n\nRED', 'tw5'), null);
+});
+
 // #74: sent to correct an existing test, test-writer adds no failing test, so the suite ends green and
 // RED would contradict the run. It ends FIXED instead; the words are run as its agent file declares them.
 test("test-writer's own ends commands accept FIXED for a correction that adds no test", () => {
