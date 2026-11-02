@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, runFailures, runTurns, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -399,6 +399,29 @@ test('full run: --login names a personal team skill that differs from the checko
   fs.writeFileSync(path.join(personal, 'skills', 'my-own', 'SKILL.md'), 'not the team\'s');
   assert.deepEqual(shadowingSkills(personal, project), ['speckit-team']);
   assert.deepEqual(shadowingSkills(path.join(tmp, 'nowhere'), project), [], 'no personal skills folder');
+});
+
+// The skill's first step is the hook's `check`, which refuses a second install of another build (#230). Run
+// on 2026-11-02 from a branch under --login, with the personal skills moved aside: every turn ran check, was
+// refused and stopped, 8 turns and $0.34 with nothing built. So the run asks the same question at no cost.
+test('full run: the check the skill starts with is asked before any model call, and a refusal is named', () => {
+  // The long path: on the Windows runner the temp dir is an 8.3 name (RUNNER~1), and check compares the trust
+  // entry with the folder git reports, spelled out.
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'skpre-')));
+  const [personal, repo] = [path.join(tmp, 'home', '.claude'), path.join(tmp, 'repo')];
+  buildRepo(repo);
+  const project = path.join(repo, '.claude');
+  for (const dir of [personal, project]) {
+    const r = spawnSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', dir], { encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+  }
+  const untrust = trustFolder(path.join(personal, '.claude.json'), repo);
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: personal };
+  assert.equal(preflightProblem({ teamDir: project, repo, env }), null, 'the same build in both places is no problem');
+  const stamped = path.join(personal, 'hooks', 'speckit-team.mjs');
+  fs.writeFileSync(stamped, fs.readFileSync(stamped, 'utf8').replace(/build [0-9a-f]{12}/, 'build 000000000000'));
+  assert.match(preflightProblem({ teamDir: project, repo, env }) ?? '', /two installs of the team/);
+  untrust();
 });
 
 // #173: main()'s loop, with claude replaced by canned --output-format json results, one per turn.
