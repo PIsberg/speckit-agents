@@ -320,6 +320,30 @@ of [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-
 (`docs/claude.md`, "Reviewer isolation"), whose reviewers declare the same field and get only the
 task, the target and the paths they read.
 
+## Preloaded skills on a revision
+
+Characters of the skills `skills:` preloaded, measured in the subagent transcripts of the two full runs
+of 2026-11-01 ([#257](https://github.com/PIsberg/speckit-agents/issues/257)); tokens are estimated at
+4 characters a token, not counted. A preloaded skill sits ahead of the launch prompt with no cache
+breakpoint between them, so every launch writes it and every later response reads it back.
+
+| Agent | Skills | Preloaded before | First run now | Revision now |
+|---|---|--:|--:|--:|
+| product-owner | `speckit-specify`, `speckit-clarify` | 39,859 (~10k) | 19,473 read | 0 |
+| architect | `speckit-plan`, `speckit-tasks` | 21,079 (~5.3k) | 21,079 read | 0 |
+| spec-auditor | `speckit-analyze` | 12,726 (~3.2k) | 12,726 preloaded | 12,726 preloaded |
+
+What it led to: product-owner and architect preload nothing. A first run reads the files it follows,
+which costs it one more response; product-owner's rules from `speckit-clarify` (at most 5 questions,
+highest impact first, how an answer is recorded) are a few lines of its body. spec-auditor keeps its
+skill, since each of its launches runs the whole phase.
+
+What it should save, worked out and not measured: with the 2026-10-25 default run's launches (product-owner
+3, at least 2 of them revisions; architect 2) and the responses of the 2026-11-01 runs (about 6 and 9),
+about 0.2M tokens carried, of that run's 2.41M, mostly cache reads at a tenth of the price. The fake API
+shows the first requests no longer carry the skills (`test/e2e.test.mjs`). No real run has shown a
+model following the read, or the saving.
+
 ## The skill's conditional sections
 
 Whether to move the sections of `skills/speckit-team/SKILL.md` that only some runs need into a

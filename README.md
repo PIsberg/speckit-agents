@@ -348,12 +348,13 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 | [`security-reviewer`](agents/security-reviewer.md) | opt-in review | nothing | `VERDICT: PASS` or `FAIL`; reviews spec state and reviews implementation result | sonnet |
 | [`patcher`](agents/patcher.md) | fast track | the working tree except protected paths, within 30 production lines and 2 files, never a commit | a report that `/speckit-patch` commits from, ending `DONE`, or `ESCALATE` or `FAILED` | sonnet |
 
-Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on), preloaded
-into the agent with the `skills:` frontmatter field. The agent file adds only what Spec Kit does
-not say: its inputs, its lane, and the shape of its report. Those bodies are 27 to 114 lines long,
-blank lines not counted; the architect's is the longest. `patcher` is the exception to the
-preloaded skill: it runs no Spec Kit phase, so its 34-line body carries the whole job.
-`test/install.test.mjs` counts them.
+Each agent's phase instructions are Spec Kit's own skill (`speckit-plan` and so on). spec-auditor,
+which runs its whole phase on every launch, preloads `speckit-analyze` with the `skills:` frontmatter
+field. product-owner and architect read theirs from `.claude/skills/` on a first run, so a revision
+does not carry them ([#257](https://github.com/PIsberg/speckit-agents/issues/257)). The agent file
+adds only what Spec Kit does not say: its inputs, its lane, and the shape of its report. Those bodies
+are 27 to 118 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
+Spec Kit phase, so its 34-line body carries the whole job. `test/install.test.mjs` counts them.
 
 ### Why the prompts are short
 
@@ -1531,18 +1532,18 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 550 tests:
+`npm test` runs 552 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 176 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 127 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 128 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 57 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 58 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
@@ -1704,7 +1705,9 @@ need no login and cost nothing.
   so a relaunch with another prompt writes them again. A ninth pins what `omitClaudeMd: true` leaves
   out: with a marker in the project's `CLAUDE.md` and in the user's, test-writer's first request
   carries both, and spec-auditor's, spec-gatekeeper's and security-reviewer's carry neither, but
-  still their launch prompt. Without the field on those three it fails.
+  still their launch prompt. Without the field on those three it fails. A tenth pins what `skills:`
+  preloads: with a marker in each Spec Kit skill, product-owner's and architect's first requests carry
+  none, and spec-auditor's carries `speckit-analyze`.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
@@ -2165,8 +2168,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   product-owner, architect, test-writer and implementer, which sends them back to restore it.
 - **Subagents can't ask you questions.** product-owner returns its questions, and the main
   session asks them.
-- **A preloaded skill pulls in its whole phase.** An architect asked to do one small thing will
-  tend to run all of `speckit-plan`.
+- **Skipping Spec Kit's skill on a revision is prompt text.** product-owner and architect read
+  `speckit-specify`, `speckit-plan` and `speckit-tasks` themselves on a first run and are told to
+  leave them unread on a revision. No hook checks either half, so an architect asked to do one small
+  thing can still read and run all of `speckit-plan`.
 - **The team never merges.** It stops at the PR.
 - **The fast track guards against mistakes and drift, not evasion.** Its threat model is an agent
   that overreaches by accident. It does not cover one that evades the hooks on purpose through the

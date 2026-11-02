@@ -400,6 +400,27 @@ test('installed test-writer runs the type check and reports a task number no imp
   assert.match(text.slice(text.indexOf('## Report')), /numbers that cannot hold/);
 });
 
+// #257: only a first run follows Spec Kit's phase instructions, so product-owner and architect read them
+// then, and a revision leaves them unread. product-owner's few rules from speckit-clarify live in its body.
+test("installed product-owner and architect read Spec Kit's skills on a first run, and a revision does not", () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const raw = (a) => fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n');
+  for (const a of ['product-owner', 'architect']) assert.doesNotMatch(raw(a).split(/^---$/m)[1], /^skills:/m, `${a} preloads no skill`);
+  assert.match(raw('spec-auditor').split(/^---$/m)[1], /^skills:\n {2}- speckit-analyze$/m, 'spec-auditor runs its whole phase on every launch');
+  const owner = flat(raw('product-owner'));
+  assert.ok(owner.includes('New feature: Read `.claude/skills/speckit-specify/SKILL.md`'), 'a first spec reads speckit-specify');
+  assert.match(owner, /Existing feature: edit its `spec\.md` in place and leave that skill unread/);
+  assert.doesNotMatch(owner, /speckit-clarify/, 'its rules are in the body, so the body does not send it there');
+  for (const rule of ['`## Clarifications`', '`### Session YYYY-MM-DD`', '`- Q: <question> → A: <answer>`', 'at most 5, highest impact first', 'at most 5 words']) {
+    assert.ok(owner.includes(rule), `product-owner states ${rule}`);
+  }
+  const architect = flat(raw('architect'));
+  assert.ok(architect.includes('Read `.claude/skills/speckit-plan/SKILL.md` and `.claude/skills/speckit-tasks/SKILL.md`'), 'a first plan reads both');
+  assert.match(architect, /A revision edits the artifacts in place: leave both skills unread/);
+  for (const a of ['product-owner', 'architect']) assert.match(flat(raw(a)), /specify init --here --integration claude/, `${a} says what a missing skill means`);
+});
+
 // #254: a task cited FR-009 and told test-writer to keep a test as it is. test-writer did, no test file named
 // the ID, and the drift check refused the APPROVED: one more test-writer and spec-gatekeeper (0.13M input) to
 // add a comment. The two prompts disagreed, so test-writer's says a kept test takes the comment too, and that
