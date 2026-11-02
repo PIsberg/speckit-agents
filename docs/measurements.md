@@ -600,7 +600,8 @@ APPROVED on FR-009, which `test('add', ...)` covered by behaviour without naming
 (SubagentStop), spec-gatekeeper wrote REJECTED, one more test-writer added `// FR-009` (0.07M, 23 s) and a
 second spec-gatekeeper approved (0.06M, 35 s). T002 had told test-writer to keep that test as it was
 ([#254](https://github.com/PIsberg/speckit-agents/issues/254)). It is the first live run in which #228's
-refusal changed the word.
+refusal changed the word. What it led to: test-writer's prompt now puts a cited ID on a kept test as a
+comment, held by `test/install.test.mjs`. Whether that removes the two launches has not been seen in a run.
 
 Where the agents' tokens went, from the subagent transcripts, led to three issues:
 [#256](https://github.com/PIsberg/speckit-agents/issues/256) (each writer launch carries the owner's
