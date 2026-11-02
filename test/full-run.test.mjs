@@ -405,7 +405,9 @@ test('full run: --login names a personal team skill that differs from the checko
 // on 2026-11-02 from a branch under --login, with the personal skills moved aside: every turn ran check, was
 // refused and stopped, 8 turns and $0.34 with nothing built. So the run asks the same question at no cost.
 test('full run: the check the skill starts with is asked before any model call, and a refusal is named', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'skpre-'));
+  // The long path: on the Windows runner the temp dir is an 8.3 name (RUNNER~1), and check compares the trust
+  // entry with the folder git reports, spelled out.
+  const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'skpre-')));
   const [personal, repo] = [path.join(tmp, 'home', '.claude'), path.join(tmp, 'repo')];
   buildRepo(repo);
   const project = path.join(repo, '.claude');
