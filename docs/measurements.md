@@ -320,6 +320,37 @@ of [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-
 (`docs/claude.md`, "Reviewer isolation"), whose reviewers declare the same field and get only the
 task, the target and the paths they read.
 
+## Your personal CLAUDE.md in the agents that write
+
+Measured on the two full runs of 2026-11-01 (Claude Code 2.1.316, `--login`, main at `807d9e9`,
+[#256](https://github.com/PIsberg/speckit-agents/issues/256)). Each writer agent's transcript has an
+`instructions` attachment of 19,595 characters, nearly all of it the owner's 19,610-byte
+`~/.claude/CLAUDE.md`, against 260 bytes for the fixture's project file. At 4 characters a token, an
+estimate with no tokens counted, that is about 4.9k tokens written once per launch and read back by
+each later response of that agent:
+
+| Run | Writer responses | Carried, estimated | Run's input |
+|---|--:|--:|--:|
+| `--two-slices` (one at a time) | 28 | ~0.14M | 1.66M (~8%) |
+| `--side-by-side` | 44 | ~0.22M | 2.39M (~9%) |
+
+Whether a writer can drop only that file, checked on 2.1.316 at $0 against the fake API:
+
+| Tried | User's file | Project's file | Scope |
+|---|---|---|---|
+| nothing (the control, test-writer) | loaded | loaded | |
+| `omitClaudeMd: true` in the agent | dropped | dropped | that agent |
+| `claudeMdExcludes` as an agent frontmatter key | loaded | loaded | ignored |
+| `settings:` with `claudeMdExcludes` in agent frontmatter | loaded | loaded | ignored |
+| `claudeMdExcludes` in `.claude/settings.local.json` | dropped | loaded | the session, main included |
+
+The agent field list in the 2.1.316 binary has nothing else for this (read, not tested).
+
+What it led to: no change to the agents, since no setting does this per agent. README's "Context budget"
+states the cost and the session-wide setting, and `test/e2e.test.mjs` pins the setting. Dropping the file
+from the writers some other way changes which of your rules reach the agents that write:
+[#268](https://github.com/PIsberg/speckit-agents/issues/268).
+
 ## Preloaded skills on a revision
 
 Characters of the skills `skills:` preloaded, measured in the subagent transcripts of the two full runs
