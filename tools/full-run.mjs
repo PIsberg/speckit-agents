@@ -209,6 +209,13 @@ export function shadowingSkills(personalDir, projectDir) {
   return names.filter((n) => { const own = text(personalDir, n); return own !== null && own !== text(projectDir, n); }).sort();
 }
 
+// What the hook's `check` refuses, or null. It is the first step of the skill, so a refusal here would stop
+// every turn of the run after a model call: seen on 2026-11-02, 8 turns and $0.34 with nothing built.
+export function preflightProblem({ teamDir, repo, env }) {
+  const r = run(process.execPath, [path.join(teamDir, 'hooks', 'speckit-team.mjs'), 'check'], { cwd: repo, env });
+  return r.status === 0 ? null : `${r.stdout}${r.stderr}`.trim() || `check exited ${r.status}`;
+}
+
 // main()'s turns: prompt n, invoke claude on it (resuming the session after the first), stop on a turn
 // error or a lost session, or once `ended` says the run is over. `invoke` returns a spawnSync result.
 export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log }) {
@@ -340,6 +347,12 @@ function main() {
       'skills/speckit-team/', 'skills/speckit-patch/', 'skills/speckit-triage/', 'skills/speckit-role-*/'].map((p) => `/.claude/${p}\n`).join(''));
   }
   const untrust = trustFolder(confFile, repo);
+  // A gate case in agents mode sends its request without the skill, so it never reaches the check.
+  const refused = !gate || o.skillAgents ? preflightProblem({ teamDir: o.login ? path.join(repo, '.claude') : cfg, repo, env }) : null;
+  if (refused) {
+    untrust();
+    throw new Error(`the skill's first step would refuse this run, so no model was called:\n${refused}`);
+  }
 
   const marker = newMarker();
   const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');

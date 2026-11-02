@@ -1543,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 553 tests:
+`npm test` runs 554 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1561,7 +1561,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 16 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 25 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 26 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
@@ -1776,7 +1776,11 @@ the settings gates of a team you installed fire beside the scratch repo's. Skill
 to the override: a personal skill wins over a project one of the same name, so the run refuses to
 start, at no cost, while a team skill in your own `skills/` differs from the run's copy (hook paths
 aside), and names them. Reinstall the team from the checkout under test, or move those skills aside
-([#175](https://github.com/PIsberg/speckit-agents/issues/175)).
+([#175](https://github.com/PIsberg/speckit-agents/issues/175)). It also runs the hook's `check`, the
+skill's first step, before any model call and stops on a refusal, so under `--login` a personal
+install of another build must be reinstalled from the checkout or removed: moving only its skills
+aside is not enough. Before this, such a run spent 8 turns and $0.34 on the same refusal
+(2026-11-02). A gate case in agents mode never runs the skill, so it skips this.
 
 With `--side-by-side` the request is two functions in two files (`sum()` in `src/math.js`,
 `capitalize()` in a new `src/text.js`, from `request-side-by-side.txt`), and the answer takes every
