@@ -221,10 +221,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' specs are not inputs. text, unseen (cost).
 
 ### agents/product-owner.md: Process
-<!-- fingerprint: 5011442f -->
-- Stop without `.specify/`; follow speckit-specify. text.
+<!-- fingerprint: 713a3822 -->
+- Stop without `.specify/` or the skill; a new feature reads speckit-specify, a revision leaves it unread. pinned; e2e that nothing is preloaded (#257); no hook.
+- An answer goes under `## Clarifications`, `### Session`, as `- Q: ... → A: ...`, and into what it settles. pinned; spec-auditor reads the result.
 - A finding judged wrong is reported `contested` with its file:line; an upheld contest is recorded. pinned.
-- At most 5 open questions, highest impact first. text.
+- At most 5 open questions, highest impact first, each with options or at most 5 words. pinned, unseen.
 - Tick a checklist item only after checking it this run. text, unseen.
 
 ### agents/product-owner.md: Lane
@@ -248,8 +249,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: b69e78fc -->
+<!-- fingerprint: 9168b467 -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
+- A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
 - Grep for an existing function before a task adds one. pinned; spec-auditor checks (HIGH).
 - Each fact once; write `research.md`, `data-model.md`, `contracts/`, `quickstart.md` only when needed. pinned (facts once), text.

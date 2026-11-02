@@ -440,6 +440,29 @@ test("the agents that cannot write start without the user's and the project's CL
   }
 });
 
+// #257: a preloaded skill sits ahead of the launch prompt on every launch, so a revision of product-owner or
+// architect wrote and re-read a phase's instructions it does not follow (about 10k and 5k tokens). They read
+// those files on a first run instead. spec-auditor runs its whole phase on every launch and keeps its skill,
+// as the control: a test that only saw no marker could pass with no skill in the fixture at all.
+test("product-owner and architect start without Spec Kit's skills, and spec-auditor keeps its own", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  for (const skill of ['specify', 'clarify', 'plan', 'tasks', 'analyze']) {
+    s.write(`.claude/skills/speckit-${skill}/SKILL.md`, `---\nname: speckit-${skill}\ndescription: Spec Kit ${skill}.\n---\nE2E SKILL ${skill.toUpperCase()}\n`);
+  }
+  const r = await session(s, {
+    [MAIN]: [agent('product-owner', 'e2e owner'), agent('architect', 'e2e architect'), agent('spec-auditor', 'e2e auditor')],
+    'e2e owner': [say('READY FOR PLAN')],
+    'e2e architect': [say('Round 1: red T001; green T002')],
+    'e2e auditor': [say('No findings.\nVERDICT: PASS')],
+  });
+  const context = (k) => strings(r.requests[k][0] ?? []).join('\n');
+  for (const k of ['e2e owner', 'e2e architect']) {
+    assert.ok(r.requests[k][0], `${k} was launched: ${story(r)}`);
+    assert.doesNotMatch(context(k), /E2E SKILL/, `${k} starts without a Spec Kit skill`);
+  }
+  assert.match(context('e2e auditor'), /E2E SKILL ANALYZE/, `spec-auditor still preloads speckit-analyze: ${story(r)}`);
+});
+
 // #19: the board mod (mods/speckit-board) in a real headless session on every OS CI runs, loaded with
 // --plugin-dir: Claude Code starts it, it sets the status line and raises its startup toast, and its
 // commands answer with no model call (004 quickstart L1, L2). Needs no hook of the team.

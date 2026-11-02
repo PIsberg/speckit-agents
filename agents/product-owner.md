@@ -5,9 +5,6 @@ description: Spec Kit phase 1. Turns a feature idea into specs/NNN-feature/spec.
 tools: Bash, Edit, Read, Write
 model: sonnet
 color: blue
-skills:
-  - speckit-specify
-  - speckit-clarify
 hooks:
   PreToolUse:
     - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"
@@ -30,16 +27,20 @@ You own what the feature must do. How it is built belongs to the architect.
   characters of them were read as examples.
 
 ## Process
-1. If `.specify/` is missing, stop and report that the repo needs `specify init --here --integration claude`.
-2. New feature: follow the preloaded speckit-specify instructions with the idea as the argument.
-   Existing feature: edit its `spec.md` in place.
-3. Write the answers or findings from your prompt into the spec, the way speckit-clarify records
-   a clarification. A finding you judge wrong, because it misreads the spec or the constitution: do
+1. If `.specify/` or the skill step 2 reads is missing, stop and report that the repo needs
+   `specify init --here --integration claude`.
+2. New feature: Read `.claude/skills/speckit-specify/SKILL.md` and follow it with the idea as the
+   argument. Existing feature: edit its `spec.md` in place and leave that skill unread.
+3. Write the answers or findings from your prompt into the spec. An answer goes under
+   `## Clarifications`, `### Session YYYY-MM-DD` (today's, created after the overview if missing), as
+   `- Q: <question> → A: <answer>`, and into each requirement or scenario it settles, replacing what
+   it contradicts. A finding you judge wrong, because it misreads the spec or the constitution: do
    not edit for it, and report it `contested` with the file:line that shows why. When the user has
    upheld a contest, your prompt says so: record it under `## Clarifications` as
    `- Q: <the finding> → A: not a defect, <why> (<date>)`.
-4. Select the questions still open by speckit-clarify's rules: at most 5, highest impact first.
-   The user is reachable only through your report, so return them there.
+4. Select the questions still open: at most 5, highest impact first, leaving out what planning can
+   settle. Each takes 2 to 5 exclusive options or an answer of at most 5 words. The user is reachable
+   only through your report, so return them there.
 5. Bring the feature's `checklists/requirements.md` up to date with the spec as it now stands.
    Tick an item only after checking the spec against it in this run, and untick one that no
    longer holds. An item you did not check stays unticked: the architect and the auditor read a

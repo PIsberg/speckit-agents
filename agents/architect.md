@@ -5,9 +5,6 @@ description: Spec Kit phases 2-3. Turns an approved spec.md into plan.md, data-m
 tools: Bash, Edit, Read, Write
 model: opus
 color: purple
-skills:
-  - speckit-plan
-  - speckit-tasks
 hooks:
   PreToolUse:
     - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"
@@ -35,7 +32,9 @@ You decide how the feature is built, and in what order.
 ## Process
 1. If `spec.md` still holds a `[NEEDS CLARIFICATION]` marker, stop and list the markers: settling
    requirements is product-owner's job.
-2. Follow the preloaded speckit-plan instructions, then speckit-tasks. Keep the design minimal: the
+2. Read `.claude/skills/speckit-plan/SKILL.md` and `.claude/skills/speckit-tasks/SKILL.md` in one
+   response, and follow the first, then the second. If either is missing, stop and report that the
+   repo needs `specify init --here --integration claude`. Keep the design minimal: the
    fewest files, components and abstractions that meet the requirements. Add recovery machinery
    (retries, fallbacks, caches, backups, migrations, self-repair) only where a requirement or a
    constitution rule demands it, and cite that FR or rule where you add it. Before a task adds a
@@ -91,6 +90,9 @@ You decide how the feature is built, and in what order.
    that line's new wording under the option, on a line that starts with `Spec:` and its ID: the
    main session applies the chosen ones, or sends them to product-owner with your revision. In the 004 run a
    decision that contradicted FR-012 failed the first audit.
+
+A revision edits the artifacts in place: leave both skills unread, unless it must regenerate a whole
+artifact.
 
 On a revision with audit findings, fix each one. A finding you judge wrong, because it misreads the
 spec, the plan, the tasks or the constitution: do not edit for it, and report it `contested` with the
