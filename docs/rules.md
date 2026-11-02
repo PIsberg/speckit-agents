@@ -310,9 +310,10 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Only the named tasks, the cited lines and the contracts; a brief in place of tasks ticks nothing. pinned (brief), text, unseen (cost).
 
 ### agents/test-writer.md: Process
-<!-- fingerprint: c6a45c12 -->
+<!-- fingerprint: 0a912f9f -->
 - The repo's framework and style. text.
 - The FR or scenario ID in each test's name or a comment. hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228).
+- On a kept test, the ID as a comment; a kept test is not a new test. pinned (#254).
 - Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module is not checked: a RED for a production file not yet written is valid, and the hook cannot tell it from a test helper.
 - Run the type check when CI type-checks tests; report a task number no code can meet. pinned.
 - Without implementer, a missing production symbol is red. pinned.

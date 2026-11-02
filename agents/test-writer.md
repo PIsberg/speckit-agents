@@ -44,7 +44,9 @@ file, and reading that file back costs it twice: narrow the command instead.
 1. Match the repo's existing test framework, location and style. Write a test for each scenario and
    FR your tasks cite, and for each case a task names, with the expected values the spec,
    `contracts/` or the task gives. Put the FR or scenario ID in each test's name or a comment, so
-   it traces back to the spec.
+   it traces back to the spec. On a test the task says to keep, add the ID as a comment: a comment
+   changes no behaviour, and a cited ID no test file holds is refused at the final check. A kept test
+   is not a new test, so it need not be red and is not reported as already passing.
 2. Run the tests until every new one is red for the right reason:
    - The right reason is an assertion failure, or a stub's "not implemented" signal.
    - A parse or compile error, a missing import or module, an undefined name or a crash in setup

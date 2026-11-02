@@ -400,6 +400,20 @@ test('installed test-writer runs the type check and reports a task number no imp
   assert.match(text.slice(text.indexOf('## Report')), /numbers that cannot hold/);
 });
 
+// #254: a task cited FR-009 and told test-writer to keep a test as it is. test-writer did, no test file named
+// the ID, and the drift check refused the APPROVED: one more test-writer and spec-gatekeeper (0.13M input) to
+// add a comment. The two prompts disagreed, so test-writer's says a kept test takes the comment too, and that
+// such a test is no new test, which its report would otherwise have to list as already passing.
+test('installed test-writer names a cited ID on a test the task says to keep', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'agents', 'test-writer.md'), 'utf8'));
+  const work = text.slice(text.indexOf('## Process'), text.indexOf('## Lane'));
+  assert.match(work, /a test the task says to keep[^.]*comment/i, 'the ID goes on a kept test as a comment');
+  assert.match(work, /comment changes no behaviour/i, 'why that does not break "keep it as it is"');
+  assert.match(work, /kept test is not a new test/i, 'it does not count as a test that already passes');
+});
+
 // specs/004-board-clear/findings.md, 5 and 6: product-owner's and architect's hooks see Write and
 // Edit only, and no stop check reads their Bash writes. And in Claude Code 2.1.296 a report arrives as
 // the agent's hand-back message, which the Agent tool's result only points to.
