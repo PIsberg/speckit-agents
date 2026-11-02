@@ -440,6 +440,25 @@ test("the agents that cannot write start without the user's and the project's CL
   }
 });
 
+// #256: no agent field drops only the user's CLAUDE.md (omitClaudeMd drops the project's too), and agent
+// frontmatter has no settings. What a user can do, per repository, is the session-wide claudeMdExcludes, which
+// README's "Context budget" offers. It costs the main session the file as well, so this pins both halves.
+// The control is the case above, where test-writer carries the user's file with no such setting.
+test("claudeMdExcludes drops the user's CLAUDE.md for the session and its agents, and keeps the project's", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const userFile = path.join(s.cfg, 'CLAUDE.md');
+  fs.writeFileSync(userFile, 'E2E USER CLAUDE MD\n');
+  s.write('CLAUDE.md', 'E2E PROJECT CLAUDE MD\n');
+  s.write('.claude/settings.local.json', JSON.stringify({ claudeMdExcludes: [userFile.replaceAll('\\', '/')] }));
+  const r = await session(s, { [MAIN]: [agent('test-writer', 'e2e writer')], 'e2e writer': [say('RED')] });
+  for (const k of [MAIN, 'e2e writer']) {
+    assert.ok(r.requests[k][0], `${k} ran: ${story(r)}`);
+    const context = strings(r.requests[k][0]).join('\n');
+    assert.match(context, /E2E PROJECT CLAUDE MD/, `${k} keeps the project's file`);
+    assert.doesNotMatch(context, /E2E USER CLAUDE MD/, `${k} loses the user's file`);
+  }
+});
+
 // #257: a preloaded skill sits ahead of the launch prompt on every launch, so a revision of product-owner or
 // architect wrote and re-read a phase's instructions it does not follow (about 10k and 5k tokens). They read
 // those files on a first run instead. spec-auditor runs its whole phase on every launch and keeps its skill,

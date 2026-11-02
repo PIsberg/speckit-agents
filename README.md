@@ -1212,6 +1212,17 @@ once. Four full headless runs of a small feature cost $1.83 to $3.98, and one fa
 $0.064. The runs, what each cost, and which rule each finding led to are in
 [Measurements](docs/measurements.md).
 
+The agents that write also carry your personal `~/.claude/CLAUDE.md` on every launch, which no agent
+setting can drop on its own: `omitClaudeMd` takes the project's file too. A 19,610-byte file came to
+an estimated 8% to 9% of a full run's input
+([the measurement](docs/measurements.md#your-personal-claudemd-in-the-agents-that-write)). So keep that
+file short, or leave it out of one repository for the whole session, your main session included, in
+that repository's `.claude/settings.local.json`, with the file's absolute path and forward slashes:
+
+```json
+{ "claudeMdExcludes": ["C:/Users/you/.claude/CLAUDE.md"] }
+```
+
 ### Foreground launches
 
 A background launch returns only a receipt, and the main session then spent a request that did
@@ -1532,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 552 tests:
+`npm test` runs 553 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1543,7 +1554,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 58 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 59 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
@@ -1707,7 +1718,9 @@ need no login and cost nothing.
   carries both, and spec-auditor's, spec-gatekeeper's and security-reviewer's carry neither, but
   still their launch prompt. Without the field on those three it fails. A tenth pins what `skills:`
   preloads: with a marker in each Spec Kit skill, product-owner's and architect's first requests carry
-  none, and spec-auditor's carries `speckit-analyze`.
+  none, and spec-auditor's carries `speckit-analyze`. An eleventh pins `claudeMdExcludes` in
+  `.claude/settings.local.json`: the main session and test-writer lose the user's `CLAUDE.md` and keep
+  the project's.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
 recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
