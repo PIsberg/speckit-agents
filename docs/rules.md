@@ -249,14 +249,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: f01db853 -->
+<!-- fingerprint: 93f53eda -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
 - Grep for an existing function before a task adds one. pinned; spec-auditor checks (HIGH).
 - Each fact once; write `research.md`, `data-model.md`, `contracts/`, `quickstart.md` only when needed. pinned (facts once), text.
 - Slices: one behaviour each, every task in one slice. pinned.
-- Every FR is cited by a test task or by a task saying `No test: <reason>`. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and excused by no such task is refused (#235).
+- Every FR is cited by a test task or excused by `No test: <reason>` right after it, which excuses only that ID and those the reason names. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and not excused that way is refused (#235); a cited ID a task excuses is not asked of its test files.
 - Every test task names its test file and the IDs it covers. pinned; hook `ends --record` checks at spec-gatekeeper's APPROVED that the test files hold the IDs (#228).
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
