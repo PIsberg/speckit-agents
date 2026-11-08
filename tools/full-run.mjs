@@ -238,6 +238,41 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
 }
 
 // The run's failures: why it stopped early comes first, since the checks after it judge a run cut short.
+// Spec-gatekeeper's whole last report, kept in run.json as gate.report (#255): turns[].result keeps 600
+// characters, and the transcripts it comes from live under the user's ~/.claude/projects. In agents mode
+// it is the last response of the newest spec-gatekeeper transcript in the session's subagents/ folder (the
+// type from its .meta.json, as tools/usage.mjs reads it); in skill-agents mode, the main session's text
+// after its last speckit-role-spec-gatekeeper Skill call, up to the next Skill call. null when none ran.
+export function gateReport({ transcript, skillAgents = false }) {
+  const rows = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }); } catch { return null; } };
+  const parts = (r) => (r?.type === 'assistant' && Array.isArray(r.message?.content) ? r.message.content : []);
+  const texts = (rs) => rs.flatMap((r) => parts(r).filter((p) => p?.type === 'text' && p.text).map((p) => ({ id: r.message.id, text: p.text })));
+  const main = transcript ? rows(transcript) : null;
+  if (!main) return null;
+  if (skillAgents) {
+    const own = main.filter((r) => !r.isSidechain);
+    const skill = (r) => parts(r).find((p) => p?.type === 'tool_use' && p.name === 'Skill');
+    const at = own.findLastIndex((r) => /speckit-role-spec-gatekeeper$/.test(String(skill(r)?.input?.skill ?? '')));
+    if (at < 0) return null;
+    const next = own.findIndex((r, i) => i > at && skill(r));
+    const t = texts(own.slice(at + 1, next < 0 ? undefined : next));
+    return t.length ? t.map((x) => x.text).join('') : null;
+  }
+  const dir = path.join(path.dirname(transcript), path.basename(transcript, '.jsonl'), 'subagents');
+  const runs = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => f.endsWith('.jsonl')).flatMap((f) => {
+    let type = null;
+    try { type = JSON.parse(fs.readFileSync(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), 'utf8')).agentType; } catch { /* no meta */ }
+    if (type !== 'spec-gatekeeper') return [];
+    const rs = rows(path.join(dir, f)) ?? [];
+    const t = texts(rs);
+    return t.length ? [{ t, when: Math.max(0, ...rs.map((r) => Date.parse(r.timestamp) || 0)) }] : [];
+  }).sort((a, b) => a.when - b.when);
+  const last = runs.at(-1)?.t;
+  if (!last) return null;
+  const id = last.at(-1).id;
+  return last.filter((x) => x.id === id).map((x) => x.text).join('');
+}
+
 export const runFailures = (failures, stopped) => (stopped ? [stopped, ...failures] : [...failures]);
 
 // A .claude.json that exists but does not parse is one Claude Code is rewriting (it does so throughout a
@@ -376,7 +411,7 @@ function main() {
   // A gate case is judged by tools/eval.mjs on spec-gatekeeper's word, whichever it is; only the cost ceiling
   // and a missing word are failures of the run itself.
   const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
-  const word = gateWord({ ends, text: turns.at(-1)?.result });
+  const word = { ...gateWord({ ends, text: turns.at(-1)?.result }), report: transcript ? gateReport({ transcript, skillAgents: o.skillAgents }) : null };
   const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
