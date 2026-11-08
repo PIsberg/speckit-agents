@@ -1941,13 +1941,14 @@ and the skill stops, naming the paths, when:
   Remove one with `node install.mjs --claude-dir <dir> --uninstall`, or install the same checkout into
   both;
 - the install is the repo's `.claude/`, and your `.claude.json` (beside `CLAUDE_CONFIG_DIR`'s
-  contents, else in your home) trusts neither the repo nor a folder above it.
+  contents, else in your home) does not trust the repo itself. A trusted folder above it does not
+  count: Claude Code still skips the agents' frontmatter hooks there (checked on 2.1.293 and
+  2.1.319, [Live results](docs/live-results.md); [#237](https://github.com/PIsberg/speckit-agents/issues/237)).
 
 It prints a `note:` line and goes on for a second install of the same build, a `.claude.json` that is
 not JSON, and, in a speckit-agents checkout, an install that is not this checkout's build (run
 `node install.mjs`). Verified by `test/install.test.mjs` on throwaway installs, and by an e2e case in
-which Claude Code runs the personal skill over the project's and its check stops the run. Not
-verified: that Claude Code counts a trusted folder above the repo as trust for it, as the check does.
+which Claude Code runs the personal skill over the project's and its check stops the run.
 
 If git cannot read your global config, as in a sandbox that denies `~/.gitconfig`, git for Windows
 2.56 fails every command (`fatal: unknown error occurred while reading the configuration files`;
