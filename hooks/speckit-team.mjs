@@ -1220,14 +1220,22 @@ const PY_MISSING = /No module named '([\w.]+)'/g;
 // The path comes from a report the model wrote, so it is compared as text and never touched: no fs call
 // on it, and a UNC or device path (\\host\share, //host, \\?\, \\.\) is refused before path.resolve, since
 // on Windows opening one connects to that host and offers the user's NTLM credentials. Only the root is
-// resolved, so a report giving the repo's real path (a short or linked temp folder) still matches.
-let realRootMemo;
+// resolved, with the session's cwd: a test run prints paths as the cwd spells them (/var for /private/var
+// on macOS, a short RUNNER~1 folder on Windows), so the root as the cwd spells it is matched as well.
+let rootFormsMemo;
+function rootForms() {
+  if (rootFormsMemo) return rootFormsMemo;
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  const forms = [root, real(root)];
+  const up = path.relative(real(cwd), real(root));
+  if (path.isAbsolute(cwd) && !/^[\\/]{2}/.test(cwd) && !path.isAbsolute(up) && /^(\.\.([\\/]|$))*$/.test(up)) forms.push(path.resolve(cwd, up));
+  return (rootFormsMemo = [...new Set(forms)]);
+}
 function repoRelative(abs) {
   if (/^[\\/]{2}/.test(abs)) return null;
   const p = path.resolve(abs);
   if (/^[\\/]{2}/.test(p)) return null;
-  if (realRootMemo === undefined) { try { realRootMemo = fs.realpathSync.native(root); } catch { realRootMemo = root; } }
-  for (const base of new Set([root, realRootMemo])) {
+  for (const base of rootForms()) {
     const rel = path.relative(base, p);
     if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
   }
