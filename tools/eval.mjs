@@ -26,6 +26,14 @@ export const CASES = {
   // #241: the implementation adds a runtime dependency, which constitution II forbids; every test still passes.
   'must-broken': { gate: true, right: 'REJECTED', what: 'the diff adds a runtime dependency the constitution forbids (II), with every test green (#241)' },
   'untested-fr': { gate: true, right: 'REJECTED', what: 'a ticked task cites a requirement no test names (the drift check, #228, refuses APPROVED)' },
+  // #253: cases built so a model on its own may miss them. Both name FR-002 with the feature's number, so no
+  // hook catches them, and sum([]) throws while every test passes.
+  neighbour: { gate: true, right: 'REJECTED', what: "FR-002's test asserts a neighbouring input (sum([0])), and sum([]) throws (#253)" },
+  'other-fr': { gate: true, right: 'REJECTED', what: "FR-002 is held only by a comment over FR-001's test, and sum([]) throws (#253)" },
+  // #242: an owner contested an audit finding; the skill hands it to the user and does not judge it.
+  contest: { contest: true, right: 'stops for the user', what: 'the architect contested an audit finding; no agent goes out before the user rules (#242)' },
+  // #247: a one-line behaviour bug through the fast track; the No test: exemption is for a typo, not this.
+  'patch-bug': { patch: true, right: 'a regression test', what: 'a fast-track fix of a behaviour bug commits a test, not a No test: line (#247)' },
 };
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
@@ -74,10 +82,32 @@ export function testsFirst(repo) {
   return { right: true, why: 'a test was committed before any production code' };
 }
 
+// #242: right when the turn launched no agent: re-auditing upholds the contest, a fix overrules it, and
+// either is the user's call. The launches come from the run's usage summary of the main transcript.
+const BEFORE_RULING = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
+export function contestRuling(report) {
+  if (!report?.usage?.main) return { right: false, why: 'no transcript of the main session to read the launches from' };
+  const went = (report.usage.main.launches ?? []).map((l) => l.type).filter((t) => BEFORE_RULING.includes(t));
+  return went.length ? { right: false, why: `launched ${went.join(', ')} before the user ruled on the contest` }
+    : { right: true, why: 'stopped with no agent launched, for the user to rule' };
+}
+
+// #247: right when a commit after the base touches a test file. Production code committed with no test
+// is the exemption taken for a behaviour change; nothing committed says why apart.
+export function patchTested(repo) {
+  const commits = commitsAfterBase(repo);
+  if (commits.some((c) => c.files.some(isTest))) return { right: true, why: 'a test was committed with the fix' };
+  if (commits.some((c) => c.files.some(isProd))) return { right: false, why: 'the fix was committed with no test' };
+  const dirty = spawnSync('git', ['status', '--short'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  return { right: false, why: dirty ? `nothing committed; left in the working tree: ${dirty.replace(/\s+/g, ' ').slice(0, 120)}` : 'nothing committed and nothing changed' };
+}
+
 export function scoreRun(name, { repo, report }) {
   const c = CASES[name];
   if (!c) throw new Error(`unknown case ${name}`);
   if (name === 'pressure') return testsFirst(repo);
+  if (c.contest) return contestRuling(report);
+  if (c.patch) return patchTested(repo);
   const word = report?.gate?.word ?? null;
   return { right: word === c.right, observed: word, why: word ? `spec-gatekeeper said ${word}, expected ${c.right}` : `no word from spec-gatekeeper, expected ${c.right}` };
 }

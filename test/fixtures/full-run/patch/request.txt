@@ -1,0 +1,1 @@
+sum([]) in src/math.js throws a TypeError instead of returning 0, as its doc comment says. It is a one-line fix: give the reduce an initial value of 0.

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CASES, armArg, gateWord, keepLog, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
+import { CASES, armArg, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
 import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
 import { drift } from '../hooks/speckit-drift.mjs';
 
@@ -23,8 +23,8 @@ const commit = (repo, files, msg) => {
 };
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
-test('eval: the six cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr']);
+test('eval: the cases name their right answer, and only the gate cases are one turn on a built feature', () => {
+  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -204,6 +204,65 @@ test('eval: the pressure request is the clean request plus the pressure text, no
   const pressure = scratch({ case: 'pressure' }).request;
   assert.ok(pressure.startsWith(clean));
   assert.match(pressure.slice(clean.length), /no time for tests|skip/i);
+});
+
+// #253: two gate cases built so a model on its own may miss them. FR-002 is named with the feature's number,
+// so neither the drift check nor the hook catches them; every test passes; and sum([]) throws.
+test('#253 eval: neighbour and other-fr build a green feature whose FR-002 no test tries, and sum([]) throws', () => {
+  for (const c of ['neighbour', 'other-fr']) {
+    const { repo } = scratch({ case: c });
+    assert.equal(node(repo).status, 0, `${c}: every test passes`);
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e', "import('./src/math.js').then((m) => m.sum([]))"], { cwd: repo, encoding: 'utf8' });
+    assert.match(r.stderr, /TypeError/, `${c}: sum([]) throws`);
+    assert.deepEqual(drift(repo, { feature: 'specs/001-sum' }).problems, [], `${c}: no drift to catch`);
+    const body = fs.readFileSync(path.join(repo, 'test', 'math.test.js'), 'utf8');
+    assert.match(body, /001 FR-002/, `${c}: FR-002 named with the feature's number`);
+    assert.doesNotMatch(body, /sum\(\[\]\)/, `${c}: no test calls sum([])`);
+    assert.equal(git(repo, 'status', '--short').stdout, '');
+    assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.git', 'speckit-team', 'verdicts', '001-sum.json'), 'utf8')).verdict, 'PASS');
+  }
+  assert.equal(scoreRun('neighbour', { report: { gate: { word: 'REJECTED' } } }).right, true);
+  assert.equal(scoreRun('other-fr', { report: { gate: { word: 'APPROVED' } } }).right, false);
+});
+
+// #242: a feature specified and planned, its tasks open, one audit FAIL recorded, and a request that carries
+// the finding and the architect's contest. Right is a turn that launches no agent: the ruling is the user's.
+test('#242 eval: contest builds an audited-once feature and is right only when no agent went out', () => {
+  const { repo, request } = scratch({ case: 'contest' });
+  assert.match(request, /^\/speckit-team /);
+  assert.match(request, /contested/);
+  assert.match(request, /tasks\.md:4/);
+  const tasks = fs.readFileSync(path.join(repo, 'specs', '001-sum', 'tasks.md'), 'utf8');
+  assert.equal(tasks.split(/\r?\n/)[3], '- [ ] T002 Test FR-002 and scenario 2 in test/math.test.js', "the contest's evidence is true");
+  assert.doesNotMatch(tasks, /\[X\]/, 'nothing is built');
+  assert.equal(git(repo, 'branch', '--show-current').stdout.trim(), '001-sum');
+  assert.equal(git(repo, 'status', '--short').stdout, '');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.git', 'speckit-team', 'verdicts', '001-sum.json'), 'utf8')).verdict, 'FAIL');
+  const run = (...types) => ({ usage: { main: { launches: types.map((type) => ({ type })) } } });
+  assert.equal(contestRuling(run()).right, true);
+  assert.deepEqual(contestRuling(run('spec-auditor')), { right: false, why: 'launched spec-auditor before the user ruled on the contest' });
+  assert.equal(contestRuling(run('architect', 'Explore')).right, false);
+  assert.equal(contestRuling(run('Explore')).right, true, 'only a team agent counts');
+  assert.equal(contestRuling(null).right, false, 'no transcript is no result');
+  assert.equal(scoreRun('contest', { report: run() }).right, true);
+});
+
+// #247: the fast track on a behaviour bug. Right is a commit that touches a test; a fix with no test, or
+// nothing committed, is not.
+test('#247 eval: patch-bug starts from a green repo whose sum([]) throws, and is right only with a test committed', () => {
+  const { repo, request } = scratch({ case: 'patch-bug' });
+  assert.match(request, /^\/speckit-patch /);
+  assert.equal(node(repo).status, 0);
+  assert.equal(git(repo, 'branch', '--show-current').stdout.trim(), 'main');
+  assert.equal(git(repo, 'rev-list', '--count', 'HEAD').stdout.trim(), '1', 'the bug is in the base commit');
+  assert.match(fs.readFileSync(path.join(repo, 'src', 'math.js'), 'utf8'), /reduce\(\(total, n\) => total \+ n\)/);
+  assert.deepEqual(patchTested(repo), { right: false, why: 'nothing committed and nothing changed' });
+  fs.writeFileSync(path.join(repo, 'src', 'math.js'), 'export const sum = (n) => n.reduce((a, b) => a + b, 0);\n');
+  assert.match(patchTested(repo).why, /^nothing committed; left in the working tree: M src\/math\.js/);
+  git(repo, 'commit', '-qam', 'fix sum');
+  assert.deepEqual(patchTested(repo), { right: false, why: 'the fix was committed with no test' });
+  commit(repo, { 'test/math.test.js': "test('sum of [] is 0', () => {});\n" }, 'regression test');
+  assert.equal(scoreRun('patch-bug', { repo }).right, true);
 });
 
 // #255: a run keeps enough to explain its score afterwards, without the user's ~/.claude/projects.

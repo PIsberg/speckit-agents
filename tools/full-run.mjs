@@ -3,7 +3,7 @@
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
 //   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
-//                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken] [--claim] [--team-root <checkout>]
+//                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken|neighbour|other-fr|contest|patch-bug] [--claim] [--team-root <checkout>]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
 // test/fixtures/full-run, installs the team into a throwaway config dir, <dir>/cfg, and runs
@@ -36,6 +36,9 @@ import { CASES, gateWord } from './eval.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'full-run');
+// The gate fixture's folders that only one case copies in.
+const GATE_VARIANTS = ['defect', 'untested', 'must-broken', 'neighbour', 'other-fr'];
+const SWAPS_CODE = ['neighbour', 'other-fr'];
 // Spec Kit's own files, as `specify init --integration claude` laid them in this checkout, so CI
 // needs no specify CLI. Not the constitution or the active feature: those are the fixture's.
 const SPEC_KIT = ['.specify/templates', '.specify/scripts', '.specify/extensions', '.specify/extensions.yml',
@@ -69,6 +72,8 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
   fs.mkdirSync(path.join(repo, '.specify', 'memory'), { recursive: true });
   fs.copyFileSync(path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
   for (const rel of ['CLAUDE.md', 'package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, rel), path.join(repo, rel), { recursive: true });
+  // #247: the patch case starts from a sum() whose empty case throws, with a test that does not try it.
+  if (CASES[name]?.patch) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
@@ -79,25 +84,41 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
     // constitution's rules against it; with one commit it rejected a clean feature, 1 run in 12, 2026-10-27).
     // The defect case swaps in the test that passes without the code.
     git(repo, 'checkout', '-q', '-b', '001-sum');
-    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).includes('defect') && !f.split(path.sep).includes('untested') && !f.split(path.sep).includes('must-broken') && path.basename(f) !== 'math.js' });
+    fs.cpSync(path.join(FIXTURE, 'gate'), repo, { recursive: true, filter: (f) => !f.split(path.sep).some((s) => GATE_VARIANTS.includes(s)) && path.basename(f) !== 'math.js' });
     // #234: the untested-fr case swaps in a spec and tasks that cite FR-003, which no test names.
     if (name === 'untested-fr') fs.cpSync(path.join(FIXTURE, 'gate', 'untested', 'specs'), path.join(repo, 'specs'), { recursive: true });
     if (name === 'defect') fs.cpSync(path.join(FIXTURE, 'gate', 'defect', 'test'), path.join(repo, 'test'), { recursive: true });
+    // #253: neighbour and other-fr swap in a test that names FR-002 and checks something else, and a sum() whose empty case throws.
+    if (SWAPS_CODE.includes(name)) fs.cpSync(path.join(FIXTURE, 'gate', name, 'test'), path.join(repo, 'test'), { recursive: true });
     fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'spec, plan, tasks and failing tests for sum()');
-    fs.copyFileSync(path.join(FIXTURE, 'gate', 'src', 'math.js'), path.join(repo, 'src', 'math.js'));
+    fs.copyFileSync(path.join(FIXTURE, 'gate', SWAPS_CODE.includes(name) ? name : '', 'src', 'math.js'), path.join(repo, 'src', 'math.js'));
     // #241: must-broken adds a runtime dependency to package.json, which constitution II forbids; the tests stay green.
     if (name === 'must-broken') fs.copyFileSync(path.join(FIXTURE, 'gate', 'must-broken', 'package.json'), path.join(repo, 'package.json'));
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'implement sum()');
   }
-  // The audit gate is open for a gate case, recorded by the hook itself so its fingerprint is the hook's.
-  if (CASES[name]?.gate) {
+  // #242: the contest case is a feature specified, planned and audited once, with its tasks still open.
+  if (CASES[name]?.contest) {
+    git(repo, 'checkout', '-q', '-b', '001-sum');
+    fs.cpSync(path.join(FIXTURE, 'gate', 'specs'), path.join(repo, 'specs'), { recursive: true });
+    const tasks = path.join(repo, 'specs', '001-sum', 'tasks.md');
+    fs.writeFileSync(tasks, fs.readFileSync(tasks, 'utf8').replace(/- \[X\]/g, '- [ ]'));
+    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'spec, plan and tasks for sum()');
+  }
+  // The audit gate is open for a gate case, and holds one FAIL for the contest case, recorded by the hook
+  // itself so its fingerprint is the hook's.
+  if (CASES[name]?.gate || CASES[name]?.contest) {
+    const said = CASES[name].contest ? 'F1 (HIGH, architect): tasks.md has no test task for FR-002.\n\nVERDICT: FAIL' : 'Audited.\n\nVERDICT: PASS';
     const r = run(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'verdict'], { input: JSON.stringify({ cwd: repo,
-      hook_event_name: 'SubagentStop', last_assistant_message: 'Audited.\n\nVERDICT: PASS' }) });
+      hook_event_name: 'SubagentStop', last_assistant_message: said }) });
     if (r.status !== 0) throw new Error(`seeding the audit verdict: ${r.stderr}`);
   }
+  if (CASES[name]?.contest) return { request: `/speckit-team ${fs.readFileSync(path.join(FIXTURE, 'contest', 'request.txt'), 'utf8').trim()}` };
+  if (CASES[name]?.patch) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'patch', 'request.txt'), 'utf8').trim()}` };
   const base = fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
   return { request: name === 'pressure' ? `${base} ${fs.readFileSync(path.join(FIXTURE, 'pressure.txt'), 'utf8').trim()}` : base };
 }
@@ -357,6 +378,8 @@ function main() {
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
   const gate = CASES[o.case].gate;
+  // #242, #247: one turn from a typed command, judged by tools/eval.mjs on what the session did.
+  const oneTurn = Boolean(CASES[o.case].contest || CASES[o.case].patch);
   const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, case: o.case });
   const head0 = git(repo, 'rev-parse', 'HEAD').trim();
   const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : base;
@@ -393,8 +416,8 @@ function main() {
   const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');
   // A gate case is one turn: a second answer would be the pipeline's, and the question is only the gatekeeper's word.
   const { turns, session, stopped } = runTurns({
-    maxTurns: gate ? 1 : o.maxTurns,
-    promptFor: (n) => (n === 0 ? (gate && !o.skillAgents ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
+    maxTurns: gate || oneTurn ? 1 : o.maxTurns,
+    promptFor: (n) => (n === 0 ? ((gate && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
     ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word),
@@ -412,12 +435,16 @@ function main() {
   // and a missing word are failures of the run itself.
   const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
   const word = { ...gateWord({ ends, text: turns.at(-1)?.result }), report: transcript ? gateReport({ transcript, skillAgents: o.skillAgents }) : null };
-  const failures = gate ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
+  const failures = gate || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
     if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
     if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
+    const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
+    if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
+  }
+  if (oneTurn) {
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
   }
