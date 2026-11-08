@@ -83,4 +83,13 @@ its hook wrapped to log each input and the transcript's rows before running it. 
   that is not a list of tool results gets a new id (typed prompts, slash commands, the prompt after an
   interrupt or an API error), so an AskUserQuestion answer keeps it. Not known: whether a message typed
   while a turn runs gets a new id; the `-p` harness cannot send one.
+- Probed 2026-11-08 (#184), Claude Code 2.1.293 and 2.1.319, Windows 11, a fake API and a settings hook
+  logging every input, three runs of each: a background task's notice that arrives while the turn runs
+  fires UserPromptSubmit with the turn's `prompt_id`, and so does every call after it; an auto-compaction
+  (forced by a reply reporting 995,000 input tokens) keeps it through PreCompact, SessionStart `compact`
+  and the calls after the summary; a message sent over `--input-format stream-json` during a tool call
+  is folded into that turn ("This is how Claude Code surfaces messages the user sends mid-turn") with
+  the turn's `prompt_id`, and so is one typed into the TUI through vhs (one run per version). A notice
+  that arrives after the turn's Stop opens a new turn with a new `prompt_id`. `test/e2e.test.mjs` pins
+  the first three under a role skill.
 - Decision: plan D11.
