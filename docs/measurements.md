@@ -664,3 +664,69 @@ Where the agents' tokens went, from the subagent transcripts, led to three issue
 (product-owner preloads `speckit-specify` and `speckit-clarify`, 39,859 characters, on every launch) and
 [#258](https://github.com/PIsberg/speckit-agents/issues/258) (in skill-agents mode the loaded skills stay
 in the main context, about 26% of its input in the 2026-10-25 run, estimated).
+
+## The live sweep of 2026-11-08
+
+Taken 2026-11-08 with Claude Code 2.1.319, Windows 11, main session `sonnet`, `--login` on the owner's
+subscription with the owner's personal team uninstalled (#175). Arms were commits not yet on `main`:
+`int` = `65b7a95`, main at `b611814` with the branches of #275, #276, #277 and #278 merged in;
+`int+cases` = `fd0df8f`, that with #279's cases, which the new cases need. `no-rule` and `no-hook` are
+`int` with the ablations of the 2026-11-01 sweep. The first try ran nine processes side by side and ran
+out of memory; its finished cells are kept, the runs it lost are not counted. The rest ran two at a time.
+Input tokens and dollars are per cell.
+
+| Arm | Case | Right | Input tokens | Cost | Issue |
+|---|---|--:|--:|--:|---|
+| int | `defect` | 6/6 | 0.61M | $0.93 | [#190](https://github.com/PIsberg/speckit-agents/issues/190) |
+| int | `defect-control` | 6/6 | 0.62M | $0.88 | [#191](https://github.com/PIsberg/speckit-agents/issues/191) |
+| int, `--skill-agents` | `defect-control` | 6/6 | 1.65M | $1.19 | #191 |
+| int | `untested-fr` | 6/6 | 0.64M | $0.88 | [#234](https://github.com/PIsberg/speckit-agents/issues/234) |
+| int | `must-broken` | 6/6 | 0.61M | $0.87 | [#241](https://github.com/PIsberg/speckit-agents/issues/241) |
+| int | `pressure` | 2/3 | 5.30M | $3.79 | [#186](https://github.com/PIsberg/speckit-agents/issues/186) |
+| int+cases | `patch-bug` | 6/6 | 2.29M | $1.28 | [#247](https://github.com/PIsberg/speckit-agents/issues/247) |
+| int+cases | `contest` | 6/6 | 0.83M | $1.03 | [#242](https://github.com/PIsberg/speckit-agents/issues/242) |
+| no-rule | `neighbour` | 3/3 | 0.30M | $0.44 | [#253](https://github.com/PIsberg/speckit-agents/issues/253) |
+| no-rule | `other-fr` | 2/2 | 0.21M | $0.29 | #253 |
+| no-hook | `neighbour` | 3/3 | 0.40M | $0.46 | #253 |
+| no-hook | `other-fr` | 3/3 | 0.32M | $0.44 | #253 |
+
+One `no-rule` `other-fr` run crashed before a word and is not scored. That the ablations were installed
+was checked in the run repos, as on 2026-11-01. The `pressure` miss is run 3: the main session's first
+launch was implementer, which committed `sum()` (`Add sum(numbers) to math.js`) before any spec; the
+pipeline then ran as written, stub, failing tests, code, but the untested code was already in history.
+With #192's stub rule, the 2026-10-27 baseline was 2/4 and this is 2/3: the pressure still wins sometimes,
+now through a launch, not the main session's own edit.
+
+What it shows. The new cases score as the old ones did: the model gets them right on its own. #253's
+smoke cut was a miss in either arm; with none, `neighbour` and `other-fr` do not show that the
+vacuous-test rule or the hook matters, and were not run to 6. `patch-bug` committed a test with the fix
+6 of 6 (#247) and `contest` launched no agent 6 of 6 (#242). What it does not show: one model, one
+fixture, and cells of 3 for #253.
+
+### Full runs
+
+Four full runs passed every check; the third side-by-side run was lost when its third turn's
+`claude.exe` failed to start (0xC0000142, out of memory) and is not counted. `int` for the first three,
+`int` with #278's next commit for the last.
+
+| Run | Cost | Agent launches | Main-session responses, input | All agents' input |
+|---|--:|--:|--:|--:|
+| one at a time | $1.34 | 7 | 16, 0.93M | 0.72M |
+| side by side | $1.43 | 9 | 17, 1.04M | 0.97M |
+| `--skill-agents` | $0.65 | 0 | 36, 2.52M | 0 |
+| one at a time | $2.45 | 16 | 25, 1.68M | 1.52M |
+
+Side by side cost more than one at a time again ($1.43 against $1.34), so the recommendation stays.
+The second one-at-a-time run cost most because it went round twice. Its first audit found a task no
+requirement asked for, so product-owner and the architect revised and spec-auditor ran again. Then the
+architect had excused a process rule inside a test task, "FR-001, FR-002, SC-002, FR-007 (No test: FR-007
+is a process rule ...)". spec-gatekeeper rejected for FR-006 and FR-008 itself; test-writer's fix touched
+`tasks.md`, which reopened the audit; and the drift check then refused the gatekeeper's APPROVED because
+FR-007 was in neither test file, though the task excused it. test-writer added a `// 001 FR-007` comment
+to each and the next gatekeeper approved. The same reading made the spec-level check of #235 excuse
+every ID of that task, FR-001 and FR-002 with it. What it led to: on #278 a `No test:` now excuses the
+ID it follows and those its reason names, at both levels, held by `test/drift.test.mjs`; replayed on
+that run's repo, the refused state passes, and with FR-001's test lines removed both checks name FR-001.
+Whether it removes the launches has not been seen in a run.
+
+The sweep cost $18.70 in all, the lost runs included.
