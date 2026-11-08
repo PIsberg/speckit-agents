@@ -161,13 +161,10 @@ spec-gatekeeper starts), the retry limit (the skill counts), the check that a re
 each role's own context (every role sees this conversation), each agent's tool list (a role may use
 every tool of this session, MCP tools included, and a read-only role's write through one is not
 checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the
-role's lane check and report then do not run). Not observed: whether a background task's notice, a
-compaction or a message typed while a role runs carries a new prompt_id; if one does, it may end the
-role mid-turn, with the message that the role ended, and its lane goes unchecked for the rest of that
-turn.`
+role's lane check and report then do not run).`
 
-The last sentence stays until those three inputs are probed on the oldest supported Claude Code
-(section 8; #184).
+Until 2026-11-08 it ended with a sentence naming a background task's notice, a compaction and a message
+typed while a role runs as not observed; the probe of #184 (section 8) settled them, and it was dropped.
 
 The skill does not repeat it; it adds its one-line team notice as in `## Team`.
 
@@ -177,7 +174,11 @@ A role record is live from its Skill call to the end of that turn. It has ended 
 being handled carries a `prompt_id` (a non-empty string) other than the record's `prompt_id`. Claude
 Code gives every prompt a new one: a typed prompt, the prompt after an interrupt or after a turn an API
 error ended (StopFailure, no Stop); an AskUserQuestion answer (a tool result) and a Skill's body keep
-the turn's (research R5). A record or an input without a string `prompt_id` leaves the record live.
+the turn's (research R5). So do three inputs that arrive while the turn runs, probed on 2.1.293 and
+2.1.319 (research R5, #184): a background task's notice, an auto-compaction (its PreCompact, its
+SessionStart `compact` and every call after it) and a message typed or sent during the turn. A notice
+that arrives after the turn's Stop opens a new turn with a new `prompt_id`, after the Stop has closed
+the role. A record or an input without a string `prompt_id` leaves the record live.
 The transcript is not read for this.
 
 An ended record is removed where it is read (section 4 step 3, section 5, section 6 at Stop), never
