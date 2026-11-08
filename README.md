@@ -353,7 +353,7 @@ which runs its whole phase on every launch, preloads `speckit-analyze` with the 
 field. product-owner and architect read theirs from `.claude/skills/` on a first run, so a revision
 does not carry them ([#257](https://github.com/PIsberg/speckit-agents/issues/257)). The agent file
 adds only what Spec Kit does not say: its inputs, its lane, and the shape of its report. Those bodies
-are 27 to 121 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
+are 27 to 120 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
 Spec Kit phase, so its 34-line body carries the whole job. `test/install.test.mjs` counts them.
 
 ### Why the prompts are short

@@ -249,7 +249,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: c87ce2d3 -->
+<!-- fingerprint: f01db853 -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
