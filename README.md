@@ -492,7 +492,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 
 | | Enforced by the hook | Not enforced |
 |---|---|---|
-| Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run; and, not observed either way, after a background task's notice, a compaction or a message typed mid-turn, if Claude Code gives it a new `prompt_id` (#184) |
+| Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run |
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
 | Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Hand-on | a role whose turn ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN`, where the skill has no Stop: its Stop is sent back once, so the run goes on without you (#261) | the response that Stop costs, which a typed "go on" would cost too: asking for the next call in the report's own response was tried and dropped, as in its one run the audit and the gatekeeper wrote no report ([measurements](docs/measurements.md#where-a-skill-agents-run-stops-261)) |
@@ -507,7 +507,7 @@ built once as the default team and once with `--team skill-agents`, 31% more inp
 less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
 close, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
-end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers only a resumed prompt ending the role. Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running), and whether a background task's notice, an auto-compaction summary or a message typed during a turn gets a new `prompt_id` (not known; if one does, the acting role ends mid-turn with its lane unchecked for the rest of the turn, which the start message names, [#184](https://github.com/PIsberg/speckit-agents/issues/184)).
+end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers a resumed prompt ending the role, and the role staying live through a background task's notice, an auto-compaction and a message sent during its turn, each of which keeps the turn's `prompt_id` ([#184](https://github.com/PIsberg/speckit-agents/issues/184); a message typed into the TUI was probed by hand, through vhs). Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running).
 
 **Agents or skills.** An agent starts each role in a fresh context with only its launch prompt, and
 returns a capped report. A role skill loads its instructions into your session, so every role works
@@ -1543,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 557 tests:
+`npm test` runs 560 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1554,7 +1554,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
-| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 59 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
+| [`test/e2e.test.mjs`](test/e2e.test.mjs) | 62 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
@@ -1646,7 +1646,7 @@ need no login and cost nothing.
   "1 model requests".
 - **A scripted model.** The fake API answers as a model would: the main session asks for an `Agent`
   call, the agent for a `Write`, a `Bash` command or a report. The test then reads the hook's
-  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 44
+  decision in the agent's next request, and the state files under `.git/speckit-team/`. The 47
   tests fire every hook entry the installer writes: each agent's scope rule (on a write tool and
   on Bash), both gates, every lane check (product-owner's and architect's `lane only` from the `start` entry's record
   among them), `verdict`, `result` and `ends` on both report paths (`Stop`, and the
@@ -1679,8 +1679,11 @@ need no login and cost nothing.
   In another, product-owner leaves a file outside its lane after the lane check sent it back once, and
   the main session's next request names the file: the `PostToolUse` relay on `Agent` handed it over
   ([#231](https://github.com/PIsberg/speckit-agents/issues/231)).
+  In three, an architect role skill is acting when a background task's notice, an auto-compaction or a
+  message sent mid-turn arrives, and its lane still denies the write after it: each keeps the turn's
+  `prompt_id` ([#184](https://github.com/PIsberg/speckit-agents/issues/184)).
   They run with `--permission-mode bypassPermissions` unless a case says otherwise, so a hook that
-  does not fire lets the action through. With the installed hook replaced by one that only exits, all 44
+  does not fire lets the action through. With the installed hook replaced by one that only exits, all 47
   fail, as do the two blocking cases above (measured again 2026-10-17, Claude Code 2.1.302: 36
   failures, none of the 34 passed). Setting
   `SPECKIT_E2E_NO_HOOK=1` does that replacement: the installer's hook becomes `process.exit(0);`, and
