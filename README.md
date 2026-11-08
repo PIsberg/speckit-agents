@@ -1543,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 562 tests:
+`npm test` runs 566 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
