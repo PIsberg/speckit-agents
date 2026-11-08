@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { HOOK, FEAT, repo, run, write, denied, pass, handback, decided, stateDir, commitAll, msg } from './hook-helpers.mjs';
 
@@ -956,6 +957,13 @@ test('#245 ends: a RED on a missing test helper is sent back once; a missing pro
   assert.equal(send("ModuleNotFoundError: No module named 'app.sum'\n\nRED", 'v4'), null, 'Python production');
   assert.equal(send(`Cannot find module '${path.join(os.tmpdir(), 'elsewhere', 'test', 'x.mjs')}' imported from ${at('test/a.test.mjs')}\n\nRED`, 'v5'), null, 'outside the repo');
   assert.equal(send(`Cannot find module '${at('test/helpers/db.mjs')}'\n\nBLOCKED`, 'v6'), null, 'only a RED is judged');
+  // The path is model-written: a share or device path is never resolved or opened (an SMB connection leaks
+  // NTLM credentials on Windows), and is no fault.
+  for (const [i, p] of ['\\\\attacker.invalid\\share\\test\\x.mjs', '//attacker.invalid/share/test/x.mjs', '\\\\?\\C:\\test\\x.mjs', '\\\\.\\pipe\\test\\x.mjs', 'file://attacker.invalid/share/test/x.mjs'].entries()) {
+    assert.equal(send(`Cannot find module '${p}' imported from ${at('test/a.test.mjs')}\n\nRED`, `u${i}`), null, p);
+  }
+  assert.equal(send(`Error: Cannot find module './test/x'\nRequire stack:\n- \\\\attacker.invalid\\share\\a.test.js\n\nRED`, 'u9'), null, 'a share as the requiring file');
+  assert.ok(denied(send(`Cannot find module '${pathToFileURL(at('test/helpers/db.mjs')).href}' imported from x\n\nRED`, 'u10')), 'a local file URL is still read');
 });
 
 // #74: sent to correct an existing test, test-writer adds no failing test, so the suite ends green and

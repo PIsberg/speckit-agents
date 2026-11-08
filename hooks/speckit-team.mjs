@@ -1217,23 +1217,27 @@ const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean
 // outside the repo, is no fault: refusing a valid RED is worse than letting a broken one through.
 const NODE_MISSING = /Cannot find module '?([^'\s]+?)'?(?: imported from [^\r\n]+)?[ \t]*(?:\r?\n[ \t]*Require stack:[ \t]*\r?\n[ \t]*- ([^\r\n]+))?(?=\s|$)/g;
 const PY_MISSING = /No module named '([\w.]+)'/g;
+// The path comes from a report the model wrote, so it is compared as text and never touched: no fs call
+// on it, and a UNC or device path (\\host\share, //host, \\?\, \\.\) is refused before path.resolve, since
+// on Windows opening one connects to that host and offers the user's NTLM credentials. Only the root is
+// resolved, so a report giving the repo's real path (a short or linked temp folder) still matches.
+let realRootMemo;
 function repoRelative(abs) {
-  // The file is missing: resolve the deepest folder that exists, so a short or linked temp path matches root's.
-  const real = (p) => {
-    const rest = [];
-    for (let d = path.resolve(p); ; d = path.dirname(d)) {
-      try { return path.join(fs.realpathSync.native(d), ...rest.reverse()); } catch { /* not there yet */ }
-      if (path.dirname(d) === d) return path.resolve(p);
-      rest.push(path.basename(d));
-    }
-  };
-  const rel = path.relative(real(root), real(abs));
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return null;
-  return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
+  if (/^[\\/]{2}/.test(abs)) return null;
+  const p = path.resolve(abs);
+  if (/^[\\/]{2}/.test(p)) return null;
+  if (realRootMemo === undefined) { try { realRootMemo = fs.realpathSync.native(root); } catch { realRootMemo = root; } }
+  for (const base of new Set([root, realRootMemo])) {
+    const rel = path.relative(base, p);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
+  }
+  return null;
 }
 function missingTestModule(text) {
   for (const [, spec, from] of String(text).matchAll(NODE_MISSING)) {
-    const file = spec.startsWith('file://') ? fileURLToPath(spec) : spec;
+    let file = spec;
+    // A file URL with a host names a share; only a local one (file:///) is read.
+    if (spec.startsWith('file:')) { try { file = /^file:\/\/\//i.test(spec) ? fileURLToPath(spec) : ''; } catch { file = ''; } }
     let rel = null;
     if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) rel = repoRelative(file);
     else if (/^\.\.?[\\/]/.test(file) && from && path.isAbsolute(from.trim())) rel = repoRelative(path.resolve(path.dirname(from.trim()), file));
