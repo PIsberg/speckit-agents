@@ -317,7 +317,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The repo's framework and style. text.
 - The FR or scenario ID in each test's name or a comment, after the feature's number (`001 FR-002`). hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228), and an FR of `spec.md` in no test line naming the feature's number (#235).
 - On a kept test, the ID as a comment; a kept test is not a new test. pinned (#254).
-- Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module is not checked: a RED for a production file not yet written is valid, and the hook cannot tell it from a test helper.
+- Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module counts only when the path the error names is a test file under the repo's test patterns (a helper, a fixture; #245): Node ESM's absolute path, a relative one resolved against CJS's Require stack or with its leading `./` and `../` dropped, or a Python module. A missing production file, a package or a path outside the repo is still a valid RED, and a relative helper path that names no test folder (`./helper.mjs`) is not caught.
 - Run the type check when CI type-checks tests; report a task number no code can meet. pinned.
 - Without implementer, a missing production symbol is red. pinned.
 - Stop after 3 rounds on one test. text.
