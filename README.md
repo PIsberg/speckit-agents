@@ -353,7 +353,7 @@ which runs its whole phase on every launch, preloads `speckit-analyze` with the 
 field. product-owner and architect read theirs from `.claude/skills/` on a first run, so a revision
 does not carry them ([#257](https://github.com/PIsberg/speckit-agents/issues/257)). The agent file
 adds only what Spec Kit does not say: its inputs, its lane, and the shape of its report. Those bodies
-are 27 to 118 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
+are 27 to 120 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
 Spec Kit phase, so its 34-line body carries the whole job. `test/install.test.mjs` counts them.
 
 ### Why the prompts are short
@@ -1052,7 +1052,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
 | `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
-| `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
+| `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds, or an FR of its `spec.md` in no test line naming the feature's number that no task excuses with `No test: <reason>` ([#235](https://github.com/PIsberg/speckit-agents/issues/235)) (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError`, a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240), and so is one on a missing module the error names by a test path, a helper or a fixture (#245); a missing production file, a package or a path outside the repo is a valid RED |
 | `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
 
@@ -1543,11 +1543,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 565 tests:
+`npm test` runs 569 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 177 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 178 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 128 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
@@ -1556,7 +1556,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 62 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 15 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
@@ -2171,9 +2171,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   no feature, the same ID of another feature in the same test file still hides drift, so no problems
   reported is not proof that every requirement is still tested. A test task is told from a docs task
   by its opening words ("Tests in", "Contract test for"), so a test task worded otherwise is not
-  checked at all. The same holds for the check at spec-gatekeeper's `APPROVED`, which also sees only
-  requirements a test task cites: an FR no task cites, or one whose ID a test names without testing
-  it, still rests on the gatekeeper's own trace.
+  checked at all. At spec-gatekeeper's `APPROVED` the hook also checks every FR of `spec.md`, cited or
+  not, but only that some test line names it with the feature's number (#235): one whose ID a test
+  names without testing it, or one a task excuses with `No test:`, still rests on the gatekeeper's
+  own trace.
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2422,6 +2423,16 @@ the word while it reports a problem ([#228](https://github.com/PIsberg/speckit-a
 In the full run of 2026-10-31 the gate approved FR-006, which two tasks cited and no test held,
 on the argument that each test file imports only its own module. A hook installed without the file
 records `APPROVED` and says the check did not run.
+
+At `APPROVED` the hook also runs it at spec level
+([#235](https://github.com/PIsberg/speckit-agents/issues/235)): every requirement `spec.md` defines
+(`**FR-002**`) must be in some test file, on a line naming the feature by its number
+(`test('001 FR-002 ...')` or a `// 001 FR-002` comment, as test-writer writes them), since every
+feature has an FR-002. A requirement no test can hold, such as a docs one, is excused only by a task
+that says `No test: <reason>` right after it (`FR-009 (No test: docs)`). That excuses the ID it
+follows and any the reason names, not the task's other IDs, at task level too. The architect writes
+that and you approve it at the tasks stop, not the gatekeeper. `tools/drift.mjs` stays at task level, since features built before #235 do
+not name their number in every test.
 
 ```sh
 node tools/drift.mjs <repo>

@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drift } from '../tools/drift.mjs';
+import { excusedBy } from '../hooks/speckit-drift.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = path.join(ROOT, 'tools', 'drift.mjs');
@@ -161,4 +162,55 @@ test('drift: this repository\'s finished features name the test files that hold 
   const r = drift(ROOT);
   assert.deepEqual(r.problems, []);
   assert.ok(r.tasks >= 30, `checked ${r.tasks} test tasks`);
+});
+
+// #235: with `spec`, every requirement the feature's spec.md defines must be held by some test file, on a
+// line naming the feature by its number (test-writer names tests `001 FR-002 ...`), since FR numbers repeat
+// across features. A requirement no test can hold is excused only by a task that cites it with `No test:
+// <reason>`: the architect writes it and the user approves it at the tasks stop, not the gatekeeper.
+test('drift (#235): with spec, every FR of spec.md needs a test line naming its feature, or a task\'s No test:', () => {
+  const SPEC = '# Spec\n\n- **FR-001**: adds.\n- **FR-002**: empty gives 0.\n- **FR-003**: docs in README.\n\nFR-001 again in prose.\n';
+  const tasks = '- [X] T001 Test FR-001 and FR-002 in `test/sum.test.js`\n- [X] T002 Implement `sum` (FR-001)\n';
+  const files = { 'specs/001-sum/spec.md': SPEC, 'test/sum.test.js': "test('001 FR-001 adds', () => {});\n// 001 FR-002\n" };
+  const one = (extra = {}, t = tasks) => drift(repo(t, { ...files, ...extra }), { feature: 'specs/001-sum', spec: true }).problems;
+  const p = one();
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0], /^specs\/001-sum\/spec\.md FR-003: no test names it with 001/);
+  assert.deepEqual(one({}, `${tasks}- [X] T003 Docs for FR-003 in \`README.md\`. No test: prose, read by spec-auditor\n`), [], 'a task\'s No test: excuses it');
+  assert.equal(one({}, `${tasks}- [X] T003 Docs in \`README.md\`. No test: prose\n`).length, 1, 'a No test: that cites another ID excuses nothing');
+  // A line naming no feature, or another feature, does not hold it: every feature has an FR-003.
+  assert.equal(one({ 'test/old.test.js': "test('FR-003 docs', () => {});\n// 002 FR-003\n" }).length, 1, 'FR-003 named without 001, or with 002');
+  assert.deepEqual(one({ 'test/more/docs.test.js': '// 001 FR-003\n' }), [], 'any test file of the repo holds it, with the number');
+  // Without `spec`, only test tasks' cited IDs are checked, as before.
+  assert.deepEqual(drift(repo(tasks, files), { feature: 'specs/001-sum' }).problems, []);
+  // A feature without spec.md has nothing to check at spec level.
+  assert.deepEqual(drift(repo(tasks, { 'test/sum.test.js': files['test/sum.test.js'] }), { feature: 'specs/001-sum', spec: true }).problems, []);
+});
+
+// In the full run of 2026-11-08 the architect excused a process rule inside a test task: "Tests in
+// `test/math.test.js` for ... FR-001, FR-002, SC-002, FR-007 (No test: FR-007 is a process rule ...)".
+// The task check still asked for FR-007 in the test file, refusing APPROVED twice, and the spec check
+// excused FR-001 and FR-002 with it. A No test: excuses the ID it follows and those its reason names,
+// at both levels, and no other ID of the task.
+test('drift (#235): a No test: excuses the ID it follows and those its reason names, not the task\'s others', () => {
+  const SPEC = '- **FR-001**: adds.\n- **FR-002**: empty gives 0.\n- **FR-003**: test first.\n- **FR-004**: JSDoc.\n';
+  const run = (tasks, tests) => drift(repo(tasks, { 'specs/001-sum/spec.md': SPEC, 'test/sum.test.js': tests }),
+    { feature: 'specs/001-sum', spec: true }).problems;
+  const T1 = '- [X] T001 Tests in `test/sum.test.js` for FR-001, FR-002, FR-003 (No test: a process rule, seen in git history)\n';
+  const T2 = '- [X] T002 Implement `sum` (FR-001; No test: JSDoc is documentation, FR-004)\n';
+  assert.deepEqual(run(T1 + T2, '// 001 FR-001\n// 001 FR-002\n'), [], 'FR-003 needs no test line, in its task or the spec');
+  const p = run(T1 + T2, '// 001 FR-001\n');
+  assert.equal(p.length, 2, JSON.stringify(p));
+  assert.ok(p.every((x) => /FR-002/.test(x)), 'FR-002, cited before the excuse, is still owed at both levels');
+  assert.equal(run(T1, '// 001 FR-001\n// 001 FR-002\n').length, 1, 'FR-004 is excused only by T002');
+  assert.deepEqual([...excusedBy('make it name `src/text.js` too (FR-009). No test: documentation.')], ['FR-009']);
+  assert.deepEqual([...excusedBy('Tests for FR-001 and FR-002 (No test: FR-002 is a process rule)')], ['FR-002']);
+});
+
+test('drift (#235): a test file git ignores, or one under node_modules, holds nothing', () => {
+  const dir = repo('- [X] T001 Test FR-001 in `test/sum.test.js`\n', {
+    'specs/001-sum/spec.md': '- **FR-001**: adds.\n- **FR-002**: empty.\n',
+    'test/sum.test.js': '// 001 FR-001\n', 'node_modules/x/test/a.test.js': '// 001 FR-002\n',
+  });
+  assert.deepEqual(drift(dir, { feature: 'specs/001-sum', spec: true }).problems, ['specs/001-sum/spec.md FR-002: no test names it with 001 (put "001 FR-002" in a test\'s name or a comment, or give a task that cites it "No test: <reason>")']);
 });

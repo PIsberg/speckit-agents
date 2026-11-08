@@ -241,10 +241,12 @@ const driftModule = (mode === 'ends' && args[0] === '--record') || mode === 'gat
 // The active feature's drift: { problems }, or { failed } when the check could not run.
 function driftOf(feat) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { return { problems: driftModule.drift(root, { feature: feat }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  try { return { problems: driftModule.drift(root, { feature: feat, spec: true }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
-const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: tasks.md cites requirements that no test file of their `
-  + `task holds (the drift check; test-writer puts each ID in a test's name or a comment):\n${problems.join('\n')}\n`
+// #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
+const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
+  + 'task cites must be in one of its test files, and every FR of spec.md in a test line naming the feature\'s number, '
+  + `as test-writer writes "001 FR-002" in a test's name or a comment):\n${problems.join('\n')}\n`
   + 'A requirement no test holds cannot be approved, whatever argument covers it. Report each as a rejection reason '
   + '(owner: test-writer, who adds the test, or the ID to the test that already covers it) and end with REJECTED.';
 const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
