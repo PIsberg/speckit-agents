@@ -871,7 +871,8 @@ function installAt(dir) {
   });
 }
 const fwdPath = (p) => p.split(path.sep).join('/');
-// Whether Claude Code has trusted `dir` or a folder above it: true, false, or null when its file is unreadable.
+// Whether Claude Code has trusted `dir` itself: true, false, or null when its file is unreadable. A trusted
+// folder above it does not count: Claude Code still skips the project agents' frontmatter hooks (#237).
 function trusted(dir) {
   const conf = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json') : path.join(os.homedir(), '.claude.json');
   const text = readOr(conf, undefined);
@@ -880,10 +881,7 @@ function trusted(dir) {
   try { projects = JSON.parse(text)?.projects ?? {}; } catch { return { ok: null, conf }; }
   const norm = (p) => { const f = fwdPath(p).replace(/\/+$/, ''); return process.platform === 'win32' ? f.toLowerCase() : f; };
   const accepted = new Set(Object.entries(projects).filter(([, v]) => v?.hasTrustDialogAccepted === true).map(([k]) => norm(k)));
-  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
-    if (accepted.has(norm(d))) return { ok: true, conf };
-    if (path.dirname(d) === d) return { ok: false, conf };
-  }
+  return { ok: accepted.has(norm(path.resolve(dir))), conf };
 }
 if (mode === 'check') {
   const self = STAMP.exec(readOr(fileURLToPath(import.meta.url), ''));
@@ -912,7 +910,7 @@ if (mode === 'check') {
   if (canonical(project) === canonical(TEAM_DIR)) {
     const t = trusted(root);
     if (t.ok === false) {
-      problems.push(`the team is installed in ${here}, and Claude Code has not trusted ${fwdPath(root)} or a folder above it (${fwdPath(t.conf)}): `
+      problems.push(`the team is installed in ${here}, and Claude Code has not trusted ${fwdPath(root)} (${fwdPath(t.conf)}; a trusted folder above it does not count): `
         + 'it skips the frontmatter hooks of agents from a folder it has not trusted, so their guardrails would not run. '
         + `Open Claude Code in ${fwdPath(root)} once and accept the trust dialog.`);
     }
