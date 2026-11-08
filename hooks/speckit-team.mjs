@@ -1203,10 +1203,60 @@ if (mode === 'result') {
 
 // A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
 // so the agent finishes and resends; never twice, so it is never gagged.
-// #240: the output of a RED that ran no expectation, or null. A missing module is not one: a RED for a
-// production file not written yet is valid. A hook cannot tell a production module from a test helper.
+// #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
+// test file (#245): a RED for a production file not written yet is valid.
 const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
-const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? null;
+const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? missingTestModule(text);
+
+// #245: a missing module that the repo's test patterns call a test file (a helper, a fixture), as
+// "Cannot find module <path>, a test file", or null. Only a path the error names is judged: Node ESM's
+// absolute path, a relative one resolved against Node CJS's Require stack, else a relative one with its
+// leading ./ and ../ dropped (as a report paraphrases it), or a Python module. A package name, or a path
+// outside the repo, is no fault: refusing a valid RED is worse than letting a broken one through.
+const NODE_MISSING = /Cannot find module '?([^'\s]+?)'?(?: imported from [^\r\n]+)?[ \t]*(?:\r?\n[ \t]*Require stack:[ \t]*\r?\n[ \t]*- ([^\r\n]+))?(?=\s|$)/g;
+const PY_MISSING = /No module named '([\w.]+)'/g;
+// The path comes from a report the model wrote, so it is compared as text and never touched: no fs call
+// on it, and a UNC or device path (\\host\share, //host, \\?\, \\.\) is refused before path.resolve, since
+// on Windows opening one connects to that host and offers the user's NTLM credentials. Only the root is
+// resolved, with the session's cwd: a test run prints paths as the cwd spells them (/var for /private/var
+// on macOS, a short RUNNER~1 folder on Windows), so the root as the cwd spells it is matched as well.
+let rootFormsMemo;
+function rootForms() {
+  if (rootFormsMemo) return rootFormsMemo;
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  const forms = [root, real(root)];
+  const up = path.relative(real(cwd), real(root));
+  if (path.isAbsolute(cwd) && !/^[\\/]{2}/.test(cwd) && !path.isAbsolute(up) && /^(\.\.([\\/]|$))*$/.test(up)) forms.push(path.resolve(cwd, up));
+  return (rootFormsMemo = [...new Set(forms)]);
+}
+function repoRelative(abs) {
+  if (/^[\\/]{2}/.test(abs)) return null;
+  const p = path.resolve(abs);
+  if (/^[\\/]{2}/.test(p)) return null;
+  for (const base of rootForms()) {
+    const rel = path.relative(base, p);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
+  }
+  return null;
+}
+function missingTestModule(text) {
+  for (const [, spec, from] of String(text).matchAll(NODE_MISSING)) {
+    let file = spec;
+    // A file URL with a host names a share; only a local one (file:///) is read.
+    if (spec.startsWith('file:')) { try { file = /^file:\/\/\//i.test(spec) ? fileURLToPath(spec) : ''; } catch { file = ''; } }
+    let rel = null;
+    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) rel = repoRelative(file);
+    // With a Require stack, the requiring file is the only base: one that is a share or not absolute is no fault.
+    else if (/^\.\.?[\\/]/.test(file) && from) rel = path.isAbsolute(from.trim()) ? repoRelative(path.join(path.dirname(from.trim()), file)) : null;
+    else if (/^\.\.?[\\/]/.test(file)) rel = path.posix.normalize(fwdPath(file)).replace(/^(\.\.?\/)+/, '');
+    if (rel && isTest(rel)) return `Cannot find module ${rel}, a test file`;
+  }
+  for (const [, mod] of String(text).matchAll(PY_MISSING)) {
+    const rel = `${mod.replaceAll('.', '/')}.py`;
+    if (isTest(rel)) return `No module named '${mod}', a test file`;
+  }
+  return null;
+}
 
 if (mode === 'ends') {
   const viaHandback = event === 'PreToolUse';
