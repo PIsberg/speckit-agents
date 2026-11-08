@@ -1543,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 557 tests:
+`npm test` runs 561 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1559,7 +1559,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 16 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 20 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 26 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
@@ -1841,7 +1841,10 @@ An arm is a label and the checkout whose agents, skills and hook get installed (
 `full-run.mjs`): a path, or `ref:<gitref>` for a worktree of that ref. The model, the Claude Code
 version and everything else are the same for both, and the output records the model, the version and each
 arm's commit. A run that ends on an infrastructure error is listed as not scored, not as a miss, and a cell
-with no run prints `not run`. The scoring is plain code over a run's git history and `run.json`;
+with no run prints `not run`. Each run's folder keeps `full-run.mjs`'s output in `full-run.log`, and
+its `run.json` keeps spec-gatekeeper's whole last report as `gate.report` (from its subagent transcript,
+or the main one in skill-agents mode), so a score can be explained without `~/.claude/projects/`
+([#255](https://github.com/PIsberg/speckit-agents/issues/255)). The scoring is plain code over a run's git history and `run.json`;
 `test/eval.test.mjs` runs it on synthetic runs, without a model, and shows the seeded defect is one the
 scratch repo's own tests cannot see. The model runs are manual and cost tokens: the one measured
 skill-agents run cost $0.78, so 6 runs of 3 cases on 2 arms is on the order of $28 (an estimate from one
