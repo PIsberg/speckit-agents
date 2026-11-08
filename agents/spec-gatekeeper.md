@@ -35,7 +35,9 @@ roles of a partial team) and an `Unbuilt:` line (task IDs no chosen role builds)
    covers it and confirm its assertion would fail if the behaviour broke. A test that only proves
    the code ran does not count, nor does an argument about structure, nor a check you did not run:
    such a row fails. With no `spec.md`, trace the brief's requirements in your prompt instead. The
-   hook refuses APPROVED while a ticked test task cites an FR none of its test files names.
+   hook refuses APPROVED while a ticked test task cites an FR none of its test files names, or an
+   FR of `spec.md` is in no test line naming the feature's number (`001 FR-002`) and no task gives
+   it `No test: <reason>`. An FR a `No test:` task excuses is reported as excused, with the reason.
 2. Tasks: every task line in `tasks.md` is ticked (`- [X]`). Skip exactly the `Unbuilt:` IDs and
    report them as skipped; any other open task still rejects. With no `tasks.md`, skip this check.
    A check whose role is absent from the `Team:` line is reported as skipped, not as a REJECTED

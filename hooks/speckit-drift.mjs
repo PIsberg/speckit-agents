@@ -60,7 +60,7 @@ function tasksOf(text) {
 
 // Every feature under specs/, or with `feature` (a repo-relative directory such as specs/001-sum) that one
 // feature alone, wherever it is; then specs/ need not exist, and a feature without tasks.md checks nothing.
-export function drift(repo, { feature: only = null } = {}) {
+export function drift(repo, { feature: only = null, spec = false } = {}) {
   const specs = path.join(repo, 'specs');
   const hasSpecs = fs.existsSync(specs);
   if (!only && !hasSpecs) throw new Error(`no specs/ in ${repo}`);
@@ -90,7 +90,8 @@ export function drift(repo, { feature: only = null } = {}) {
     for (const t of tasksOf(text).filter((x) => x.done && writesTests(x.text))) {
       const tests = [...new Set(t.text.match(PATHS) ?? [])]
         .filter((rel) => isTest(rel) && (fs.existsSync(path.join(repo, rel)) || tracked(rel)));
-      const ids = [...new Set(t.text.match(IDS) ?? [])];
+      const excused = excusedBy(t.text);
+      const ids = [...new Set(t.text.match(IDS) ?? [])].filter((id) => !excused.has(id));
       if (!tests.length || !ids.length) continue;
       tasks++;
       const present = tests.filter((rel) => fs.existsSync(path.join(repo, rel)));
@@ -106,6 +107,60 @@ export function drift(repo, { feature: only = null } = {}) {
       }
     }
   }
+  if (spec) for (const dir of dirs) problems.push(...specDrift(repo, dir, { isTest, namedIn, number }));
   return { features, tasks, problems };
+}
+
+// The IDs a task's `No test: <reason>` excuses: the last one before it, in its own clause or the one before
+// ("FR-007 (No test: a process rule)", "Docs for FR-003 in `README.md`. No test: prose"), and any its
+// reason names. Not the task's other IDs: a test task citing FR-001, FR-002, FR-007 (No test: ...) still
+// owes FR-001 and FR-002 their tests, at task and at spec level.
+export function excusedBy(text) {
+  const out = new Set();
+  for (const m of text.matchAll(/\bNo test:/g)) {
+    const clauses = text.slice(0, m.index).split(/[.;]\s+/);
+    const last = clauses.at(-1).match(IDS) ?? (clauses.length > 1 ? clauses.at(-2).match(IDS) : null) ?? [];
+    if (last.length) out.add(last.at(-1));
+    const rest = text.slice(m.index + m[0].length);
+    const end = rest.search(/\)|\.(\s|$)|\n/);
+    for (const id of (end < 0 ? rest : rest.slice(0, end)).match(IDS) ?? []) out.add(id);
+  }
+  return out;
+}
+
+// #235: every requirement spec.md defines (`**FR-001**`) held by some test file of the repo on a line that
+// names the feature by its number, since every feature has an FR-001; test-writer names tests that way.
+// A requirement no test can hold is excused only by a task's `No test: <reason>` (excusedBy), which the
+// architect writes and the user approves at the tasks stop. Test files are git's (tracked or not ignored),
+// or outside git every file under the repo but node_modules and dot folders.
+function specDrift(repo, dir, { isTest, namedIn, number }) {
+  const text = readOr(path.join(repo, dir, 'spec.md'), null);
+  if (text === null) return [];
+  const feature = path.posix.basename(dir);
+  const num = number(feature);
+  const defined = [...new Set([...text.matchAll(/\*\*(FR-\d{3})\*\*/g)].map((m) => m[1]))];
+  if (!defined.length || !num) return [];
+  const excused = new Set(tasksOf(readOr(path.join(repo, dir, 'tasks.md'), '')).flatMap((t) => [...excusedBy(t.text)]));
+  const lines = testFiles(repo).filter(isTest).flatMap((rel) => readOr(path.join(repo, rel), '').split(/\r?\n/))
+    .filter((l) => namedIn(l).includes(num));
+  return defined.filter((id) => !excused.has(id) && !lines.some((l) => new RegExp(`\\b${id}\\b`).test(l)))
+    .map((id) => `${dir}/spec.md ${id}: no test names it with ${num} (put "${num} ${id}" in a test's name or a comment, or give a task that cites it "No test: <reason>")`);
+}
+
+function testFiles(repo) {
+  const r = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (r.status === 0) return r.stdout.split('\0').filter((f) => f && !f.split('/').some((s) => s === 'node_modules' || s.startsWith('.')));
+  const out = [];
+  const walk = (rel) => {
+    let entries;
+    try { entries = fs.readdirSync(path.join(repo, rel), { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(child); else if (e.isFile()) out.push(child);
+    }
+  };
+  walk('');
+  return out;
 }
 

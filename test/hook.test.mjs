@@ -1027,6 +1027,24 @@ test('#228 FR-001: spec-gatekeeper\'s APPROVED is refused at hand-back while a c
   assert.equal(endsWord(dir).word, 'APPROVED');
 });
 
+// #235: every FR of the active spec.md must be in a test line naming the feature's number, cited by a task
+// or not; FR numbers repeat across features, so a line naming none, or another feature, does not hold it.
+test('#235: spec-gatekeeper\'s APPROVED is refused while an FR of spec.md has no test line naming the feature', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n\n- **FR-001**: sums.\n- **FR-002**: empty gives 0.\n');
+  r.write(`${FEAT}/tasks.md`, '- [X] T001 Test FR-001 in `test/a.test.mjs`\n- [X] T002 Implement sum (FR-001, FR-002)\n');
+  r.write('test/a.test.mjs', "test('001 FR-001 sums', () => {});\ntest('FR-002 empty', () => {});\n");
+  const { dir, write: put } = commitAll(r, 'tests');
+  const send = (message, agent_id) => run(dir, GK, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const out = send('All covered.\n\nAPPROVED', 'gs1');
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /specs\/001-demo\/spec\.md FR-002: no test names it with 001/);
+  assert.doesNotMatch(out.hookSpecificOutput.permissionDecisionReason, /FR-001:/, 'FR-001 is held');
+  put('test/a.test.mjs', "test('001 FR-001 sums', () => {});\ntest('001 FR-002 empty', () => {});\n");
+  assert.equal(send('All covered.\n\nAPPROVED', 'gs2'), null, 'goes through once a test line names 001 FR-002');
+  assert.equal(endsWord(dir).word, 'APPROVED');
+});
+
 test('#228 FR-001: at Stop the APPROVED is sent back once, then recorded as REJECTED with the drift', () => {
   const { dir } = driftRepo();
   const stop = (extra) => run(dir, GK, { hook_event_name: 'SubagentStop', agent_id: 'gk3', last_assistant_message: 'All covered.\n\nAPPROVED', ...extra });
