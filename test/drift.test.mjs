@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { drift } from '../tools/drift.mjs';
+import { excusedBy } from '../hooks/speckit-drift.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = path.join(ROOT, 'tools', 'drift.mjs');
@@ -184,6 +185,26 @@ test('drift (#235): with spec, every FR of spec.md needs a test line naming its 
   assert.deepEqual(drift(repo(tasks, files), { feature: 'specs/001-sum' }).problems, []);
   // A feature without spec.md has nothing to check at spec level.
   assert.deepEqual(drift(repo(tasks, { 'test/sum.test.js': files['test/sum.test.js'] }), { feature: 'specs/001-sum', spec: true }).problems, []);
+});
+
+// In the full run of 2026-11-08 the architect excused a process rule inside a test task: "Tests in
+// `test/math.test.js` for ... FR-001, FR-002, SC-002, FR-007 (No test: FR-007 is a process rule ...)".
+// The task check still asked for FR-007 in the test file, refusing APPROVED twice, and the spec check
+// excused FR-001 and FR-002 with it. A No test: excuses the ID it follows and those its reason names,
+// at both levels, and no other ID of the task.
+test('drift (#235): a No test: excuses the ID it follows and those its reason names, not the task\'s others', () => {
+  const SPEC = '- **FR-001**: adds.\n- **FR-002**: empty gives 0.\n- **FR-003**: test first.\n- **FR-004**: JSDoc.\n';
+  const run = (tasks, tests) => drift(repo(tasks, { 'specs/001-sum/spec.md': SPEC, 'test/sum.test.js': tests }),
+    { feature: 'specs/001-sum', spec: true }).problems;
+  const T1 = '- [X] T001 Tests in `test/sum.test.js` for FR-001, FR-002, FR-003 (No test: a process rule, seen in git history)\n';
+  const T2 = '- [X] T002 Implement `sum` (FR-001; No test: JSDoc is documentation, FR-004)\n';
+  assert.deepEqual(run(T1 + T2, '// 001 FR-001\n// 001 FR-002\n'), [], 'FR-003 needs no test line, in its task or the spec');
+  const p = run(T1 + T2, '// 001 FR-001\n');
+  assert.equal(p.length, 2, JSON.stringify(p));
+  assert.ok(p.every((x) => /FR-002/.test(x)), 'FR-002, cited before the excuse, is still owed at both levels');
+  assert.equal(run(T1, '// 001 FR-001\n// 001 FR-002\n').length, 1, 'FR-004 is excused only by T002');
+  assert.deepEqual([...excusedBy('make it name `src/text.js` too (FR-009). No test: documentation.')], ['FR-009']);
+  assert.deepEqual([...excusedBy('Tests for FR-001 and FR-002 (No test: FR-002 is a process rule)')], ['FR-002']);
 });
 
 test('drift (#235): a test file git ignores, or one under node_modules, holds nothing', () => {

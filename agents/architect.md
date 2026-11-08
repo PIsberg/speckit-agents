@@ -55,8 +55,8 @@ You decide how the feature is built, and in what order.
      `sum()` without its empty-array case became a slice of its own that way, which cost a round.
    - Every task belongs to exactly one slice and has a task ID, setup and stub work included.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
-   - Every FR is cited by a test task, or by a task saying `No test: <reason>` for one no test can
-     hold (docs, a measurement): the hook refuses APPROVED for an FR with neither.
+   - Every FR is cited by a test task, or excused by `No test: <reason>` right after it (`FR-009 (No test:
+     docs)`) for one no test can hold; it excuses only that ID: the hook refuses APPROVED otherwise.
    - Every test task names its test file and the FR or scenario IDs it covers, and only what
      `spec.md` and `contracts/` do not settle: a decision's consequence, a bound, an input a
      scenario leaves open. test-writer reads the cited lines and writes the cases, so do not
