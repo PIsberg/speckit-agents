@@ -927,6 +927,37 @@ test('ends: a RED that is a parse or name error is sent back once and then kept 
   assert.equal(send('test/d.test.mjs:9 Cannot find module ./src/sum.mjs\n\nRED', 'tw5'), null);
 });
 
+// #245: a missing module that is itself a test file (a helper, a fixture) means the test file did not run
+// either. Only the path the error names is judged, against the repo's test patterns: Node ESM's absolute
+// path, Node CJS's relative one from its Require stack, a relative path as a report gives it, or a Python
+// module. A production file, a package or a path outside the repo is still a valid RED.
+test('#245 ends: a RED on a missing test helper is sent back once; a missing production module or package is not', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'RED', 'BLOCKED'];
+  const send = (message, agent_id) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const at = (rel) => path.join(dir, ...rel.split('/'));
+  const esm = (rel) => `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '${at(rel)}' imported from ${at('test/a.test.mjs')}\n\nRED`;
+  const helper = send(esm('test/helpers/db.mjs'), 'h1');
+  assert.ok(denied(helper), 'ESM: a missing helper under test/');
+  assert.match(helper.hookSpecificOutput.permissionDecisionReason, /test\/helpers\/db\.mjs/, 'names the helper');
+  assert.ok(denied(send(`Error: Cannot find module './fixtures/user'\nRequire stack:\n- ${at('test/a.test.js')}\n\nRED`, 'h2')), 'CJS: resolved against the requiring file');
+  assert.ok(denied(send('test/a.test.mjs:1 Cannot find module ../test/support/setup.mjs\n\nRED', 'h3')), 'a relative path as a report gives it');
+  assert.ok(denied(send("E   ModuleNotFoundError: No module named 'tests.helpers'\n\nRED", 'h4')), 'Python');
+  assert.ok(denied(send(esm('.claude/worktrees/slice-1/test/helpers/db.mjs'), 'h5')), 'in a worktree under the repo');
+  const second = send(esm('test/helpers/db.mjs'), 'h1');
+  assert.equal(second?.hookSpecificOutput, undefined, 'never twice: the second report goes through');
+  assert.match(second?.systemMessage ?? '', /not red for the right reason/);
+  const kept = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'ends', 'red-faults.json'), 'utf8'));
+  assert.match(kept[0].fault, /test\/helpers\/db\.mjs/);
+
+  assert.equal(send(esm('src/sum.mjs'), 'v1'), null, 'ESM: a production file not written yet');
+  assert.equal(send(`Error: Cannot find module '../src/sum'\nRequire stack:\n- ${at('test/a.test.js')}\n\nRED`, 'v2'), null, 'CJS: production');
+  assert.equal(send("Error: Cannot find module 'left-pad'\n\nRED", 'v3'), null, 'a package');
+  assert.equal(send("ModuleNotFoundError: No module named 'app.sum'\n\nRED", 'v4'), null, 'Python production');
+  assert.equal(send(`Cannot find module '${path.join(os.tmpdir(), 'elsewhere', 'test', 'x.mjs')}' imported from ${at('test/a.test.mjs')}\n\nRED`, 'v5'), null, 'outside the repo');
+  assert.equal(send(`Cannot find module '${at('test/helpers/db.mjs')}'\n\nBLOCKED`, 'v6'), null, 'only a RED is judged');
+});
+
 // #74: sent to correct an existing test, test-writer adds no failing test, so the suite ends green and
 // RED would contradict the run. It ends FIXED instead; the words are run as its agent file declares them.
 test("test-writer's own ends commands accept FIXED for a correction that adds no test", () => {
