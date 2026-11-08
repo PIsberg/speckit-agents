@@ -160,11 +160,24 @@ export function parseArgs(argv) {
   return o;
 }
 
+// full-run's stdout and stderr, kept beside its run.json (#255): a run that stops early says why only there.
+export function keepLog(dir, r) {
+  fs.mkdirSync(dir, { recursive: true });
+  const lines = [`exit ${r.status}`, ...(r.error ? [`error: ${r.error.message}`] : []), String(r.stdout ?? ''), '--- stderr ---', String(r.stderr ?? '')];
+  fs.writeFileSync(path.join(dir, 'full-run.log'), lines.join('\n'));
+}
+
+// `claude --version` with no shell option, which Node 24 deprecates for an argument list (DEP0190). On
+// Windows claude may be a .cmd shim, which only a shell runs, so cmd is that shell.
+export function versionCommand(platform = process.platform) {
+  return platform === 'win32' ? ['cmd', ['/d', '/s', '/c', 'claude --version'], { encoding: 'utf8' }] : ['claude', ['--version'], { encoding: 'utf8' }];
+}
+
 function main() {
   const o = parseArgs(process.argv.slice(2));
   fs.mkdirSync(o.out, { recursive: true });
   const rows = [];
-  const version = spawnSync('claude', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' }).stdout?.trim() ?? 'unknown';
+  const version = spawnSync(...versionCommand()).stdout?.trim() || 'unknown';
   for (const arm of o.arms) {
     if (arm.ref) {
       arm.dir = path.join(o.out, 'arms', arm.label);
@@ -179,7 +192,8 @@ function main() {
     if (o.login) a.push('--login');
     if (o.skillAgents) a.push('--skill-agents');
     if (o.claim) a.push('--claim');
-    const r = spawnSync(process.execPath, a, { encoding: 'utf8', timeout: 60 * 60_000 });
+    const r = spawnSync(process.execPath, a, { encoding: 'utf8', timeout: 60 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    keepLog(dir, r);
     let report = null;
     try { report = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8')); } catch { /* no run.json: infrastructure or crash */ }
     // A run that never reached a verdict because of the infrastructure is not a miss: it is reported apart.

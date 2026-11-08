@@ -9,8 +9,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CASES, armArg, contestRuling, gateWord, patchTested, scoreRun, table, tally } from '../tools/eval.mjs';
-import { buildRepo, gateRequest, firstPrompt } from '../tools/full-run.mjs';
+import { CASES, armArg, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
+import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
 import { drift } from '../hooks/speckit-drift.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -263,4 +263,60 @@ test('#247 eval: patch-bug starts from a green repo whose sum([]) throws, and is
   assert.deepEqual(patchTested(repo), { right: false, why: 'the fix was committed with no test' });
   commit(repo, { 'test/math.test.js': "test('sum of [] is 0', () => {});\n" }, 'regression test');
   assert.equal(scoreRun('patch-bug', { repo }).right, true);
+});
+
+// #255: a run keeps enough to explain its score afterwards, without the user's ~/.claude/projects.
+const jsonl = (file, rows) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n'); };
+const said = (id, text, extra = {}) => ({ type: 'assistant', message: { id, content: [{ type: 'text', text }] }, ...extra });
+const used = (id, name, input) => ({ type: 'assistant', message: { id, content: [{ type: 'tool_use', id: `tu_${id}`, name, input }] } });
+const LONG = `${'The dependency left-pad in package.json breaks constitution II. '.repeat(15)}\nREJECTED`;
+
+test('#255 eval: gate.report is spec-gatekeeper\'s whole last report, from its last subagent transcript', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skeval-tr-'));
+  const main = path.join(dir, 'sess.jsonl');
+  jsonl(main, [used('m1', 'Agent', { subagent_type: 'spec-gatekeeper' }), said('m2', 'The gatekeeper said REJECTED.')]);
+  const sub = path.join(dir, 'sess', 'subagents');
+  const agent = (id, type, rows) => { jsonl(path.join(sub, `agent-${id}.jsonl`), rows); fs.writeFileSync(path.join(sub, `agent-${id}.meta.json`), JSON.stringify({ agentType: type })); };
+  agent('a1', 'spec-gatekeeper', [said('g1', 'first review\nAPPROVED', { timestamp: '2026-11-08T08:00:00Z' })]);
+  agent('a2', 'spec-gatekeeper', [said('g2', 'looking', { timestamp: '2026-11-08T09:00:00Z' }), said('g3', LONG.slice(0, 300), { timestamp: '2026-11-08T09:01:00Z' }), said('g3', LONG.slice(300), { timestamp: '2026-11-08T09:01:00Z' })]);
+  agent('a3', 'implementer', [said('i1', 'GREEN', { timestamp: '2026-11-08T10:00:00Z' })]);
+  assert.ok(LONG.length > 600);
+  assert.equal(gateReport({ transcript: main }), LONG, 'the newest gatekeeper\'s last response, all of its text blocks, uncut');
+  assert.equal(gateReport({ transcript: path.join(dir, 'gone.jsonl') }), null);
+  fs.rmSync(sub, { recursive: true });
+  assert.equal(gateReport({ transcript: main }), null, 'no gatekeeper transcript, no report');
+});
+
+test('#255 eval: in skill-agents mode gate.report is the main session\'s text after the last spec-gatekeeper Skill call', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skeval-tr-'));
+  const main = path.join(dir, 'sess.jsonl');
+  jsonl(main, [
+    used('m1', 'Skill', { skill: 'speckit-role-spec-gatekeeper' }), said('m2', 'an earlier review\nAPPROVED'),
+    used('m3', 'Skill', { skill: 'speckit-role-implementer' }), said('m4', 'GREEN'),
+    used('m5', 'Skill', { skill: 'speckit-role-spec-gatekeeper' }), said('m6', LONG.slice(0, 300)), said('m6', LONG.slice(300)),
+    { type: 'user', message: { content: 'thanks' } }, said('m7', 'unrelated', { isSidechain: true }),
+  ]);
+  assert.equal(gateReport({ transcript: main, skillAgents: true }), LONG);
+  jsonl(main, [said('x', 'no role ran')]);
+  assert.equal(gateReport({ transcript: main, skillAgents: true }), null);
+});
+
+test('#255 eval: each run keeps full-run\'s stdout and stderr in full-run.log', () => {
+  const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skeval-log-')), 'run');
+  keepLog(dir, { status: 1, stdout: 'turn 1: ...\nFAILED:\n- no word\n', stderr: 'Error: boom\n', error: undefined });
+  const log = fs.readFileSync(path.join(dir, 'full-run.log'), 'utf8');
+  assert.match(log, /^exit 1$/m);
+  assert.match(log, /FAILED:\n- no word/);
+  assert.match(log, /--- stderr ---\nError: boom/);
+  keepLog(dir, { status: null, stdout: null, stderr: null, error: new Error('spawnSync node ETIMEDOUT') });
+  assert.match(fs.readFileSync(path.join(dir, 'full-run.log'), 'utf8'), /ETIMEDOUT/, 'a timeout is kept too');
+});
+
+test('#255 eval: claude --version is spawned without shell: true (DEP0190)', () => {
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const [cmd, argv, opts] = versionCommand(platform);
+    assert.equal(opts.shell, undefined, platform);
+    assert.deepEqual(platform === 'win32' ? [cmd, argv.at(-1)] : [cmd, argv], platform === 'win32' ? ['cmd', 'claude --version'] : ['claude', ['--version']]);
+  }
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'tools', 'eval.mjs'), 'utf8'), /shell:/);
 });
