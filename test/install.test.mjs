@@ -1994,8 +1994,12 @@ test('#230: a project install in a folder Claude Code has not trusted stops the 
   assert.equal(check(project, repo, cfg).status, 1, 'an entry that says no');
   trust(cfg, repo);
   assert.equal(check(project, repo, cfg).status, 0);
+  // #237: Claude Code does not inherit trust from a folder above (probed 2026-11-08 on 2.1.293 and
+  // 2.1.319: only the repo's own entry let the project agent's frontmatter hook fire).
   trust(cfg, path.dirname(repo));
-  assert.equal(check(project, repo, cfg).status, 0, 'a folder above it trusted');
+  const parent = check(project, repo, cfg);
+  assert.equal(parent.status, 1, `a folder above it trusted is not trust: ${parent.stdout}`);
+  assert.doesNotMatch(parent.stdout, /or a folder above it/);
   fs.writeFileSync(path.join(cfg, '.claude.json'), '{ not json');
   const unread = check(project, repo, cfg);
   assert.equal(unread.status, 0, unread.stdout);

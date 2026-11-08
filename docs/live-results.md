@@ -95,6 +95,27 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-08</b>: Claude Code 2.1.293 and 2.1.319, Windows 11, folder trust for a project agent's frontmatter hooks, against a fake API, $0 (#237)</summary>
+
+Setup: a git repo at `<tmp>/parent/repo` with one project agent in `.claude/agents/` whose frontmatter
+holds a `PreToolUse` hook on Bash that appends a line to a log; `CLAUDE_CONFIG_DIR` set to a fresh folder
+whose `.claude.json` has `hasTrustDialogAccepted: true` on the repo, on `<tmp>/parent` only, or on
+nothing. `claude -p` in the repo, `bypassPermissions`, `--debug-file`; the fake API had the main session
+launch the agent and the agent run `echo`. Three runs of each case on 2.1.319; on 2.1.293 three of the
+parent case and one each of the other two.
+
+| Trusted | Frontmatter hook | Debug log |
+|---|---|---|
+| the repo | fired, every run | no skip line |
+| only the folder above it | never fired | `[ERROR] Skipping frontmatter hooks for agent 'probe-agent': the folder its definition file came from is not trusted (source: projectSettings)` |
+| nothing | never fired | the same line |
+
+A trusted parent folder is no trust for the repo. `node <hook> check` counted it as trust until this
+check; it now stops the run, as for an untrusted repo.
+
+</details>
+
+<details>
 <summary><b>2026-10-31</b>: Claude Code 2.1.316, Windows 11, one full run side by side, from the head of the #218–#227 chain, on the owner's subscription</summary>
 
 Setup: `node tools/full-run.mjs --login --side-by-side --model sonnet --max-cost 8` from commit
