@@ -188,7 +188,9 @@ function reply(res, stream, step, id) {
     name ? { type: 'tool_use', id: `${id}_${i}`, name, input } : { type: 'text', text },
   ]);
   const stop = blocks.some((b) => b.type === 'tool_use') ? 'tool_use' : 'end_turn';
-  const message = { id: `msg_${id}`, type: 'message', role: 'assistant', model: 'claude-fake', stop_sequence: null, usage: { input_tokens: 1, output_tokens: 1 } };
+  // A step's `usage` is the input_tokens it reports: a large one makes Claude Code auto-compact before its next request.
+  const inputTokens = Math.max(1, ...(Array.isArray(step) ? step : [step]).map((s) => s.usage ?? 1));
+  const message = { id: `msg_${id}`, type: 'message', role: 'assistant', model: 'claude-fake', stop_sequence: null, usage: { input_tokens: inputTokens, output_tokens: 1 } };
   if (!stream) {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ ...message, content: blocks, stop_reason: stop }));
@@ -208,10 +210,17 @@ function reply(res, stream, step, id) {
   res.end();
 }
 
+// Claude Code's auto-compaction request (2.1.293 to 2.1.319): the conversation, ending in this instruction.
+const compacting = (b) => JSON.stringify(b.messages ?? []).includes('Respond with TEXT ONLY');
+
 // Runs `claude -p MAIN` with the script as the model. Returns every request each sender made, the
 // stream-json events and the exit code. bypassPermissions by default: a guardrail that does not fire
 // then lets the action through, instead of a permission check stopping it in the hook's place.
-async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [], idBase = 0 } = {}) {
+// A compaction request is answered with a summary that names its sender, so the requests after it are
+// still told apart, and takes no step of the script. `typed: { text, after }` sends the prompt over
+// stdin (--input-format stream-json) and, a second after the main session's request number `after`
+// (from 0) is answered, sends `text` as a message typed while that turn runs.
+async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissions', env = {}, prompt = MAIN, args = [], idBase = 0, typed = null } = {}) {
   const senders = Object.keys(script);
   const requests = Object.fromEntries(senders.map((k) => [k, []]));
   // When each sender's requests arrived, in ms: shows whether two agents ran at the same time.
@@ -231,30 +240,43 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
       let b = {};
       try { b = JSON.parse(body); } catch { /* answered like an unknown sender */ }
       let next = say('done');
+      const first = textOf((b.messages ?? []).find((m) => m.role === 'user')?.content);
+      const who = senders.find((k) => first.includes(k));
       if (textOf(b.system).includes('security monitor')) next = say('<severity>0</severity>');
-      else {
-        const first = textOf((b.messages ?? []).find((m) => m.role === 'user')?.content);
-        const who = senders.find((k) => first.includes(k));
-        if (who) { times[who].push(Date.now()); next = script[who][requests[who].push(b) - 1] ?? next; }
+      else if (compacting(b)) { compactions++; next = say(`<summary>${who ?? 'a session'}: earlier turns compacted</summary>`); }
+      else if (who) {
+        times[who].push(Date.now());
+        const n = requests[who].push(b) - 1;
+        next = script[who][n] ?? next;
+        if (typed && who === MAIN && n === typed.after) setTimeout(() => user(typed.text), 1000);
       }
       reply(res, b.stream, next, `toolu_e2e_${++ids}`);
     });
   });
+  let compactions = 0;
+  let child;
+  const user = (text) => child?.stdin?.writable && child.stdin.write(`${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   try {
     return await new Promise((resolve, reject) => {
       let out = '';
       let err = '';
-      const child = spawn('claude', ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...args],
-        { cwd: repo, env: fakeEnv(cfg, server.address().port, env), stdio: ['ignore', 'pipe', 'pipe'] });
-      child.stdout.on('data', (d) => { out += d; });
+      const input = typed ? ['--input-format', 'stream-json'] : [prompt];
+      child = spawn('claude', ['-p', ...input, '--output-format', 'stream-json', '--verbose', '--permission-mode', permissionMode, ...args],
+        { cwd: repo, env: fakeEnv(cfg, server.address().port, env), stdio: [typed ? 'pipe' : 'ignore', 'pipe', 'pipe'] });
+      if (typed) user(prompt);
+      child.stdout.on('data', (d) => {
+        out += d;
+        // Over stdin the session waits for more input: the turn's result ends it.
+        if (typed && out.includes('"type":"result"')) child.stdin.end();
+      });
       child.stderr.on('data', (d) => { err += d; });
       child.on('error', reject);
       const timer = setTimeout(() => child.kill(), 90_000);
       child.on('close', (code) => {
         clearTimeout(timer);
         const events = out.split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-        resolve({ code, events, requests, times, out, err });
+        resolve({ code, events, requests, times, compactions, out, err });
       });
     });
   } finally {
@@ -1278,6 +1300,47 @@ test("009 T017 T026 FR-008 US3-5 plan D10 research R1: the auditor role's VERDIC
   assert.equal(verdict(s2), 'PASS', story(r2));
   // #261: a PASS is no Stop of /speckit-team, so that Stop is sent back once and the session goes on.
   assert.match(shown(r2.requests[MAIN][2]), /the spec-auditor role's report ends VERDICT: PASS, where \/speckit-team has no Stop\. Go on with the next step in this turn\./, story(r2));
+});
+
+// #184, research R5: a role ends on a prompt_id other than its Skill call's (plan D11). Three inputs can
+// arrive while a role's turn runs, and each carries that turn's prompt_id (probed 2026-11-08 on 2.1.293
+// and 2.1.319, also typed into the TUI), so the role stays live through it: the write after it is still
+// held to the architect's lane. If Claude Code gave one a new prompt_id, the role would end and the write
+// would go through. A notice that arrives after the turn's Stop opens a new turn with a new prompt_id,
+// when the Stop has already closed the role.
+const pause = (ms, extra = {}) => call('Bash', { command: `node -e "setTimeout(Boolean,${ms})"`, description: 'Wait', ...extra });
+const laneHeld = (s, r, at) => {
+  assert.ok(lastResultIsError(r.requests[MAIN][at]), story(r));
+  assert.match(lastResult(r.requests[MAIN][at]), /architect may only write specs\/, CLAUDE\.md; src\/x\.js is outside that lane/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the Write went through');
+};
+
+test("#184: a background task's notice that arrives while a role's turn runs leaves the role live", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('architect'), pause(1000, { run_in_background: true }), pause(6000), wfile(s, 'src/x.js', 'export const x = 1;\n'), say('done')],
+  }, { prompt: SA_PROMPT });
+  assert.match(shown(r.requests[MAIN][3]), /<task-notification>/, `the notice came before the write:\n${story(r)}`);
+  laneHeld(s, r, 4);
+});
+
+test("#184: an auto-compaction while a role's turn runs leaves the role live", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('architect'), { ...call('Bash', { command: 'echo before', description: 'Echo' }), usage: 995_000 }, wfile(s, 'src/x.js', 'export const x = 1;\n'), say('done')],
+  }, { prompt: SA_PROMPT });
+  assert.equal(r.compactions, 1, story(r));
+  assert.match(shown(r.requests[MAIN][2]), /earlier turns compacted/, `the write came after the compaction:\n${story(r)}`);
+  laneHeld(s, r, 3);
+});
+
+test("#184: a message sent while a role's turn runs leaves the role live", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('architect'), pause(6000), wfile(s, 'src/x.js', 'export const x = 1;\n'), say('done')],
+  }, { prompt: SA_PROMPT, typed: { text: 'e2e typed mid-turn', after: 1 } });
+  assert.match(shown(r.requests[MAIN][2]), /e2e typed mid-turn/, `the message came before the write:\n${story(r)}`);
+  laneHeld(s, r, 3);
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
