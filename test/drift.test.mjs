@@ -162,3 +162,34 @@ test('drift: this repository\'s finished features name the test files that hold 
   assert.deepEqual(r.problems, []);
   assert.ok(r.tasks >= 30, `checked ${r.tasks} test tasks`);
 });
+
+// #235: with `spec`, every requirement the feature's spec.md defines must be held by some test file, on a
+// line naming the feature by its number (test-writer names tests `001 FR-002 ...`), since FR numbers repeat
+// across features. A requirement no test can hold is excused only by a task that cites it with `No test:
+// <reason>`: the architect writes it and the user approves it at the tasks stop, not the gatekeeper.
+test('drift (#235): with spec, every FR of spec.md needs a test line naming its feature, or a task\'s No test:', () => {
+  const SPEC = '# Spec\n\n- **FR-001**: adds.\n- **FR-002**: empty gives 0.\n- **FR-003**: docs in README.\n\nFR-001 again in prose.\n';
+  const tasks = '- [X] T001 Test FR-001 and FR-002 in `test/sum.test.js`\n- [X] T002 Implement `sum` (FR-001)\n';
+  const files = { 'specs/001-sum/spec.md': SPEC, 'test/sum.test.js': "test('001 FR-001 adds', () => {});\n// 001 FR-002\n" };
+  const one = (extra = {}, t = tasks) => drift(repo(t, { ...files, ...extra }), { feature: 'specs/001-sum', spec: true }).problems;
+  const p = one();
+  assert.equal(p.length, 1, JSON.stringify(p));
+  assert.match(p[0], /^specs\/001-sum\/spec\.md FR-003: no test names it with 001/);
+  assert.deepEqual(one({}, `${tasks}- [X] T003 Docs for FR-003 in \`README.md\`. No test: prose, read by spec-auditor\n`), [], 'a task\'s No test: excuses it');
+  assert.equal(one({}, `${tasks}- [X] T003 Docs in \`README.md\`. No test: prose\n`).length, 1, 'a No test: that cites another ID excuses nothing');
+  // A line naming no feature, or another feature, does not hold it: every feature has an FR-003.
+  assert.equal(one({ 'test/old.test.js': "test('FR-003 docs', () => {});\n// 002 FR-003\n" }).length, 1, 'FR-003 named without 001, or with 002');
+  assert.deepEqual(one({ 'test/more/docs.test.js': '// 001 FR-003\n' }), [], 'any test file of the repo holds it, with the number');
+  // Without `spec`, only test tasks' cited IDs are checked, as before.
+  assert.deepEqual(drift(repo(tasks, files), { feature: 'specs/001-sum' }).problems, []);
+  // A feature without spec.md has nothing to check at spec level.
+  assert.deepEqual(drift(repo(tasks, { 'test/sum.test.js': files['test/sum.test.js'] }), { feature: 'specs/001-sum', spec: true }).problems, []);
+});
+
+test('drift (#235): a test file git ignores, or one under node_modules, holds nothing', () => {
+  const dir = repo('- [X] T001 Test FR-001 in `test/sum.test.js`\n', {
+    'specs/001-sum/spec.md': '- **FR-001**: adds.\n- **FR-002**: empty.\n',
+    'test/sum.test.js': '// 001 FR-001\n', 'node_modules/x/test/a.test.js': '// 001 FR-002\n',
+  });
+  assert.deepEqual(drift(dir, { feature: 'specs/001-sum', spec: true }).problems, ['specs/001-sum/spec.md FR-002: no test names it with 001 (put "001 FR-002" in a test\'s name or a comment, or give a task that cites it "No test: <reason>")']);
+});

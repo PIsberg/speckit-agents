@@ -43,8 +43,10 @@ file, and reading that file back costs it twice: narrow the command instead.
 ## Process
 1. Match the repo's existing test framework, location and style. Write a test for each scenario and
    FR your tasks cite, and for each case a task names, with the expected values the spec,
-   `contracts/` or the task gives. Put the FR or scenario ID in each test's name or a comment, so
-   it traces back to the spec. On a test the task says to keep, add the ID as a comment: a comment
+   `contracts/` or the task gives. Put the FR or scenario ID in each test's name or a comment, after
+   the feature's number (`001 FR-002`, from the feature folder `specs/001-...`), so it traces back
+   to that feature's spec: every feature has an FR-001, and a line without the number is not
+   counted. On a test the task says to keep, add the number and ID as a comment: a comment
    changes no behaviour, and a cited ID no test file holds is refused at the final check. A kept test
    is not a new test, so it need not be red and is not reported as already passing.
 2. Run the tests until every new one is red for the right reason:

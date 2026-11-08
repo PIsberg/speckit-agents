@@ -249,13 +249,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: 9168b467 -->
+<!-- fingerprint: c87ce2d3 -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
 - Grep for an existing function before a task adds one. pinned; spec-auditor checks (HIGH).
 - Each fact once; write `research.md`, `data-model.md`, `contracts/`, `quickstart.md` only when needed. pinned (facts once), text.
 - Slices: one behaviour each, every task in one slice. pinned.
+- Every FR is cited by a test task or by a task saying `No test: <reason>`. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and excused by no such task is refused (#235).
 - Every test task names its test file and the IDs it covers. pinned; hook `ends --record` checks at spec-gatekeeper's APPROVED that the test files hold the IDs (#228).
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
@@ -312,9 +313,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Only the named tasks, the cited lines and the contracts; a brief in place of tasks ticks nothing. pinned (brief), text, unseen (cost).
 
 ### agents/test-writer.md: Process
-<!-- fingerprint: 0a912f9f -->
+<!-- fingerprint: 2a78fd97 -->
 - The repo's framework and style. text.
-- The FR or scenario ID in each test's name or a comment. hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228).
+- The FR or scenario ID in each test's name or a comment, after the feature's number (`001 FR-002`). hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228), and an FR of `spec.md` in no test line naming the feature's number (#235).
 - On a kept test, the ID as a comment; a kept test is not a new test. pinned (#254).
 - Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module is not checked: a RED for a production file not yet written is valid, and the hook cannot tell it from a test helper.
 - Run the type check when CI type-checks tests; report a task number no code can meet. pinned.
@@ -374,8 +375,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `Team:` and `Unbuilt:` lines. pinned.
 
 ### agents/spec-gatekeeper.md: Process
-<!-- fingerprint: 5b88acd5 -->
-- Every FR has a test that would fail if it broke. hook `ends --record` for an FR a ticked test task cites (#228); text, unseen for the rest (#235).
+<!-- fingerprint: 26c41ded -->
+- Every FR has a test that would fail if it broke. hook `ends --record`: an FR a ticked test task cites must be in its test files (#228), and every FR of `spec.md` in a test line naming the feature's number unless a task gives it `No test:` (#235). Whether the test would fail if the behaviour broke: text, unseen.
 - Every task ticked, `Unbuilt:` IDs skipped. pinned.
 - Run what CI runs; a skipped gate is not a passed one. text; the report shows a breach.
 - A Bash `timeout` that covers the run. pinned.
