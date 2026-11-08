@@ -1240,7 +1240,8 @@ function missingTestModule(text) {
     if (spec.startsWith('file:')) { try { file = /^file:\/\/\//i.test(spec) ? fileURLToPath(spec) : ''; } catch { file = ''; } }
     let rel = null;
     if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) rel = repoRelative(file);
-    else if (/^\.\.?[\\/]/.test(file) && from && path.isAbsolute(from.trim())) rel = repoRelative(path.resolve(path.dirname(from.trim()), file));
+    // With a Require stack, the requiring file is the only base: one that is a share or not absolute is no fault.
+    else if (/^\.\.?[\\/]/.test(file) && from) rel = path.isAbsolute(from.trim()) ? repoRelative(path.join(path.dirname(from.trim()), file)) : null;
     else if (/^\.\.?[\\/]/.test(file)) rel = path.posix.normalize(fwdPath(file)).replace(/^(\.\.?\/)+/, '');
     if (rel && isTest(rel)) return `Cannot find module ${rel}, a test file`;
   }
