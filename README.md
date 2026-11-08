@@ -1543,7 +1543,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 554 tests:
+`npm test` runs 557 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1559,7 +1559,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 12 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 16 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 19 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 26 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
@@ -1816,6 +1816,10 @@ One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](t
 | `defect-control` | the same feature with a real FR-002 test | `APPROVED` |
 | `must-broken` | one turn on a finished, audited feature whose implementation adds a runtime dependency to `package.json`, which constitution II forbids; every test still passes | `REJECTED` |
 | `untested-fr` | one turn on a finished, audited feature whose ticked task cites FR-003, which no test names (the spec defines it) | `REJECTED`; the drift check (#228) refuses an `APPROVED` here, so the hook's record alone cannot show the model's own word (its `claimed` field can) |
+| `neighbour` | one turn on a finished, audited feature whose FR-002 test asserts `sum([0])`, not `sum([])`, and whose `sum([])` throws; every test passes and names `001 FR-002`, so no hook catches it ([#253](https://github.com/PIsberg/speckit-agents/issues/253)) | `REJECTED` |
+| `other-fr` | the same, with FR-002 held only by a `// 001 FR-002` comment over FR-001's test (#253) | `REJECTED` |
+| `contest` | one turn of `/speckit-team` on a feature specified and planned, its first audit a `FAIL` whose finding the architect contested with the line that shows it wrong ([#242](https://github.com/PIsberg/speckit-agents/issues/242)) | no agent launched in the turn: the skill hands the contest to the user, and re-auditing or a fix would rule on it |
+| `patch-bug` | one turn of `/speckit-patch` on a one-line behaviour bug (`sum([])` throws) that no test tries ([#247](https://github.com/PIsberg/speckit-agents/issues/247)) | a commit that touches a test file; a fix committed with a `No test:` line and no test is the exemption taken for a behaviour change |
 
 The gate cases ([`test/fixtures/full-run/gate/`](test/fixtures/full-run/gate/)) skip the pipeline: the
 audit `PASS` is recorded by the hook itself, so the gate is open and the fingerprint is the hook's, and
