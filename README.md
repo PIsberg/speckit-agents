@@ -1731,7 +1731,11 @@ need no login and cost nothing.
   the project's.
 
 The fake model tells the main session from each agent by a marker in its first prompt, and
-recognises auto mode's safety classifier by its prompt. A Claude Code release that changes either
+recognises auto mode's safety classifier by its prompt. The tests set `CLAUDE_CODE_AUTO_MODE_SERVER=0`
+so that classifier is asked at all: from about 2.1.319, auto mode behind a base URL asks the server
+to review actions inside the model requests, which the fake cannot do, and every Agent call is
+refused with `auto_mode_no_check_in_session` ([#280](https://github.com/PIsberg/speckit-agents/issues/280)).
+The server-side review itself is not covered. A Claude Code release that changes either
 fails these tests with no hook at fault: the failure message gives each sender's request count and
 Claude Code's last events, so check those before changing a hook.
 
