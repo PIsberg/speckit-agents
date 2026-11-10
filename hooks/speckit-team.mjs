@@ -33,7 +33,8 @@
 //                           subagents (kept under notices/ as they said it), as additionalContext; never a decision
 //   check                   Not a hook: the pipeline skills' first step (#230). Exit 1 when the team that would run
 //                           is not this install alone (mixed builds, a second install of another build, a project
-//                           install in a folder Claude Code has not trusted); `note:` lines otherwise
+//                           install in a folder Claude Code has not trusted); `note:` lines otherwise.
+//   check team              the same, then `state:` lines for /speckit-team's step 0: working tree, constitution, branch
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -895,6 +896,26 @@ function trusted(dir) {
   const accepted = new Set(Object.entries(projects).filter(([, v]) => v?.hasTrustDialogAccepted === true).map(([k]) => norm(k)));
   return { ok: accepted.has(norm(path.resolve(dir))), conf };
 }
+// `check team`: what step 0 of /speckit-team asks of the repo, one `state:` line each, so the main session
+// needs no call of its own for them. In 3 of the 5 full runs of 2026-11-08 it spent a second response there.
+function repoState() {
+  const out = [];
+  const st = git(root, 'status', '--porcelain');
+  const files = (st ?? '').split('\n').filter(Boolean).map((l) => l.replace(/^\s*\S+\s+/, ''));
+  if (st === null) out.push('state: working tree could not be read: run git status');
+  else if (!files.length) out.push('state: working tree clean');
+  else {
+    out.push(`state: working tree has ${files.length} uncommitted file${files.length === 1 ? '' : 's'}: ${files.slice(0, 8).join(', ')}`
+      + `${files.length > 8 ? ` and ${files.length - 8} more` : ''}: ask before going on`);
+  }
+  const text = readOr(path.join(root, '.specify', 'memory', 'constitution.md'), undefined);
+  if (text === undefined) out.push('state: constitution is missing: run step 0b');
+  else if (/\[(PROJECT_NAME|PRINCIPLE_\d+_NAME)\]/.test(text)) out.push('state: constitution is still the template: run step 0b');
+  else out.push('state: constitution holds rules');
+  const branch = git(root, 'branch', '--show-current');
+  out.push(branch ? `state: on branch ${branch}` : 'state: not on a branch');
+  return out;
+}
 if (mode === 'check') {
   const self = STAMP.exec(readOr(fileURLToPath(import.meta.url), ''));
   if (!self) projectRefuse('this hook is not an installed copy (it carries no build stamp). Install the team with node install.mjs and run the skill from it.');
@@ -933,7 +954,7 @@ if (mode === 'check') {
     if (mine !== build) notes.push(`note: the installed team is build ${build}, not this checkout's (build ${mine}): run node install.mjs to run what is checked out.`);
   }
   if (problems.length) projectSay(problems.map((p) => `speckit-team: check: ${p}`).join('\n'), 1);
-  projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes].join('\n'), 0);
+  projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes, ...(args[0] === 'team' ? repoState() : [])].join('\n'), 0);
 }
 
 if (mode === 'scope') {

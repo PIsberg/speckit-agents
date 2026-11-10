@@ -80,11 +80,12 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - At most 4 questions per AskUserQuestion call, all before the next launch. text.
 
 ### skills/speckit-team/SKILL.md: 0. Preconditions
-<!-- fingerprint: af599062 -->
-- Run `check` first and stop on exit 1. script `check`, pinned (#230).
-- Stop without `.specify/`. text; every hook is off there anyway.
-- Note that `/clear` saves tokens; ask about a dirty tree. pinned (dirty tree), text.
-- Run step 0b while the constitution is the template. text.
+<!-- fingerprint: fc4f8c5d -->
+- Run `check team` first, alone, and stop on exit 1. script `check`, pinned (#230).
+- Stop without `.specify/`. script `check` (exit 1 names it); every hook is off there anyway.
+- Note that `/clear` saves tokens. text.
+- Ask about a dirty tree. script `check team` (the `state:` line names the files), pinned.
+- Run step 0b while the constitution is missing or the template. script `check team` (the `state:` line says which), text.
 - Say how to bring foreground launches back when the Agent tool has no `run_in_background`. text.
 
 ### skills/speckit-team/SKILL.md: Team

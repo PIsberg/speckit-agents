@@ -679,6 +679,20 @@ Where the agents' tokens went, from the subagent transcripts, led to three issue
 [#258](https://github.com/PIsberg/speckit-agents/issues/258) (in skill-agents mode the loaded skills stay
 in the main context, about 26% of its input in the 2026-10-25 run, estimated).
 
+## Step 0 in one call
+
+Read on 2026-11-10 from five main transcripts of 2026-11-08 full runs (`two-1`, `two-2`, `two-3`,
+`sbs-1` and `skill-full` under the sweep's output folder). Step 0 asks four things of the repository:
+the install check, `.specify/`, a clean tree, a constitution that is not the template. In 3 of the 5
+the main session answered them in two responses, not one: in two its first command left the
+constitution out, in one it returned a bare `0` from `grep -c` that the session then looked at again.
+The second response read 51.7k to 51.8k tokens back and came 10 s to 18 s after the first.
+
+What it led to: `check team` prints one `state:` line each for the working tree, the constitution and
+the branch after its `ok` line, exits 1 without `.specify/`, and the skill's step 0 runs that call
+alone. Held by `test/install.test.mjs`. Whether a main session then stops at one response has not
+been seen in a run with a real model.
+
 ## The live sweep of 2026-11-08
 
 Taken 2026-11-08 with Claude Code 2.1.319, Windows 11, main session `sonnet`, `--login` on the owner's

@@ -1812,7 +1812,7 @@ test('#181 009 T006 SC-002: the skill-agents text stays under 3,000 characters, 
   assert.ok(added <= 3000, `## Skill agents and the ## Team lines naming skill-agents are ${added} characters`);
   assert.equal(team.slice(team.indexOf('With no roles named'), team.indexOf('A free-text answer ("Other")')), TEAM_QUESTION_BEFORE_009);
   // Spec edge case: a dirty tree gets the default run's precondition, which ## Skill agents runs as written.
-  assert.match(skillSection(source, '## 0. Preconditions'), /The working tree is clean\. If not, ask before going on\./);
+  assert.match(skillSection(source, '## 0. Preconditions'), /`state: working tree clean`\. On any other working tree line, ask before going on\./);
   assert.match(flat(skillSection(source, '## Skill agents')), /Steps 0 to 7 run as written/);
 });
 
@@ -2027,6 +2027,67 @@ test('#230: in a speckit-agents checkout, check notes an install that is not thi
   assert.equal(behind.status, 0, behind.stdout);
   assert.match(behind.stdout, /^note: .*not this checkout's/m);
   assert.match(behind.stdout, /node install\.mjs/);
+});
+
+// Step 0 of /speckit-team asks four things of the repo. In 3 of the 5 full runs of 2026-11-08 the main
+// session spent a second response on them (51k to 52k tokens each): `check team` answers all in one call.
+const checkTeam = (installDir, repo, cfg) => spawnSync(process.execPath, [path.join(installDir, 'hooks', 'speckit-team.mjs'), 'check', 'team'], {
+  cwd: repo, encoding: 'utf8', input: '', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg },
+});
+const commitAll = (repo) => {
+  for (const a of [['add', '-A'], ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '-m', 'base']]) {
+    assert.equal(spawnSync('git', a, { cwd: repo }).status, 0, a.join(' '));
+  }
+};
+test('check team: state lines say the tree is clean, the constitution holds rules, and the branch', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  assert.equal(install(cfg).status, 0);
+  commitAll(repo);
+  const branch = spawnSync('git', ['branch', '--show-current'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+  const r = checkTeam(cfg, repo, cfg);
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /^speckit-team: check: ok, /m);
+  assert.match(r.stdout, /^state: working tree clean$/m);
+  assert.match(r.stdout, /^state: constitution holds rules$/m);
+  assert.ok(r.stdout.includes(`state: on branch ${branch}\n`), r.stdout);
+  const plain = check(cfg, repo, cfg);
+  assert.equal(plain.status, 0, plain.stdout);
+  assert.doesNotMatch(plain.stdout, /^state:/m, 'the fast track\'s check is unchanged');
+});
+
+test('check team: a dirty tree is named with its files, a template or missing constitution sends to step 0b', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  assert.equal(install(cfg).status, 0);
+  commitAll(repo);
+  const constitution = path.join(repo, '.specify', 'memory', 'constitution.md');
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'x\n');
+  fs.writeFileSync(constitution, '# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n');
+  const template = checkTeam(cfg, repo, cfg);
+  assert.equal(template.status, 0, template.stdout);
+  assert.match(template.stdout, /^state: working tree has 2 uncommitted files: \.specify\/memory\/constitution\.md, notes\.txt: ask before going on$/m);
+  assert.match(template.stdout, /^state: constitution is still the template: run step 0b$/m);
+  fs.rmSync(constitution);
+  const missing = checkTeam(cfg, repo, cfg);
+  assert.equal(missing.status, 0, missing.stdout);
+  assert.match(missing.stdout, /^state: constitution is missing: run step 0b$/m);
+  for (let i = 0; i < 12; i += 1) fs.writeFileSync(path.join(repo, `n${String(i).padStart(2, '0')}.txt`), 'x\n');
+  const many = checkTeam(cfg, repo, cfg);
+  assert.match(many.stdout, /^state: working tree has 14 uncommitted files: (\S+, ){7}\S+ and 6 more: ask before going on$/m, many.stdout);
+});
+
+test('check team: a problem still exits 1 and prints no state line', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  const project = path.join(repo, '.claude');
+  assert.equal(install(cfg).status, 0);
+  assert.equal(install(project).status, 0);
+  trust(cfg, repo);
+  restamp(project, 'ffffffffffff');
+  const r = checkTeam(cfg, repo, cfg);
+  assert.equal(r.status, 1, r.stdout);
+  assert.doesNotMatch(r.stdout, /^state:/m);
 });
 
 test('#230: the hook as checked out, not installed, refuses the check', () => {
