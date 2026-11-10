@@ -153,9 +153,14 @@ the main session's role stays acting; its own Stop closes it (#177).
    2026-11-08 run waited for the user after `RESULT: STUB` and `RESULT: GREEN`). Only a record that
    cannot be written falls back to `stop_hook_active`.
 6. One voice per Stop (#284): every role skill loaded in a turn leaves its `lane role` Stop hook
-   registered, so a later Stop of that turn runs one process per role. For the hand-on only the
-   process whose unlink removes the record blocks; the others end with no output. The blocks of step 1
-   and of the drift check can still arrive once per process.
+   registered, so a later Stop of that turn runs one process per role. Each block of that Stop (step
+   1's lane check, the drift check, step 4's hand-on) comes from the one process whose exclusive create
+   takes a claim on it, a file `role/<session>.<lane|drift|hand-on>.<record key>.claim`; the others end
+   with no output and leave the record alone. Not the record's unlink: on Windows two processes can
+   both unlink one file in the same millisecond (3 of 6 runs of the #261 e2e case had two hand-ons).
+   The session's claims go when its record is removed or the next role's record is written. A send-back
+   whose `sentBack` could not be written marks its claim `unrecorded`, and the next Stop falls back to
+   `stop_hook_active` as before. The processes themselves still run, one per loaded role skill.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
 says so only when that holds no verdict or word. So does a transcript that could not be read when the role

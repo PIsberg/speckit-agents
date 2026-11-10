@@ -1044,7 +1044,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `scope none` | spec-auditor, spec-gatekeeper, security-reviewer: PreToolUse `Bash` | a Bash command that writes a file in the repo, writes to a path only the run can tell, or changes the working tree or the history with git (`checkout`, `stash`, `reset`, `add`, `commit` and the like); checks, tests and writes outside the repo pass ([#209](https://github.com/PIsberg/speckit-agents/issues/209)) |
 | every `scope` rule | all five writing agents, and the three read-only ones on Bash | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `scope role` | `--team skill-agents`: each role skill's frontmatter, PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | the acting role writing outside its lane (the same rule as its agent's `scope`, a twin of `ROLE_LANES`), or any write by a read-only role, through a write tool or Bash as `scope none` reads it |
-| `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; ending the turn, once per role call, on a report the skill goes on from (`VERDICT: PASS`, `RESULT: STUB`, `RED`, `RESULT: GREEN`; #261); records spec-auditor's verdict and spec-gatekeeper's word from its messages, the next Skill call's first `args` line and the Stop's last message |
+| `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; ending the turn, once per role call, on a report the skill goes on from (`VERDICT: PASS`, `RESULT: STUB`, `RED`, `RESULT: GREEN`; #261); records spec-auditor's verdict and spec-gatekeeper's word from its messages, the next Skill call's first `args` line and the Stop's last message. A turn that loaded several role skills runs one process per skill at each Stop; one of them sends each block back ([#284](https://github.com/PIsberg/speckit-agents/issues/284)) |
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
@@ -1200,7 +1200,7 @@ Verdicts, retry counts, the gatekeeper's last word and per-agent start points li
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, where
 an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `drift` fields,
 `agents/`, `team/`: one small record per session that launched a team role or typed
-`--team noagents`, and `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+`--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
@@ -1548,11 +1548,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 583 tests:
+`npm test` runs 585 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 188 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 190 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 131 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |

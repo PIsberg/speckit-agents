@@ -567,7 +567,10 @@ and a plan stop it did not hold, which is the loss #261's first fix was taken ou
 because its first response wrote 51k tokens to the cache where the earlier one wrote 36k and read the
 rest. The send-back after `VERDICT: PASS` arrived twice, word for word: that Stop ran two `lane role`
 processes ([#284](https://github.com/PIsberg/speckit-agents/issues/284)), and the last Stop of the turn
-ran five. Since then only the process that removes the role record sends the hand-on, held by the
+ran five. Since then only one process of a Stop sends the hand-on (and the lane and drift blocks): the
+one whose exclusive create takes a claim on it. #288 first let the one that removed the role record
+speak, but on Windows two processes could both remove it in the same millisecond, and the e2e case
+below failed in 3 of 6 local runs on 2026-11-10; with the claim it passed 8 of 8. Held by that
 same e2e case (4 mentions of the feedback in the next request before, 2 after, as for a Stop with one
 process). The fix stays shown by `test/e2e.test.mjs` only
 ([#283](https://github.com/PIsberg/speckit-agents/issues/283)).
