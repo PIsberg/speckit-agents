@@ -1313,6 +1313,12 @@ test("#261: a role's Stop in a turn an earlier hand-on continued is sent back to
   assert.match(shown(r.requests[MAIN][2]), /the spec-auditor role's report ends VERDICT: PASS, where \/speckit-team has no Stop\./, story(r));
   assert.match(shown(r.requests[MAIN][4]), /the implementer role's report ends RESULT: STUB, where \/speckit-team has no Stop\. Go on with the next step in this turn\./, story(r));
   assert.equal(r.requests[MAIN].length, 5, `a Stop with no new role call ends the turn:\n${story(r)}`);
+  // #284: every role skill loaded in the turn leaves its own `lane role` Stop hook, so that Stop runs two
+  // processes. Only the one that removes the record speaks.
+  const said = (req, text) => shown(req).split(text).length - 1;
+  const once = said(r.requests[MAIN][2], "the spec-auditor role's report ends VERDICT: PASS");
+  assert.equal(said(r.requests[MAIN][4], "the implementer role's report ends RESULT: STUB"), once,
+    `the second hand-on is said as often as the first, which one process sent (${once}):\n${story(r)}`);
 });
 
 // #184, research R5: a role ends on a prompt_id other than its Skill call's (plan D11). Three inputs can

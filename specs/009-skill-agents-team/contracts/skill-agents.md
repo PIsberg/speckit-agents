@@ -152,6 +152,10 @@ the main session's role stays acting; its own Stop closes it (#177).
    every role called after an earlier role's hand-on end the turn unchecked and unsent (the
    2026-11-08 run waited for the user after `RESULT: STUB` and `RESULT: GREEN`). Only a record that
    cannot be written falls back to `stop_hook_active`.
+6. One voice per Stop (#284): every role skill loaded in a turn leaves its `lane role` Stop hook
+   registered, so a later Stop of that turn runs one process per role. For the hand-on only the
+   process whose unlink removes the record blocks; the others end with no output. The blocks of step 1
+   and of the drift check can still arrive once per process.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
 says so only when that holds no verdict or word. So does a transcript that could not be read when the role

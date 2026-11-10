@@ -730,7 +730,11 @@ function closeRole(rec, at, gate = null) {
   if (at === 'stop') {
     const word = handOnWord(rec);
     if (word) {
-      drop();
+      // #284: a turn runs one `lane role` process per role skill loaded in it (5 at the last Stop of the
+      // 2026-11-10 run), and each would say this. Only the one that removes the record does.
+      let mine = false;
+      try { fs.unlinkSync(roleFile(id)); mine = true; } catch { /* another process of this Stop took it */ }
+      if (!mine) return finish();
       // Only where to go: the report is already written. #261's run showed text asking for the next call
       // in the report's own response cost the reports themselves (no audit report, no gatekeeper word).
       block(`speckit-team: the ${rec.role} role's report ends ${word}, where /speckit-team has no Stop. Go on with the next step in this turn.`);
