@@ -2843,11 +2843,82 @@ test('#261: a role Stop on VERDICT: PASS, RESULT: STUB, RED or RESULT: GREEN is 
     assert.equal(stop?.decision, 'block', `${role} ${JSON.stringify(last)}: ${JSON.stringify(stop)}`);
     assert.match(stop.reason, HAND_ON_MSG(role, word), role);
     assert.ok(!hasRole(dir), `${role}: the record is removed, so the next role's Skill call starts clean`);
-    putRole(dir, role);
     const again = stopRole(dir, { last_assistant_message: last, stop_hook_active: true });
-    assert.ok(!decided(again), `${role}: sent back once only: ${JSON.stringify(again)}`);
+    assert.ok(!decided(again), `${role}: sent back once only, the record went with the hand-on: ${JSON.stringify(again)}`);
+  }
+});
+
+// The 2026-11-08 skill-agents run: the Stops after VERDICT: PASS and RED were sent back, the ones after
+// RESULT: STUB and RESULT: GREEN were not, and the run waited for a typed "go on" twice. Claude Code sets
+// stop_hook_active for the rest of a turn a Stop hook continued, so "once" is counted per role record.
+test('a role called in a turn an earlier hand-on continued is handed on too', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  putRole(dir, 'spec-auditor');
+  assert.equal(stopRole(dir, { last_assistant_message: 'VERDICT: PASS' })?.decision, 'block');
+  for (const [role, last, word] of [['implementer', 'Stub committed.\n\nRESULT: STUB', 'RESULT: STUB'], ['test-writer', 'RED', 'RED'], ['implementer', 'RESULT: GREEN', 'RESULT: GREEN']]) {
+    putRole(dir, role);
+    const stop = stopRole(dir, { last_assistant_message: last, stop_hook_active: true });
+    assert.equal(stop?.decision, 'block', `${role} ${word}: ${JSON.stringify(stop)}`);
+    assert.match(stop.reason, HAND_ON_MSG(role, word));
     assert.ok(!hasRole(dir), role);
   }
+  assert.ok(!decided(stopRole(dir, { last_assistant_message: 'RESULT: GREEN', stop_hook_active: true })), 'no new role call, no block: it cannot loop');
+});
+
+test('a role called in a continued turn that wrote outside its lane is blocked once, then warned', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  putRole(dir, 'test-writer');
+  putFile(dir, 'src/main/Impl.java');
+  const first = stopRole(dir, { last_assistant_message: 'RED', stop_hook_active: true });
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^Lane check: test-writer changed files outside its lane: src\/main\/Impl\.java/);
+  assert.ok(hasRole(dir), 'a block keeps the record');
+  const second = stopRole(dir, { last_assistant_message: 'RED', stop_hook_active: true });
+  assert.notEqual(second?.decision, 'block', JSON.stringify(second));
+  assert.match(msg(second), /WARNING: test-writer left changes outside its lane: src\/main\/Impl\.java/);
+  assert.ok(!hasRole(dir));
+});
+
+// The count lives in the role record. When the record cannot be written the hook must not throw (it would
+// fail open) and must not loop: it falls back to Claude Code's own flag.
+test('a role record that cannot be written still blocks a lane violation once, by stop_hook_active', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  putRole(dir, 'test-writer');
+  putFile(dir, 'src/main/Impl.java');
+  fs.chmodSync(roleFile(dir, 's1'), 0o444);
+  try {
+    const first = runRaw(dir, ['lane', 'role'], JSON.stringify({ hook_event_name: 'Stop', session_id: 's1', cwd: dir, last_assistant_message: 'RED' }));
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.out?.decision, 'block', JSON.stringify(first));
+    assert.match(first.out.reason, /^Lane check: test-writer/);
+    const second = stopRole(dir, { last_assistant_message: 'RED', stop_hook_active: true });
+    assert.notEqual(second?.decision, 'block', JSON.stringify(second));
+    assert.match(msg(second), /WARNING: test-writer left changes outside its lane/);
+  } finally {
+    if (hasRole(dir)) fs.chmodSync(roleFile(dir, 's1'), 0o644);
+  }
+});
+
+test('#228: the spec-gatekeeper role called in a continued turn has its drifted APPROVED sent back once too', () => {
+  const { dir } = driftRepo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.\n\nAPPROVED');
+  const first = stopRole(dir, { stop_hook_active: true });
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.ok(hasRole(dir), 'the role still acts');
+  assert.equal(endsRec(dir), null);
+  const second = stopRole(dir, { stop_hook_active: true });
+  assert.ok(!decided(second), JSON.stringify(second));
+  assert.equal(endsRec(dir).word, 'REJECTED');
+  assert.equal(endsRec(dir).claimed, 'APPROVED');
+  assert.ok(!hasRole(dir));
 });
 
 test('#261: the spec-auditor role\'s PASS read from the transcript sends its Stop back, and is recorded', () => {

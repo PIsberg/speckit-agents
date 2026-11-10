@@ -1302,6 +1302,19 @@ test("009 T017 T026 FR-008 US3-5 plan D10 research R1: the auditor role's VERDIC
   assert.match(shown(r2.requests[MAIN][2]), /the spec-auditor role's report ends VERDICT: PASS, where \/speckit-team has no Stop\. Go on with the next step in this turn\./, story(r2));
 });
 
+// The 2026-11-08 skill-agents run waited for a typed "go on" after RESULT: STUB and RESULT: GREEN: those
+// roles were called in a turn the hook had already continued, and Claude Code sets stop_hook_active on
+// every later Stop of such a turn. The hand-on is counted per role record instead.
+test("#261: a role's Stop in a turn an earlier hand-on continued is sent back too", { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [roleSkill('spec-auditor'), say('No findings.\n\nVERDICT: PASS'), roleSkill('implementer'), say('Stub committed.\n\nRESULT: STUB'), say('Going on.')],
+  }, { prompt: SA_PROMPT });
+  assert.match(shown(r.requests[MAIN][2]), /the spec-auditor role's report ends VERDICT: PASS, where \/speckit-team has no Stop\./, story(r));
+  assert.match(shown(r.requests[MAIN][4]), /the implementer role's report ends RESULT: STUB, where \/speckit-team has no Stop\. Go on with the next step in this turn\./, story(r));
+  assert.equal(r.requests[MAIN].length, 5, `a Stop with no new role call ends the turn:\n${story(r)}`);
+});
+
 // #184, research R5: a role ends on a prompt_id other than its Skill call's (plan D11). Three inputs can
 // arrive while a role's turn runs, and each carries that turn's prompt_id (probed 2026-11-08 on 2.1.293
 // and 2.1.319, also typed into the TUI), so the role stays live through it: the write after it is still
