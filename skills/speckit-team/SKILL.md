@@ -255,9 +255,10 @@ dictated revision. Record the answers yourself, in the message that commits them
 audit. Under each decision's `###` heading in `plan.md` add the line
 `Answer (<date>): <option>, as recommended`, then rename `## Open Decisions` to `## Decisions` (if
 `plan.md` has a `## Decisions` section already, move the entries under it instead). Put each chosen
-`Spec:` line's wording into `spec.md`: a changed line in place of the line it names, a line it adds
-under the heading where the `Spec:` line puts it. Grep for the place, Read only those lines with an
-offset and a limit, and Edit. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
+`Spec:` line's wording into `spec.md`: a changed line in place of the text it quotes, a line it adds
+under the heading where the `Spec:` line puts it. The quote is the line as it is, so replace it without
+reading `spec.md` first; grep for the place only when a quote is not found. In two full runs of
+2026-11-08 finding the place took a response of its own. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
 product-owner were launched for one such Edit each instead, 0.16M tokens and about 44 s.
 Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:

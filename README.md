@@ -537,7 +537,8 @@ The architect writes each decision you should confirm (a new dependency, a schem
 change, a rule with more than one reasonable reading) to an `## Open Decisions` section of
 `plan.md`: the options, its recommendation first, and what follows from each option (edge cases,
 counts, side effects, the requirements and tasks it changes). An option that would make a line of
-the spec wrong carries that line's new wording on a `Spec:` line. Its report names only the
+the spec wrong carries, on a `Spec:` line, that line as it is and its new wording, so the main
+session can replace it without looking the place up. Its report names only the
 decision IDs, so the reasoning is not carried in the main session for the rest of the run. At the
 plan stop the skill reads the section in one command and asks you about every open decision at
 once; with more than 4, its first question takes every recommended option in one answer, in which
