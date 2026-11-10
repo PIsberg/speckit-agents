@@ -115,8 +115,8 @@ the main session's role stays acting; its own Stop closes it (#177).
    rule. A read-only role gets no lane check at close, as its agent has no `lane` hook in a default run
    (SC-006, plan D7); section 5 denies its Write and Edit calls as the agent's `disallowedTools` do. At a Skill
    call: deny, `Lane check: <role> changed files outside its lane: <files>. Restore them (git checkout
-   <sha 12> -- <file>, or delete new files), then go on.` At Stop: `block` with the same text, unless
-   `stop_hook_active`, then a `WARNING` system message as the agents' lane check gives.
+   <sha 12> -- <file>, or delete new files), then go on.` At Stop: `block` with the same text, once per
+   role record (step 5), then a `WARNING` system message as the agents' lane check gives.
 2. Report: the assistant text blocks of `transcript` after `offset`, in order, then one last text
    from the hook input, when it is a string: at a Skill call, the first line of that call's
    `tool_input.args`; at Stop, `last_assistant_message`. The response that holds a tool call can reach
@@ -136,7 +136,7 @@ the main session's role stays acting; its own Stop closes it (#177).
      and the hand-over can share one response, and text after the word would hide it (#185).
 3. At Stop the record is removed; at a Skill call it is replaced (section 4 step 5). At Stop an ended
    record (section 8) is removed with section 8's message and nothing closed: no lane check, no block.
-4. Hand-on, at Stop only, after steps 1 to 3 and unless `stop_hook_active` (#261): the role's last
+4. Hand-on, at Stop only, after steps 1 to 3 (#261): the role's last
    text (`last_assistant_message`, else the last text of the transcript after `offset`) ending a report
    the skill goes on from, with no Stop in between, is sent back with `block`: `speckit-team: the <role>
    role's report ends <word>, where /speckit-team has no Stop. Go on with the next step in this turn.`
@@ -144,7 +144,14 @@ the main session's role stays acting; its own Stop closes it (#177).
    `BLOCKED`, `FIXED` being `RED`; implementer's last line that is one of `RESULT: STUB`, `RESULT:
    GREEN`, `RESULT: RED` being one of the first two. Every other ending may go to the user and is let
    through. Without it the run waits for the user there, where in agents mode the report returns as a
-   tool result and the main session goes on in the same turn.
+   tool result and the main session goes on in the same turn. The record goes with the hand-on, so a
+   Stop with no new role call is let through: it cannot loop.
+5. Once per role record, not per turn: the blocks of step 1 and of the drift check (#228) are counted
+   in the record (`sentBack`), and step 4 by the record's removal. Claude Code keeps
+   `stop_hook_active` true for the rest of a turn a Stop hook continued, so reading it instead let
+   every role called after an earlier role's hand-on end the turn unchecked and unsent (the
+   2026-11-08 run waited for the user after `RESULT: STUB` and `RESULT: GREEN`). Only a record that
+   cannot be written falls back to `stop_hook_active`.
 An unreadable record, an incomplete one or an unreadable transcript: a system message naming what
 could not run; never a crash. With an unreadable transcript, step 2 reads the last text alone, and
 says so only when that holds no verdict or word. So does a transcript that could not be read when the role

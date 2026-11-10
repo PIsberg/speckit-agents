@@ -107,7 +107,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - One Skill call per role, one role per response, its Inputs as `args`. pinned.
 - Each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, the verdict and the word. hook `scope role`, `lane role`, `gate`.
 - After spec-auditor's or spec-gatekeeper's report, the next Skill call's `args` starts with its last line. pinned; hook `gate` reads it.
-- Steps 1 to 6 stop only where they stop: a role's turn that ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN` is sent back once, so the run goes on without the user (#261). hook `lane role`.
+- Steps 1 to 6 stop only where they stop: a role's turn that ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN` is sent back once per role call, so the run goes on without the user (#261). hook `lane role`.
 - Count RED yourself: 3 in a row go to the user. text, unseen (the hook does not count in this mode; README says so).
 
 ### skills/speckit-team/SKILL.md: Project

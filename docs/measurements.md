@@ -533,6 +533,20 @@ and nothing is skipped, at the cost of the one response a typed "go on" costs to
 its turn on one of the words, so the send-back was never reached; `test/e2e.test.mjs` shows Claude Code
 delivers it and goes on, and no run with a real model has shown it yet.
 
+The `--skill-agents` run of 2026-11-08 was the first to reach it (its main transcript, read 2026-11-10).
+Of the 4 Stops on those words, the ones after `VERDICT: PASS` and `RED` were sent back and the run went
+on; the ones after `RESULT: STUB` and `RESULT: GREEN` were not, and each waited for the harness's typed
+"go on". Those two roles were called in a turn the hook had already continued, and Claude Code keeps
+`stop_hook_active` true on every later Stop of such a turn, which the hook read as "sent back already".
+So only every other role was handed on. The send-back is now counted per role record, not per turn.
+Checked at $0 against the fake API on Claude Code 2.1.322 (`test/e2e.test.mjs`): with the old hook the
+session ends on `RESULT: STUB` after 4 requests, with the new one it makes the 5th. The same flag held
+back the role's lane block and the spec-gatekeeper role's drift refusal in a continued turn, a warning
+where a block was meant; both are counted per record too (`test/hook.test.mjs`). No run with a real
+model has been made since, so the stops a full run saves are worked out, not measured: half of the
+2 + 2R above, 1 + R for a feature of R rounds, each one a wait for the user and, when the wait
+outlasts the prompt cache, a rewrite of the context (72k and 81k tokens at those two Stops).
+
 ## Baseline of the agent-skills lessons (#188, #186, #187)
 
 Taken 2026-10-27 with `tools/eval.mjs` on the unchanged prompts of this branch, before any prompt change,

@@ -677,13 +677,24 @@ function recordReport(rec, last = null, where = 'stop') {
   // #228, as for the agent: sent back once at Stop (the role stays the acting one), then recorded as REJECTED.
   const drifted = word === 'APPROVED' ? driftOf(feat) : null;
   if (drifted?.problems?.length) {
-    if (where === 'stop' && !input.stop_hook_active) block(driftRefusal('the spec-gatekeeper role', drifted.problems));
+    if (where === 'stop' && sendBackOnce(rec, 'drift')) block(driftRefusal('the spec-gatekeeper role', drifted.problems));
     writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: null, role: rec.role });
     addNote(`speckit-team: the spec-gatekeeper role's APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}`);
     return;
   }
   if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
+}
+
+// Whether a role's Stop may still be sent back for `why` ('lane', 'drift'): once per role record, counted in
+// the record. Not `stop_hook_active`: Claude Code keeps it true for the rest of a turn a Stop hook continued,
+// so a role called after an earlier role's hand-on would never be sent back (the 2026-11-08 skill-agents run
+// waited for the user after RESULT: STUB and RESULT: GREEN). A record that cannot be written falls back to it.
+function sendBackOnce(rec, why) {
+  const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
+  if (sent.includes(why)) return false;
+  try { writeJson(roleFile(str(input.session_id)), { ...rec, sentBack: [...sent, why] }); } catch { return !input.stop_hook_active; }
+  return true;
 }
 
 // Close the acting role (contract section 6) at a Skill call ('skill': denies on a lane violation, else
@@ -709,12 +720,13 @@ function closeRole(rec, at, gate = null) {
       const text = `Lane check: ${rec.role} changed files outside its lane: ${r.outside.join(', ')}. `
         + `Restore them (git checkout ${rec.sha.slice(0, 12)} -- <file>, or delete new files), then go on.`;
       if (at === 'skill') deny(text);
-      if (!input.stop_hook_active) block(text);
+      if (sendBackOnce(rec, 'lane')) block(text);
       drop();
       emit({ systemMessage: `WARNING: ${rec.role} left changes outside its lane: ${r.outside.join(', ')}` });
     }
   }
-  if (at === 'stop' && !input.stop_hook_active) {
+  // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
+  if (at === 'stop') {
     const word = handOnWord(rec);
     if (word) {
       drop();
