@@ -368,6 +368,9 @@ test('installed skill records answers that take every recommendation itself, whi
   assert.ok(stop.includes('rename `## Open Decisions` to `## Decisions`'));
   assert.match(stop, /each chosen `Spec:` line[^.]*`spec\.md`/i, 'the main session applies the chosen spec lines');
   assert.match(stop, /replace it without reading `spec\.md` first/, 'no read to find the place');
+  // The record is one command of the hook (test/hook.test.mjs holds what it writes), chained to the commit.
+  assert.match(stop, /one Bash call: `node "[^"]+" decisions --recommended`, chained with `&&` to the commit/, 'the skill runs the command');
+  assert.match(stop, /On exit 1 it changed nothing/, 'and says what a refusal means');
   assert.match(stop, /Otherwise send all the answers to one architect revision/);
   // The side-by-side run of 2026-10-25 (Sonnet main session) still launched a dictated product-owner
   // for a new Edge Cases line and a dictated architect for the record, 0.16M and 44 s: the Handoffs

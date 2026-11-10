@@ -544,9 +544,12 @@ plan stop the skill reads the section in one command and asks you about every op
 once; with more than 4, its first question takes every recommended option in one answer, in which
 you can also name exceptions (`D5: B`). The architect writes the plan and the tasks as its
 recommendations make them, so when every answer is the recommended option the main session launches
-no one: it adds `Answer (<date>): <option>, as recommended` under each decision, renames the section
-`## Decisions` and puts the chosen `Spec:` lines into the spec itself (in the full run of 2026-10-24
-that was an architect and a product-owner for one edit each, 0.16M tokens). Otherwise one architect
+no one: one command of the hook, `decisions --recommended`, adds `Answer (<date>): <option>, as
+recommended` under each decision, renames the section `## Decisions` and puts the chosen `Spec:` lines
+into the spec, or changes nothing and names the line it could not place (in the full run of 2026-10-24
+that was an architect and a product-owner for one edit each, 0.16M tokens; in the runs of 2026-11-08 and
+2026-11-10, 3 or 4 main-session responses with a script of its own). The hook refuses the audit's
+launch while `plan.md` still lists an open decision. Otherwise one architect
 revision applies all the answers, moving each entry to a `## Decisions` section with the answer and
 the date, and product-owner, launched in the same message, rewords the spec lines the chosen options
 carry. The spec and the
@@ -1052,6 +1055,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `start` | `settings.json`: `SubagentStart` of the eight agents | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all eight when a project is active (007); never decides |
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
 | `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest. `check team`, which `/speckit-team` runs, adds one `state:` line each for the working tree, the constitution (rules, template or missing) and the branch, so step 0 is one call ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
+| `decisions --recommended` | CLI: the plan stop of `/speckit-team`, when every answer is the recommended option | hand-written edits at the plan stop: it records each answer in `plan.md` and applies the recommended options' `Spec:` lines to `spec.md`, or changes nothing and names the line it could not place (exit 1). The `Skill\|Agent` `gate` refuses a spec-auditor launch while `plan.md` still lists an open decision, so a failed record is not followed by an audit of an unsettled plan ([measurements](docs/measurements.md#the-plan-stop-in-one-call)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds, or an FR of its `spec.md` in no test line naming the feature's number that no task excuses with `No test: <reason>` ([#235](https://github.com/PIsberg/speckit-agents/issues/235)) (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError`, a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240), and so is one on a missing module the error names by a test path, a helper or a fixture (#245); a missing production file, a package or a path outside the repo is a valid RED |
@@ -1544,11 +1548,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 577 tests:
+`npm test` runs 583 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 182 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 188 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 131 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |

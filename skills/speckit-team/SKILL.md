@@ -252,13 +252,16 @@ answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recomme
 When every answer is the option the architect recommended, also when the user gave it in advance,
 its plan and tasks already follow it, so launch no one: no architect, no product-owner, never a
 dictated revision. Record the answers yourself, in the message that commits them and launches the
-audit. Under each decision's `###` heading in `plan.md` add the line
-`Answer (<date>): <option>, as recommended`, then rename `## Open Decisions` to `## Decisions` (if
-`plan.md` has a `## Decisions` section already, move the entries under it instead). Put each chosen
+audit, with one Bash call: `node "{{HOOK}}" decisions --recommended`, chained with `&&` to the commit.
+It makes the whole record and reads nothing into your context: under each decision's `###` heading in
+`plan.md` the line `Answer (<date>): <option>, as recommended`, then it will rename `## Open Decisions` to `## Decisions`
+(entries move under a `## Decisions` section that is already there), and it puts each chosen
 `Spec:` line's wording into `spec.md`: a changed line in place of the text it quotes, a line it adds
-under the heading where the `Spec:` line puts it. The quote is the line as it is, so replace it without
-reading `spec.md` first; grep for the place only when a quote is not found. In two full runs of
-2026-11-08 finding the place took a response of its own. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
+under the heading where the `Spec:` line puts it. On exit 1 it changed nothing and names the line it
+could not place, and the hook refuses the audit while a decision is open: make that record by hand
+(replace it without reading `spec.md` first when the quote is right), commit, and launch the audit again.
+In four full runs of 2026-11-08 and 2026-11-10 the main session wrote these edits with a script of its
+own, in 3 or 4 responses. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
 product-owner were launched for one such Edit each instead, 0.16M tokens and about 44 s.
 Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:

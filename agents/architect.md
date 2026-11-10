@@ -89,9 +89,9 @@ You decide how the feature is built, and in what order.
    adds it in one answer. Work the consequences out now. In the 003 run a side effect of the
    rename rule came out only in the second revision, and that cost a whole extra round. Where an
    option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
-   under the option a line `Spec: <ID>: "<the line as it is, whole>" becomes "<its new wording>"`, or for
-   a new line `Spec: under <heading>: add "<line>"`: the main session replaces the quoted text without
-   reading it, or sends the lines to product-owner. In the 004 run a decision that contradicted FR-012 failed the first audit.
+   under the option, each on one line, `Spec: <ID>: "<the line as it is, whole>" becomes "<its new wording>"`, or for
+   a new line `Spec: under <heading>: add "<line>"`: a script applies the chosen ones by the quoted text,
+   or product-owner gets the lines. In the 004 run a decision that contradicted FR-012 failed the first audit.
 
 A revision edits the artifacts in place: leave both skills unread, unless it must regenerate a whole
 artifact.

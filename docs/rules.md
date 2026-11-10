@@ -128,9 +128,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Stop for the spec review; commit it with the architect's launch. pinned.
 
 ### skills/speckit-team/SKILL.md: 2. Plan and tasks: architect
-<!-- fingerprint: fb74fe66 -->
+<!-- fingerprint: 5310c5fd -->
 - Read only `## Open Decisions`; ask every decision at one stop. pinned.
-- Answers that all take the recommendation: record them yourself, launch no one; replace the text a `Spec:` line quotes without reading the spec. pinned.
+- Answers that all take the recommendation: launch no one, record them with `decisions --recommended` in the message that commits and launches the audit. script `decisions` (all or nothing), pinned; hook `gate` refuses a spec-auditor launch while `plan.md` has an open decision.
 - Otherwise one architect revision and the `Spec:` lines to product-owner in one message. pinned.
 - Ask once whether to build `[P]` slices side by side. pinned.
 
@@ -250,7 +250,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: 29cba63c -->
+<!-- fingerprint: e33e7bea -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
@@ -262,7 +262,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
 - Check every constitution MUST rule before reporting. text; spec-auditor checks (CRITICAL).
-- `## Open Decisions` with options, consequences and `Spec:` lines that quote the line they replace; plan and tasks as recommended. pinned.
+- `## Open Decisions` with options, consequences and `Spec:` lines, each on one line, that quote the line they replace; plan and tasks as recommended. pinned; script `decisions` refuses a line in another form.
 - Contested findings, answered decisions, dictated revisions. pinned.
 
 ### agents/architect.md: Context
