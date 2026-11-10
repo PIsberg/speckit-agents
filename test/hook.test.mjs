@@ -2406,16 +2406,40 @@ test('#284: five lane role processes at one Stop send the lane block back once, 
   const { dir } = repo();
   putRole(dir, 'product-owner');
   putFile(dir, 'src/x.js');
-  const outs = await stopRoleTogether(dir, 5);
+  const t = transcriptIn(dir, [userRow('typed'), assistantRow('Spec written.')]);
+  const outs = await stopRoleTogether(dir, 5, { last_assistant_message: 'Spec written.', transcript_path: t });
   const blocks = outs.filter((o) => o?.decision === 'block');
   assert.equal(blocks.length, 1, JSON.stringify(outs));
   assert.match(blocks[0].reason, /^Lane check: product-owner changed files outside its lane: src\/x\.js\./);
   assert.ok(outs.every((o) => o === null || o.decision === 'block'), `the others say nothing: ${JSON.stringify(outs)}`);
   assert.ok(hasRole(dir), 'the record stays for the next Stop');
-  // The next Stop, also five processes: no second send-back; the record goes with a warning.
-  const next = await stopRoleTogether(dir, 5);
+  // The next Stop follows the feedback and a new response, also five processes: no second send-back; the record
+  // goes with a warning.
+  fs.appendFileSync(t, `${JSON.stringify(userRow('Stop hook feedback: Lane check'))}\n${JSON.stringify(assistantRow('Restored nothing.'))}\n`);
+  const next = await stopRoleTogether(dir, 5, { last_assistant_message: 'Restored nothing.', transcript_path: t, stop_hook_active: true });
   assert.ok(next.every((o) => o?.decision !== 'block'), JSON.stringify(next));
   assert.ok(next.some((o) => /WARNING: product-owner left changes outside its lane: src\/x\.js/.test(msg(o))), JSON.stringify(next));
+  assert.ok(!hasRole(dir), 'the record is removed');
+});
+
+// The same race, in the order Linux CI ran it (PR #295): a process of the Stop that starts after another
+// has already sent the block back reads `sentBack` as written. It is the same Stop, not the next one: it
+// says nothing and leaves the record, where it used to warn and remove it under the block it followed.
+test('#284: a lane role process that reads the record after its Stop sent the block back says nothing', () => {
+  const { dir } = repo();
+  putRole(dir, 'product-owner');
+  putFile(dir, 'src/x.js');
+  const t = transcriptIn(dir, [userRow('typed'), assistantRow('RED')]);
+  const at = { last_assistant_message: 'RED', transcript_path: t };
+  assert.equal(stopRole(dir, at)?.decision, 'block');
+  const late = stopRole(dir, at);
+  assert.equal(late, null, JSON.stringify(late));
+  assert.ok(hasRole(dir), 'the record stays for the next Stop');
+  // A later Stop whose last message is the same word: the transcript has grown, so it is told apart and warned.
+  fs.appendFileSync(t, `${JSON.stringify(userRow('Stop hook feedback: Lane check'))}\n${JSON.stringify(assistantRow('RED'))}\n`);
+  const next = stopRole(dir, { ...at, stop_hook_active: true });
+  assert.notEqual(next?.decision, 'block', JSON.stringify(next));
+  assert.match(msg(next), /WARNING: product-owner left changes outside its lane: src\/x\.js/);
   assert.ok(!hasRole(dir), 'the record is removed');
 });
 

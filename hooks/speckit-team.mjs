@@ -717,9 +717,26 @@ function recordReport(rec, last = null, where = 'stop') {
 // so a role called after an earlier role's hand-on would never be sent back (the 2026-11-08 skill-agents run
 // waited for the user after RESULT: STUB and RESULT: GREEN). A record that cannot be written falls back to it.
 // One process of a Stop sends it back (#284, `claimed`); the others end with no output and leave the record.
+// A process of that Stop can also start after the send-back was written (Linux CI, PR #295): `sentStop` holds
+// the Stop it went out at, told by its last message and the transcript's size, which every process of one
+// Stop is given and a later Stop is not: the block's feedback and a new response come between, so the
+// transcript has grown even when the message repeats ("RED"). Without either the Stop cannot be told, and it
+// counts as a later one, as before #284.
+function stopKey() {
+  const last = str(input.last_assistant_message);
+  const t = str(input.transcript_path);
+  if (last === null || t === null) return null;
+  let size;
+  try { size = fs.statSync(t).size; } catch { return null; }
+  return createHash('sha256').update(`${size}\0${last}`).digest('hex').slice(0, 16);
+}
 function sendBackOnce(rec, why) {
   const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
-  if (sent.includes(why)) return false;
+  const stop = stopKey();
+  if (sent.includes(why)) {
+    if (stop !== null && rec.sentStop?.[why] === stop) finish();
+    return false;
+  }
   const id = str(input.session_id);
   const claim = roleClaim(id, rec, why);
   if (!claimed(rec, why)) {
@@ -728,7 +745,7 @@ function sendBackOnce(rec, why) {
     if (held !== UNRECORDED) finish();
     return !input.stop_hook_active;
   }
-  try { writeJson(roleFile(id), { ...rec, sentBack: [...sent, why] }); } catch {
+  try { writeJson(roleFile(id), { ...rec, sentBack: [...sent, why], sentStop: { ...(rec.sentStop && typeof rec.sentStop === 'object' ? rec.sentStop : {}), [why]: stop } }); } catch {
     try { fs.writeFileSync(claim, UNRECORDED); } catch { /* the claim stays empty: later Stops say nothing */ }
     return !input.stop_hook_active;
   }

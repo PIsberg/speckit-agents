@@ -42,7 +42,9 @@ Claims, `role/<session_id>.<why>.<key>.claim` (#284): one per send-back a Stop m
 being `lane`, `drift` or `hand-on` and `key` the first 16 hex characters of the SHA-256 of the
 record's `role`, `at` and `sha`. Created exclusively by the one `lane role` process of that Stop that
 sends it back (contract section 6 step 6). Empty, or `unrecorded` when the record's `sentBack` could not
-be written. Removed with the record, and when the next role's record is written.
+be written. Removed with the record, and when the next role's record is written. The record's `sentBack`
+(the reasons already sent back) gains `sentStop`, reason to the Stop it went out at: the first 16 hex
+characters of the SHA-256 of the transcript's size and the last message, or null when either was missing.
 
 ## Verdict and ends records (changed, additive)
 
