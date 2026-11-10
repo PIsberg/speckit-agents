@@ -336,7 +336,11 @@ test('installed skill, architect and product-owner settle the plan decisions and
   const architect = read('agents', 'architect.md');
   const owner = read('agents', 'product-owner.md');
   const stop = skill.slice(skill.indexOf('## 2.'), skill.indexOf('## 3.'));
-  assert.ok(architect.includes('`Spec:`'), 'architect writes the new wording of a spec line an option changes');
+  // The line carries the text it replaces, so the main session edits without looking the place up: in two
+  // full runs of 2026-11-08 finding it took a response of its own. Both halves, or the quote goes unused.
+  assert.ok(architect.includes('`Spec: <ID>: "<the line as it is, whole>" becomes "<its new wording>"`'), 'architect quotes the spec line an option changes, with its new wording');
+  assert.ok(architect.includes('`Spec: under <heading>: add "<line>"`'), 'and says where a new line goes');
+  assert.ok(stop.includes('in place of the text it quotes'), 'the plan stop replaces the quoted text');
   for (const term of ['`Spec:`', 'product-owner', 'same message']) assert.ok(stop.includes(term), `the plan stop names ${term}`);
   assert.match(owner.slice(owner.indexOf('## Inputs'), owner.indexOf('## Process')), /plan decisions/);
   assert.match(skill.slice(0, skill.indexOf('## 1.')), /at most 4 questions/, 'the limit is stated before the first stop');
@@ -363,7 +367,10 @@ test('installed skill records answers that take every recommendation itself, whi
   assert.ok(stop.includes('`Answer (<date>): <option>, as recommended`'), 'the record line');
   assert.ok(stop.includes('rename `## Open Decisions` to `## Decisions`'));
   assert.match(stop, /each chosen `Spec:` line[^.]*`spec\.md`/i, 'the main session applies the chosen spec lines');
-  assert.match(stop, /offset and a limit/, 'reading only the line it edits');
+  assert.match(stop, /replace it without reading `spec\.md` first/, 'no read to find the place');
+  // The record is one command of the hook (test/hook.test.mjs holds what it writes), chained to the commit.
+  assert.match(stop, /one Bash call: `node "[^"]+" decisions --recommended`, chained with `&&` to the commit/, 'the skill runs the command');
+  assert.match(stop, /On exit 1 it changed nothing/, 'and says what a refusal means');
   assert.match(stop, /Otherwise send all the answers to one architect revision/);
   // The side-by-side run of 2026-10-25 (Sonnet main session) still launched a dictated product-owner
   // for a new Edge Cases line and a dictated architect for the record, 0.16M and 44 s: the Handoffs

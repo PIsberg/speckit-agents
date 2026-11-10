@@ -3056,3 +3056,116 @@ test('#231: relay says nothing outside a Spec Kit repo, on another tool, or with
   assert.equal(run(dir, ['relay'], { hook_event_name: 'PostToolUse', tool_name: 'Bash', session_id: 's34' }), null);
   for (const session_id of [undefined, 7, '../x']) assert.ok(!decided(relay(dir, session_id)), String(session_id));
 });
+
+// ---- decisions --recommended: the plan stop's record, when every answer is the recommended option ----
+// The 2026-11-10 run (and three of 2026-11-08) wrote these edits with a script of the main session's own,
+// 3 to 4 responses at the plan stop, one of them a script that failed. The command makes them in one call,
+// or changes nothing and says which line it could not place.
+const TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+const SPEC = ['# Spec', '', '### Edge Cases', '', '- Sum of an empty list is `0`.', "- Capitalize of `''` is `''`.", '', '## Requirements', '',
+  '- **FR-003**: `capitalize(text)` returns the text with its first character in upper case.', "- **FR-004**: `capitalize('')` returns `''`.", '', '## Assumptions', '', '- Inputs are valid.', ''].join('\n');
+const PLAN = (decisions) => ['# Plan', '', '## Summary', '', 'Two functions.', '', ...decisions, ''].join('\n');
+const D1 = ['### D1: What is the "first character"?', '', 'Strings are UTF-16.', '',
+  '- **A (recommended): the first code point.** One case more in T005.',
+  '  Spec: FR-003: "- **FR-003**: `capitalize(text)` returns the text with its first character in upper case." becomes "- **FR-003**: `capitalize(text)` returns the text with its first code point in upper case."',
+  '  Spec: under Edge Cases: add "- A first letter outside the BMP is upper-cased whole: `"𐐨bc"` gives `"𐐀bc"`."',
+  '- **B: the first code unit.** T005 drops its case.',
+  '  Spec: under Assumptions: add "- The first character is the first UTF-16 code unit."'];
+const D2 = ['', '### D2: Re-record the demo?', '', '- **A (recommended): no.** Nothing changes.', '- **B: yes.** One more task.'];
+const decisionsRepo = (plan, spec = SPEC) => {
+  const { dir } = repo();
+  fs.writeFileSync(path.join(dir, FEAT, 'plan.md'), plan);
+  fs.writeFileSync(path.join(dir, FEAT, 'spec.md'), spec);
+  return dir;
+};
+const decide = (dir, ...a) => spawnSync('node', [HOOK, 'decisions', ...a], { cwd: dir, encoding: 'utf8' });
+const featFile = (dir, name) => fs.readFileSync(path.join(dir, FEAT, name), 'utf8');
+
+test('decisions --recommended records each answer, renames the section and applies the recommended Spec: lines', () => {
+  const dir = decisionsRepo(PLAN(['## Open Decisions', '', ...D1, ...D2]));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const plan = featFile(dir, 'plan.md');
+  assert.ok(!plan.includes('## Open Decisions'), plan);
+  assert.ok(plan.includes(`## Decisions\n\n### D1: What is the "first character"?\n\nAnswer (${TODAY}): A, as recommended\n\nStrings are UTF-16.`), plan);
+  assert.ok(plan.includes(`### D2: Re-record the demo?\n\nAnswer (${TODAY}): A, as recommended\n`), plan);
+  const spec = featFile(dir, 'spec.md');
+  assert.ok(spec.includes('- **FR-003**: `capitalize(text)` returns the text with its first code point in upper case.\n- **FR-004**'), spec);
+  assert.ok(!spec.includes('first character in upper case'), 'the old line is gone');
+  assert.ok(spec.includes("- Capitalize of `''` is `''`.\n- A first letter outside the BMP is upper-cased whole: `\"𐐨bc\"` gives `\"𐐀bc\"`.\n\n## Requirements"), `the new line ends its section:\n${spec}`);
+  assert.ok(!spec.includes('UTF-16 code unit'), "option B's line is not applied");
+  assert.match(r.stdout, new RegExp(`^speckit-team: decisions: recorded D1: A, D2: A as recommended in ${FEAT}/plan\\.md; 2 Spec: lines applied to ${FEAT}/spec\\.md$`, 'm'));
+});
+
+test('decisions --recommended moves the entries under a ## Decisions section that is already there', () => {
+  const dir = decisionsRepo(PLAN(['## Decisions', '', '### D0: Earlier', '', 'Answer (2026-11-01): B', '', '## Open Decisions', ...D2]));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout);
+  const plan = featFile(dir, 'plan.md');
+  assert.ok(!plan.includes('## Open Decisions'), plan);
+  assert.equal(plan.split('## Decisions').length - 1, 1, 'one Decisions section');
+  assert.ok(plan.indexOf('### D0: Earlier') < plan.indexOf('### D2: Re-record the demo?'), plan);
+  assert.ok(plan.includes(`### D2: Re-record the demo?\n\nAnswer (${TODAY}): A, as recommended`), plan);
+});
+
+test('decisions --recommended changes nothing and names the line when one cannot be placed', () => {
+  const bad = [
+    ['a quote that is not in the spec', D1.map((l) => l.replace('its first character in upper case." becomes', 'its 1st character in upper case." becomes')), /D1: the quoted text is not in \S+spec\.md: /],
+    ['a heading the spec does not have', D1.map((l) => l.replace('under Edge Cases', 'under Corner Cases')), /D1: \S+spec\.md has no heading "Corner Cases"/],
+    ['a Spec: line in another form', D1.map((l) => (l.includes('under Edge Cases') ? '  Spec: FR-009 new wording' : l)), /D1: not `Spec: <ID>: "<the line as it is>" becomes "<new wording>"` or `Spec: under <heading>: add "<line>"`: Spec: FR-009 new wording/],
+    ['a decision with no recommended option', D1.map((l) => l.replace(' (recommended)', '')), /D1: no option is marked \(recommended\)/],
+  ];
+  for (const [what, d1, why] of bad) {
+    const plan = PLAN(['## Open Decisions', '', ...d1, ...D2]);
+    const dir = decisionsRepo(plan);
+    const r = decide(dir, '--recommended');
+    assert.equal(r.status, 1, `${what}: ${r.stdout}`);
+    assert.match(r.stdout, why, what);
+    assert.match(r.stdout, /nothing was changed/, what);
+    assert.equal(featFile(dir, 'plan.md'), plan, `${what}: plan.md untouched`);
+    assert.equal(featFile(dir, 'spec.md'), SPEC, `${what}: spec.md untouched`);
+  }
+  const twice = decisionsRepo(PLAN(['## Open Decisions', '', ...D1]), SPEC.replace('- Inputs are valid.', '- Inputs are valid.\n- **FR-003**: `capitalize(text)` returns the text with its first character in upper case.'));
+  const r2 = decide(twice, '--recommended');
+  assert.equal(r2.status, 1, r2.stdout);
+  assert.match(r2.stdout, /D1: the quoted text is in \S+spec\.md 2 times/);
+});
+
+test('decisions refuses other arguments, a plan with no open decisions and a repo with no active feature', () => {
+  const none = decisionsRepo(PLAN(['## Decisions', '', '### D0: Earlier', '', 'Answer (2026-11-01): B']));
+  const r = decide(none, '--recommended');
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /plan\.md has no ## Open Decisions section/);
+  const args = decide(decisionsRepo(PLAN(['## Open Decisions', ...D2])), 'D1=B');
+  assert.equal(args.status, 1);
+  assert.match(args.stdout, /the only argument is --recommended/);
+  const noFeat = decisionsRepo(PLAN(['## Open Decisions', ...D2]));
+  fs.rmSync(path.join(noFeat, '.specify', 'feature.json'));
+  const r3 = decide(noFeat, '--recommended');
+  assert.equal(r3.status, 1);
+  assert.match(r3.stdout, /no feature is active/);
+});
+
+test('decisions --recommended keeps CRLF files CRLF', () => {
+  const crlf = (t) => t.replace(/\n/g, '\r\n');
+  const dir = decisionsRepo(crlf(PLAN(['## Open Decisions', '', ...D1])), crlf(SPEC));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout);
+  for (const name of ['plan.md', 'spec.md']) assert.ok(!/[^\r]\n/.test(featFile(dir, name)), `${name} has a bare LF`);
+  assert.ok(featFile(dir, 'spec.md').includes('first code point in upper case.\r\n'));
+});
+
+// The skill records the answers in the message that launches the audit. If the record fails there, the
+// launch in the same message would still run, and an audit of a plan nobody settled costs a round.
+test('a spec-auditor launch is refused while plan.md has open decisions, and let through once they are recorded', () => {
+  const dir = decisionsRepo(PLAN(['## Open Decisions', '', ...D1, ...D2]));
+  const launch = () => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: 'spec-auditor', prompt: 'audit the spec' } });
+  const held = launch();
+  assert.ok(denied(held), JSON.stringify(held));
+  assert.match(held.hookSpecificOutput.permissionDecisionReason, /plan\.md still has open decisions \(D1, D2\)/);
+  assert.match(held.hookSpecificOutput.permissionDecisionReason, /decisions --recommended/);
+  assert.equal(decide(dir, '--recommended').status, 0);
+  assert.equal(denied(launch()), false, 'recorded: the audit may run');
+  const empty = decisionsRepo(PLAN(['## Open Decisions', '', 'None.']));
+  assert.equal(denied(run(empty, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: 'spec-auditor', prompt: 'audit the spec' } })), false, 'a section that lists no decision holds nothing up');
+});

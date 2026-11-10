@@ -722,6 +722,38 @@ session `sonnet`, branch `perf/step0-one-call` at `2001d81`, $0.72, every check 
 response was `check team` alone, 191 characters back, and the second was the product-owner role's Skill
 call. One sample ([#286](https://github.com/PIsberg/speckit-agents/issues/286)).
 
+## The plan stop in one call
+
+When every answer at the plan stop is the recommended option, the main session records the answers
+itself and launches no one. Read on 2026-11-10 from the main transcripts of four full runs, counting
+the responses between the architect's report and the message that commits and launches the audit:
+
+| Run | Responses | What they were |
+|---|--:|---|
+| `two-2`, 2026-11-08 | 3 | read `## Open Decisions`; read the spec's section to find the line; a `node -e` script for both files |
+| `sbs-1`, 2026-11-08 | 3 | read the section; grep the headings of both files; a `printf` and `sed` edit |
+| `two-3`, 2026-11-08 | 1 | read the section; the edit went into the launch message |
+| 2026-11-10, with quoted `Spec:` lines | 4 | read the section; read the spec's section; a script whose heredoc failed; the script again |
+
+The first change tried was the prompt alone: the architect's `Spec:` line quotes the line it replaces
+(`Spec: <ID>: "<the line as it is>" becomes "<new wording>"`, or `Spec: under <heading>: add "<line>"`),
+so that no lookup is needed. One run with it on 2026-11-10 (`tools/full-run.mjs --login --two-slices`,
+Claude Code 2.1.322, main session `sonnet`, branch `perf/spec-lines-quote` at its first commit, $1.71,
+10 launches, 19 main-session responses, 1.12M main input, every check passed): the architect wrote the
+new form, and the plan stop took 4 responses, not fewer. Its one `Spec:` line added a line under a
+heading, which the quote does not place, and the edit was again a script of the session's own, written
+twice. The lookup was not the cost; writing the edit by hand was.
+
+What it led to: `decisions --recommended`, a command of the hook that makes the whole record in one
+Bash call and reads nothing into the main context, or changes nothing and names the line it could not
+place. The skill chains it to the commit in the message that launches the audit, and the hook refuses
+that launch while `plan.md` still lists an open decision, so a failed record is not followed by an
+audit of an unsettled plan. Held by `test/hook.test.mjs` (6 tests). Replayed on that run's `plan.md`
+and `spec.md` with the session's edits undone, it gives the session's own result but for where in
+`### Edge Cases` the new line sits (last, where the session put it second to last) and one blank line.
+That a main session then needs 1 response there, the read of the section, has not been seen in a run.
+The same run answered step 0 in one response again, in agents mode this time.
+
 ## The live sweep of 2026-11-08
 
 Taken 2026-11-08 with Claude Code 2.1.319, Windows 11, main session `sonnet`, `--login` on the owner's

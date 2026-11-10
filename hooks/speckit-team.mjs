@@ -35,6 +35,9 @@
 //                           is not this install alone (mixed builds, a second install of another build, a project
 //                           install in a folder Claude Code has not trusted); `note:` lines otherwise.
 //   check team              the same, then `state:` lines for /speckit-team's step 0: working tree, constitution, branch
+//   decisions --recommended Not a hook: /speckit-team's plan stop runs it when every answer is the recommended option.
+//                           Records the answers in plan.md and applies the recommended `Spec:` lines to spec.md, or
+//                           changes nothing and exits 1. `gate` refuses a spec-auditor launch while a decision is open
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -107,7 +110,7 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
 const [mode, ...args] = process.argv.slice(2);
 // `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
 // exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
-const CLI = mode === 'project' || mode === 'check' || mode === 'audit';
+const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
 const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -1127,6 +1130,101 @@ if (mode === 'gate') {
 // #242: after two spec-auditor FAILs in a row, the main session's next launch of it is refused until the user
 // says to go on. The count is per feature and a PASS clears it. `audit --approve` is run by the skill only on
 // the user's yes, and spends the approval on one launch. The hook refuses; it cannot tell the user's yes from a model's.
+// `decisions --recommended`: the plan stop's record when every answer is the option the architect recommended
+// (skill step 2). Under each `### D<n>` of plan.md's `## Open Decisions` it adds the Answer line, renames the
+// section `## Decisions` (or moves the entries under one that exists), and applies the recommended options'
+// `Spec:` lines to spec.md. All or nothing: a line it cannot place is named and no file changes. In the full
+// runs of 2026-11-08 and 2026-11-10 the main session wrote these edits by hand in 3 to 4 responses.
+// The IDs of the `### D<n>` entries under plan.md's `## Open Decisions`, in order; none when the section is absent.
+function openDecisions(planText) {
+  const lines = planText.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^## Open Decisions\s*$/.test(l));
+  if (start < 0) return [];
+  const ids = [];
+  for (let i = start + 1; i < lines.length && !/^## /.test(lines[i]); i += 1) { const m = /^### (D\d+)\b/.exec(lines[i]); if (m) ids.push(m[1]); }
+  return ids;
+}
+const SPEC_FORMS ='`Spec: <ID>: "<the line as it is>" becomes "<new wording>"` or `Spec: under <heading>: add "<line>"`';
+function recordRecommended(planText, specText, planRel, specRel, day) {
+  const eolOf = (t) => (t.includes('\r\n') ? '\r\n' : '\n');
+  const planEol = eolOf(planText); const specEol = eolOf(specText);
+  let plan = planText.split(planEol);
+  const start = plan.findIndex((l) => /^## Open Decisions\s*$/.test(l));
+  if (start < 0) return { problems: [`${planRel} has no ## Open Decisions section`] };
+  const nextSection = (lines, from) => { const i = lines.findIndex((l, n) => n > from && /^## /.test(l)); return i < 0 ? lines.length : i; };
+  const end = nextSection(plan, start);
+  const heads = [];
+  for (let i = start + 1; i < end; i += 1) { const m = /^### (D\d+)\b/.exec(plan[i]); if (m) heads.push({ i, id: m[1] }); }
+  if (!heads.length) return { problems: [`the ## Open Decisions section of ${planRel} lists no ### D<n> decision`] };
+  const problems = []; const answers = []; const edits = [];
+  heads.forEach((h, n) => {
+    const to = n + 1 < heads.length ? heads[n + 1].i : end;
+    const opts = [];
+    for (let i = h.i + 1; i < to; i += 1) { const m = /^- \*\*([A-Z])\b/.exec(plan[i]); if (m) opts.push({ letter: m[1], from: i, rec: /\(recommended\)/i.test(plan[i]) }); }
+    const k = opts.findIndex((o) => o.rec);
+    if (k < 0) { problems.push(`${h.id}: no option is marked (recommended)`); return; }
+    answers.push({ i: h.i, id: h.id, letter: opts[k].letter });
+    for (let i = opts[k].from; i < (k + 1 < opts.length ? opts[k + 1].from : to); i += 1) {
+      const m = /^\s*Spec:\s*(.*?)\s*$/.exec(plan[i]);
+      if (!m) continue;
+      const add = /^under (.+?): add "(.*)"$/.exec(m[1]);
+      const at = m[1].indexOf(': "'); const rest = at < 0 ? '' : m[1].slice(at + 3); const sep = rest.indexOf('" becomes "');
+      if (add) edits.push({ id: h.id, heading: add[1], line: add[2] });
+      else if (sep >= 0 && rest.endsWith('"') && rest.length > sep + 11) edits.push({ id: h.id, old: rest.slice(0, sep), neu: rest.slice(sep + 11, -1) });
+      else problems.push(`${h.id}: not ${SPEC_FORMS}: ${plan[i].trim()}`);
+    }
+  });
+  let spec = specText.split(specEol).join('\n');
+  const title = (l) => (/^#{1,6}\s+(.*?)\s*$/.exec(l)?.[1] ?? null)?.replace(/\s*\*\([^)]*\)\*$/, '').toLowerCase() ?? null;
+  for (const e of edits) {
+    if ('old' in e) {
+      const times = e.old ? spec.split(e.old).length - 1 : 0;
+      if (times === 1) spec = spec.split(e.old).join(e.neu);
+      else problems.push(times ? `${e.id}: the quoted text is in ${specRel} ${times} times: ${e.old}` : `${e.id}: the quoted text is not in ${specRel}: ${e.old}`);
+      continue;
+    }
+    const lines = spec.split('\n');
+    const h = lines.findIndex((l) => title(l) === e.heading.trim().toLowerCase());
+    if (h < 0) { problems.push(`${e.id}: ${specRel} has no heading "${e.heading}"`); continue; }
+    let stop = lines.findIndex((l, n) => n > h && (/^#{1,6}\s/.test(l) || /^---\s*$/.test(l)));
+    if (stop < 0) stop = lines.length;
+    let last = stop - 1;
+    while (last > h && !lines[last].trim()) last -= 1;
+    lines.splice(last + 1, 0, ...(last === h ? ['', e.line] : [e.line]));
+    spec = lines.join('\n');
+  }
+  if (problems.length) return { problems };
+  for (const a of [...answers].reverse()) plan.splice(a.i + 1, 0, '', `Answer (${day}): ${a.letter}, as recommended`);
+  const kept = plan.findIndex((l) => /^## Decisions\s*$/.test(l));
+  if (kept < 0) plan[start] = '## Decisions';
+  else {
+    const trim = (ls) => { const out = [...ls]; while (out.length && !out[0].trim()) out.shift(); while (out.length && !out.at(-1).trim()) out.pop(); return out; };
+    const block = trim(plan.splice(start, nextSection(plan, start) - start).slice(1));
+    const d = plan.findIndex((l) => /^## Decisions\s*$/.test(l));
+    let into = nextSection(plan, d);
+    while (into > d + 1 && !plan[into - 1].trim()) into -= 1;
+    plan.splice(into, 0, '', ...block, ...(into < plan.length ? [] : ['']));
+  }
+  while (plan.length > 1 && !plan.at(-1).trim() && !plan.at(-2).trim()) plan.pop();
+  return { problems, plan: plan.join(planEol), spec: spec.split('\n').join(specEol), answers, applied: edits.length };
+}
+if (mode === 'decisions') {
+  const feat = feature();
+  if (!feat || args.length !== 1 || args[0] !== '--recommended') projectRefuse(feat ? 'the only argument is --recommended' : 'no feature is active');
+  const planRel = `${feat}/plan.md`; const specRel = `${feat}/spec.md`;
+  const planText = readOr(path.join(root, planRel), undefined); const specText = readOr(path.join(root, specRel), undefined);
+  if (planText === undefined || specText === undefined) projectRefuse(`${planText === undefined ? planRel : specRel} cannot be read`);
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const r = recordRecommended(planText, specText, planRel, specRel, day);
+  if (r.problems.length) {
+    projectSay([...r.problems, 'nothing was changed; record the answers by hand, as step 2 of the skill says'].map((p) => `speckit-team: decisions: ${p}`).join('\n'), 1);
+  }
+  if (r.spec !== specText) fs.writeFileSync(path.join(root, specRel), r.spec);
+  fs.writeFileSync(path.join(root, planRel), r.plan);
+  projectSay(`speckit-team: decisions: recorded ${r.answers.map((a) => `${a.id}: ${a.letter}`).join(', ')} as recommended in ${planRel}; `
+    + `${r.applied ? `${r.applied} Spec: line${r.applied === 1 ? '' : 's'} applied to ${specRel}` : 'no Spec: line to apply'}`, 0);
+}
 if (mode === 'audit') {
   const feat = feature();
   if (!feat || args.length !== 1 || args[0] !== '--approve') {
@@ -1141,6 +1239,14 @@ if (mode === 'audit') {
 // AUDIT_FAIL_LIMIT FAILs in a row, unless an approval is waiting, which it spends. Otherwise it changes nothing.
 function holdAudit(feat) {
   if (!feat) return;
+  // The skill records the plan stop's answers in the message that launches the audit; a record that failed
+  // there must not be followed by an audit of a plan nobody settled.
+  const open = openDecisions(readOr(path.join(root, feat, 'plan.md'), ''));
+  if (open.length) {
+    deny(`speckit-team: ${feat}/plan.md still has open decisions (${open.join(', ')}), so the audit would read a plan nobody settled. `
+      + `Settle them at the plan stop first: node "${process.argv[1]}" decisions --recommended when every answer is the recommended option, `
+      + 'otherwise the architect revision. Then launch the audit again.');
+  }
   const a = auditRecord(feat);
   if (!(Number(a.fails) >= AUDIT_FAIL_LIMIT)) return;
   if (a.approved) { writeJson(auditFile(feat), { ...a, approved: false }); return; }
