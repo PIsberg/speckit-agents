@@ -88,15 +88,17 @@ the background (see Handoffs). AskUserQuestion takes at most 4 questions per cal
 in as many calls as it takes, all before the next launch.
 
 ## 0. Preconditions
-- Run `node "{{HOOK}}" check` in one Bash call. On exit 1, show its lines and stop with nothing launched:
-  the team that would run is not this install alone (#230). On exit 0, show any `note:` line, then go on.
-- `.specify/` exists. If not, stop: the user runs `specify init --here --integration claude`.
+- Run `node "{{HOOK}}" check team` in one Bash call with nothing else in it. On exit 1, show its lines and
+  stop with nothing launched: the team that would run is not this install alone (#230), or the repository
+  has no `.specify/` (the user runs `specify init --here --integration claude`). On exit 0, show any
+  `note:` line, then go on. Its `state:` lines answer the two bullets that quote one: run no other
+  command for this step.
 - The conversation holds nothing but this run. If it already holds other work, tell the user once,
   in one line, that every response of the run re-reads it and that `/clear` before `/speckit-team`
   avoids that (in the 004 run, 2.73M of the main session's 8.92M). Then go on.
-- The working tree is clean. If not, ask before going on.
-- `.specify/memory/constitution.md` holds real rules. If it is missing or still the template
-  (placeholder tokens such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
+- `state: working tree clean`. On any other working tree line, ask before going on.
+- `state: constitution holds rules`. When it is missing or still the template (placeholder tokens
+  such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
 - Your Agent tool has a `run_in_background` parameter. If not, Claude Code has fork subagents on
   (the default in an interactive session) and runs every agent in the background, which costs an
   extra waiting request per agent. Tell the user once, in one line, that `CLAUDE_CODE_FORK_SUBAGENT=0`

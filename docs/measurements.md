@@ -547,6 +547,29 @@ model has been made since, so the stops a full run saves are worked out, not mea
 2 + 2R above, 1 + R for a feature of R rounds, each one a wait for the user and, when the wait
 outlasts the prompt cache, a rewrite of the context (72k and 81k tokens at those two Stops).
 
+The run of 2026-11-10 with the fix (the one in [Step 0 in one call](#step-0-in-one-call)) did not reach
+it either: after `RESULT: STUB`, `RED` and `RESULT: GREEN` the session wrote no report text and made the
+next role's Skill call in the same turn, so no Stop fell on those words. Only the Stop after
+`VERDICT: PASS` was sent back. The pipeline ended one turn, the spec stop; the plan stop was skipped,
+as on 2026-11-01, because the harness's answer had approved the plan in advance.
+
+| | 2026-11-08 | 2026-11-10 |
+|---|--:|--:|
+| Cost | $0.65 | $0.72 |
+| Main-session responses, input | 36, 2.52M | 27, 2.16M |
+| Cache writes, of them the first response | 70k, 36k | 99k, 51k |
+| Turns the pipeline ended | 4 (spec stop, plan stop, after `RESULT: STUB`, after `RESULT: GREEN`) | 1 (spec stop) |
+| First line to last, harness resumes included | 828 s | 184 s |
+
+Not a clean comparison, and not a measurement of the fix: one run each, Claude Code 2.1.319 against
+2.1.322, and most of the 9 responses and of the time the second run saved are reports it did not write
+and a plan stop it did not hold, which is the loss #261's first fix was taken out for. It cost more
+because its first response wrote 51k tokens to the cache where the earlier one wrote 36k and read the
+rest. The send-back after `VERDICT: PASS` arrived twice, word for word: that Stop ran two `lane role`
+processes ([#284](https://github.com/PIsberg/speckit-agents/issues/284)), and the last Stop of the turn
+ran five. The fix stays shown by `test/e2e.test.mjs` only
+([#283](https://github.com/PIsberg/speckit-agents/issues/283)).
+
 ## Baseline of the agent-skills lessons (#188, #186, #187)
 
 Taken 2026-10-27 with `tools/eval.mjs` on the unchanged prompts of this branch, before any prompt change,
@@ -678,6 +701,24 @@ Where the agents' tokens went, from the subagent transcripts, led to three issue
 (product-owner preloads `speckit-specify` and `speckit-clarify`, 39,859 characters, on every launch) and
 [#258](https://github.com/PIsberg/speckit-agents/issues/258) (in skill-agents mode the loaded skills stay
 in the main context, about 26% of its input in the 2026-10-25 run, estimated).
+
+## Step 0 in one call
+
+Read on 2026-11-10 from five main transcripts of 2026-11-08 full runs (`two-1`, `two-2`, `two-3`,
+`sbs-1` and `skill-full` under the sweep's output folder). Step 0 asks four things of the repository:
+the install check, `.specify/`, a clean tree, a constitution that is not the template. In 3 of the 5
+the main session answered them in two responses, not one: in two its first command left the
+constitution out, in one it returned a bare `0` from `grep -c` that the session then looked at again.
+The second response read 51.7k to 51.8k tokens back and came 10 s to 18 s after the first.
+
+What it led to: `check team` prints one `state:` line each for the working tree, the constitution and
+the branch after its `ok` line, exits 1 without `.specify/`, and the skill's step 0 runs that call
+alone. Held by `test/install.test.mjs`.
+
+One run with it on 2026-11-10 (`tools/full-run.mjs --login --skill-agents`, Claude Code 2.1.322, main
+session `sonnet`, branch `perf/step0-one-call` at `2001d81`, $0.72, every check passed): the first
+response was `check team` alone, 191 characters back, and the second was the product-owner role's Skill
+call. One sample ([#286](https://github.com/PIsberg/speckit-agents/issues/286)).
 
 ## The live sweep of 2026-11-08
 
