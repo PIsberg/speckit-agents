@@ -673,6 +673,14 @@ take minutes, which no run has measured. The side-by-side run also had two stub 
 docs-only implementer and a commit to take out worktrees, since fixed (below); the one-at-a-time
 run already had the architect's round lines, which save the main session one response.
 
+Measured again on 2026-11-11 with those faults fixed, both runs from one build of the team (`e14efc9`)
+and the same request, 1 run each: one at a time cost $1.26 with 7 agent launches and 1 min 32 s from
+the first red launch to the verify launch; side by side cost $1.37 (9% more) with 9 launches and
+1 min 53 s. One at a time gave both slices' tests to one test-writer and both implementations to
+one implementer, so it was a single round with nothing for side by side to save
+([`docs/measurements.md`](docs/measurements.md), "The live runs of 2026-11-11"). The recommendation
+stays one at a time.
+
 Claude Code does run them side by side: agents launched in one message overlap, in worktrees too,
 and the main session waits for all of them, checked against a fake API and pinned by
 [`test/e2e.test.mjs`](test/e2e.test.mjs) ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).
