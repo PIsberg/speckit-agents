@@ -930,8 +930,13 @@ What they say about step 0, the plan stop and the hand-on is in those three sect
 - **A test added after the code cannot be shown failing by test-writer.** Showing the FR-005 tests red
   means breaking `src/`, which test-writer's scope denies. test-writer ended on `BLOCKED` the first
   time, and on `RED` the last time for two tests that pass by design. The main session made the edit
-  to `src/` itself, twice, saw both tests fail, and restored it. No rule says who does this
-  ([#298](https://github.com/PIsberg/speckit-agents/issues/298)).
+  to `src/` itself, twice, saw both tests fail, and restored it. No rule said who does this
+  ([#298](https://github.com/PIsberg/speckit-agents/issues/298)). What it led to: the skill sends such
+  a reason to test-writer, which shows the test passing, names the production line to break and ends
+  `FIXED`; the main session shows it failing in one Bash call that restores with
+  `git checkout -- <file>` and ends on `git status --short`, and spec-gatekeeper gets that output
+  or runs the break itself (the three halves are pinned by `test/install.test.mjs`). No hook holds
+  the restore, and none of it has been seen in a run.
 - **The stopped run left its trust entry and two locked worktrees behind**
   ([#260](https://github.com/PIsberg/speckit-agents/issues/260)): the undo runs in the tool's own
   process, which was killed with the session. The entry was removed by hand after the run.

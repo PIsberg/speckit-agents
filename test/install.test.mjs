@@ -257,6 +257,27 @@ test('installed architect excuses a rule of how the work is done when it writes 
   assert.ok(architect.indexOf(rule) < architect.indexOf('## Report'), 'in the Process');
 });
 
+// #298: in the full run of 2026-11-11 spec-gatekeeper asked for a test of behaviour the code already had.
+// The test passes at once, so only breaking the code shows it can fail, and test-writer may not write
+// there: told to break src/, it was denied and ended BLOCKED with its tests committed, then RED for tests
+// green by design. The main session broke and restored src/ twice with nothing but its own word that it
+// was restored, and the gate approved on that word. Each half of the rule is in another file.
+test('installed skill, test-writer and spec-gatekeeper agree on who shows a test added after the code failing (#298)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const verify = skill.slice(skill.indexOf('## 6. Verify'), skill.indexOf('## 7. Hand over'));
+  assert.match(verify, /test of behaviour the code already has[^.]*test-writer[^.]*`FIXED`/, 'the skill sends it to test-writer, which ends FIXED');
+  assert.match(verify, /never ask test-writer to change production code/i);
+  assert.match(verify, /one Bash call[^.]*`git checkout -- <file>`[^.]*`git status --short`/, 'the main session breaks and restores in one call');
+  assert.match(verify, /output[^.]*spec-gatekeeper/, 'and the gate gets the output, not a claim');
+  const writer = flat(installedAgent('test-writer'));
+  const report = writer.slice(writer.indexOf('## Report'));
+  assert.match(report, /test of behaviour the code already has[^.]*passing[^.]*production line[^.]*`FIXED`/, 'test-writer names the line to break and ends FIXED');
+  const gate = flat(installedAgent('spec-gatekeeper'));
+  assert.match(gate, /test added after the code[^.]*`git status --short`[^.]*or break it yourself/i, 'the gate takes the output or runs the check');
+});
+
 // In the --login run of 2026-10-25 the main session spent a response (60k input) right after the
 // audit PASS only to `cat tasks.md` and plan the rounds. The architect knows them when it writes the
 // tasks, so its report carries one line per round and the skill launches the first round from it.

@@ -38,6 +38,8 @@ roles of a partial team) and an `Unbuilt:` line (task IDs no chosen role builds)
    hook refuses APPROVED while a ticked test task cites an FR none of its test files names, or an
    FR of `spec.md` is in no test line naming the feature's number (`001 FR-002`) and no task gives
    it `No test: <reason>`. An FR a `No test:` task excuses is reported as excused, with the reason.
+   A test added after the code counts when your prompt shows it failing on broken code and
+   `git status --short` clean after the restore, or break it yourself the same way and restore.
 2. Tasks: every task line in `tasks.md` is ticked (`- [X]`). Skip exactly the `Unbuilt:` IDs and
    report them as skipped; any other open task still rejects. With no `tasks.md`, skip this check.
    A check whose role is absent from the `Team:` line is reported as skipped, not as a REJECTED

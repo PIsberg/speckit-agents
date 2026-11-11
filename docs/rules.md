@@ -154,9 +154,10 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Side-by-side slices in worktrees, merged in task order. pinned.
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
-<!-- fingerprint: 0a1855e9 -->
+<!-- fingerprint: fbbe77e0 -->
 - Start once the last round is GREEN and every task is ticked; the `Unbuilt:` line for an absent role's tasks. pinned.
 - REJECTED reasons to test-writer or implementer, or the user. pinned.
+- A test of behaviour the code already has: test-writer writes it and ends `FIXED`; the main session shows it failing in one Bash call that restores and ends on `git status --short`, and gives spec-gatekeeper the output. pinned (#298); hook `scope` denies test-writer the production write. That the session restored the file is text: the output in the prompt shows a breach, nothing refuses one.
 - security-reviewer on the result, then spec-gatekeeper again after its fix. pinned.
 
 ### skills/speckit-team/SKILL.md: 7. Hand over
@@ -331,8 +332,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Test files and `tasks.md` only. hook `scope tests`, `lane tests`.
 
 ### agents/test-writer.md: Report
-<!-- fingerprint: 3fcabb39 -->
+<!-- fingerprint: 281fc551 -->
 - `RED`, `BLOCKED` or `FIXED` last. hook `ends`.
+- A test added for behaviour the code already has is shown passing, with the production line to break, and ends `FIXED`. pinned (#298); which of the three words fits is text, unseen.
 
 ## agents/implementer.md
 
@@ -377,8 +379,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `Team:` and `Unbuilt:` lines. pinned.
 
 ### agents/spec-gatekeeper.md: Process
-<!-- fingerprint: 26c41ded -->
+<!-- fingerprint: 8b3d4fba -->
 - Every FR has a test that would fail if it broke. hook `ends --record`: an FR a ticked test task cites must be in its test files (#228), and every FR of `spec.md` in a test line naming the feature's number unless a task gives it `No test:` (#235). Whether the test would fail if the behaviour broke: text, unseen.
+- A test added after the code counts on the output that shows it failing on broken code and the tree clean after, or on its own break and restore. pinned (#298); text, unseen.
 - Every task ticked, `Unbuilt:` IDs skipped. pinned.
 - Run what CI runs; a skipped gate is not a passed one. text; the report shows a breach.
 - A Bash `timeout` that covers the run. pinned.
