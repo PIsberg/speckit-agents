@@ -1138,3 +1138,21 @@ test-writer), passed every check: `APPROVED` from the hook record, the audit `PA
   The run tool now stops such a run at the turn the session only talked back in, the third here,
   at $0.34 (#325).
 - **The run left nothing behind**: no trust entry, no worktree.
+
+### A run killed from outside
+
+The one case of [#260](https://github.com/PIsberg/speckit-agents/issues/260) no test with a real
+session had shown: 2026-11-11, from `main` at `8f19f08`, two `--login` runs one after the other.
+
+| Step | Trust entries for the runs' folders | Ledger |
+|---|---|---|
+| Before | none | no file |
+| Run A under way, 8 s after it trusted its folder | A's | A's row, with its process id |
+| A's process tree killed (`taskkill /T /F`, 7 processes), 12 s later | A's, still | A's row, still |
+| Run B (`--max-turns 1`) ended, 13 s later | none | no file |
+
+Run B printed `trust for .../live-1111-kill-a/repo was left by a run that ended without its undo
+(pid 21220); removed` before its first model call, and removed its own entry at its end. B cost
+$0.17; A's cost is not known, since it was killed before it reported one. 1 pair of runs. What stays
+unshown is a write-back later than the undo's 10 s recheck, which no run has produced since the
+recheck went in.
