@@ -1084,7 +1084,7 @@ if (mode === 'gate') {
     const role = str(input.tool_input?.subagent_type)?.toLowerCase();
     if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
-    if (role === 'spec-auditor') holdAudit(feature());
+    if (role === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
     let projectNote = null;
     const named = parseProject(input.tool_input.prompt);
@@ -1283,13 +1283,16 @@ if (mode === 'audit') {
     fs.writeSync(1, `speckit-team: audit: ${feat ? 'the only argument is --approve' : 'no feature is active'}\n`);
     process.exit(1);
   }
-  writeJson(auditFile(feat), { ...auditRecord(feat), feature: feat, approved: true, at: new Date().toISOString() });
+  writeJson(auditFile(feat), { ...auditRecord(feat), feature: feat, approved: true, launch: null, at: new Date().toISOString() });
   fs.writeSync(1, `speckit-team: the next spec-auditor launch for ${feat} may run, once.\n`);
   process.exit(0);
 }
 // Called at a main-session launch of spec-auditor (the gate mode's Agent branch): refuses the launch after
 // AUDIT_FAIL_LIMIT FAILs in a row, unless an approval is waiting, which it spends. Otherwise it changes nothing.
-function holdAudit(feat) {
+// The approval is spent on a launch, kept by its tool_use_id: with the team installed for the user and in the
+// project, Claude Code runs this once per install for one launch, and the second process must not refuse the
+// launch the first one let through (the full run of 2026-11-11 ended there).
+function holdAudit(feat, launch) {
   if (!feat) return;
   // The skill records the plan stop's answers in the message that launches the audit; a record that failed
   // there must not be followed by an audit of a plan nobody settled.
@@ -1301,7 +1304,8 @@ function holdAudit(feat) {
   }
   const a = auditRecord(feat);
   if (!(Number(a.fails) >= AUDIT_FAIL_LIMIT)) return;
-  if (a.approved) { writeJson(auditFile(feat), { ...a, approved: false }); return; }
+  if (a.approved) { writeJson(auditFile(feat), { ...a, approved: false, launch: launch || null }); return; }
+  if (launch && a.launch === launch) return;
   deny(`speckit-team: spec-auditor has reported VERDICT: FAIL ${a.fails} times in a row on ${feat}, so a further audit is refused until the user says to go on. `
     + `Ask the user (AskUserQuestion): audit again, or stop and fix the spec first. Only on a yes, run node "${process.argv[1]}" audit --approve, then launch the audit again. A PASS clears the count.`);
 }

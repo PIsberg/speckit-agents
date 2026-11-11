@@ -140,7 +140,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - CRITICAL and HIGH findings to their owner, or to the user when the owner is absent. pinned.
 - A contested finding goes to the user; do not judge it yourself. pinned, unseen; measured by the scored case `contest` (#242, 6 of 6 on 2026-11-08).
 - MEDIUM and LOW findings are listed at hand-over, not routed. text.
-- After two FAILs, the findings go to the user. hook `gate`: a third spec-auditor launch is refused until `audit --approve`, which the skill runs only on the user's yes (#242). The yes itself is text: the hook cannot tell it from a model's.
+- After two FAILs, the findings go to the user. hook `gate`: a third spec-auditor launch is refused until `audit --approve`, which the skill runs only on the user's yes (#242) and which covers one launch, by its `tool_use_id`, for every install's gate process (#304, e2e). The yes itself is text: the hook cannot tell it from a model's.
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time

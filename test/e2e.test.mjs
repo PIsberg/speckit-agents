@@ -680,6 +680,23 @@ test("spec-auditor's Stop asks once for a missing VERDICT line, then records the
   assert.equal(v.feature, 'specs/001-x');
 });
 
+// #304: with the team installed for the user and in the project, Claude Code runs the launch gate once per
+// install. The approval for one more audit after two FAILs was spent by the first process and the second
+// refused the same launch (the full run of 2026-11-11). The hook tells the launch by the payload's tool_use_id,
+// which only a real session shows Claude Code sends.
+test('#304: with two installs, an approved audit launch after two FAILs runs: both gate processes let it through', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', path.join(s.repo, '.claude')], { stdio: 'ignore' });
+  fs.mkdirSync(path.join(s.repo, '.git', 'speckit-team', 'audit'), { recursive: true });
+  fs.writeFileSync(path.join(s.repo, '.git', 'speckit-team', 'audit', '001-x.json'), JSON.stringify({ feature: 'specs/001-x', fails: 2, approved: false }));
+  execFileSync(process.execPath, [s.hook, 'audit', '--approve'], { cwd: s.repo, stdio: 'ignore' });
+  const r = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [say('No findings.\nVERDICT: PASS')] });
+  assert.ok(r.requests['e2e auditor']?.length, `the approved audit ran:\n${lastResult(r.requests[MAIN][1])}\n${story(r)}`);
+  const spent = state(s, 'audit', '001-x.json');
+  assert.equal(spent.approved, false, 'the approval is spent');
+  assert.match(String(spent.launch), /^toolu_/, 'on that launch, by the id Claude Code gave it');
+});
+
 // #77: the PreToolUse entry on every tool records the files the audit starts from. Without it, the
 // second audit's PASS would be stamped on the spec it edited mid-run and replace the first one.
 test("spec-auditor's verdict is not recorded when the files changed after its first tool call", { skip: noClaude, timeout: 180_000 }, async () => {
