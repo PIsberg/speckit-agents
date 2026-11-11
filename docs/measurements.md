@@ -1068,3 +1068,27 @@ Two more runs, the first pair on one build of the team (`fix/316-cited-ids-test-
   large for one agent each is not measured.
 - **Both worktree implementers ended `RESULT: GREEN`** (#309), 2 of 2 runs with the change.
 - **The cited-ID check (#315) had nothing to catch** in either run: no send-back, no message.
+
+A tenth run, `--login` with the default one-function request, from `main` at `a4771d0` (all eight
+fixes of the day merged), passed every check: `APPROVED` from the hook record, the audit `PASS`
+first time, 12 of 12 tests.
+
+| Cost | Time | Agent launches | Main-session responses, input | All agents' input |
+|--:|--:|--:|--:|--:|
+| $1.42 | 741 s | 9 | 13, 0.76M | 0.83M |
+
+- **The cited-ID check (#315) fired for the first time with real models, and held.** test-writer's
+  `FIXED` named FR-001, which its ticked task cites, in no test. The hook sent it back once,
+  test-writer added `// 001 FR-001` as a comment in 27 s, and spec-gatekeeper approved first time
+  with that comment's line in its table. 1 run.
+- **One launch was lost to a test that cannot be red**
+  ([#321](https://github.com/PIsberg/speckit-agents/issues/321)). The task told test-writer to
+  cover FR-001 (`sum` is exported by name). The stub already exports it, so the `typeof` test
+  passed, test-writer ended `BLOCKED` after 2 min 37 s, and the main session launched it again to
+  drop the test (68 s). spec-auditor had said so in a MEDIUM finding of its `PASS`, with the fix;
+  a `PASS`'s findings reach nobody. 2 of the 9 launches were corrections: this one and
+  product-owner's revision for the one question it asked.
+- **The run left nothing behind**: no trust entry, no ledger file (#260), no worktree.
+
+Every paid run still owed is listed in
+[#322](https://github.com/PIsberg/speckit-agents/issues/322).
