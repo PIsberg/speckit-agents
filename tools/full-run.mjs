@@ -336,21 +336,54 @@ function withConfLock(confFile, fn) {
 // #260: a process can write the file back from a copy read before the undo (1 entry in the 56 runs of
 // 2026-11-01). `undo({ recheck })` looks again after each wait in ms and removes an entry that came back.
 // A write later than the last check, such as one by a run still going beside it, is not caught.
+// A run stopped from outside never reaches its undo (seen 2026-11-11). Each entry a run adds is kept in a
+// ledger beside the config, `<file>.speckit-trust.json`, with the run's pid; the next run removes the entries
+// of pids that are gone, and says so. Only entries this tool added are in it. A pid the system gave to another
+// process reads as a run still going, so its entry stays: never the other way. `opts.ledger: null` keeps none.
 export const TRUST_RECHECK_MS = [2_000, 10_000];
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+function readLedger(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (e) { if (e.code === 'ENOENT') return []; throw e; }
+  const rows = JSON.parse(text);
+  if (!Array.isArray(rows)) throw new Error('not a list');
+  return rows.filter((r) => typeof r?.key === 'string' && Number.isInteger(r?.pid));
+}
+const writeLedger = (file, rows) => (rows.length ? fs.writeFileSync(file, JSON.stringify(rows, null, 2)) : fs.rmSync(file, { force: true }));
 export function trustFolder(confFile, repo, opts = {}) {
   const key = repo.split(path.sep).join('/');
+  const ledger = opts.ledger === undefined ? `${confFile}.speckit-trust.json` : opts.ledger;
+  // The ledger never stops a run: a problem with it is said, and the run goes on without it.
+  const withLedger = (fn) => {
+    if (!ledger) return;
+    try { writeLedger(ledger, fn(readLedger(ledger))); } catch (e) { console.error(`full-run: the trust ledger ${ledger} was not used: ${e.message}`); }
+  };
   const added = withConfLock(confFile, () => {
     const conf = readConf(confFile, opts);
-    if (conf.projects?.[key]?.hasTrustDialogAccepted) return false;
-    conf.hasCompletedOnboarding = true;
-    (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
-    fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
-    return true;
+    let swept = false;
+    withLedger((rows) => {
+      for (const r of rows.filter((x) => !pidAlive(x.pid))) {
+        if (!conf.projects?.[r.key]) continue;
+        delete conf.projects[r.key];
+        swept = true;
+        console.error(`full-run: trust for ${r.key} was left by a run that ended without its undo (pid ${r.pid}); removed`);
+      }
+      return rows.filter((x) => pidAlive(x.pid));
+    });
+    const trusted = Boolean(conf.projects?.[key]?.hasTrustDialogAccepted);
+    if (!trusted) {
+      conf.hasCompletedOnboarding = true;
+      (conf.projects ??= {})[key] = { hasTrustDialogAccepted: true };
+    }
+    if (swept || !trusted) fs.writeFileSync(confFile, JSON.stringify(conf, null, 2));
+    if (!trusted) withLedger((rows) => [...rows, { key, pid: process.pid }]);
+    return !trusted;
   });
   if (!added) return () => {};
   // Whether the entry was there to remove.
   const remove = () => withConfLock(confFile, () => {
     const now = readConf(confFile, opts);
+    withLedger((rows) => rows.filter((r) => !(r.key === key && r.pid === process.pid)));
     if (!now?.projects?.[key]) return false;
     delete now.projects[key];
     fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
