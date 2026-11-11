@@ -1002,7 +1002,11 @@ implementers in one message in worktrees, both branches merged with no conflict 
   ([#310](https://github.com/PIsberg/speckit-agents/issues/310)): a bold paragraph with no bullet,
   `**Option B (recommended): ...**`. The command changed nothing and said "no option line found"
   (#306's message). The record by hand took 3 calls, and one lost the backslashes of a spec line:
-  the committed `spec.md` reads `'{10428}x'` where the plan has `'\u{10428}x'`.
+  the committed `spec.md` reads `'{10428}x'` where the plan has `'\u{10428}x'`. What it led to: the
+  architect is told the form (`- **A (recommended): <option>**`, then `- **B: <option>**`), and the
+  command reads the forms seen before the rule. Writing its test found a second fault: a bold list
+  item under the recommended option was read as a new option, which ended the recommended one early
+  and recorded the answer without applying its `Spec:` lines.
 - **The architect's first `tasks.md` excused the process rules on the tasks that carry them out**
   (#299): FR-006 on T003 and T006, FR-007 on T002 and T005, and the audit passed first time. 3 of 3
   runs with #302's rule.

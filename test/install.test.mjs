@@ -404,6 +404,11 @@ test('installed skill records answers that take every recommendation itself, whi
   const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
   const stop = skill.slice(skill.indexOf('## 2.'), skill.indexOf('## 3.'));
   assert.match(flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8')), /`plan\.md` and `tasks\.md` as your recommended options make them/);
+  // #310: the command reads the options by their first characters, and nothing told the architect how to write
+  // them: three runs of 2026-11-11 gave "- **A (", "- **Option A (" and "**Option B (" with no bullet.
+  const arch = flat(fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8'));
+  assert.ok(arch.includes('`### D1: <question>`'), 'the decision heading');
+  assert.ok(arch.includes('`- **A (recommended): <option>**`') && arch.includes('`- **B: <option>**`'), 'the option lines, as the command reads them');
   assert.match(stop, /every answer is the option the architect recommended[^.]*launch no one/i);
   assert.ok(stop.includes('`Answer (<date>): <option>, as recommended`'), 'the record line');
   assert.ok(stop.includes('rename `## Open Decisions` to `## Decisions`'));

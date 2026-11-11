@@ -3197,6 +3197,27 @@ test('decisions --recommended finds an option headed "Option A" as well as "A" (
   assert.ok(featFile(dir, 'spec.md').includes('its first code point in'), 'and the recommended Spec: line is applied');
 });
 
+// #310: the third form in three runs of 2026-11-11, a bold paragraph with no bullet, "**Option B (recommended): ...**",
+// with plain list items under it. And a bold list item under an option ("- **A letter outside the BMP** ...") is
+// not a new option A.
+test('decisions --recommended finds an option written as a bold paragraph, and takes no bold detail for an option (#310)', () => {
+  const para = [...D1, ...D2].map((l) => l.replace(/^- \*\*([A-Z])\b/, '**Option $1'));
+  const dir = decisionsRepo(PLAN(['## Open Decisions', '', ...para]));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal((featFile(dir, 'plan.md').match(/^Answer \(\d{4}-\d\d-\d\d\): A, as recommended$/gm) || []).length, 2);
+  assert.ok(featFile(dir, 'spec.md').includes('its first code point in'), 'the recommended Spec: line is applied');
+  // The detail sits under the recommended option, ahead of its Spec: lines. Read as an option of its own it
+  // would end the recommended one there, and the command would record the answer without changing the spec.
+  const at = D1.findIndex((l) => l.startsWith('- **A (recommended)'));
+  const detail = [...D1.slice(0, at + 1), '- **A letter outside the BMP** is upper-cased whole.', ...D1.slice(at + 1), ...D2];
+  const dir2 = decisionsRepo(PLAN(['## Open Decisions', '', ...detail]));
+  const r2 = decide(dir2, '--recommended');
+  assert.equal(r2.status, 0, r2.stdout + r2.stderr);
+  assert.match(r2.stdout, /recorded D1: A, D2: A as recommended[^\n]*2 Spec: lines applied/);
+  assert.ok(featFile(dir2, 'spec.md').includes('its first code point in'), 'the Spec: lines after the detail are still the option\'s');
+});
+
 test('decisions --recommended moves the entries under a ## Decisions section that is already there', () => {
   const dir = decisionsRepo(PLAN(['## Decisions', '', '### D0: Earlier', '', 'Answer (2026-11-01): B', '', '## Open Decisions', ...D2]));
   const r = decide(dir, '--recommended');
@@ -3214,7 +3235,7 @@ test('decisions --recommended changes nothing and names the line when one cannot
     ['a heading the spec does not have', D1.map((l) => l.replace('under Edge Cases', 'under Corner Cases')), /D1: \S+spec\.md has no heading "Corner Cases"/],
     ['a Spec: line in another form', D1.map((l) => (l.includes('under Edge Cases') ? '  Spec: FR-009 new wording' : l)), /D1: not `Spec: <ID>: "<the line as it is>" becomes "<new wording>"` or `Spec: under <heading>: add "<line>"`: Spec: FR-009 new wording/],
     ['a decision with no recommended option', D1.map((l) => l.replace(' (recommended)', '')), /D1: no option is marked \(recommended\)/],
-    ['a decision whose options are not headed by a letter (#306)', D1.map((l) => l.replace(/^- \*\*[A-Z]\b/, '- **Choice one')), /D1: no option line found \(one starts "- \*\*A" or "- \*\*Option A"\)/],
+    ['a decision whose options are not headed by a letter (#306)', D1.map((l) => l.replace(/^- \*\*[A-Z]\b/, '- **Choice one')), /D1: no option line found \(one starts "- \*\*A \(recommended\):" or "- \*\*B:"\)/],
   ];
   for (const [what, d1, why] of bad) {
     const plan = PLAN(['## Open Decisions', '', ...d1, ...D2]);
