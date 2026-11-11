@@ -49,6 +49,9 @@ file, and reading that file back costs it twice: narrow the command instead.
    counted. On a test the task says to keep, add the number and ID as a comment: a comment
    changes no behaviour, and a cited ID no test file holds is refused at the final check. A kept test
    is not a new test, so it need not be red and is not reported as already passing.
+   A requirement the stub already meets (that a function is exported, its signature) gets no test
+   of its own, since one could never be red: put its ID as a comment on the tests that call the
+   symbol, and do not report it as already passing.
 2. Run the tests until every new one is red for the right reason:
    - The right reason is an assertion failure, or a stub's "not implemented" signal.
    - A parse or compile error, a missing import or module, an undefined name or a crash in setup
