@@ -979,3 +979,28 @@ passed: `APPROVED`, 2 turns, 22 model turns, $1.67, one audit `FAIL` then a `PAS
   process rule, carried out by T001 running red first)". 2 of 2 runs with #302's rule; the one audit
   `FAIL` was about a test that could not fail on the stub, not about this.
 - **#298 was not seen**: test-writer ran once, before the code.
+
+A sixth run, `--login --side-by-side` from `main` at `a083bfc` (the six fixes above merged), passed:
+`APPROVED`, 2 turns, 27 model turns, $1.79, one audit (`PASS`), two test-writers in one message, two
+implementers in one message in worktrees, both branches merged with no conflict and no worktree left.
+
+- **spec-gatekeeper rejected a test-first build for a break it could not run**
+  ([#308](https://github.com/PIsberg/speckit-agents/issues/308)). #298's rule told it to "break it
+  yourself" when the prompt shows no failing run. It tried, the hook denied the write, and it ended
+  `REJECTED` with "no row below is shown to fail", although its own report listed the stub, the
+  tests and the code as committed in that order. The main session ran the breaks in one call and the
+  second verify approved: one gate round and one call for nothing. 1 of 2 runs with the rule. What
+  it led to: the rule says a test committed before its code needs no such run, and that the gate
+  breaks nothing itself.
+- **Each worktree implementer ended `RESULT: RED` for the other slice's stubs**
+  ([#309](https://github.com/PIsberg/speckit-agents/issues/309)). Both had `last round`, ran the
+  full suite, and saw the sibling's tests fail on `not implemented`. The retry record held 2 of the
+  3 REDs that lock implementer out; after the merge the suite was 14 of 14.
+- **`decisions --recommended` met a third option form**
+  ([#310](https://github.com/PIsberg/speckit-agents/issues/310)): a bold paragraph with no bullet,
+  `**Option B (recommended): ...**`. The command changed nothing and said "no option line found"
+  (#306's message). The record by hand took 3 calls, and one lost the backslashes of a spec line:
+  the committed `spec.md` reads `'{10428}x'` where the plan has `'\u{10428}x'`.
+- **The architect's first `tasks.md` excused the process rules on the tasks that carry them out**
+  (#299): FR-006 on T003 and T006, FR-007 on T002 and T005, and the audit passed first time. 3 of 3
+  runs with #302's rule.
