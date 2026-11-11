@@ -275,7 +275,13 @@ test('installed skill, test-writer and spec-gatekeeper agree on who shows a test
   const report = writer.slice(writer.indexOf('## Report'));
   assert.match(report, /test of behaviour the code already has[^.]*passing[^.]*production line[^.]*`FIXED`/, 'test-writer names the line to break and ends FIXED');
   const gate = flat(installedAgent('spec-gatekeeper'));
-  assert.match(gate, /test added after the code[^.]*`git status --short`[^.]*or break it yourself/i, 'the gate takes the output or runs the check');
+  assert.match(gate, /test added after the code counts only when your prompt shows it failing on broken code[^.]*`git status --short`/i, 'the gate takes the output');
+  // #308: the rule also said "or break it yourself", which a read-only role cannot, and it read as a demand for
+  // every test. In the side-by-side run of 2026-11-11 the gate tried the break, was denied, and rejected a
+  // build whose stubs, tests and code were committed in that order.
+  assert.doesNotMatch(gate, /break it yourself/i, 'a read-only role is not told to break the code');
+  assert.match(gate, /test committed before the code that passes it[^.]*needs no run on broken code/i, 'a test-first test needs no break');
+  assert.match(gate, /never break the code yourself/i, 'and the gate does not try');
 });
 
 // In the --login run of 2026-10-25 the main session spent a response (60k input) right after the

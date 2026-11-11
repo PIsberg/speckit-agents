@@ -379,9 +379,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `Team:` and `Unbuilt:` lines. pinned.
 
 ### agents/spec-gatekeeper.md: Process
-<!-- fingerprint: 8b3d4fba -->
+<!-- fingerprint: d42825c5 -->
 - Every FR has a test that would fail if it broke. hook `ends --record`: an FR a ticked test task cites must be in its test files (#228), and every FR of `spec.md` in a test line naming the feature's number unless a task gives it `No test:` (#235). Whether the test would fail if the behaviour broke: text, unseen.
-- A test added after the code counts on the output that shows it failing on broken code and the tree clean after, or on its own break and restore. pinned (#298); text, unseen.
+- A test committed before the code that passes it needs no break; a test added after the code counts only on the output that shows it failing on broken code and the tree clean after, and the gate breaks nothing itself. pinned (#298, #308); hook `scope none` denies the write. Seen 2026-11-11: told it could break the code, the gate was denied and rejected a test-first build.
 - Every task ticked, `Unbuilt:` IDs skipped. pinned.
 - Run what CI runs; a skipped gate is not a passed one. text; the report shows a breach.
 - A Bash `timeout` that covers the run. pinned.
