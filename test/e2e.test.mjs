@@ -75,6 +75,10 @@ function recordPass({ repo, hook }) {
 // could change how Claude Code behaves. A parent Claude Code session passes its own CLAUDE_* and
 // CLAUDE_CODE_* variables down, and a developer's CLAUDE_CODE_FORK_SUBAGENT would decide whether
 // agents run in the background. Any other credential could send a request somewhere real.
+// CLAUDE_CODE_AUTO_MODE_SERVER=0: from about 2.1.319, auto mode behind a base URL asks the server to
+// review actions inside the model requests, which the fake API cannot do, so it refuses every Agent
+// call (`auto_mode_no_check_in_session`, #280). With it off, Claude Code sends its own classifier
+// requests again, which the fake answers; older releases ignore the variable.
 function fakeEnv(cfg, port, extra = {}) {
   return {
     ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDE|ANTHROPIC_|AI_AGENT$)/.test(k))),
@@ -82,6 +86,7 @@ function fakeEnv(cfg, port, extra = {}) {
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
     ANTHROPIC_API_KEY: 'sk-ant-e2e-fake',
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    CLAUDE_CODE_AUTO_MODE_SERVER: '0',
     DISABLE_AUTOUPDATER: '1',
     ...extra,
   };
