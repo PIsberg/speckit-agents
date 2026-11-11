@@ -83,4 +83,6 @@ express as a test, with the reason. The last line is exactly `RED` when every ne
 the right reason, or `BLOCKED` when any of those lists has an entry, on its own; a hook sends back
 a report that ends otherwise. Sent only to correct an existing test (a wrong expectation, a broken
 setup) and adding no new one, show the corrected test passing on the current code and end `FIXED`
-instead: a `RED` there would contradict the run.
+instead: a `RED` there would contradict the run. Sent to add a test of behaviour the code already has,
+show it passing, name for each the production line whose break must fail it, and end `FIXED` too:
+breaking the code is not yours.

@@ -376,6 +376,12 @@ implementer for it with `last round`, and verify after its GREEN. Hand to the us
 agent can do. On REJECTED, route each reason to test-writer or implementer, whichever is chosen (a reason for a
 role not chosen goes to the user) (an implementer then
 with `last round`), then re-run spec-gatekeeper.
+A reason that asks for a test of behaviour the code already has goes to test-writer, which shows it
+passing, names the production line to break and ends `FIXED`. Never ask test-writer to change
+production code: its scope denies it (2026-11-11: `BLOCKED`, with its tests committed). Show the test
+failing yourself, in one Bash call that makes the break, runs the test, restores with
+`git checkout -- <file>` and ends on `git status --short`, and put that call's output in
+spec-gatekeeper's prompt.
 If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), an implementer then with `last round`; the fix changes code spec-gatekeeper approved, so re-run spec-gatekeeper (when chosen) before you relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to handover.
 
 ## 7. Hand over
