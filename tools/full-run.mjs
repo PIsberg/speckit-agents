@@ -333,6 +333,10 @@ function withConfLock(confFile, fn) {
 // Trust for the scratch repo in a .claude.json, or Claude Code skips the agents' frontmatter hooks
 // (README, "Troubleshooting"). The undo reads the file again and drops only the entry it added, since
 // Claude Code rewrites the file while the run goes on; a folder trusted before stays trusted.
+// #260: a process can write the file back from a copy read before the undo (1 entry in the 56 runs of
+// 2026-11-01). `undo({ recheck })` looks again after each wait in ms and removes an entry that came back.
+// A write later than the last check, such as one by a run still going beside it, is not caught.
+export const TRUST_RECHECK_MS = [2_000, 10_000];
 export function trustFolder(confFile, repo, opts = {}) {
   const key = repo.split(path.sep).join('/');
   const added = withConfLock(confFile, () => {
@@ -344,14 +348,21 @@ export function trustFolder(confFile, repo, opts = {}) {
     return true;
   });
   if (!added) return () => {};
-  return () => {
+  // Whether the entry was there to remove.
+  const remove = () => withConfLock(confFile, () => {
+    const now = readConf(confFile, opts);
+    if (!now?.projects?.[key]) return false;
+    delete now.projects[key];
+    fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
+    return true;
+  });
+  return ({ recheck = [] } = {}) => {
     try {
-      withConfLock(confFile, () => {
-        const now = readConf(confFile, opts);
-        if (!now?.projects?.[key]) return;
-        delete now.projects[key];
-        fs.writeFileSync(confFile, JSON.stringify(now, null, 2));
-      });
+      remove();
+      for (const ms of recheck) {
+        sleep(ms);
+        if (remove()) console.error(`full-run: trust for ${key} came back after its undo; removed again`);
+      }
     } catch (e) { console.error(`full-run: trust for ${key} left in place: ${e.message}`); }
   };
 }
@@ -423,7 +434,8 @@ function main() {
     ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word),
   });
 
-  untrust();
+  // Its session is over; a write-back from a stale copy shortly after is removed again (#260).
+  untrust({ recheck: TRUST_RECHECK_MS });
   const projects = path.join(cfg, 'projects');
   const transcript = session && fs.existsSync(projects) && fs.readdirSync(projects)
     .map((p) => path.join(projects, p, `${session}.jsonl`)).find((f) => fs.existsSync(f));

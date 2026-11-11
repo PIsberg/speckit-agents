@@ -166,6 +166,37 @@ test('full run: folder trust is added for the run, and its undo removes only tha
   assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], { hasTrustDialogAccepted: true, x: 1 });
 });
 
+// #260: after the 2026-11-01 sweep one undone entry was back, though its undo had found and deleted it: a
+// process wrote the file again from a copy read before the undo. A writer that does that shortly after
+// the undo is caught by the undo's checks, which delete the entry again and say so.
+test('full run: an entry written back after the undo is removed again by its later checks (#260)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'scratch', 'repo');
+  const key = repo.split(path.sep).join('/');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: {} }));
+  const undo = trustFolder(conf, repo);
+  // The stale copy a writer holds, read while the run's entry was there.
+  const stale = fs.readFileSync(conf, 'utf8');
+  assert.ok(JSON.parse(stale).projects[key]);
+  // A process that writes the stale copy back 300 ms after the entry is gone. The undo blocks this one.
+  const writer = `const fs = require('fs'); const [f, k, s] = process.argv.slice(1);
+    const gone = () => { try { return !JSON.parse(fs.readFileSync(f, 'utf8')).projects?.[k]; } catch { return false; } };
+    const t = setInterval(() => { if (gone()) { clearInterval(t); setTimeout(() => { fs.writeFileSync(f, s); process.exit(0); }, 300); } }, 10);
+    setTimeout(() => process.exit(2), 20000);`;
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, ['-e', writer, conf, key, stale]);
+  const exited = new Promise((done) => child.on('exit', done));
+  await new Promise((r) => setTimeout(r, 300));
+  const errors = [];
+  const realError = console.error;
+  console.error = (m) => errors.push(String(m));
+  try { undo({ recheck: [1500] }); } finally { console.error = realError; }
+  assert.equal(await exited, 0, 'the writer wrote its copy back');
+  assert.equal(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[key], undefined, 'the entry written back is gone');
+  assert.match(errors.join('\n'), /trust for .* came back after its undo; removed again/);
+});
+
 test('full run: runs started together each keep their trust entry, as tools/eval.mjs runs in parallel need', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
   const conf = path.join(dir, '.claude.json');
