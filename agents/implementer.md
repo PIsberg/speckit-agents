@@ -43,8 +43,9 @@ brief state.
 2. Per task: write the least code that turns its tests green, then refactor while they stay green.
 3. Run the build and linter the way `CLAUDE.md` or the build file specifies, and the tests that
    cover your change: your tasks' test files and those that import or name the files you changed.
-   Run the full suite only when your prompt says `last round`; spec-gatekeeper runs it again
-   before the PR. Check each command's own exit status: through a pipe to `tail`, `tee` or `grep`,
+   Run the full suite only when your prompt says `last round` and not `worktree` (a worktree lacks
+   the other slices' code, so their tests fail there; the main session runs the suite after the
+   merge); spec-gatekeeper runs it again before the PR. Check each command's own exit status: through a pipe to `tail`, `tee` or `grep`,
    the status you see is the last stage's. Give each run a Bash `timeout` that covers it, up to
    600000 ms: past the default 2 minutes Claude Code moves the command to the background, where
    you cannot wait for it.
@@ -67,7 +68,7 @@ the line and your evidence.
 ## Report
 At most 10 lines, repo-relative paths: the tasks done, the exact test command and its final summary
 line, and anything left red or skipped, stated as such. The last line is exactly `RESULT: GREEN`
-(the tests you ran pass, the full suite among them in the last round), `RESULT: RED` (anything
-else) or, after a stub pass, `RESULT: STUB`. A hook counts RED reports: after 3 in a row on the
+(the tests you ran pass, the full suite among them in the last round outside a worktree),
+`RESULT: RED` (anything else) or, after a stub pass, `RESULT: STUB`. A hook counts RED reports: after 3 in a row on the
 same plan and tasks, it blocks further attempts until the architect revises them or the user
 decides.
