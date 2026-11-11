@@ -87,10 +87,12 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
     const text = readOr(path.join(repo, file), null);
     if (text === null) continue;
     features++;
-    for (const t of tasksOf(text).filter((x) => x.done && writesTests(x.text))) {
+    // #299: an ID any task of the feature excuses is owed by no test task of it, as at spec level.
+    const all = tasksOf(text);
+    const excused = new Set(all.flatMap((t) => [...excusedBy(t.text)]));
+    for (const t of all.filter((x) => x.done && writesTests(x.text))) {
       const tests = [...new Set(t.text.match(PATHS) ?? [])]
         .filter((rel) => isTest(rel) && (fs.existsSync(path.join(repo, rel)) || tracked(rel)));
-      const excused = excusedBy(t.text);
       const ids = [...new Set(t.text.match(IDS) ?? [])].filter((id) => !excused.has(id));
       if (!tests.length || !ids.length) continue;
       tasks++;
@@ -114,7 +116,8 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
 // The IDs a task's `No test: <reason>` excuses: the last one before it, in its own clause or the one before
 // ("FR-007 (No test: a process rule)", "Docs for FR-003 in `README.md`. No test: prose"), and any its
 // reason names. Not the task's other IDs: a test task citing FR-001, FR-002, FR-007 (No test: ...) still
-// owes FR-001 and FR-002 their tests, at task and at spec level.
+// owes FR-001 and FR-002 their tests, at task and at spec level. Both levels take the excuses of every
+// task of the feature together, so one written on the implementation task holds for the test task too.
 export function excusedBy(text) {
   const out = new Set();
   for (const m of text.matchAll(/\bNo test:/g)) {

@@ -207,6 +207,30 @@ test('drift (#235): a No test: excuses the ID it follows and those its reason na
   assert.deepEqual([...excusedBy('Tests for FR-001 and FR-002 (No test: FR-002 is a process rule)')], ['FR-002']);
 });
 
+// In the full run of 2026-11-11 the test tasks cited a process rule (FR-006, tests first) and the excuse
+// went on the implementation task, where the main session had it dictated. The spec check took the
+// excuse, the task check did not: it refused spec-gatekeeper's APPROVED until each test file carried a
+// comment naming FR-006, which holds nothing (#299). An ID any task of the feature excuses is owed by no
+// test task of that feature; another feature's excuse, or none, changes nothing.
+test('drift (#299): an ID another task of the feature excuses is not asked of the test task that cites it', () => {
+  const SPEC = '- **FR-001**: adds.\n- **FR-006**: tests are written first.\n';
+  const T1 = '- [X] T001 Tests in `test/sum.test.js` for FR-001, FR-006\n';
+  const T2 = '- [X] T002 Implement `sum` (FR-001). FR-006 (No test: a process rule, shown by the git history).\n';
+  const BARE = '- [X] T002 Implement `sum` (FR-001)\n';
+  const run = (tasks, tests, more = {}) => drift(repo(tasks, { 'specs/001-sum/spec.md': SPEC, 'test/sum.test.js': tests, ...more }),
+    { feature: 'specs/001-sum', spec: true }).problems;
+  assert.deepEqual(run(T1 + T2, '// 001 FR-001\n'), [], 'excused on T002, so T001 owes no line for it');
+  const none = run(T1 + BARE, '// 001 FR-001\n');
+  assert.equal(none.length, 2, JSON.stringify(none));
+  assert.ok(none.every((x) => /FR-006/.test(x)), 'with no excuse it is owed at both levels');
+  const p = run(T1 + T2, '// nothing\n');
+  assert.equal(p.length, 2, JSON.stringify(p));
+  assert.ok(p.every((x) => /FR-001/.test(x)), 'FR-001, cited by both tasks and excused by neither, is still owed');
+  const other = run(T1 + BARE, '// 001 FR-001\n', { 'specs/002-text/tasks.md': '- [X] T001 Docs. FR-006 (No test: prose)\n' });
+  assert.equal(other.length, 2, 'an excuse in another feature\'s tasks.md excuses nothing here');
+  assert.deepEqual(run(T1 + T2.replace('[X]', '[ ]'), '// 001 FR-001\n'), [], 'the excuse counts ticked or not, as at spec level');
+});
+
 test('drift (#235): a test file git ignores, or one under node_modules, holds nothing', () => {
   const dir = repo('- [X] T001 Test FR-001 in `test/sum.test.js`\n', {
     'specs/001-sum/spec.md': '- **FR-001**: adds.\n- **FR-002**: empty.\n',

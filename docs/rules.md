@@ -257,7 +257,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Grep for an existing function before a task adds one. pinned; spec-auditor checks (HIGH).
 - Each fact once; write `research.md`, `data-model.md`, `contracts/`, `quickstart.md` only when needed. pinned (facts once), text.
 - Slices: one behaviour each, every task in one slice. pinned.
-- Every FR is cited by a test task or excused by `No test: <reason>` right after it, which excuses only that ID and those the reason names. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and not excused that way is refused (#235); a cited ID a task excuses is not asked of its test files.
+- Every FR is cited by a test task or excused by `No test: <reason>` right after it, which excuses only that ID and those the reason names. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and not excused that way is refused (#235); a cited ID any task of the feature excuses is not asked of a test task's files (#299).
 - Every test task names its test file and the IDs it covers. pinned; hook `ends --record` checks at spec-gatekeeper's APPROVED that the test files hold the IDs (#228).
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.

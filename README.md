@@ -1550,7 +1550,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 587 tests:
+`npm test` runs 588 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1563,7 +1563,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 63 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 15 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 16 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
@@ -2449,7 +2449,9 @@ At `APPROVED` the hook also runs it at spec level
 (`test('001 FR-002 ...')` or a `// 001 FR-002` comment, as test-writer writes them), since every
 feature has an FR-002. A requirement no test can hold, such as a docs one, is excused only by a task
 that says `No test: <reason>` right after it (`FR-009 (No test: docs)`). That excuses the ID it
-follows and any the reason names, not the task's other IDs, at task level too. The architect writes
+follows and any the reason names, not the task's other IDs, at task level too. An excuse on one task
+holds for the whole feature: a test task that cites the same ID owes no test line for it
+([#299](https://github.com/PIsberg/speckit-agents/issues/299)). The architect writes
 that and you approve it at the tasks stop, not the gatekeeper. `tools/drift.mjs` stays at task level, since features built before #235 do
 not name their number in every test.
 
