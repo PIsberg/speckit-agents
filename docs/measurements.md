@@ -945,3 +945,21 @@ What they say about step 0, the plan stop and the hand-on is in those three sect
   `permissions.deny`. The session worked from the spec template and the run passed.
 
 The three runs cost $2.89 as reported, the stopped run's second turn not included.
+
+A fourth run the same day, `--login --two-slices` from `fix/298-late-test-shown-failing` at `0a8d0fb`
+(the fixes for #298 and #299, not yet merged), failed at its 8-turn limit, $2.40, with no code written:
+
+- **The audit could not be approved with two installs of the team**
+  ([#304](https://github.com/PIsberg/speckit-agents/issues/304)). Three audits failed, each on a real
+  finding that was fixed and committed. After each `audit --approve` the next launch was refused all
+  the same: 5 refusals. A `--login` run has the team in `~/.claude` and in the project, Claude Code
+  runs the launch gate once per install, and the first process spent the approval the second then
+  missed. What it led to: the approval is kept by the launch's `tool_use_id`, held by a case in
+  `test/e2e.test.mjs` that failed against Claude Code before the fix.
+- **The session blamed its proxy.** The owner's proxy replaced the repeated refusal with "identical
+  to the earlier tool result", so the session never quoted the hook and asked for the proxy's rule
+  to be cleared. From the owner's setup, not the team; the transcript on disk had the hook's text.
+- **The architect's first `tasks.md` excused the process rule** (#299): "Standard library only
+  (constitution II; No test: no dependency added)" on the two implementation tasks, cited by no test
+  task. 1 run, and none of the three audit findings was about it. The gate was never reached, so
+  the drift check's half and #298 were not seen.

@@ -368,6 +368,23 @@ test('verdict demands a VERDICT line, once', () => {
   assert.match(run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: '| x |\n\n**VERDICT: PASS**' }).systemMessage, /PASS/);
 });
 
+// #304: with the team installed in ~/.claude and in the project, Claude Code runs the gate once per install
+// for one launch. In the full run of 2026-11-11 (--login) the first process spent the approval and the second
+// refused the launch it was given for: the audit could not be run again and the run ended at 8 turns, $2.40.
+// The approval is spent on a launch, told by its tool_use_id, so every process of that launch lets it through.
+test('verdict: an approved audit launch passes every gate process of that launch, and no other launch (#304)', () => {
+  const { dir } = repo();
+  const audit = (verdict) => run(dir, ['verdict'], { hook_event_name: 'SubagentStop', last_assistant_message: `report\n\nVERDICT: ${verdict}` });
+  const launch = (id) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_use_id: id, tool_input: { subagent_type: 'spec-auditor', prompt: 'audit the spec' } });
+  audit('FAIL'); audit('FAIL');
+  assert.ok(denied(launch('toolu_a')), 'two FAILs: refused');
+  assert.equal(spawnSync('node', [HOOK, 'audit', '--approve'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.equal(denied(launch('toolu_b')), false, 'approved: the first process of the launch lets it through');
+  assert.equal(denied(launch('toolu_b')), false, "and so does the other install's process of the same launch");
+  assert.ok(denied(launch('toolu_c')), 'another launch is refused: the approval was for one');
+  assert.ok(denied(launch('toolu_a')), 'and so is the launch refused before the approval');
+});
+
 // #242: after two spec-auditor FAILs in a row, a third launch is refused until the user says to go on
 // (`audit --approve`, run by the skill on a yes, spends the approval on one launch). A PASS clears the count.
 test('verdict: a third spec-auditor launch after two FAILs is refused until --approve; a PASS clears the count', () => {
