@@ -3183,6 +3183,20 @@ test('decisions --recommended records each answer, renames the section and appli
   assert.match(r.stdout, new RegExp(`^speckit-team: decisions: recorded D1: A, D2: A as recommended in ${FEAT}/plan\\.md; 2 Spec: lines applied to ${FEAT}/spec\\.md$`, 'm'));
 });
 
+// #306: no rule fixes how an option is headed, and in the full run of 2026-11-11 the architect wrote
+// "- **Option A (recommended): ...". The command found no option, changed nothing, and the main session wrote
+// the record by hand in 4 more calls.
+test('decisions --recommended finds an option headed "Option A" as well as "A" (#306)', () => {
+  const worded = [...D1, ...D2].map((l) => l.replace(/^- \*\*([A-Z])\b/, '- **Option $1'));
+  const dir = decisionsRepo(PLAN(['## Open Decisions', '', ...worded]));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const plan = featFile(dir, 'plan.md');
+  assert.ok(!plan.includes('## Open Decisions'), 'the section is renamed');
+  assert.equal((plan.match(/^Answer \(\d{4}-\d\d-\d\d\): A, as recommended$/gm) || []).length, 2, plan);
+  assert.ok(featFile(dir, 'spec.md').includes('its first code point in'), 'and the recommended Spec: line is applied');
+});
+
 test('decisions --recommended moves the entries under a ## Decisions section that is already there', () => {
   const dir = decisionsRepo(PLAN(['## Decisions', '', '### D0: Earlier', '', 'Answer (2026-11-01): B', '', '## Open Decisions', ...D2]));
   const r = decide(dir, '--recommended');
@@ -3200,6 +3214,7 @@ test('decisions --recommended changes nothing and names the line when one cannot
     ['a heading the spec does not have', D1.map((l) => l.replace('under Edge Cases', 'under Corner Cases')), /D1: \S+spec\.md has no heading "Corner Cases"/],
     ['a Spec: line in another form', D1.map((l) => (l.includes('under Edge Cases') ? '  Spec: FR-009 new wording' : l)), /D1: not `Spec: <ID>: "<the line as it is>" becomes "<new wording>"` or `Spec: under <heading>: add "<line>"`: Spec: FR-009 new wording/],
     ['a decision with no recommended option', D1.map((l) => l.replace(' (recommended)', '')), /D1: no option is marked \(recommended\)/],
+    ['a decision whose options are not headed by a letter (#306)', D1.map((l) => l.replace(/^- \*\*[A-Z]\b/, '- **Choice one')), /D1: no option line found \(one starts "- \*\*A" or "- \*\*Option A"\)/],
   ];
   for (const [what, d1, why] of bad) {
     const plan = PLAN(['## Open Decisions', '', ...d1, ...D2]);

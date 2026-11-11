@@ -963,3 +963,19 @@ A fourth run the same day, `--login --two-slices` from `fix/298-late-test-shown-
   (constitution II; No test: no dependency added)" on the two implementation tasks, cited by no test
   task. 1 run, and none of the three audit findings was about it. The gate was never reached, so
   the drift check's half and #298 were not seen.
+
+A fifth run, the same options from `fix/audit-approval-two-installs` at `38e9e16` (#304's fix),
+passed: `APPROVED`, 2 turns, 22 model turns, $1.67, one audit `FAIL` then a `PASS`.
+
+- **#304's fix was not exercised**: the count never reached two FAILs, so no approval was asked for.
+  What holds it is the case in `test/e2e.test.mjs`, not this run.
+- **`decisions --recommended` did not find options headed "Option A"**
+  ([#306](https://github.com/PIsberg/speckit-agents/issues/306)). The architect wrote
+  `- **Option A (recommended): ...`, the run before wrote `- **A (recommended): ...`, and no rule
+  fixes either. The command changed nothing, the audit launched beside it was refused twice for open
+  decisions, and the main session wrote the record by hand in 4 more calls. What it led to: the
+  command reads both forms, and says "no option line found" when it reads neither.
+- **The architect's first `tasks.md` excused the process rule here too** (#299): "FR-007 (No test:
+  process rule, carried out by T001 running red first)". 2 of 2 runs with #302's rule; the one audit
+  `FAIL` was about a test that could not fail on the stub, not about this.
+- **#298 was not seen**: test-writer ran once, before the code.

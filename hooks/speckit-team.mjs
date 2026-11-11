@@ -1211,10 +1211,11 @@ function recordRecommended(planText, specText, planRel, specRel, day) {
   const problems = []; const answers = []; const edits = [];
   heads.forEach((h, n) => {
     const to = n + 1 < heads.length ? heads[n + 1].i : end;
+    // An option starts `- **A` or `- **Option A` (#306): the architect's prompt fixes neither, and both were seen.
     const opts = [];
-    for (let i = h.i + 1; i < to; i += 1) { const m = /^- \*\*([A-Z])\b/.exec(plan[i]); if (m) opts.push({ letter: m[1], from: i, rec: /\(recommended\)/i.test(plan[i]) }); }
+    for (let i = h.i + 1; i < to; i += 1) { const m = /^- \*\*(?:Option )?([A-Z])\b/.exec(plan[i]); if (m) opts.push({ letter: m[1], from: i, rec: /\(recommended\)/i.test(plan[i]) }); }
     const k = opts.findIndex((o) => o.rec);
-    if (k < 0) { problems.push(`${h.id}: no option is marked (recommended)`); return; }
+    if (k < 0) { problems.push(opts.length ? `${h.id}: no option is marked (recommended)` : `${h.id}: no option line found (one starts "- **A" or "- **Option A")`); return; }
     answers.push({ i: h.i, id: h.id, letter: opts[k].letter });
     for (let i = opts[k].from; i < (k + 1 < opts.length ? opts[k + 1].from : to); i += 1) {
       const m = /^\s*Spec:\s*(.*?)\s*$/.exec(plan[i]);
