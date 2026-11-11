@@ -546,7 +546,8 @@ you can also name exceptions (`D5: B`). The architect writes the plan and the ta
 recommendations make them, so when every answer is the recommended option the main session launches
 no one: one command of the hook, `decisions --recommended`, adds `Answer (<date>): <option>, as
 recommended` under each decision, renames the section `## Decisions` and puts the chosen `Spec:` lines
-into the spec, or changes nothing and names the line it could not place (in the full run of 2026-10-24
+into the spec, or changes nothing and names the line it could not place (an option may be headed
+`- **A` or `- **Option A`, [#306](https://github.com/PIsberg/speckit-agents/issues/306); in the full run of 2026-10-24
 that was an architect and a product-owner for one edit each, 0.16M tokens; in the runs of 2026-11-08 and
 2026-11-10, 3 or 4 main-session responses with a script of its own). The hook refuses the audit's
 launch while `plan.md` still lists an open decision. Otherwise one architect
@@ -1553,11 +1554,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 592 tests:
+`npm test` runs 593 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 192 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 193 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 133 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
