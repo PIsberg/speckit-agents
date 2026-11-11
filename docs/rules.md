@@ -252,7 +252,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: 49d00675 -->
+<!-- fingerprint: 2739c988 -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
@@ -265,7 +265,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
 - Check every constitution MUST rule before reporting. text; spec-auditor checks (CRITICAL).
-- `## Open Decisions` with options, consequences and `Spec:` lines, each on one line, that quote the line they replace; plan and tasks as recommended. pinned; script `decisions` refuses a line in another form.
+- `## Open Decisions` with options, consequences and `Spec:` lines, each on one line, that quote the line they replace; plan and tasks as recommended; each option a list item `- **A (recommended): <option>**`, then `- **B: <option>**`. pinned (#310); script `decisions` refuses a `Spec:` line in another form and changes nothing when it finds no option line. Seen 2026-11-11: three runs, three option forms, before the rule.
 - Contested findings, answered decisions, dictated revisions. pinned.
 
 ### agents/architect.md: Context

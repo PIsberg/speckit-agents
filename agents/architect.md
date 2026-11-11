@@ -81,8 +81,8 @@ You decide how the feature is built, and in what order.
    6.8k characters, 39% of plan.md.
 5. Write each decision a human should confirm (a new dependency, a schema change, a public API
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
-   end of `plan.md`: an ID (`D1`, `D2`, ...), the question, the options with your recommendation
-   first, and under each option what follows from it: edge cases, counts, side effects, and the
+   end of `plan.md`: `### D1: <question>`, then each option one list item, `- **A (recommended): <option>**`
+   first, then `- **B: <option>**` (a script reads them), and under each what follows from it: edge cases, counts, side effects, and the
    FRs and tasks it changes. Write `plan.md` and `tasks.md` as your recommended options make them:
    an answer that takes every recommendation then changes only the record, which the main session
    writes without launching you again. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
