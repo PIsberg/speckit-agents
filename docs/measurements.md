@@ -1038,5 +1038,10 @@ too), passed: `APPROVED`, 2 turns, 26 model turns, $1.84.
   launch, a break-and-restore call and a second verify. What it led to: the hook runs the task half
   of the drift check when test-writer stops and sends a missing ID back to it once. The gate broke nothing itself and took the
   commit order for the red run (#308, 2 of 2 runs).
+- **The fix round went as #298's rule says**, for the first time in a run: test-writer changed test
+  names only, named the production line that fails the kept `add` test (`src/math.js:2`), broke
+  nothing and ended `FIXED`; the main session broke that line, ran the test (1 fail, `actual: -1,
+  expected: 5`), restored with `git checkout` and ended on an empty `git status --short`, all in one
+  Bash call; spec-gatekeeper got that output, ran `git status --short` itself and approved. 1 run.
 - **The cost is not comparable with the run before**: $1.84 against $1.38, with an audit round and a
   gate round more.
