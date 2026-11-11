@@ -1023,3 +1023,19 @@ above, not yet merged), passed: `APPROVED`, 2 turns, 18 model turns, $1.38 again
   RED for the other slice's stubs: 2 of 2, so the rule in the agent's body holds nothing. The skill's
   half held: the main session ran the suite at the end of the merge call, 12 of 12. What it led to:
   the skill never puts `last round`, the words that ask for the suite, in a worktree launch.
+
+An eighth run, the same options from `fix/309-no-last-round-in-worktree` at `40c9f51` (that change
+too), passed: `APPROVED`, 2 turns, 26 model turns, $1.84.
+
+- **Both worktree implementers ended `RESULT: GREEN`** (#309): their launches carried `worktree`
+  without `last round`, each ran its own test file only, no retry record was written, and the main
+  session ran the suite after the merge, 12 of 12. 1 run, after 2 of 2 failing without the change.
+- **The audit failed once, on a real fault**: the plan's FR-003 check (the input is not modified)
+  could never be seen failing against the stub. One architect revision, then `PASS`.
+- **The gate rejected once, for two IDs no test named**
+  ([#315](https://github.com/PIsberg/speckit-agents/issues/315)): T001 cited FR-007 and FR-009,
+  test-writer tagged neither, and the drift check runs only at the gate. The fix took a test-writer
+  launch, a break-and-restore call and a second verify. The gate broke nothing itself and took the
+  commit order for the red run (#308, 2 of 2 runs).
+- **The cost is not comparable with the run before**: $1.84 against $1.38, with an audit round and a
+  gate round more.

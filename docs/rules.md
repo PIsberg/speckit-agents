@@ -152,7 +152,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
 - Side-by-side slices in worktrees, merged in task order. pinned.
-- The full suite of a side-by-side round: the main session runs it after the last round's merge, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: the main session ran the suite after the merge, 12 of 12; told only in their own body not to, both implementers still ran it and ended RED, which is why the skill leaves `last round` out.
+- The full suite of a side-by-side round: the main session runs it after the last round's merge, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
 <!-- fingerprint: fbbe77e0 -->
