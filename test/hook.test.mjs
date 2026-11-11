@@ -2929,6 +2929,55 @@ test('#228 FR-001: the spec-gatekeeper role\'s APPROVED is sent back once, then 
   assert.ok(!hasRole(dir));
 });
 
+// #316: the test-writer role of --team skill-agents is closed by `lane role` and `gate`, not by `ends`, so
+// #315's check did not reach it. Its RED is sent back once at Stop, or denied once at the next role call.
+function testWriterRole() {
+  const { dir, write: put } = driftRepo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-test-writer', { transcript_path: t })));
+  return { dir, put, t };
+}
+test('#316: the test-writer role\'s RED is sent back once at Stop while a ticked test task cites an ID no test file holds', () => {
+  const { dir, t } = testWriterRole();
+  say(t, 'T001 fails on its assertion.\n\nRED');
+  const first = stopRole(dir);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.match(first.reason, /"001 FR-002"/);
+  assert.ok(hasRole(dir), 'the role still acts');
+  // The second Stop is the hand-on, as before, and says what is still missing.
+  const second = stopRole(dir);
+  assert.match(reasonOf(second), /report ends RED, where \/speckit-team has no Stop/);
+  assert.match(msg(second), /cited requirements no test names: [^\n]*T001: FR-001/);
+});
+
+test('#316: with the ID in the test file the test-writer role\'s Stop is the hand-on alone, and BLOCKED is never checked', () => {
+  const a = testWriterRole();
+  a.put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  say(a.t, 'T001 fails on its assertion.\n\nRED');
+  const out = stopRole(a.dir);
+  assert.match(reasonOf(out), /where \/speckit-team has no Stop/);
+  assert.doesNotMatch(`${reasonOf(out)}${msg(out)}`, /FR-001/);
+  const b = testWriterRole();
+  say(b.t, 'The spec contradicts itself.\n\nBLOCKED');
+  assert.ok(!decided(stopRole(b.dir)));
+});
+
+test('#316: the next role call is denied once for the same lines, leaves the role, and is let through when made again', () => {
+  const { dir, t } = testWriterRole();
+  say(t, 'T001 fails on its assertion.\n\nRED');
+  const first = callWithArgs(dir, 'speckit-role-implementer', t, 'T002');
+  assert.ok(denied(first), JSON.stringify(first));
+  assert.match(reasonOf(first), /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.equal(roleRec(dir).role, 'test-writer', 'the test-writer record is left');
+  const again = callWithArgs(dir, 'speckit-role-implementer', t, 'T002');
+  assert.ok(!denied(again), JSON.stringify(again));
+  assert.match(msg(again), /cited requirements no test names/);
+  assert.equal(roleRec(dir).role, 'implementer');
+});
+
 // #185: the gatekeeper's report and the orchestrator's hand-over can share one response, so the word is
 // the response's last standalone APPROVED or REJECTED line, not its very last line.
 test('#185: a spec-gatekeeper word followed by hand-over text in the same response is recorded', () => {
