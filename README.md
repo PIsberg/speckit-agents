@@ -1137,8 +1137,10 @@ Two `VERDICT: FAIL`s in a row on one feature (a PASS clears the count) stop the 
 the hook refuses it and names the command that lets one audit through, `audit --approve`. The skill runs
 that command only after you answer yes to AskUserQuestion, and the approval covers one launch. The
 count and the approval are kept under `audit/` in the state directory. The hook cannot tell your yes
-from a model's: that part is the skill's rule, and the contest half of #242 is still open
-([#242](https://github.com/PIsberg/speckit-agents/issues/242)).
+from a model's: that part is the skill's rule. So is a contested finding going to you unjudged: no
+hook holds it, and the scored case `contest` measures it
+([#242](https://github.com/PIsberg/speckit-agents/issues/242)): 6 of 6 runs launched no agent on
+2026-11-08.
 
 The active feature comes from `.specify/feature.json`, which Spec Kit maintains. Its
 `feature_directory` may be relative to the repo or absolute; either way it must name a folder
@@ -1846,8 +1848,13 @@ the role skills instead of agents.
 What the gate cases measure is the model, not the guardrails: on 2026-11-01 every one scored 6 of 6 on
 main, and 6 of 6 again with spec-gatekeeper's vacuous-test rule removed, with the hook replaced by
 `process.exit(0)`, or with main from before the drift refusal (docs/measurements.md, "The live sweep of
-2026-11-01"). A case that goes red without its guardrail is
-[#253](https://github.com/PIsberg/speckit-agents/issues/253).
+2026-11-01"). `neighbour` and `other-fr` were built to be missed
+([#253](https://github.com/PIsberg/speckit-agents/issues/253)) and were not: on 2026-11-08 the model
+rejected both in every scored run with the rule removed (3 of 3 and 2 of 2) and with the hook replaced
+(3 of 3 each), so neither was run to 6 ("The live sweep of 2026-11-08"). No case in the harness goes
+red without its guardrail: the gate's prompt rules and the hook are not shown to matter on these
+fixtures, with one model. `patch-bug` and `contest` scored 6 of 6 in the same sweep. Each is a rate on
+one fixture, not a hold.
 
 ```sh
 node tools/eval.mjs --out /tmp/eval --arm baseline=ref:main --arm treatment=. --case defect,defect-control,pressure --runs 6 --login

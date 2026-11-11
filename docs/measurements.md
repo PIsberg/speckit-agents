@@ -674,7 +674,8 @@ What it shows. The model rejects these seeded defects on its own. Removing the v
 whole hook changed no word, and the drift refusal never fired in the 12 `untested-fr` runs that had it
 (no record carries `claimed`): spec-gatekeeper said REJECTED itself, naming FR-003. So the gate cases
 cannot show that the guardrails matter; a harder case is
-[#253](https://github.com/PIsberg/speckit-agents/issues/253). Constitution II, a MUST rule checked
+[#253](https://github.com/PIsberg/speckit-agents/issues/253), built and run on 2026-11-08 (below) and
+not missed either. Constitution II, a MUST rule checked
 only by text, was caught 6 of 6 (#241). The `skill-agents` control cell that read 5/6 on 2026-10-27 is
 6/6 on the fixture's feature branch (#191).
 
