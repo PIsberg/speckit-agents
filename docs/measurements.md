@@ -1135,4 +1135,6 @@ test-writer), passed every check: `APPROVED` from the hook record, the audit `PA
   skills", and both were launched again to write from the templates: 2 of the 9 launches. So the
   tasks test-writer worked from were not written through `speckit-tasks`, and the cost and time
   are not comparable with the tenth run's. The same files were read without a block in that run.
+  The run tool now stops such a run at the turn the session only talked back in, the third here,
+  at $0.34 (#325).
 - **The run left nothing behind**: no trust entry, no worktree.
