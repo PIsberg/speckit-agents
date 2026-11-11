@@ -1010,3 +1010,32 @@ implementers in one message in worktrees, both branches merged with no conflict 
 - **The architect's first `tasks.md` excused the process rules on the tasks that carry them out**
   (#299): FR-006 on T003 and T006, FR-007 on T002 and T005, and the audit passed first time. 3 of 3
   runs with #302's rule.
+
+A seventh run, the same options from `fix/310-decisions-option-form` at `f19f77f` (the three fixes
+above, not yet merged), passed: `APPROVED`, 2 turns, 18 model turns, $1.38 against $1.79.
+
+- **The gate approved first time** (#308): one verify, no break asked for or tried.
+- **`decisions --recommended` recorded the answer** (#310): the architect wrote `- **A (recommended):
+  ...**` and `- **B: ...**` as its rule now says, and the command recorded D1 in the commit's own
+  call. The audit passed first time.
+- **Both worktree implementers still ended `RESULT: RED`** (#309). Each had the new rule in its body
+  and "Run only `node --test <its file>`" in its prompt, ran `npm test` all the same, and reported
+  RED for the other slice's stubs: 2 of 2, so the rule in the agent's body holds nothing. The skill's
+  half held: the main session ran the suite at the end of the merge call, 12 of 12. What it led to:
+  the skill never puts `last round`, the words that ask for the suite, in a worktree launch.
+
+An eighth run, the same options from `fix/309-no-last-round-in-worktree` at `40c9f51` (that change
+too), passed: `APPROVED`, 2 turns, 26 model turns, $1.84.
+
+- **Both worktree implementers ended `RESULT: GREEN`** (#309): their launches carried `worktree`
+  without `last round`, each ran its own test file only, no retry record was written, and the main
+  session ran the suite after the merge, 12 of 12. 1 run, after 2 of 2 failing without the change.
+- **The audit failed once, on a real fault**: the plan's FR-003 check (the input is not modified)
+  could never be seen failing against the stub. One architect revision, then `PASS`.
+- **The gate rejected once, for two IDs no test named**
+  ([#315](https://github.com/PIsberg/speckit-agents/issues/315)): T001 cited FR-007 and FR-009,
+  test-writer tagged neither, and the drift check runs only at the gate. The fix took a test-writer
+  launch, a break-and-restore call and a second verify. The gate broke nothing itself and took the
+  commit order for the red run (#308, 2 of 2 runs).
+- **The cost is not comparable with the run before**: $1.84 against $1.38, with an audit round and a
+  gate round more.
