@@ -1114,3 +1114,25 @@ first time, 12 of 12 tests.
 
 Every paid run still owed is listed in
 [#322](https://github.com/PIsberg/speckit-agents/issues/322).
+
+An eleventh run, the same options from `fix/321-stub-met-requirement` at `bcfdb5f` (#321's rule in
+test-writer), passed every check: `APPROVED` from the hook record, the audit `PASS` first time, 9 of
+9 tests.
+
+| Cost | Time | Agent launches | Main-session responses, input | All agents' input |
+|--:|--:|--:|--:|--:|
+| $1.40 | 699 s | 9 | 16, 0.97M | 0.65M |
+
+- **A requirement the stub already meets cost no launch
+  ([#321](https://github.com/PIsberg/speckit-agents/issues/321)).** The test task cited FR-006 "(the
+  named import)". test-writer wrote no test of its own for it, put `// 001 FR-006` as a comment on
+  the tests that call `sum`, and ended `RED` in one launch of 76 s; the cited-ID check sent nothing
+  back. 1 run, against 1 run without the rule that took two launches.
+- **The run is not the pipeline as shipped
+  ([#325](https://github.com/PIsberg/speckit-agents/issues/325)).** A guard in front of the API,
+  outside this repository, withheld the three Spec Kit skill files from the agents. product-owner
+  and architect each stopped and said so, the run tool's canned answer was taken as "skip the
+  skills", and both were launched again to write from the templates: 2 of the 9 launches. So the
+  tasks test-writer worked from were not written through `speckit-tasks`, and the cost and time
+  are not comparable with the tenth run's. The same files were read without a block in that run.
+- **The run left nothing behind**: no trust entry, no worktree.
