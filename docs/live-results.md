@@ -95,6 +95,34 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-11</b>: Claude Code 2.1.322, Windows 11, three full runs from <code>main</code> on the owner's subscription, two passed and one stopped (#283, #286, #290, #79)</summary>
+
+Setup: `node tools/full-run.mjs --login` with `--two-slices`, then `--skill-agents`, then
+`--side-by-side`, one at a time, from `main` at `b938625`, the owner's user-level team reinstalled
+from the same commit first (a personal skill shadows the run's copy, #175). Main session `sonnet`.
+Numbers and the per-issue findings: docs/measurements.md, "The live runs of 2026-11-11".
+
+- **`--two-slices`, passed every check:** `failures: []`, APPROVED from the hook record, $2.26,
+  1,220 s, 15 launches, all in the foreground, 0 responses that only waited. The scratch repo's own
+  `npm test`: 15 of 15 pass.
+- **`--skill-agents`, passed every check:** APPROVED from the hook record, $0.63, 431 s, no agent
+  launch, 9 role skill calls. The turn was sent on once after each of `VERDICT: PASS`,
+  `RESULT: STUB`, `RED` and `RESULT: GREEN`, and the pipeline ended 3 turns.
+- **`--side-by-side`, stopped, not counted:** Claude Code stopped the run 728 s in, when the machine
+  was critically low on memory. Until then: two test-writers in one message, then two implementers in
+  one message, each with `isolation: "worktree"`. Its trust entry and two locked worktrees were left
+  behind; the entry was removed by hand.
+- **Guardrails that fired, in the `--two-slices` run:** the drift check refused a spec-gatekeeper
+  APPROVED at its Stop (T002 and T005 cited FR-006, in neither test file), and the agent revised to
+  REJECTED; test-writer's scope denied a Bash write to `src/`. spec-gatekeeper rejected 3 times
+  itself before it approved.
+- **Not covered:** side by side against one at a time on one commit (#114), an interactive session
+  with fork subagents off (#66), a decision with a `Spec:` line for `decisions --recommended` to
+  apply, the rates of #233.
+
+</details>
+
+<details>
 <summary><b>2026-11-08</b>: Claude Code 2.1.293 and 2.1.319, Windows 11, folder trust for a project agent's frontmatter hooks, against a fake API, $0 (#237)</summary>
 
 Setup: a git repo at `<tmp>/parent/repo` with one project agent in `.claude/agents/` whose frontmatter

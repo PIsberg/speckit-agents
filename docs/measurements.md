@@ -572,8 +572,7 @@ one whose exclusive create takes a claim on it. #288 first let the one that remo
 speak, but on Windows two processes could both remove it in the same millisecond, and the e2e case
 below failed in 3 of 6 local runs on 2026-11-10; with the claim it passed 8 of 8. Held by that
 same e2e case (4 mentions of the feedback in the next request before, 2 after, as for a Stop with one
-process). The fix stays shown by `test/e2e.test.mjs` only
-([#283](https://github.com/PIsberg/speckit-agents/issues/283)).
+process), and seen with a real model on 2026-11-11, below.
 
 The processes themselves still run, one per role skill the turn loaded, and they do not lengthen the
 Stop ([#294](https://github.com/PIsberg/speckit-agents/issues/294)). Read 2026-11-11 from the three
@@ -592,6 +591,23 @@ the first 230 ms, so four more processes cost a Stop about 30 ms. In all three t
 another of the machine's own (a plugin's), not ours; the two processes of the send-back carry no
 duration in the row. One run, one machine; the other three hooks in each row are the owner's own
 settings, not the team's.
+
+The hand-on on every role was seen with a real model on 2026-11-11
+([#283](https://github.com/PIsberg/speckit-agents/issues/283)): `tools/full-run.mjs --login
+--skill-agents` from `main` at `b938625`, Claude Code 2.1.322, $0.63, 431 s, 35 main-session responses,
+2.41M main input, every check passed. Unlike the run of 2026-11-10, the session ended its turn on each
+of the four words, and each Stop was sent back once and followed in the same turn:
+
+| Report ended | Sent back | Next call in the same turn |
+|---|--:|---|
+| `VERDICT: PASS` | 1 | the implementer role, stub pass |
+| `RESULT: STUB` | 1 | the test-writer role |
+| `RED` | 1 | the implementer role |
+| `RESULT: GREEN` | 1 | the spec-gatekeeper role |
+
+The pipeline ended 3 turns: the spec stop, the plan stop and the hand-over, against 4 on 2026-11-08
+before the fix, two of them after `RESULT: STUB` and `RESULT: GREEN`. Those Stops ran 1 to 4 `lane role`
+processes and no send-back arrived twice (#284). One run.
 
 ## Baseline of the agent-skills lessons (#188, #186, #187)
 
@@ -744,6 +760,11 @@ session `sonnet`, branch `perf/step0-one-call` at `2001d81`, $0.72, every check 
 response was `check team` alone, 191 characters back, and the second was the product-owner role's Skill
 call. One sample ([#286](https://github.com/PIsberg/speckit-agents/issues/286)).
 
+Three more on 2026-11-11, from `main` at `b938625` ("The live runs of 2026-11-11" below): in the
+`--two-slices` run, the `--skill-agents` run and the side-by-side run that was stopped later, the first
+response was `check team` alone and nothing else looked at the repository before the team question or
+the first role. 4 of 4 runs since the change, against 2 of 5 before it.
+
 ## The plan stop in one call
 
 When every answer at the plan stop is the recommended option, the main session records the answers
@@ -773,8 +794,22 @@ that launch while `plan.md` still lists an open decision, so a failed record is 
 audit of an unsettled plan. Held by `test/hook.test.mjs` (6 tests). Replayed on that run's `plan.md`
 and `spec.md` with the session's edits undone, it gives the session's own result but for where in
 `### Edge Cases` the new line sits (last, where the session put it second to last) and one blank line.
-That a main session then needs 1 response there, the read of the section, has not been seen in a run.
 The same run answered step 0 in one response again, in agents mode this time.
+
+Two runs with the command on 2026-11-11 (`main` at `b938625`, the fixture's one open decision, D1,
+answered as recommended; [#290](https://github.com/PIsberg/speckit-agents/issues/290)):
+
+| Run | Responses | What they were |
+|---|--:|---|
+| `--two-slices` | 2 | `decisions --recommended` chained to the commit; then the audit launch alone |
+| `--side-by-side`, stopped later | 1 | `decisions --recommended`, the commit and the audit launch in one message |
+
+Neither read the section first, wrote a script of its own or launched the architect or product-owner:
+the command printed `recorded D1: A as recommended in specs/001-sum-and-capitalize/plan.md; no Spec:
+line to apply` and the session went on from that line. In the first run the commit and the launch were
+two messages where the skill asks for one, which cost one response of 55k cache-read tokens and 4 s.
+The gate's refusal of an audit with open decisions did not fire in either. Two runs, one fixture, one
+decision with no `Spec:` line, so the edit of `spec.md` by the command has still not been seen in a run.
 
 ## The live sweep of 2026-11-08
 
@@ -841,3 +876,59 @@ that run's repo, the refused state passes, and with FR-001's test lines removed 
 Whether it removes the launches has not been seen in a run.
 
 The sweep cost $18.70 in all, the lost runs included.
+
+## The live runs of 2026-11-11
+
+Three full runs on the owner's subscription, one at a time, from `main` at `b938625` with the personal
+team reinstalled from the same commit (build `2c5919a81303`): Claude Code 2.1.322, Windows 11, main
+session `sonnet`, the agents on their own `model:` lines. Two passed every check. The third, side by
+side, was stopped by Claude Code 728 s in, when the machine ran critically low on memory, with both
+implementers at work in their worktrees; it is not counted, and
+[#114](https://github.com/PIsberg/speckit-agents/issues/114)'s comparison on one commit is still
+missing.
+
+| Run | Cost | Time | Agent launches | Main-session responses, input | All agents' input |
+|---|--:|--:|--:|--:|--:|
+| `--two-slices`, one at a time | $2.26 | 1,220 s | 15 | 25, 1.61M | 1.19M |
+| `--skill-agents` | $0.63 | 431 s | 0 | 35, 2.41M | 0 |
+| `--side-by-side`, stopped | not known ($0.17 for its first turn) | 728 s | 9 by then | 11, 0.63M by then | 0.91M by then |
+
+What they say about step 0, the plan stop and the hand-on is in those three sections above. The rest:
+
+- **Decisions ([#79](https://github.com/PIsberg/speckit-agents/issues/79)).** The fixture's one open
+  decision was recorded with no architect or product-owner launch in both default-team runs. The
+  architect's report ended with its `Round 1:` line, the first round went out in the response that
+  read the audit PASS, with no `cat tasks.md` response before it, and both slices shared that round.
+  One dictated revision (17 s, 19k tokens) came back done, not `needs revision`. In the
+  `--skill-agents` run `sum()` was one slice, a test task and its implementation, not two.
+- **First audit ([#42](https://github.com/PIsberg/speckit-agents/issues/42)).** PASS on the fixture's
+  constitution in all three runs. There is still no arm without the architect's self-check, so what it
+  costs when it has nothing to catch is not measured.
+- **The one-at-a-time run went round the gate four times,** which is why it cost $2.26 where the same
+  request cost $1.34 on 2026-11-08. spec-gatekeeper rejected 3 times before it approved; test-writer
+  was launched 4 times and spec-auditor twice.
+  1. The architect's test tasks T002 and T005 cited FR-005 (the two modules are independent) and
+     FR-006 (tests first), and no test named either. REJECTED, correctly: on 2026-10-31 the same gap
+     was approved (#228).
+  2. The main session had the architect excuse FR-006 on T003 by a dictated edit, which voided the
+     audit PASS and cost a second audit (111 s). The architect's report said T002 and T005 still cited
+     FR-006; the session went on. The next spec-gatekeeper wrote APPROVED and **the hook's drift check
+     refused it** at its Stop, naming T002 and T005, and the agent revised to REJECTED. This is the
+     state #278 was meant to spare, with the excuse on another task than the ones that cite the ID.
+     It was cleared by a comment naming `001 FR-006` in each test file, which holds nothing
+     ([#299](https://github.com/PIsberg/speckit-agents/issues/299)).
+  3. test-writer's first FR-005 tests grepped the source for an import. REJECTED as an argument about
+     structure, and replaced by tests that copy one module alone into a temporary folder and call it.
+- **A test added after the code cannot be shown failing by test-writer.** Showing the FR-005 tests red
+  means breaking `src/`, which test-writer's scope denies. test-writer ended on `BLOCKED` the first
+  time, and on `RED` the last time for two tests that pass by design. The main session made the edit
+  to `src/` itself, twice, saw both tests fail, and restored it. No rule says who does this
+  ([#298](https://github.com/PIsberg/speckit-agents/issues/298)).
+- **The stopped run left its trust entry and two locked worktrees behind**
+  ([#260](https://github.com/PIsberg/speckit-agents/issues/260)): the undo runs in the tool's own
+  process, which was killed with the session. The entry was removed by hand after the run.
+- **From the owner's settings, not the team:** in the `--skill-agents` run a Read of
+  `.claude/skills/speckit-specify/SKILL.md` was withheld, since a `--login` run loads the owner's
+  `permissions.deny`. The session worked from the spec template and the run passed.
+
+The three runs cost $2.89 as reported, the stopped run's second turn not included.
