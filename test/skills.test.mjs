@@ -78,7 +78,7 @@ test('skills: the collision check fails on two descriptions that say the same th
 // #189: the authoring rules that a test can hold. Each check is a function over text so it can be shown failing
 // on a violating fixture; the model-neutrality rule is a review criterion in the constitution, not a test.
 const MAX_SKILL_LINES = 500; // agent-skills' docs/skill-anatomy.md; speckit-team is 375 at 2026-10-27
-const MAX_ROLE_LINES = 150; // a role skill is its agent's body plus a preamble; architect's is 143
+const MAX_ROLE_LINES = 150; // a role skill is its agent's body plus a preamble; architect's is 150
 const MAX_DESCRIPTION = 1024;
 const MODEL_NAME = /\b(opus|sonnet|haiku|fable)\b|claude-[a-z]+-\d/i;
 export const problems = {

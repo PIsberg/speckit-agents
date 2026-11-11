@@ -921,8 +921,10 @@ What they say about step 0, the plan stop and the hand-on is in those three sect
      by `test/drift.test.mjs`. Replayed on that run's repo at the refused commit (`b84706e`), the
      check passes; with the excuse taken out it names FR-006 three times, and with the `001 FR-001`
      lines taken out of `test/math.test.js` it names FR-001 twice. This spares the gatekeeper round
-     and the comment, not the second audit, which the edit to `tasks.md` still costs: whether the
-     architect excuses a process rule when it writes the tasks has not been seen in a run.
+     and the comment, not the second audit, which the edit to `tasks.md` still costs: the architect
+     is now told to excuse a rule of how the work is done on the task that carries it out, in the
+     first `tasks.md`, and to cite it on no test task (pinned by `test/install.test.mjs`). Whether
+     it does has not been seen in a run.
   3. test-writer's first FR-005 tests grepped the source for an import. REJECTED as an argument about
      structure, and replaced by tests that copy one module alone into a temporary folder and call it.
 - **A test added after the code cannot be shown failing by test-writer.** Showing the FR-005 tests red

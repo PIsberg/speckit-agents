@@ -243,6 +243,20 @@ test('installed speckit-team skill builds up to 4 slices per round, across phase
   assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
 });
 
+// #299: in the full runs of 2026-11-08 and 2026-11-11 the architect's test tasks cited a process rule
+// ("tests are written first") as covered by their test file. No test can hold one, so the gate rejected,
+// the excuse was dictated into tasks.md afterwards, and that edit voided the audit: one architect, one
+// spec-auditor and one spec-gatekeeper launch more. The excuse belongs in the first tasks.md, on the task
+// that carries the rule out (the drift check takes it from any task of the feature).
+test('installed architect excuses a rule of how the work is done when it writes the tasks, on no test task (#299)', () => {
+  const architect = flat(installedAgent('architect'));
+  const rule = /A test task cites only what a test can fail on[^.]*./.exec(architect)?.[0] ?? '';
+  assert.match(rule, /a rule of how the work is done ([^)]*tests first[^)]*)/, 'says what kind of requirement, with the one seen');
+  assert.match(rule, /`No test:` on the task that carries it out/, 'and where its excuse goes');
+  assert.ok(architect.indexOf(rule) > architect.indexOf('excused by `No test: <reason>`'), 'after the rule that introduces the excuse');
+  assert.ok(architect.indexOf(rule) < architect.indexOf('## Report'), 'in the Process');
+});
+
 // In the --login run of 2026-10-25 the main session spent a response (60k input) right after the
 // audit PASS only to `cat tasks.md` and plan the rounds. The architect knows them when it writes the
 // tasks, so its report carries one line per round and the skill launches the first round from it.
