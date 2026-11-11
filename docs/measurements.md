@@ -287,6 +287,28 @@ A breakpoint on the last context block, before the prompt, would let every relau
 that is a Claude Code change (#133). The shape is pinned in
 [`test/e2e.test.mjs`](../test/e2e.test.mjs), which fails if Claude Code moves the breakpoint.
 
+Whether a hook can get round it, checked 2026-11-11 against the e2e fake API on Claude Code 2.1.322,
+at $0, with a throwaway hook that is not in the repository: at `Agent` PreToolUse it replaced every
+launch prompt with one fixed line (`updatedInput`), and at SubagentStart it handed the real prompt
+over as `additionalContext`. Two test-writer launches with different prompts then sent a first
+message that was byte for byte the same, context and prompt (22,495 characters in 4 blocks). It
+does not help, for two reasons:
+
+- **The brief lands in the block that carries the breakpoint.** Claude Code puts the
+  `additionalContext` at the start of the next message's one block, ahead of `# Environment`, and
+  the first breakpoint is on that block. A cache entry exists only where a breakpoint was, so the
+  identical first message is never an entry of its own, and the block that is one differs with
+  every brief. Seen once; no test pins it.
+- **In a real run the context differs anyway.** Its second block is the git status with the recent
+  commits, and the team commits between launches: in the run of 2026-11-11 from `main` at
+  `a4771d0`, the second test-writer's context listed the commit the first one had made.
+
+That run shows what it costs: its three same-type relaunches (product-owner, test-writer,
+implementer) read 4,630 to 5,151 tokens and wrote 8,614 to 8,725 each, 26,061 written in all, of the
+run's 1.59M input. A brief fetched by the agent's first tool call would come after the breakpoint,
+but costs a response per launch and still meets the git status. So nothing in this repository's
+reach is left for #133: both remaining changes are Claude Code's.
+
 ## CLAUDE.md in the read-only agents
 
 Measured 2026-10-24 on Claude Code 2.1.310, Windows, against the e2e fake API, with the case in
