@@ -995,7 +995,9 @@ implementers in one message in worktrees, both branches merged with no conflict 
 - **Each worktree implementer ended `RESULT: RED` for the other slice's stubs**
   ([#309](https://github.com/PIsberg/speckit-agents/issues/309)). Both had `last round`, ran the
   full suite, and saw the sibling's tests fail on `not implemented`. The retry record held 2 of the
-  3 REDs that lock implementer out; after the merge the suite was 14 of 14.
+  3 REDs that lock implementer out; after the merge the suite was 14 of 14. What it led to: an
+  implementer in a worktree runs its own tasks' tests and ends on them, and the main session runs
+  the full suite after the last round's merge.
 - **`decisions --recommended` met a third option form**
   ([#310](https://github.com/PIsberg/speckit-agents/issues/310)): a bold paragraph with no bullet,
   `**Option B (recommended): ...**`. The command changed nothing and said "no option line found"

@@ -356,7 +356,10 @@ A worktree starts from the last commit, without uncommitted work: commit the rou
 ticks in the message that launches the implementers. After each implementer step, in one Bash
 call chained with `&&`: merge the branches the results name (`worktreeBranch`) into the feature
 branch in task order, `git worktree remove` each `worktreePath` and `git branch -d` its branch, and
-only then tick the tasks each report names as done and commit. The worktrees sit inside the repository
+only then tick the tasks each report names as done and commit. A worktree lacks the other slices'
+code, so an implementer there runs its own tasks' tests, never the full suite: run it yourself at the
+end of that call after the last round's merge, and on a failure relaunch one implementer without a
+worktree, with the output and `last round`. The worktrees sit inside the repository
 (`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
 the 2026-10-25 run committed both and spent a commit taking them out.
 

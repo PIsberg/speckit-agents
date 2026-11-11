@@ -679,6 +679,10 @@ uncommitted work, so the main session commits the round's tests in the message t
 implementers. An implementer there ticks nothing in `tasks.md`, because ticks on adjacent lines in
 two branches conflict when merged; after each implementer step the main session merges the branches,
 removes each worktree and its branch, and only then ticks the tasks the reports name and commits.
+An implementer in a worktree runs its own tasks' tests and never the full suite, which cannot pass
+there: the other slices' code is still stubs. The main session runs it after the last round's merge
+([#309](https://github.com/PIsberg/speckit-agents/issues/309): in the run of 2026-11-11 both
+implementers ended `RESULT: RED` for each other's stubs, 2 of the 3 REDs that lock implementer out).
 The worktrees sit in the repository's `.claude/worktrees/`, so a `git add -A` before the removal
 commits them as embedded repositories, as the first side-by-side run with real models did
 (2026-10-25). The round's stub pass stays one implementer without a worktree: stubs take seconds,

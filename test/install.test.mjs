@@ -637,6 +637,13 @@ test('installed skill and implementer agree on building [P] slices side by side 
   const ticked = side.indexOf('tick the tasks each report names as done and commit');
   assert.ok(ticked > removed && removed >= 0, 'the worktrees and their branches go before the tick commit');
   assert.match(side, /stub pass stays one implementer, without a worktree/);
+  // #309: side-by-side implementers get `last round`, which meant the full suite, and a worktree holds the
+  // other slice's stubs. In the run of 2026-11-11 both made their own tests pass and ended RESULT: RED, 2 of
+  // the 3 REDs that lock implementer out, on a build that was 14 of 14 once merged.
+  assert.match(implementer, /full suite only when your prompt says `last round` and not `worktree`/, 'no full suite in a worktree');
+  assert.match(implementer, /the full suite among them in the last round outside a worktree/, 'so GREEN there is the tests it ran');
+  assert.match(side, /never the full suite[^.]*at the end of that call after the last round's merge/, 'the main session runs the suite once merged');
+  assert.match(side, /relaunch one implementer without a worktree[^.]*`last round`/, 'and a failure there goes to one implementer');
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
   // #114: the two runs of 2026-10-25 built one two-slice feature both ways, so the recommendation
   // stands on numbers and no longer on there being no run.

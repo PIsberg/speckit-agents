@@ -144,7 +144,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: d144544e -->
+<!-- fingerprint: a4a8f207 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
@@ -152,6 +152,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
 - Side-by-side slices in worktrees, merged in task order. pinned.
+- The full suite of a side-by-side round: the main session runs it after the last round's merge, and a failure goes to one implementer without a worktree. pinned (#309); text, unseen.
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
 <!-- fingerprint: fbbe77e0 -->
@@ -347,10 +348,10 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Only the tasks, the report and the tests; spec and plan stay unread. pinned (brief), text, unseen (cost).
 
 ### agents/implementer.md: Process
-<!-- fingerprint: 7f872658 -->
+<!-- fingerprint: 4f588567 -->
 - Confirm the red state first. text.
 - The least code that turns the tests green. text.
-- The full suite only in the last round. pinned.
+- The full suite only in the last round, and never in a worktree, which lacks the other slices' code. pinned (#309). Seen 2026-11-11: two worktree implementers ended RED for each other's stubs, 2 of the 3 that lock the role out.
 - Check each command's own exit status, not a pipe's. text, unseen.
 - A Bash `timeout` that covers the run. pinned.
 - Tick and commit; in a worktree tick nothing. pinned.
@@ -365,7 +366,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A test that looks wrong is reported, not changed. text.
 
 ### agents/implementer.md: Report
-<!-- fingerprint: f67ff55a -->
+<!-- fingerprint: 824a3852 -->
 - `RESULT: GREEN`, `RED` or `STUB` last; 3 REDs in a row block. hook `result`, `gate retries`.
 
 ## agents/spec-gatekeeper.md
