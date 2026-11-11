@@ -1010,3 +1010,16 @@ implementers in one message in worktrees, both branches merged with no conflict 
 - **The architect's first `tasks.md` excused the process rules on the tasks that carry them out**
   (#299): FR-006 on T003 and T006, FR-007 on T002 and T005, and the audit passed first time. 3 of 3
   runs with #302's rule.
+
+A seventh run, the same options from `fix/310-decisions-option-form` at `f19f77f` (the three fixes
+above, not yet merged), passed: `APPROVED`, 2 turns, 18 model turns, $1.38 against $1.79.
+
+- **The gate approved first time** (#308): one verify, no break asked for or tried.
+- **`decisions --recommended` recorded the answer** (#310): the architect wrote `- **A (recommended):
+  ...**` and `- **B: ...**` as its rule now says, and the command recorded D1 in the commit's own
+  call. The audit passed first time.
+- **Both worktree implementers still ended `RESULT: RED`** (#309). Each had the new rule in its body
+  and "Run only `node --test <its file>`" in its prompt, ran `npm test` all the same, and reported
+  RED for the other slice's stubs: 2 of 2, so the rule in the agent's body holds nothing. The skill's
+  half held: the main session ran the suite at the end of the merge call, 12 of 12. What it led to:
+  the skill never puts `last round`, the words that ask for the suite, in a worktree launch.

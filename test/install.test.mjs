@@ -649,6 +649,10 @@ test('installed skill and implementer agree on building [P] slices side by side 
   assert.match(implementer, /the full suite among them in the last round outside a worktree/, 'so GREEN there is the tests it ran');
   assert.match(side, /never the full suite[^.]*at the end of that call after the last round's merge/, 'the main session runs the suite once merged');
   assert.match(side, /relaunch one implementer without a worktree[^.]*`last round`/, 'and a failure there goes to one implementer');
+  // The run after that rule (2026-11-11, from f19f77f): both implementers had it, had "Run only <their file>" in
+  // their prompt as well, ran `npm test` all the same and ended RED. `last round` is what asks for the suite, so
+  // the skill, which writes the prompt, leaves it out of a worktree launch.
+  assert.match(side, /`worktree` in its prompt and never `last round`/, 'a worktree launch is never the last round');
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
   // #114: the two runs of 2026-10-25 built one two-slice feature both ways, so the recommendation
   // stands on numbers and no longer on there being no run.
