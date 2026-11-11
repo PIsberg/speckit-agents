@@ -197,17 +197,84 @@ test('full run: an entry written back after the undo is removed again by its lat
   assert.match(errors.join('\n'), /trust for .* came back after its undo; removed again/);
 });
 
+// #260, the second way an entry stays: a run stopped from outside never reaches its undo (2026-11-11: Claude
+// Code killed a --login run under memory pressure, and its scratch repo stayed trusted in ~/.claude.json).
+// Each entry a run adds is kept, with the run's pid, in a ledger beside the config; the next run removes the
+// entries of pids that are gone.
+function stoppedRun(conf, repo) {
+  const mod = new URL('../tools/full-run.mjs', import.meta.url).href;
+  const code = `const m = await import(${JSON.stringify(mod)}); m.trustFolder(process.argv[1], process.argv[2]);`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', code, conf, repo], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+}
+function quiet(fn) {
+  const errors = [];
+  const real = console.error;
+  console.error = (m) => errors.push(String(m));
+  try { return { value: fn(), errors: errors.join('\n') }; } finally { console.error = real; }
+}
+test('full run: the next run removes the trust entry of a run that was stopped before its undo, and says so (#260)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const [a, b] = ['a', 'b'].map((n) => path.join(dir, n, 'repo'));
+  const k = (p) => p.split(path.sep).join('/');
+  fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: { 'C:/other': { hasTrustDialogAccepted: true } } }));
+  stoppedRun(conf, a);
+  assert.ok(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[k(a)], 'the stopped run left its entry');
+  const { value: undo, errors } = quiet(() => trustFolder(conf, b));
+  const during = JSON.parse(fs.readFileSync(conf, 'utf8'));
+  assert.deepEqual(Object.keys(during.projects).sort(), ['C:/other', k(b)].sort(), 'the stopped run\'s entry is gone, the user\'s and this run\'s are there');
+  assert.match(errors, /trust for .*a\/repo was left by a run that ended without its undo \(pid \d+\); removed/);
+  undo();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects, { 'C:/other': { hasTrustDialogAccepted: true } });
+  assert.equal(fs.existsSync(`${conf}.speckit-trust.json`), false, 'an empty ledger is removed');
+});
+
+test('full run: a run on the folder a stopped run left trusted still removes the entry at its end (#260)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const repo = path.join(dir, 'out', 'repo');
+  fs.writeFileSync(conf, JSON.stringify({ projects: {} }));
+  stoppedRun(conf, repo);
+  const { value: undo } = quiet(() => trustFolder(conf, repo));
+  assert.ok(JSON.parse(fs.readFileSync(conf, 'utf8')).projects[repo.split(path.sep).join('/')], 'trusted for this run');
+  undo();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects, {});
+});
+
+test('full run: the entry of a run still going is left alone, and a ledger that does not parse removes nothing (#260)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
+  const conf = path.join(dir, '.claude.json');
+  const [a, b] = ['a', 'b'].map((n) => path.join(dir, n, 'repo'));
+  const k = (p) => p.split(path.sep).join('/');
+  fs.writeFileSync(conf, JSON.stringify({ projects: {} }));
+  // This process is the run still going.
+  const undoA = trustFolder(conf, a);
+  const { value: undoB, errors } = quiet(() => trustFolder(conf, b));
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(conf, 'utf8')).projects).sort(), [k(a), k(b)].sort());
+  assert.equal(errors, '');
+  undoA(); undoB();
+  assert.deepEqual(JSON.parse(fs.readFileSync(conf, 'utf8')).projects, {});
+  stoppedRun(conf, a);
+  fs.writeFileSync(`${conf}.speckit-trust.json`, '[{"key": ');
+  quiet(() => trustFolder(conf, b))
+    .value();
+  assert.deepEqual(Object.keys(JSON.parse(fs.readFileSync(conf, 'utf8')).projects), [k(a)], 'nothing is removed on a ledger that cannot be read');
+});
+
 test('full run: runs started together each keep their trust entry, as tools/eval.mjs runs in parallel need', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-trust-'));
   const conf = path.join(dir, '.claude.json');
   fs.writeFileSync(conf, JSON.stringify({ numStartups: 4, projects: {} }));
+  // The children stand in for runs still going, though they exit, so they keep no ledger (`ledger: null`):
+  // with one, a child still going would take an exited child's entries for a stopped run's and remove them.
   // Eight processes that wait for the same instant, then each trust 25 repos of their own: on 2026-11-01
   // eight eval processes started at once left 3 of 8 entries, the rest lost to each other's read-modify-write.
   const at = Date.now() + 1500;
   const mod = new URL('../tools/full-run.mjs', import.meta.url).href;
   const repos = Array.from({ length: 8 }, (_, i) => path.join(dir, `run${i}`));
   const all = repos.flatMap((r) => Array.from({ length: 25 }, (_, j) => path.join(r, `repo${j}`)));
-  const code = `const m = await import(${JSON.stringify(mod)}); while (Date.now() < ${at}); for (let j = 0; j < 25; j++) m.trustFolder(process.argv[1], process.argv[2] + '/repo' + j);`;
+  const code = `const m = await import(${JSON.stringify(mod)}); while (Date.now() < ${at}); for (let j = 0; j < 25; j++) m.trustFolder(process.argv[1], process.argv[2] + '/repo' + j, { ledger: null });`;
   const { spawn } = await import('node:child_process');
   const codes = await Promise.all(repos.map((r) => new Promise((done) => spawn(process.execPath, ['--input-type=module', '-e', code, conf, r]).on('exit', done))));
   assert.deepEqual(codes, repos.map(() => 0));
