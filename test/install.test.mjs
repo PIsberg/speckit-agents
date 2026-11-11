@@ -488,6 +488,21 @@ test('installed test-writer names a cited ID on a test the task says to keep', (
   assert.match(work, /kept test is not a new test/i, 'it does not count as a test that already passes');
 });
 
+// #321: in the full run of 2026-11-11 from main a task said "cover FR-001", the export by name. The stub
+// already exported it, so the test of only that passed, test-writer ended BLOCKED, and a second launch
+// dropped the test (68 s, 0.1M input). Such a requirement is held by the tests that call the symbol.
+test('installed test-writer writes no test of its own for a requirement the stub already meets (#321)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const text = flat(fs.readFileSync(path.join(dir, 'agents', 'test-writer.md'), 'utf8'));
+  const work = text.slice(text.indexOf('## Process'), text.indexOf('## Lane'));
+  const rule = /A requirement the stub already meets[^.]*./i.exec(work)?.[0] ?? '';
+  assert.match(rule, /export|signature/i, 'what such a requirement looks like');
+  assert.match(rule, /no test of its own/i, 'no test that cannot be red');
+  assert.match(rule, /comment/i, 'its ID goes on the tests that call it, as a comment');
+  assert.match(rule, /do not report it as already passing/i, 'and it is no reason to end BLOCKED');
+});
+
 // specs/004-board-clear/findings.md, 5 and 6: product-owner's and architect's hooks see Write and
 // Edit only, and no stop check reads their Bash writes. And in Claude Code 2.1.296 a report arrives as
 // the agent's hand-back message, which the Agent tool's result only points to.
