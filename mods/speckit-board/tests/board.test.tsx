@@ -596,11 +596,16 @@ function recorders(on: On) {
   return counts
 }
 
-// Refuses writes to one of the mod's state keys once armed.
+// Refuses writes to one of the mod's state keys once armed. Counts the writes it saw and the ones it let
+// through, so a test can wait for a write that runs unawaited instead of for a time (#291).
 function denyState(on: On, key: string) {
-  const gate = { isArmed: false }
-  on('state.set', { plugin: 'speckit-board', key } as never, ((_$: unknown, e: unknown, next: (e: never) => unknown) =>
-    (gate.isArmed ? { deny: 'state is read-only' } : next(e as never))) as never)
+  const gate = { isArmed: false, tries: 0, passed: 0 }
+  on('state.set', { plugin: 'speckit-board', key } as never, ((_$: unknown, e: unknown, next: (e: never) => unknown) => {
+    gate.tries++
+    if (gate.isArmed) return { deny: 'state is read-only' }
+    gate.passed++
+    return next(e as never)
+  }) as never)
   return gate
 }
 
@@ -1589,21 +1594,30 @@ test('010 constitution III a refused stats write, from the poll and from turn.co
   let percent = 10
   seen.usage.answer = () => sessionUsage({ percent: percent += 1, usd: 1 })
   const refused = () => seen.toasts.filter(t => /^board could not update the stats: /.test(t))
-  const settled = async () => { await seen.clock.settle(); await sleep(40) }
-  await start($)
-  await settled()
+  // The writes run unawaited: wait for the next one (or the next one let through) to reach the gate, not
+  // for a time. A fixed 40 ms let the write that succeeds land after the gate was armed again on a slow
+  // runner, so the toast was never re-armed (#291).
+  const next = async (count: 'tries' | 'passed', step: () => Promise<unknown>) => {
+    const before = gate[count]
+    await step()
+    await until(seen.clock, async () => gate[count] > before)
+    expect(gate[count], `a stats write reached the gate (${count})`).toBeGreaterThan(before)
+  }
+  const tick = () => seen.clock.advance(POLL)
+  await next('tries', () => start($))
+  await until(seen.clock, async () => refused().length > 0)
   expect(refused()).toHaveLength(1)
-  for (let i = 0; i < 3; i++) { await seen.clock.advance(POLL); await settled() }
-  await turn($, turnUsage('claude-sonnet-5-5', 10, 5))
-  await settled()
+  for (let i = 0; i < 3; i++) await next('tries', tick)
+  await next('tries', () => turn($, turnUsage('claude-sonnet-5-5', 10, 5)))
   expect(refused()).toHaveLength(1)
   // A write that succeeds re-arms the toast.
   gate.isArmed = false
-  await seen.clock.advance(POLL)
-  await settled()
+  await next('passed', tick)
   expect(refused()).toHaveLength(1)
   gate.isArmed = true
-  for (let i = 0; i < 2; i++) { await seen.clock.advance(POLL); await settled() }
+  await next('tries', tick)
+  await until(seen.clock, async () => refused().length > 1)
+  await next('tries', tick)
   expect(refused()).toHaveLength(2)
 })
 
