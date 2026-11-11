@@ -1091,10 +1091,61 @@ test('#228: a hook without its drift module records APPROVED and says the check 
   assert.equal(endsWord(dir).word, 'APPROVED');
 });
 
-// Non-gatekeeper uses of `ends` (test-writer's RED, patcher's DONE) never run the check.
-test('#228: ends without --record does not run the drift check', () => {
+// patcher's `ends` never runs the check, and no word but test-writer's RED and FIXED does.
+test('#228: ends without --record does not run the drift check on a word that is not RED or FIXED', () => {
   const { dir } = driftRepo();
-  assert.equal(run(dir, ['ends', 'APPROVED', 'RED'], { hook_event_name: 'SubagentStop', agent_id: 'tw9', last_assistant_message: 'x\nAPPROVED' }), null);
+  assert.equal(run(dir, ['ends', 'DONE', 'FAILED'], { hook_event_name: 'SubagentStop', agent_id: 'p9', last_assistant_message: 'x\nDONE' }), null);
+  assert.equal(run(dir, TW, { hook_event_name: 'SubagentStop', agent_id: 'tw9', last_assistant_message: 'x\nBLOCKED' }), null);
+});
+
+// #315: the cited-ID half of the check ran only at the gate. In the full run of 2026-11-11 (40c9f51) T001 cited
+// FR-007 and FR-009, test-writer tagged neither, and the gate's REJECTED cost a round and a launch on code with
+// nothing wrong. test-writer's RED or FIXED is now sent back once with the lines, while it has the files open.
+const TW = ['ends', 'RED', 'BLOCKED', 'FIXED'];
+test('#315: test-writer\'s RED is sent back once at Stop while a ticked test task cites an ID none of its test files holds', () => {
+  const { dir, write: put } = driftRepo();
+  const stop = (id, last, extra) => run(dir, TW, { hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'test-writer', last_assistant_message: last, ...extra });
+  const first = stop('tw1', 'T001 fails on its assertion.\nRED');
+  assert.equal(first?.decision, 'block');
+  assert.match(first.reason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.match(first.reason, /"001 FR-002"/, 'says how an ID is written');
+  // Never twice: the second report goes through, and says what is still missing.
+  const second = stop('tw1', 'T001 fails on its assertion.\nRED');
+  assert.ok(!decided(second), 'never blocks twice');
+  assert.match(msg(second), /test-writer reported RED with cited requirements no test names: [^\n]*T001: FR-001/);
+  // FIXED is checked as RED is; a Stop that is already a continuation is not blocked, and says so.
+  assert.equal(stop('tw2', 'Tagged.\nFIXED')?.decision, 'block');
+  const cont = stop('tw3', 'x\nRED', { stop_hook_active: true });
+  assert.ok(!decided(cont));
+  assert.match(msg(cont), /cited requirements no test names/);
+  // With the ID in the file, as test-writer writes it, nothing is said.
+  put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  assert.equal(stop('tw4', 'x\nRED'), null);
+});
+
+test('#315: the hand-back is denied once with the same lines, and the Stop after it says nothing more', () => {
+  const { dir } = driftRepo();
+  const send = (message) => run(dir, TW, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id: 'tw5', agent_type: 'test-writer' });
+  const first = send('T001 red.\nRED');
+  assert.equal(first?.hookSpecificOutput?.permissionDecision, 'deny');
+  assert.match(first.hookSpecificOutput.permissionDecisionReason, /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  const second = send('T001 red.\nRED');
+  assert.ok(!decided(second));
+  assert.match(msg(second), /cited requirements no test names/);
+  assert.equal(run(dir, TW, { hook_event_name: 'SubagentStop', agent_id: 'tw5', agent_type: 'test-writer', last_assistant_message: 'T001 red.\nRED' }), null);
+});
+
+// Only the cited half: an FR of spec.md that no test names yet may be a later round's, and stays the gate's.
+test('#315: an FR of spec.md no test names yet does not send test-writer back, and a missing drift module is said', () => {
+  const { dir, write: put } = driftRepo();
+  put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  put(`${FEAT}/spec.md`, '- **FR-001**: adds.\n- **FR-002**: a later round.\n');
+  assert.equal(run(dir, TW, { hook_event_name: 'SubagentStop', agent_id: 'tw6', agent_type: 'test-writer', last_assistant_message: 'x\nRED' }), null);
+  const alone = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-')), 'speckit-team.mjs');
+  fs.copyFileSync(HOOK, alone);
+  const out = run(dir, TW, { hook_event_name: 'SubagentStop', agent_id: 'tw7', agent_type: 'test-writer', last_assistant_message: 'x\nRED' }, alone);
+  assert.ok(!decided(out));
+  assert.match(msg(out), /cited-ID check could not run/);
 });
 
 // --- 003 fast track: `scope protected` (T001; FR-007, FR-001, US3-1, US3-4, SC-003) ---

@@ -1035,7 +1035,8 @@ too), passed: `APPROVED`, 2 turns, 26 model turns, $1.84.
 - **The gate rejected once, for two IDs no test named**
   ([#315](https://github.com/PIsberg/speckit-agents/issues/315)): T001 cited FR-007 and FR-009,
   test-writer tagged neither, and the drift check runs only at the gate. The fix took a test-writer
-  launch, a break-and-restore call and a second verify. The gate broke nothing itself and took the
+  launch, a break-and-restore call and a second verify. What it led to: the hook runs the task half
+  of the drift check when test-writer stops and sends a missing ID back to it once. The gate broke nothing itself and took the
   commit order for the red run (#308, 2 of 2 runs).
 - **The cost is not comparable with the run before**: $1.84 against $1.38, with an audit round and a
   gate round more.

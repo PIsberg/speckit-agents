@@ -816,6 +816,22 @@ test('#230: a personal install shadows a project one of another build, and the s
   assert.ok(out.includes(fwd(project)), out);
 });
 
+// #315: Claude Code runs test-writer's `ends` at its Stop with the installed drift check beside the hook, and a
+// RED on a ticked test task whose cited FR is in none of its test files comes back to it with the line.
+test("#315: test-writer's RED comes back once while a ticked test task's FR is in none of its test files", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  s.write('specs/001-x/tasks.md', '- [X] T001 Test FR-006 in `test/a.test.js`\n');
+  s.write('test/a.test.js', "test('adds', () => {});\n");
+  git(s.repo, 'add', '-A'); git(s.repo, 'commit', '-qm', 'tests');
+  const r = await session(s, {
+    [MAIN]: [agent('test-writer', 'e2e test-writer')],
+    'e2e test-writer': [say('T001 fails on its assertion.\nRED'), say('T001 fails on its assertion; FR-006 has no test of its own.\nRED')],
+  });
+  assert.match(shown(r.requests['e2e test-writer'][1]), /T001: FR-006 is in none of test\/a\.test\.js/, story(r));
+  assert.equal(r.requests['e2e test-writer'].length, 2, `sent back once, not twice:\n${story(r)}`);
+});
+
 test("test-writer's Stop: the lane check catches production code written through Bash, and the report must end in RED, BLOCKED or FIXED", { skip: noClaude, timeout: 120_000 }, async () => {
   const s = setup();
   recordPass(s);
