@@ -107,6 +107,9 @@ async function world(on: On, extra: Record<string, string> = {}, opts: { hasReco
 // on the way: about 1 s alone, but over the kit's 5000 ms default in a full npm test, where the e2e
 // suites load the machine (5031 ms on 2026-10-25). The time is for a hang, not a speed check.
 const CLOCK_HEAVY = { timeoutMs: 20_000 }
+// The same room for a test that sends many events, each of which refreshes the board: 16 of them took
+// 5292 ms in a full npm test on 2026-11-11, over the kit's 5000 ms, and passed alone.
+const EVENT_HEAVY = CLOCK_HEAVY
 
 async function poll(clock: MockClock, ms: number, isThere: () => boolean | Promise<boolean>) {
   await clock.advance(ms)
@@ -310,7 +313,7 @@ test('the team rows say what each agent was asked and whether its word is good f
 })
 
 // A pipeline launches a dozen agents or more, and the pane listed every one above the tasks.
-test('the team rows show the latest six agents and count the rest', async ($, on) => {
+test('the team rows show the latest six agents and count the rest', EVENT_HEAVY, async ($, on) => {
   await world(on)
   on('classic.SubagentStart', () => ({}))
   on('classic.SubagentStop', () => ({}))
