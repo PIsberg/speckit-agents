@@ -255,6 +255,13 @@ const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: require
   + `as test-writer writes "001 FR-002" in a test's name or a comment):\n${problems.join('\n')}\n`
   + 'A requirement no test holds cannot be approved, whatever argument covers it. Report each as a rejection reason '
   + '(owner: test-writer, who adds the test, or the ID to the test that already covers it) and end with REJECTED.';
+// #315, #316: test-writer's RED or FIXED while a ticked test task cites an ID none of its test files holds.
+const citedRefusal = (word, problems) => `Your ${word} leaves requirements a ticked test task cites in none of its test files:\n${problems.join('\n')}\n`
+  + 'Put each ID in the name or a comment of the test that holds it, after the feature\'s number ("001 FR-002"); '
+  + 'on a test the task says to keep, as a comment. A task that is not yours: leave it and say so. Then send the full report.';
+const citedStands = (name, word, problems) => `speckit-team: ${name} reported ${word} with cited requirements no test names: ${problems.join('; ')}. `
+  + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
+const citedUnchecked = (name, word, failed) => `speckit-team: the cited-ID check could not run (${failed}), so ${name}'s ${word} goes on without it.`;
 const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
   + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
@@ -780,6 +787,26 @@ function closeRole(rec, at, gate = null) {
       if (sendBackOnce(rec, 'lane')) block(text);
       drop();
       emit({ systemMessage: `WARNING: ${rec.role} left changes outside its lane: ${r.outside.join(', ')}` });
+    }
+  }
+  // #316: the test-writer role's RED or FIXED, as the agent's at `ends` (#315): blocked once at Stop, denied
+  // once at the next role call (the record keeps it, so the same call made again goes through), then said.
+  if (rec.role === 'test-writer') {
+    const texts = [...((rec.offset === null ? null : roleTexts(rec.transcript, rec.offset)) ?? []),
+      at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] : str(input.last_assistant_message)].filter(Boolean);
+    const word = texts.map(lastWord).reverse().find((w) => END_WORDS['test-writer'].includes(w));
+    const feat = feature() ?? rec.feature;
+    const cited = feat && (word === 'RED' || word === 'FIXED') ? driftOf(feat, false) : null;
+    if (cited?.failed) addNote(citedUnchecked('the test-writer role', word, cited.failed));
+    if (cited?.problems?.length) {
+      const why = citedRefusal(word, cited.problems);
+      if (at === 'skill') {
+        const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
+        let kept = !sent.includes('cited');
+        if (kept) { try { writeJson(roleFile(id), { ...rec, sentBack: [...sent, 'cited'] }); } catch { kept = false; } }
+        if (kept) deny(why);
+      } else if (sendBackOnce(rec, 'cited')) block(why);
+      addNote(citedStands('the test-writer role', word, cited.problems));
     }
   }
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
@@ -1502,19 +1529,16 @@ if (mode === 'ends') {
   if (!record && (word === 'RED' || word === 'FIXED') && words.includes(word)) {
     const feat = feature();
     const cited = feat ? driftOf(feat, false) : null;
-    if (cited?.failed) citedNote = `speckit-team: the cited-ID check could not run (${cited.failed}), so ${who}'s ${word} goes on without it.`;
+    if (cited?.failed) citedNote = citedUnchecked(who, word, cited.failed);
     if (cited?.problems?.length) {
       const asked2 = agentKey && path.join(stateDir, 'agents', `${agentKey}.cited-asked`);
       if (asked2 && !fs.existsSync(asked2)) {
         writeJson(asked2, {});
-        const why = `Your ${word} leaves requirements a ticked test task cites in none of its test files:\n${cited.problems.join('\n')}\n`
-          + 'Put each ID in the name or a comment of the test that holds it, after the feature\'s number ("001 FR-002"); '
-          + 'on a test the task says to keep, as a comment. A task that is not yours: leave it and say so. Then send the full report.';
+        const why = citedRefusal(word, cited.problems);
         if (viaHandback) deny(why);
         if (!input.stop_hook_active) block(why);
       }
-      citedNote = `speckit-team: ${who} reported ${word} with cited requirements no test names: ${cited.problems.join('; ')}. `
-        + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
+      citedNote = citedStands(who, word, cited.problems);
     }
   }
   if (words.includes(word)) {

@@ -1038,5 +1038,33 @@ too), passed: `APPROVED`, 2 turns, 26 model turns, $1.84.
   launch, a break-and-restore call and a second verify. What it led to: the hook runs the task half
   of the drift check when test-writer stops and sends a missing ID back to it once. The gate broke nothing itself and took the
   commit order for the red run (#308, 2 of 2 runs).
+- **The fix round went as #298's rule says**, for the first time in a run: test-writer changed test
+  names only, named the production line that fails the kept `add` test (`src/math.js:2`), broke
+  nothing and ended `FIXED`; the main session broke that line, ran the test (1 fail, `actual: -1,
+  expected: 5`), restored with `git checkout` and ended on an empty `git status --short`, all in one
+  Bash call; spec-gatekeeper got that output, ran `git status --short` itself and approved. 1 run.
 - **The cost is not comparable with the run before**: $1.84 against $1.38, with an audit round and a
   gate round more.
+
+Two more runs, the first pair on one build of the team (`fix/316-cited-ids-test-writer-role` at
+`e14efc9`, the same two-function request, one after the other), for
+[#114](https://github.com/PIsberg/speckit-agents/issues/114)'s comparison. Both passed with
+`APPROVED`, the audit `PASS` first time and no fix round.
+
+| | `--two-slices` (one at a time) | `--side-by-side` |
+|---|--:|--:|
+| Cost | $1.26 | $1.37 |
+| Agent launches | 7 | 9 |
+| Main-session responses | 12 | 15 |
+| Main-session input | 0.68M | 0.89M |
+| First red launch to the verify launch | 1 min 32 s | 1 min 53 s |
+| Whole run | 7 min 14 s | 10 min 0 s |
+
+- **Side by side cost 9% more and saved no time** on this request, 1 run each. The whole-run times
+  are not the build's: product-owner alone took 59 s in one and 3 min 21 s in the other.
+- **One at a time was one round, not two**: the main session gave both slices' test tasks to one
+  test-writer and both implementation tasks to one implementer, so "one at a time" had 2 build
+  launches against 4, and nothing was left for side by side to save. A request whose slices are too
+  large for one agent each is not measured.
+- **Both worktree implementers ended `RESULT: GREEN`** (#309), 2 of 2 runs with the change.
+- **The cited-ID check (#315) had nothing to catch** in either run: no send-back, no message.
