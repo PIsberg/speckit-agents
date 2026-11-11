@@ -556,3 +556,32 @@ test('full run: the turn loop stops on an API error, on no session, on a recorde
   assert.deepEqual(runFailures(['a check'], 'turn 2: infrastructure'), ['turn 2: infrastructure', 'a check'], 'the stop comes first');
   assert.deepEqual(runFailures(['a check'], null), ['a check']);
 });
+
+// #325: in the full run of 2026-11-11 from fix/321 a guard outside the repository withheld the Spec Kit
+// skill files. The main session asked whether to allow them or skip them, the canned answer said neither,
+// and it asked again in a turn of one response; the answer after that was taken as "skip", and the run
+// passed with a spec, plan and tasks written without the skills. An answer the session only talks back to
+// did not answer what it asked: of 11 kept runs, the 9 that passed as shipped have no such turn.
+test('full run: an answer the session only talks back to stops the run there, and the first turn may be all talk (#325)', () => {
+  const canned = (results) => {
+    const calls = [];
+    return { calls, invoke: (prompt, session) => { calls.push({ prompt, session }); return { status: 0, stdout: JSON.stringify(results[calls.length - 1]), stderr: '' }; } };
+  };
+  const turn = (num_turns) => ({ session_id: 'sess', total_cost_usd: 0.1, num_turns, result: 'Which do you want?' });
+  const promptFor = (n) => `prompt ${n + 1}`;
+  const quiet = { log: () => {} };
+
+  const drift = canned([turn(3), turn(2), turn(1), turn(12)]);
+  const a = runTurns({ maxTurns: 8, promptFor, invoke: drift.invoke, ended: () => false, ...quiet });
+  assert.equal(drift.calls.length, 3, 'no further answer is sent');
+  assert.match(a.stopped, /^turn 3: the session made no tool call on the answer/);
+  assert.match(a.stopped, /Which do you want\?/, 'what it asked is in the failure');
+
+  // The request itself may be answered with a question (which team?) and nothing else.
+  const first = canned([turn(1), turn(9), turn(4)]);
+  assert.equal(runTurns({ maxTurns: 3, promptFor, invoke: first.invoke, ended: () => false, ...quiet }).stopped, null);
+
+  // A last turn of one response that ends the run is the run's end, not a question.
+  const last = canned([turn(3), turn(1)]);
+  assert.equal(runTurns({ maxTurns: 8, promptFor, invoke: last.invoke, ended: (res, n) => n === 1, ...quiet }).stopped, null);
+});

@@ -239,6 +239,9 @@ export function preflightProblem({ teamDir, repo, env }) {
 
 // main()'s turns: prompt n, invoke claude on it (resuming the session after the first), stop on a turn
 // error or a lost session, or once `ended` says the run is over. `invoke` returns a spawnSync result.
+// An answer the session only talks back to (one response, so no tool call) did not answer what it
+// asked, and the next copy of it may be taken for a choice nobody made: the run stops there (#325).
+// The first turn is the request, which the skill may answer with a question and nothing else.
 export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log }) {
   const turns = [];
   let session = null;
@@ -254,6 +257,9 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
     const err = turnError(res, r.status) ?? (session ? null : 'claude returned no session to resume');
     if (err) return { turns, session, stopped: `turn ${n + 1}: ${err}` };
     if (ended(res, n)) break;
+    if (n > 0 && res?.num_turns === 1) {
+      return { turns, session, stopped: `turn ${n + 1}: the session made no tool call on the answer, so the answer did not answer what it asked (#325): ${String(res.result ?? '').replace(/s+/g, ' ').slice(-300)}` };
+    }
   }
   return { turns, session, stopped: null };
 }

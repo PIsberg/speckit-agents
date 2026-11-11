@@ -1569,7 +1569,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 605 tests:
+`npm test` runs 606 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1587,7 +1587,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 30 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 31 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
@@ -1779,6 +1779,16 @@ passed. Nothing is retried, because a retry would hide a real regression. A turn
 error (a refused connection, an overload) stops the run with a first failure line that names the
 infrastructure, not the team, rather than resuming the session with an answer to a question it never
 asked.
+
+The answer is the same text every turn, so it cannot answer a question the skill's stops do not
+ask. A turn after the first in which the session made no tool call (one response: it only talked
+back) stops the run with that response in the failure line
+([#325](https://github.com/PIsberg/speckit-agents/issues/325)): on 2026-11-11 a guard in front of
+the API withheld the Spec Kit skill files, the session asked whether to allow them or skip them,
+and the third copy of the answer was taken as "skip", so the run passed on a spec, plan and tasks
+written without the skills. Of 11 kept runs, the 9 that passed as shipped have no such turn. A
+session that skips a skill without asking is not caught: nothing in a transcript tells a
+withheld read from a real one.
 
 The note is the one check of [Handoffs are lossy on purpose](#handoffs-are-lossy-on-purpose) that
 only a real model can fail: what goes into a launch prompt is the main session's choice. Each answer
