@@ -1813,7 +1813,8 @@ such as one by a run still going beside it, can leave a scratch folder trusted. 
 outside never reaches that removal, so each entry a run adds is also kept, with the run's process
 id, in `.claude.json.speckit-trust.json` beside the file: the next run removes the entries of
 processes that are gone and says so, and the ledger is deleted when it is empty. Until a next run,
-the stopped run's folder stays trusted. A `.claude.json`
+the stopped run's folder stays trusted (seen with a real run killed mid-session on 2026-11-11,
+`docs/measurements.md`, "A run killed from outside"). A `.claude.json`
 that does not parse, as Claude Code leaves it for a moment while it rewrites the file, is read again
 for up to two seconds and then left as it is, the run stopping before any model call: it is never
 replaced by a file holding only the trust entry, which would cost you the rest of your config. Each
