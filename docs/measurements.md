@@ -575,6 +575,24 @@ same e2e case (4 mentions of the feedback in the next request before, 2 after, a
 process). The fix stays shown by `test/e2e.test.mjs` only
 ([#283](https://github.com/PIsberg/speckit-agents/issues/283)).
 
+The processes themselves still run, one per role skill the turn loaded, and they do not lengthen the
+Stop ([#294](https://github.com/PIsberg/speckit-agents/issues/294)). Read 2026-11-11 from the three
+`stop_hook_summary` rows of that 2026-11-10 run's main transcript (Claude Code 2.1.322, Windows 11),
+against the time from the last assistant row to the summary:
+
+| Stop | Hooks, of them `lane role` | Longest hook | Sum of hooks | Stop took |
+|---|--:|--:|--:|--:|
+| after `VERDICT: PASS` | 4, 1 | 2,876 ms | 3,386 ms | 2,889 ms |
+| the send-back | 5, 2 | 2,024 ms | 2,349 ms | 2,037 ms |
+| end of turn | 8, 5 | 456 ms | 2,028 ms | 465 ms |
+
+Each Stop took its longest hook plus about 10 ms, never the sum: Claude Code runs a Stop's hooks
+together. The five `lane role` processes of the last Stop took 239 to 260 ms each, the single one of
+the first 230 ms, so four more processes cost a Stop about 30 ms. In all three the longest hook was
+another of the machine's own (a plugin's), not ours; the two processes of the send-back carry no
+duration in the row. One run, one machine; the other three hooks in each row are the owner's own
+settings, not the team's.
+
 ## Baseline of the agent-skills lessons (#188, #186, #187)
 
 Taken 2026-10-27 with `tools/eval.mjs` on the unchanged prompts of this branch, before any prompt change,
@@ -674,7 +692,8 @@ What it shows. The model rejects these seeded defects on its own. Removing the v
 whole hook changed no word, and the drift refusal never fired in the 12 `untested-fr` runs that had it
 (no record carries `claimed`): spec-gatekeeper said REJECTED itself, naming FR-003. So the gate cases
 cannot show that the guardrails matter; a harder case is
-[#253](https://github.com/PIsberg/speckit-agents/issues/253). Constitution II, a MUST rule checked
+[#253](https://github.com/PIsberg/speckit-agents/issues/253), built and run on 2026-11-08 (below) and
+not missed either. Constitution II, a MUST rule checked
 only by text, was caught 6 of 6 (#241). The `skill-agents` control cell that read 5/6 on 2026-10-27 is
 6/6 on the fixture's feature branch (#191).
 

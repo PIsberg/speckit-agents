@@ -34,7 +34,7 @@ unseen too, but a breach costs tokens, not correctness, and `tools/usage.mjs` me
 |---|---|---|
 | A requirement no test task cites, or one a test names without testing it, still needs a real test | spec-gatekeeper Process 1 | #235 |
 | The constitution's MUST rules are checked against the feature's diff | spec-gatekeeper Process 4 | scored case `must-broken` (#241): 6 of 6 REJECTED on 2026-11-01, a rate, not a hold |
-| A contested finding goes to the user; the main session does not judge it | skill 3 | #242 |
+| A contested finding goes to the user; the main session does not judge it | skill 3 | scored case `contest` (#242): 6 of 6 launched no agent on 2026-11-08, a rate, not a hold |
 
 Taken over since the issue was filed: spec-gatekeeper's APPROVED on a cited FR no test holds is
 refused by a hook (#228), the undo offer and the cause of a failed fast-track run come from the hook's
@@ -138,7 +138,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 <!-- fingerprint: 0ffcae43 -->
 - Commit the approved files with the launch. text.
 - CRITICAL and HIGH findings to their owner, or to the user when the owner is absent. pinned.
-- A contested finding goes to the user; do not judge it yourself. pinned, unseen (#242).
+- A contested finding goes to the user; do not judge it yourself. pinned, unseen; measured by the scored case `contest` (#242, 6 of 6 on 2026-11-08).
 - MEDIUM and LOW findings are listed at hand-over, not routed. text.
 - After two FAILs, the findings go to the user. hook `gate`: a third spec-auditor launch is refused until `audit --approve`, which the skill runs only on the user's yes (#242). The yes itself is text: the hook cannot tell it from a model's.
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
@@ -446,4 +446,4 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 ### agents/patcher.md: Report
 <!-- fingerprint: c5918333 -->
 - `DONE`, `FAILED` or `ESCALATE` last. hook `ends`.
-- A change with production lines and no test file gives its reason in a `No test: <reason>` line. hook `patch` reads it at the end check (#243).
+- A change with production lines and no test file gives its reason in a `No test: <reason>` line. hook `patch` reads it at the end check (#243). Whether the reason is true is text, unseen; measured by the scored case `patch-bug` (#247, 6 of 6 committed a test on 2026-11-08).
