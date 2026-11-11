@@ -916,7 +916,13 @@ What they say about step 0, the plan stop and the hand-on is in those three sect
      refused it** at its Stop, naming T002 and T005, and the agent revised to REJECTED. This is the
      state #278 was meant to spare, with the excuse on another task than the ones that cite the ID.
      It was cleared by a comment naming `001 FR-006` in each test file, which holds nothing
-     ([#299](https://github.com/PIsberg/speckit-agents/issues/299)).
+     ([#299](https://github.com/PIsberg/speckit-agents/issues/299)). What it led to: an excuse on any task of the
+     feature now holds for a test task that cites the same ID, as it already did at spec level, held
+     by `test/drift.test.mjs`. Replayed on that run's repo at the refused commit (`b84706e`), the
+     check passes; with the excuse taken out it names FR-006 three times, and with the `001 FR-001`
+     lines taken out of `test/math.test.js` it names FR-001 twice. This spares the gatekeeper round
+     and the comment, not the second audit, which the edit to `tasks.md` still costs: whether the
+     architect excuses a process rule when it writes the tasks has not been seen in a run.
   3. test-writer's first FR-005 tests grepped the source for an import. REJECTED as an argument about
      structure, and replaced by tests that copy one module alone into a temporary folder and call it.
 - **A test added after the code cannot be shown failing by test-writer.** Showing the FR-005 tests red
