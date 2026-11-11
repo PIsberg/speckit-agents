@@ -3,7 +3,7 @@
 // track's patch mode is in hook-patch.test.mjs, so the two files run side by side.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -2387,6 +2387,75 @@ test('009 T013 FR-008 US3-6 contract 6 step 1: a file outside the lane denies th
   fs.rmSync(path.join(dir, 'src', 'x.js'));
   assert.ok(!decided(skillCall(dir, 'speckit-role-architect')));
   assert.equal(roleRec(dir).role, 'architect');
+});
+
+// #284: every role skill loaded in a turn leaves its own `lane role` Stop hook, and Claude Code starts them
+// together (five at the last Stop of the 2026-11-10 run). Each read the record before any wrote it, so each
+// sent the same lane block back. One Stop says it once, and keeps the record for the next.
+const stopRoleTogether = (dir, n, extra = {}) => Promise.all(Array.from({ length: n }, () => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [HOOK, 'lane', 'role'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  child.on('error', reject);
+  child.on('close', (code) => (code === 0 ? resolve(out ? JSON.parse(out) : null) : reject(new Error(`exit ${code}: ${err}`))));
+  child.stdin.end(JSON.stringify({ cwd: dir, hook_event_name: 'Stop', session_id: 's1', ...extra }));
+})));
+test('#284: five lane role processes at one Stop send the lane block back once, and keep the record', async () => {
+  const { dir } = repo();
+  putRole(dir, 'product-owner');
+  putFile(dir, 'src/x.js');
+  const t = transcriptIn(dir, [userRow('typed'), assistantRow('Spec written.')]);
+  const outs = await stopRoleTogether(dir, 5, { last_assistant_message: 'Spec written.', transcript_path: t });
+  const blocks = outs.filter((o) => o?.decision === 'block');
+  assert.equal(blocks.length, 1, JSON.stringify(outs));
+  assert.match(blocks[0].reason, /^Lane check: product-owner changed files outside its lane: src\/x\.js\./);
+  assert.ok(outs.every((o) => o === null || o.decision === 'block'), `the others say nothing: ${JSON.stringify(outs)}`);
+  assert.ok(hasRole(dir), 'the record stays for the next Stop');
+  // The next Stop follows the feedback and a new response, also five processes: no second send-back; the record
+  // goes with a warning.
+  fs.appendFileSync(t, `${JSON.stringify(userRow('Stop hook feedback: Lane check'))}\n${JSON.stringify(assistantRow('Restored nothing.'))}\n`);
+  const next = await stopRoleTogether(dir, 5, { last_assistant_message: 'Restored nothing.', transcript_path: t, stop_hook_active: true });
+  assert.ok(next.every((o) => o?.decision !== 'block'), JSON.stringify(next));
+  assert.ok(next.some((o) => /WARNING: product-owner left changes outside its lane: src\/x\.js/.test(msg(o))), JSON.stringify(next));
+  assert.ok(!hasRole(dir), 'the record is removed');
+});
+
+// The same race, in the order Linux CI ran it (PR #295): a process of the Stop that starts after another
+// has already sent the block back reads `sentBack` as written. It is the same Stop, not the next one: it
+// says nothing and leaves the record, where it used to warn and remove it under the block it followed.
+test('#284: a lane role process that reads the record after its Stop sent the block back says nothing', () => {
+  const { dir } = repo();
+  putRole(dir, 'product-owner');
+  putFile(dir, 'src/x.js');
+  const t = transcriptIn(dir, [userRow('typed'), assistantRow('RED')]);
+  const at = { last_assistant_message: 'RED', transcript_path: t };
+  assert.equal(stopRole(dir, at)?.decision, 'block');
+  const late = stopRole(dir, at);
+  assert.equal(late, null, JSON.stringify(late));
+  assert.ok(hasRole(dir), 'the record stays for the next Stop');
+  // A later Stop whose last message is the same word: the transcript has grown, so it is told apart and warned.
+  fs.appendFileSync(t, `${JSON.stringify(userRow('Stop hook feedback: Lane check'))}\n${JSON.stringify(assistantRow('RED'))}\n`);
+  const next = stopRole(dir, { ...at, stop_hook_active: true });
+  assert.notEqual(next?.decision, 'block', JSON.stringify(next));
+  assert.match(msg(next), /WARNING: product-owner left changes outside its lane: src\/x\.js/);
+  assert.ok(!hasRole(dir), 'the record is removed');
+});
+
+// #284, the hand-on: #288 let the process whose unlink removed the record speak, but on Windows two
+// processes can both unlink one file in the same millisecond (3 of 6 runs of the #261 e2e case on
+// 2026-11-10, each with two winners). Ten rounds, so a race that wins one round in two shows.
+test('#284: five lane role processes at one Stop hand on once, in every round', async () => {
+  const { dir } = repo();
+  for (let round = 0; round < 10; round++) {
+    putRole(dir, 'implementer');
+    const outs = await stopRoleTogether(dir, 5, { last_assistant_message: 'Stub committed.\n\nRESULT: STUB', stop_hook_active: true });
+    const blocks = outs.filter((o) => o?.decision === 'block');
+    assert.equal(blocks.length, 1, `round ${round}: ${JSON.stringify(outs)}`);
+    assert.match(blocks[0].reason, HAND_ON_MSG('implementer', 'RESULT: STUB'));
+    assert.ok(!hasRole(dir), `round ${round}: the record went with the hand-on`);
+  }
 });
 
 test('009 T013 FR-008 contract 6: a committed file outside the lane counts; one dirty at the start does not', () => {

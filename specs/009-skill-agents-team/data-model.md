@@ -38,6 +38,14 @@ session's Stop (`lane role`); removed by a typed `/speckit-team`. Ended once a h
 `prompt_id` (contract section 8): removed where it is next read, never closed. Unreadable or incomplete: the
 lane check says it could not run, and `scope role` denies writes until the next role Skill call replaces it (contract section 4 step 5) or a typed `/speckit-team` removes it.
 
+Claims, `role/<session_id>.<why>.<key>.claim` (#284): one per send-back a Stop made for a record, `why`
+being `lane`, `drift` or `hand-on` and `key` the first 16 hex characters of the SHA-256 of the
+record's `role`, `at` and `sha`. Created exclusively by the one `lane role` process of that Stop that
+sends it back (contract section 6 step 6). Empty, or `unrecorded` when the record's `sentBack` could not
+be written. Removed with the record, and when the next role's record is written. The record's `sentBack`
+(the reasons already sent back) gains `sentStop`, reason to the Stop it went out at: the first 16 hex
+characters of the SHA-256 of the transcript's size and the last message, or null when either was missing.
+
 ## Verdict and ends records (changed, additive)
 
 `verdicts/<feature>.json` and `ends/<feature>.json` keep their fields. Recorded from a role skill,

@@ -495,6 +495,28 @@ if (mode === 'relay') {
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
 // 009: the role acting in a skill-agents request's main session (data-model.md).
 const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
+// #284: every role skill loaded in a turn leaves its own `lane role` Stop hook, and Claude Code starts them
+// together (five at the last Stop of the 2026-11-10 run), each having read the record before any wrote it.
+// Whichever send-back (`why`: 'lane', 'drift', 'hand-on') one Stop makes, the process whose exclusive create
+// takes its claim makes it; the others end with no output. Not an unlink: on Windows two processes can both
+// unlink one file in the same millisecond (3 of 6 runs of the #261 e2e case had two winners). Keyed by the
+// record's start, so a later role of the session never finds an earlier one's claim. A claim that cannot be
+// made for another reason lets the process go on, as before #284.
+const roleClaim = (sessionId, rec, why) => path.join(stateDir, 'role',
+  `${sessionId}.${why}.${createHash('sha256').update(`${rec.role}\0${rec.at}\0${rec.sha}`).digest('hex').slice(0, 16)}.claim`);
+function claimed(rec, why) {
+  try { fs.writeFileSync(roleClaim(str(input.session_id), rec, why), '', { flag: 'wx' }); return true; } catch (e) { return e?.code !== 'EEXIST'; }
+}
+// What a claim holds when its send-back went out but the record could not say so: the next Stop then falls
+// back to stop_hook_active, as it did before #284.
+const UNRECORDED = 'unrecorded';
+// Removes a session's role record and every claim on it.
+function dropRoleFiles(sessionId) {
+  fs.rmSync(roleFile(sessionId), { force: true });
+  let names = [];
+  try { names = fs.readdirSync(path.join(stateDir, 'role')); } catch { /* no folder, no claims */ }
+  for (const n of names) if (n.startsWith(`${sessionId}.`) && n.endsWith('.claim')) fs.rmSync(path.join(stateDir, 'role', n), { force: true });
+}
 // The role skills a typed `--team skill-agents` needs, found from this script's own folder.
 function missingRoleSkills() {
   return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
@@ -613,7 +635,7 @@ function roleEnded(rec) {
 }
 function dropRole(rec) {
   const id = str(input.session_id);
-  if (id && SESSION_ID.test(id)) fs.rmSync(roleFile(id), { force: true });
+  if (id && SESSION_ID.test(id)) dropRoleFiles(id);
   return `speckit-team: the ${rec.role} role ended with its turn and no Stop ran; its lane check and report did not run. Call the Skill speckit-role-${rec.role} again to continue it.`;
 }
 
@@ -694,10 +716,39 @@ function recordReport(rec, last = null, where = 'stop') {
 // the record. Not `stop_hook_active`: Claude Code keeps it true for the rest of a turn a Stop hook continued,
 // so a role called after an earlier role's hand-on would never be sent back (the 2026-11-08 skill-agents run
 // waited for the user after RESULT: STUB and RESULT: GREEN). A record that cannot be written falls back to it.
+// One process of a Stop sends it back (#284, `claimed`); the others end with no output and leave the record.
+// A process of that Stop can also start after the send-back was written (Linux CI, PR #295): `sentStop` holds
+// the Stop it went out at, told by its last message and the transcript's size, which every process of one
+// Stop is given and a later Stop is not: the block's feedback and a new response come between, so the
+// transcript has grown even when the message repeats ("RED"). Without either the Stop cannot be told, and it
+// counts as a later one, as before #284.
+function stopKey() {
+  const last = str(input.last_assistant_message);
+  const t = str(input.transcript_path);
+  if (last === null || t === null) return null;
+  let size;
+  try { size = fs.statSync(t).size; } catch { return null; }
+  return createHash('sha256').update(`${size}\0${last}`).digest('hex').slice(0, 16);
+}
 function sendBackOnce(rec, why) {
   const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
-  if (sent.includes(why)) return false;
-  try { writeJson(roleFile(str(input.session_id)), { ...rec, sentBack: [...sent, why] }); } catch { return !input.stop_hook_active; }
+  const stop = stopKey();
+  if (sent.includes(why)) {
+    if (stop !== null && rec.sentStop?.[why] === stop) finish();
+    return false;
+  }
+  const id = str(input.session_id);
+  const claim = roleClaim(id, rec, why);
+  if (!claimed(rec, why)) {
+    let held = '';
+    try { held = fs.readFileSync(claim, 'utf8'); } catch { /* gone or unreadable: another process holds it */ }
+    if (held !== UNRECORDED) finish();
+    return !input.stop_hook_active;
+  }
+  try { writeJson(roleFile(id), { ...rec, sentBack: [...sent, why], sentStop: { ...(rec.sentStop && typeof rec.sentStop === 'object' ? rec.sentStop : {}), [why]: stop } }); } catch {
+    try { fs.writeFileSync(claim, UNRECORDED); } catch { /* the claim stays empty: later Stops say nothing */ }
+    return !input.stop_hook_active;
+  }
   return true;
 }
 
@@ -707,7 +758,7 @@ function sendBackOnce(rec, why) {
 // plan or tasks edit made inside the role is then named by the audit gate (tests/hook.test.mjs, T007).
 function closeRole(rec, at, gate = null) {
   const id = str(input.session_id);
-  const drop = () => { if (id && SESSION_ID.test(id)) fs.rmSync(roleFile(id), { force: true }); };
+  const drop = () => { if (id && SESSION_ID.test(id)) dropRoleFiles(id); };
   const done = () => { if (at === 'stop') { drop(); finish(); } };
   if (!rec || typeof rec !== 'object' || !Object.hasOwn(ROLE_LANES, rec.role)) {
     addNote('speckit-team: lane check could not run for the acting role: its role record is unreadable or incomplete.');
@@ -733,11 +784,10 @@ function closeRole(rec, at, gate = null) {
   if (at === 'stop') {
     const word = handOnWord(rec);
     if (word) {
-      // #284: a turn runs one `lane role` process per role skill loaded in it (5 at the last Stop of the
-      // 2026-11-10 run), and each would say this. Only the one that removes the record does.
-      let mine = false;
-      try { fs.unlinkSync(roleFile(id)); mine = true; } catch { /* another process of this Stop took it */ }
-      if (!mine) return finish();
+      // #284: one process of this Stop says it. Its claim stays until the session's next role record, so a
+      // process of this Stop that comes late still finds it.
+      if (!claimed(rec, 'hand-on')) return finish();
+      fs.rmSync(roleFile(id), { force: true });
       // Only where to go: the report is already written. #261's run showed text asking for the next call
       // in the report's own response cost the reports themselves (no audit report, no gatekeeper word).
       block(`speckit-team: the ${rec.role} role's report ends ${word}, where /speckit-team has no Stop. Go on with the next step in this turn.`);
@@ -1008,7 +1058,7 @@ if (mode === 'gate') {
     if (!id || !SESSION_ID.test(id)) process.exit(0);
     fs.rmSync(teamFile(id), { force: true });
     fs.rmSync(projectFile(id), { force: true });
-    fs.rmSync(roleFile(id), { force: true });
+    dropRoleFiles(id);
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
@@ -1088,6 +1138,8 @@ if (mode === 'gate') {
         let offset = null;
         try { if (transcript) offset = fs.statSync(transcript).size; } catch { /* unreadable: start unknown */ }
         const feat = feature();
+        // The last role's Stops are over: its claims (#284) can go with it.
+        dropRoleFiles(id);
         writeJson(roleFile(id), {
           session_id: id, role: roleSkill, ...start, transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
           feature: feat, fingerprint: roleSkill === 'spec-auditor' && feat ? fingerprint(feat) : null, at: new Date().toISOString(),
