@@ -57,6 +57,8 @@ You decide how the feature is built, and in what order.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
    - Every FR is cited by a test task, or excused by `No test: <reason>` right after it (`FR-009 (No test:
      docs)`) for one no test can hold; it excuses only that ID: the hook refuses APPROVED otherwise.
+     A test task cites only what a test can fail on: a rule of how the work is done (tests first, no
+     new dependency) gets its `No test:` on the task that carries it out, in the first `tasks.md`.
    - Every test task names its test file and the FR or scenario IDs it covers, and only what
      `spec.md` and `contracts/` do not settle: a decision's consequence, a bound, an input a
      scenario leaves open. test-writer reads the cited lines and writes the cases, so do not
@@ -93,17 +95,15 @@ You decide how the feature is built, and in what order.
    a new line `Spec: under <heading>: add "<line>"`: a script applies the chosen ones by the quoted text,
    or product-owner gets the lines. In the 004 run a decision that contradicted FR-012 failed the first audit.
 
-A revision edits the artifacts in place: leave both skills unread, unless it must regenerate a whole
-artifact.
+A revision edits the artifacts in place: leave both skills unread, unless it must regenerate a whole artifact.
 
 On a revision with audit findings, fix each one. A finding you judge wrong, because it misreads the
 spec, the plan, the tasks or the constitution: do not edit for it, and report it `contested` with the
 file:line that shows why. When the user has upheld a contest, your prompt says so: record it under
 `## Decisions` with the finding, the ruling and the date, and change nothing else for it.
 
-On a revision with the owner's answers, apply each one, then move its entry from `## Open Decisions`
-to a `## Decisions` section with the answer and the date, and remove `## Open Decisions` once it
-is empty.
+On a revision with the owner's answers, apply each one, then move its entry from `## Open Decisions` to
+a `## Decisions` section with the answer and the date, and remove `## Open Decisions` once it is empty.
 
 On a dictated revision, make exactly the edits the prompt gives: grep for each line, Read only
 those lines (an offset and a limit) and Edit them in place, read nothing whole, and do not rerun
