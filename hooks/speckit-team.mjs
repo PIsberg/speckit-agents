@@ -237,15 +237,17 @@ if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecK
 inSpecKitRepo = true;
 
 // #228: the drift check, a second file beside this script, loaded only by the modes that can close
-// spec-gatekeeper's report: `ends --record`, and `gate` and `lane role`, which close a skill-agents role.
+// spec-gatekeeper's report: `ends --record`, and `gate` and `lane role`, which close a skill-agents role; and
+// by test-writer's `ends`, for the half of it that reads the tasks alone (#315).
 // Loaded here, inside a Spec Kit repo, so no other repo pays for it. A missing or broken file is kept as
 // the error, and APPROVED is then recorded with a message that the check did not run (constitution II).
-const driftModule = (mode === 'ends' && args[0] === '--record') || mode === 'gate' || (mode === 'lane' && args[0] === 'role')
+const driftModule = mode === 'ends' || mode === 'gate' || (mode === 'lane' && args[0] === 'role')
   ? await import(new URL('./speckit-drift.mjs', import.meta.url).href).catch((e) => e) : null;
-// The active feature's drift: { problems }, or { failed } when the check could not run.
-function driftOf(feat) {
+// The active feature's drift: { problems }, or { failed } when the check could not run. Without `spec`, only the
+// IDs its ticked test tasks cite, which is all a round's test-writer owes.
+function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { return { problems: driftModule.drift(root, { feature: feat, spec: true }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  try { return { problems: driftModule.drift(root, { feature: feat, spec }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
@@ -1493,6 +1495,28 @@ if (mode === 'ends') {
     }
     faultNote = `speckit-team: ${who} reported RED on ${fault}, which is not red for the right reason. Kept in ends/red-faults.json.`;
   }
+  // #315: test-writer's RED or FIXED while a ticked test task cites an ID none of its test files holds. Sent
+  // back once per agent, while it has the files open; after that the report goes through and the message says
+  // what is missing, which spec-gatekeeper's APPROVED is refused for (#228). BLOCKED is never checked.
+  let citedNote = null;
+  if (!record && (word === 'RED' || word === 'FIXED') && words.includes(word)) {
+    const feat = feature();
+    const cited = feat ? driftOf(feat, false) : null;
+    if (cited?.failed) citedNote = `speckit-team: the cited-ID check could not run (${cited.failed}), so ${who}'s ${word} goes on without it.`;
+    if (cited?.problems?.length) {
+      const asked2 = agentKey && path.join(stateDir, 'agents', `${agentKey}.cited-asked`);
+      if (asked2 && !fs.existsSync(asked2)) {
+        writeJson(asked2, {});
+        const why = `Your ${word} leaves requirements a ticked test task cites in none of its test files:\n${cited.problems.join('\n')}\n`
+          + 'Put each ID in the name or a comment of the test that holds it, after the feature\'s number ("001 FR-002"); '
+          + 'on a test the task says to keep, as a comment. A task that is not yours: leave it and say so. Then send the full report.';
+        if (viaHandback) deny(why);
+        if (!input.stop_hook_active) block(why);
+      }
+      citedNote = `speckit-team: ${who} reported ${word} with cited requirements no test names: ${cited.problems.join('; ')}. `
+        + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
+    }
+  }
   if (words.includes(word)) {
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
     // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
@@ -1515,7 +1539,8 @@ if (mode === 'ends') {
     if (ok) writeJson(ok, {});
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
     if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
-    if (faultNote) emit({ systemMessage: faultNote });
+    const notes = [faultNote, citedNote].filter(Boolean);
+    if (notes.length) emit({ systemMessage: notes.join('\n') });
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
