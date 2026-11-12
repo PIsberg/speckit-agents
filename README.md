@@ -1608,7 +1608,11 @@ files: the `patch` mode's half is a file of its own, with the helpers both use i
 [`test/hook-helpers.mjs`](test/hook-helpers.mjs), which the runner does not run. The
 end-to-end tests are independent and spend their time waiting on `claude`, so that file runs up to
 four of them at once (one fewer than the machine's cores; `SPECKIT_E2E_CONCURRENCY=1` runs them one
-by one): 149 s became 43 s on Windows (2026-10-11).
+by one): 149 s became 43 s on Windows (2026-10-11). Each `claude` session there is killed after 60
+or 90 s and each test has a timeout; a killed session fails with "claude did not finish in N s and
+was killed". `SPECKIT_E2E_TIME_SCALE=3` multiplies all of those limits by 3. CI sets it on Windows,
+where one job in 100 stalled for a few minutes: sessions that take 5 to 15 s took 67 to 147 s, and
+two were cut short ([#329](https://github.com/PIsberg/speckit-agents/issues/329)).
 
 ### CI
 
