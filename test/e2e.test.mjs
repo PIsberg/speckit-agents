@@ -24,6 +24,20 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const queued = [];
 const test = (...args) => { queued.push(args); };
 const CONCURRENCY = Number(process.env.SPECKIT_E2E_CONCURRENCY) || Math.max(1, Math.min(4, os.availableParallelism() - 1));
+// #329: one windows-latest job stalled for a few minutes (2026-11-11): tests that take 5 to 15 s took 67 to
+// 147 s, git-only tests in other files as much, and the job as a whole only 66 s longer than a passing
+// one. SPECKIT_E2E_TIME_SCALE multiplies every limit below, each test's timeout and the time a claude
+// session gets before it is killed; CI sets it to 3 on Windows. A real hang fails that much later.
+const TIME_SCALE = Number(process.env.SPECKIT_E2E_TIME_SCALE) || 1;
+const scaled = (ms) => Math.round(ms * TIME_SCALE);
+// A claude process the timer kills is a failure of its own: carrying on with what it left made the
+// stall read as a missing verdict file (ENOENT), not as a session cut short.
+function killAfter(child, ms, reject) {
+  return setTimeout(() => {
+    child.kill();
+    reject(new Error(`claude did not finish in ${ms / 1000} s and was killed (SPECKIT_E2E_TIME_SCALE=${TIME_SCALE}, #329)`));
+  }, ms);
+}
 // Spawned without a shell, as in install.test.mjs: a missing claude, or an npm-installed claude.cmd,
 // reports these skipped, not passed, except in CI, where SPECKIT_REQUIRE_CLAUDE=1 makes them fail.
 const noClaude = spawnSync('claude', ['--version']).status === 0 || process.env.SPECKIT_REQUIRE_CLAUDE === '1' ? false : 'no claude executable on PATH';
@@ -117,7 +131,7 @@ async function claude({ repo, cfg }, prompt) {
       child.stdout.on('data', (d) => { out += d; });
       child.stderr.on('data', (d) => { err += d; });
       child.on('error', reject);
-      const timer = setTimeout(() => child.kill(), 60_000);
+      const timer = killAfter(child, scaled(60_000), reject);
       child.on('close', (code) => {
         clearTimeout(timer);
         let result = null;
@@ -277,7 +291,7 @@ async function session({ repo, cfg }, script, { permissionMode = 'bypassPermissi
       });
       child.stderr.on('data', (d) => { err += d; });
       child.on('error', reject);
-      const timer = setTimeout(() => child.kill(), 90_000);
+      const timer = killAfter(child, scaled(90_000), reject);
       child.on('close', (code) => {
         clearTimeout(timer);
         const events = out.split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
@@ -531,7 +545,7 @@ async function boardCommand({ repo, cfg }, arg) {
       child.stdout.on('data', (d) => { out += d; });
       child.stderr.on('data', (d) => { err += d; });
       child.on('error', reject);
-      const timer = setTimeout(() => child.kill(), 60_000);
+      const timer = killAfter(child, scaled(60_000), reject);
       child.on('close', (code) => {
         clearTimeout(timer);
         const events = out.split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
@@ -1401,6 +1415,8 @@ test("#184: a message sent while a role's turn runs leaves the role live", { ski
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
-describe('end to end', { concurrency: CONCURRENCY }, () => { for (const args of queued) nodeTest(...args); });
+describe('end to end', { concurrency: CONCURRENCY }, () => {
+  for (const [name, opts, fn] of queued) nodeTest(name, { ...opts, ...(opts.timeout && { timeout: scaled(opts.timeout) }) }, fn);
+});
 
 

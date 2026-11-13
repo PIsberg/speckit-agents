@@ -39,9 +39,12 @@ jobs:
         run: echo "$(npm root -g)/@anthropic-ai/claude-code/bin" >> "$GITHUB_PATH"
       - run: claude --version
       # SPECKIT_REQUIRE_CLAUDE turns "no claude on PATH" from a skip into a failure.
+      # SPECKIT_E2E_TIME_SCALE gives the e2e tests three times their limits on Windows, where a job
+      # stalled for minutes once in 100 runs and cut two sessions short (#329).
       - run: npm test
         env:
           SPECKIT_REQUIRE_CLAUDE: '1'
+          SPECKIT_E2E_TIME_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}
       # Neither `claude plugin validate` nor `claude plugin test` type-checks the mod, and the types
       # it checks against (.claude-plugin/types, tsconfig.json) are laid only when a session loads it.
       # A headless session needs no login to load it: it exits 1 at the model call, after the types
