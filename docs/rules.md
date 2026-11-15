@@ -332,7 +332,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/test-writer.md: Lane
 <!-- fingerprint: f4440b62 -->
-- Test files and `tasks.md` only. hook `scope tests`, `lane tests`.
+- Test files and `tasks.md` only. hook `gate scope tests`, `lane tests`.
 
 ### agents/test-writer.md: Report
 <!-- fingerprint: 281fc551 -->
@@ -343,7 +343,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/implementer.md: (opening)
 <!-- fingerprint: b33ad9f4 -->
-- Never changes the tests. hook `scope no-tests`, `lane no-tests`.
+- Never changes the tests. hook `gate retries scope no-tests`, `lane no-tests`.
 
 ### agents/implementer.md: Inputs
 <!-- fingerprint: 5878364d -->
@@ -364,7 +364,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/implementer.md: Lane
 <!-- fingerprint: 47c5d56c -->
-- Everything except test files and `.specify/`. hook `scope no-tests`, `lane no-tests`.
+- Everything except test files and `.specify/`. hook `gate retries scope no-tests`, `lane no-tests`.
 - A test that looks wrong is reported, not changed. text.
 
 ### agents/implementer.md: Report

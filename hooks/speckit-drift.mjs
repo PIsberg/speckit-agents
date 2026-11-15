@@ -77,9 +77,11 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   // once requirement and story IDs (FR-001, SC-006, US3-1) are taken out: FR-001 does not name 001.
   const number = (f) => /^(\d+)-/.exec(f)?.[1] ?? null;
   const known = [...new Set([...(hasSpecs ? fs.readdirSync(specs) : []), ...dirs.map((d) => path.posix.basename(d))].map(number).filter(Boolean))];
+  // #333: one RegExp per feature number, compiled once rather than once per line read.
+  const knownRe = known.map((n) => [n, new RegExp(`(?<![\\w.])${n}(?!\\d)`)]);
   const namedIn = (line) => {
     const bare = line.replace(/\b[A-Z]{1,4}\d*-\d+(?:-\d+)?\b/g, ' ');
-    return known.filter((n) => new RegExp(`(?<![\\w.])${n}(?!\\d)`).test(bare));
+    return knownRe.filter(([, re]) => re.test(bare)).map(([n]) => n);
   };
   for (const dir of dirs) {
     const feature = path.posix.basename(dir);
@@ -100,8 +102,10 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
       for (const rel of tests) if (!present.includes(rel)) problems.push(`${file} ${t.id}: ${rel} is gone`);
       if (!present.length) continue;
       const held = present.map((rel) => readOr(path.join(repo, rel), '')).join('\n');
+      const heldLines = held.split(/\r?\n/);
       for (const id of ids) {
-        const holding = held.split(/\r?\n/).filter((l) => new RegExp(`\\b${id}\\b`).test(l));
+        const idRe = new RegExp(`\\b${id}\\b`);
+        const holding = heldLines.filter((l) => idRe.test(l));
         if (!holding.length) problems.push(`${file} ${t.id}: ${id} is in none of ${present.join(', ')}`);
         else if (!holding.some((l) => { const named = namedIn(l); return !named.length || named.includes(number(feature)); })) {
           problems.push(`${file} ${t.id}: ${id} is in none of ${present.join(', ')} for ${feature} (only on lines naming another feature)`);
@@ -144,9 +148,10 @@ function specDrift(repo, dir, { isTest, namedIn, number }) {
   const defined = [...new Set([...text.matchAll(/\*\*(FR-\d{3})\*\*/g)].map((m) => m[1]))];
   if (!defined.length || !num) return [];
   const excused = new Set(tasksOf(readOr(path.join(repo, dir, 'tasks.md'), '')).flatMap((t) => [...excusedBy(t.text)]));
+  // #333: only a line with an FR ID can hold a requirement, so every other line skips namedIn.
   const lines = testFiles(repo).filter(isTest).flatMap((rel) => readOr(path.join(repo, rel), '').split(/\r?\n/))
-    .filter((l) => namedIn(l).includes(num));
-  return defined.filter((id) => !excused.has(id) && !lines.some((l) => new RegExp(`\\b${id}\\b`).test(l)))
+    .filter((l) => /\bFR-\d{3}\b/.test(l) && namedIn(l).includes(num));
+  return defined.filter((id) => { const re = new RegExp(`\\b${id}\\b`); return !excused.has(id) && !lines.some((l) => re.test(l)); })
     .map((id) => `${dir}/spec.md ${id}: no test names it with ${num} (put "${num} ${id}" in a test's name or a comment, or give a task that cites it "No test: <reason>")`);
 }
 

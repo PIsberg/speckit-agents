@@ -95,6 +95,30 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-15</b>: Claude Code 2.1.325, Windows 11, two <code>--skill-agents</code> runs on the owner's subscription after #331 to #337, both passed (#332)</summary>
+
+Setup: `node tools/full-run.mjs --login --skill-agents`, first with `--case defect`, then the clean
+case, from `perf/hook-speed` at `3f7790e` (PR #340, on #339), the owner's user-level team reinstalled
+from the same commit first (#175). Main session `sonnet`, `--max-cost 3`.
+
+- **`--case defect`, passed:** the spec-gatekeeper role answered REJECTED (the right answer), $0.28,
+  one turn of 7 model turns. Its Stop was sent back once on `REJECTED` (#332: the hand-on that only
+  `VERDICT: PASS`, `RESULT: STUB`, `RED` and `RESULT: GREEN` had before); the session then wrote one
+  closing answer, still `REJECTED`, changed no file and made no commit, as the request asked, and the
+  next Stop went through.
+- **clean, passed every check:** APPROVED from the hook record, $0.64, 2 turns (the run of
+  2026-11-11 took 3), 7 role skill calls and no agent launch. Hand-ons at `VERDICT: PASS` and `RED`;
+  after `RESULT: STUB` and `RESULT: GREEN` the session made the next Skill call in the same response,
+  so no Stop came. No retry or audit record was left (#332's counts, cleared by GREEN and PASS). The
+  scratch repo's own `npm test`: 6 of 6 pass.
+- **Not covered:** a first `VERDICT: FAIL`, a `FIXED` or a `RESULT: RED` in a real run (none
+  happened); #334's sent-back RED (no broken test was written); the agent team's runs, whose
+  test-writer and implementer now run gate and scope in one process (#337; held by the e2e cases on
+  2.1.325 instead).
+
+</details>
+
+<details>
 <summary><b>2026-11-11</b>: Claude Code 2.1.322, Windows 11, three full runs from <code>main</code> on the owner's subscription, two passed and one stopped (#283, #286, #290, #79)</summary>
 
 Setup: `node tools/full-run.mjs --login` with `--two-slices`, then `--skill-agents`, then

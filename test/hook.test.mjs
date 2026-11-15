@@ -152,6 +152,35 @@ const bash = (dir, args, command, extra = {}) => run(dir, args, {
 });
 const whyDenied = (out) => out?.hookSpecificOutput?.permissionDecisionReason ?? '';
 
+// #337: test-writer and implementer ran two hook processes (gate, then scope) on every write and Bash
+// call. `gate ... scope <rule>` is both in one process: the gate first, then the scope rule on a write tool.
+test('#337: gate with a scope rule denies as gate, then as scope on a write tool, and leaves every other tool to the gate', () => {
+  const { dir, write: w } = repo();
+  w('test/a.test.js', 'test("a");\n');
+  const agent = { agent_id: 'tw1', session_id: 's1' };
+  const tw = ['gate', 'scope', 'tests'];
+  const impl = ['gate', 'retries', 'scope', 'no-tests'];
+  // Before the audit the gate decides, as it did when the two ran side by side.
+  for (const args of [tw, impl]) assert.match(whyDenied(write(dir, args, 'src/main/App.java', agent)), /Implementation gate/, args.join(' '));
+  pass(dir);
+  assert.match(whyDenied(write(dir, tw, 'src/main/App.java', agent)), /test-writer writes only test files|is production code/);
+  assert.equal(write(dir, tw, 'test/b.test.js', agent), null);
+  assert.match(whyDenied(write(dir, impl, 'test/a.test.js', agent)), /may not change tests/);
+  assert.equal(write(dir, impl, 'src/main/App.java', agent), null);
+  assert.match(whyDenied(bash(dir, impl, 'echo x > test/a.test.js', agent)), /test\/a\.test\.js/);
+  assert.equal(bash(dir, impl, 'npm test', agent), null);
+  // A Read or Grep is no write: the scope rule never sees it, whatever path it names.
+  for (const [tool, input] of [['Read', { file_path: path.join(dir, 'src', 'main', 'App.java') }], ['Grep', { pattern: 'x', path: path.join(dir, 'test') }]]) {
+    assert.equal(run(dir, tw, { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, ...agent }), null, `test-writer ${tool}`);
+    assert.equal(run(dir, impl, { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { ...input, file_path: path.join(dir, 'test', 'a.test.js') }, ...agent }), null, `implementer ${tool}`);
+  }
+  // The retry limit still comes first for implementer.
+  fs.mkdirSync(path.join(stateDir(dir), 'retries'), { recursive: true });
+  const fp = readState(path.join(stateDir(dir), 'verdicts', '001-demo.json')).fingerprint;
+  fs.writeFileSync(path.join(stateDir(dir), 'retries', '001-demo.json'), JSON.stringify({ feature: FEAT, fingerprint: fp, red: ['a', 'b', 'c'] }));
+  assert.match(whyDenied(write(dir, impl, 'src/main/App.java', agent)), /Retry limit/);
+});
+
 test('scope on Bash (#210): a write outside the lane is denied before it runs, wherever the command puts it', () => {
   const { dir, write: w } = repo();
   w('test/a.test.js', 'test("a");\n');
@@ -2353,7 +2382,8 @@ test('009 T010 twin: ROLE_LANES equals the scope arguments in agents/<role>.md',
   for (const role of SKILL_ROLES) {
     const text = fs.readFileSync(path.join(agentsDir, `${role}.md`), 'utf8');
     const head = text.slice(0, text.indexOf('\n---', 4));
-    const scope = /command: '.*" scope ([^']+)'/.exec(head);
+    // #337: test-writer and implementer run it in the gate's entry (`gate [retries] scope <rule>`).
+    const scope = /command: '.*"(?: gate(?: retries)?)? scope ([^']+)'/.exec(head);
     const expected = scope ? scope[1].trim().split(/\s+/) : ['none'];
     if (!scope) assert.match(head, /^disallowedTools:.*\bWrite\b/m, `${role} has no scope hook and cannot write`);
     const at = keyAt(role, 0);
@@ -2997,6 +3027,33 @@ test('#316: the next role call is denied once for the same lines, leaves the rol
   assert.ok(!denied(again), JSON.stringify(again));
   assert.match(msg(again), /cited requirements no test names/);
   assert.equal(roleRec(dir).role, 'implementer');
+});
+
+// #336: `gate` runs on every tool call of test-writer and implementer, and the drift module is needed only
+// where a Skill call closes a role. A stand-in module beside the hook says when it is loaded.
+test('#336: gate loads the drift module only at a Skill call, not on an agent\'s tool calls', () => {
+  const { dir } = driftRepo();
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-'));
+  const hook = path.join(folder, 'speckit-team.mjs');
+  fs.copyFileSync(HOOK, hook);
+  const marker = path.join(folder, 'loaded');
+  fs.writeFileSync(path.join(folder, 'speckit-drift.mjs'),
+    `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, 'x');\nexport function drift() { return { problems: [] }; }\n`);
+  pass(dir);
+  for (const [tool, input] of [['Read', { file_path: path.join(dir, 'src', 'main', 'App.java') }], ['Grep', { pattern: 'x' }],
+    ['Write', { file_path: path.join(dir, 'test', 'b.test.mjs') }], ['Bash', { command: 'npm test' }]]) {
+    for (const args of [['gate'], ['gate', 'retries']]) {
+      assert.equal(run(dir, args, { hook_event_name: 'PreToolUse', tool_name: tool, tool_input: input, agent_id: 'tw1', session_id: 's1' }, hook), null, tool);
+    }
+  }
+  assert.ok(!fs.existsSync(marker), 'no agent tool call loaded the drift module');
+  skillAgentsTeam(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Skill', session_id: 's1', tool_input: { skill_name: 'speckit-role-spec-gatekeeper' }, transcript_path: t }, hook)));
+  say(t, 'Every task is ticked.\n\nAPPROVED');
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Skill', session_id: 's1', tool_input: { skill_name: 'speckit-role-security-reviewer', args: 'APPROVED' }, transcript_path: t }, hook);
+  assert.ok(fs.existsSync(marker), 'the Skill call that closed spec-gatekeeper loaded it');
+  assert.equal(endsRec(dir)?.word, 'APPROVED', 'and its drift() ran');
 });
 
 // #334: the test-writer role's RED on a parse or name error, or a missing test module, ran no expectation. As

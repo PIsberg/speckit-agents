@@ -15,6 +15,7 @@
 //                           role from its `Team:` line, never a decision) lacks spec-auditor, and for the main
 //                           session after the user typed /speckit-team --team noagents
 //   gate retries            the same, and also block implementer after MAX_RED REDs in a row
+//   gate [retries] scope <rule>  the same, then on a write or Bash call the scope rule, in one process (#337)
 //   verdict                 SubagentStop of spec-auditor: record its VERDICT line
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
@@ -241,7 +242,10 @@ inSpecKitRepo = true;
 // by test-writer's `ends`, for the half of it that reads the tasks alone (#315).
 // Loaded here, inside a Spec Kit repo, so no other repo pays for it. A missing or broken file is kept as
 // the error, and APPROVED is then recorded with a message that the check did not run (constitution II).
-const driftModule = mode === 'ends' || mode === 'gate' || (mode === 'lane' && args[0] === 'role')
+// #336: `gate` closes a role only at a Skill call; it also runs on every tool call of test-writer and
+// implementer, which never need the module.
+const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse' && input.tool_name === 'Skill')
+  || (mode === 'lane' && args[0] === 'role')
   ? await import(new URL('./speckit-drift.mjs', import.meta.url).href).catch((e) => e) : null;
 // The active feature's drift: { problems }, or { failed } when the check could not run. Without `spec`, only the
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
@@ -1157,19 +1161,23 @@ if (mode === 'check') {
   projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes, ...(args[0] === 'team' ? repoState() : [])].join('\n'), 0);
 }
 
-if (mode === 'scope') {
+// The tools a scope rule judges: the writer agents' frontmatter matcher for it before #337.
+const SCOPED_TOOLS = /^(Write|Edit|MultiEdit|NotebookEdit|Bash)$/;
+// The write scope of a PreToolUse Write, Edit or Bash call: decides and exits, or for Bash sets scopeBash,
+// which is judged at the end of this script. Run by `scope`, and by `gate ... scope <rule>` (#337).
+function scopeCheck(sargs) {
   const ti = input.tool_input || {};
   const viaBash = input.tool_name === 'Bash';
   const given = viaBash ? ti.command : ti.file_path ?? ti.notebook_path;
   if (given === undefined || given === null || given === '') process.exit(0);
   // patcher's Bash calls are patch mode's to judge, with the fast track's own rules.
-  if (viaBash && args[0] === 'protected') process.exit(0);
+  if (viaBash && sargs[0] === 'protected') process.exit(0);
   const file = str(given);
   if (!file) noDecision(`tool_input.${viaBash ? 'command' : 'file_path'} is ${Array.isArray(given) ? 'an array' : typeof given}, not a ${viaBash ? 'command' : 'path'}`);
   // 009: `scope role` holds the main session to the acting role skill's lane (contract section 5).
-  let ruleArgs = args;
+  let ruleArgs = sargs;
   let actor = who;
-  if (args[0] === 'role') {
+  if (sargs[0] === 'role') {
     const id = str(input.session_id);
     if (agentId || !id || !SESSION_ID.test(id)) process.exit(0);
     const rec = readState(roleFile(id));
@@ -1189,6 +1197,7 @@ if (mode === 'scope') {
     process.exit(0);
   }
 }
+if (mode === 'scope') scopeCheck(args);
 
 if (mode === 'gate') {
   // A typed /speckit-implement fires UserPromptExpansion, not UserPromptSubmit or PreToolUse(Skill).
@@ -1318,7 +1327,11 @@ if (mode === 'gate') {
     const start = startRecord();
     if (start) writeJson(baseFile(agentKey), start);
   }
-  process.exit(0);
+  // #337: `gate [retries] scope <rule>` is test-writer's and implementer's one PreToolUse entry, so a write
+  // or Bash call costs one process and one git call instead of two. The scope rule sees write tools only.
+  const scopeAt = args.indexOf('scope');
+  if (scopeAt < 0 || event !== 'PreToolUse' || !SCOPED_TOOLS.test(str(input.tool_name) ?? '')) process.exit(0);
+  scopeCheck(args.slice(scopeAt + 1));
 }
 
 // #242: after two spec-auditor FAILs in a row, the main session's next launch of it is refused until the user
