@@ -109,7 +109,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, the verdict and the word. hook `scope role`, `lane role`, `gate`.
 - After spec-auditor's or spec-gatekeeper's report, the next Skill call's `args` starts with its last line. pinned; hook `gate` reads it.
 - Steps 1 to 6 stop only where they stop: a role's turn that ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN` is sent back once per role call, so the run goes on without the user (#261); so is a first `VERDICT: FAIL`, a `REJECTED`, a `FIXED` and a `RESULT: RED` under the retry limit (#332). hook `lane role`.
-- Count RED yourself: 3 in a row go to the user. hook `lane role` and `gate` count the role's REDs in the retry record and say the third, which is not handed on (#332); nothing denies a fourth call.
+- Count RED yourself: 3 in a row go to the user. hook `lane role` and `gate` count the role's REDs in the retry record and say the third, which is not handed on (#332); `gate` denies a fourth `speckit-role-implementer` call with the agent's text (#341).
 - `--project`: the block is already in the session from `## Project` step 2; never pasted into a role call's `args` (#335). pinned.
 
 ### skills/speckit-team/SKILL.md: Project

@@ -534,7 +534,7 @@ function dropRoleFiles(sessionId) {
 function missingRoleSkills() {
   return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
 }
-const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word. Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
+const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word, and the retry limit at each implementer call (3 RESULT: RED in a row on the active feature). Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit without an active feature (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
 // The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
 const projectFile = (sessionId) => path.join(stateDir, 'project', `${sessionId}.json`);
 const parseProject = (prompt) => /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})[ \t]*$/m.exec(prompt)?.[1] ?? null;
@@ -1281,6 +1281,8 @@ if (mode === 'gate') {
       const live = readState(roleFile(id));
       if (live !== undefined) closeRole(live, 'skill', auditGate);
       auditGate();
+      // #341: the agent's `gate retries` limit, on the role's call. After closeRole, which counts the RED it closes.
+      if (roleSkill === 'implementer' && feature()) retryLimit(feature());
       const start = startRecord();
       if (start) {
         const transcript = str(input.transcript_path);
@@ -1307,22 +1309,7 @@ if (mode === 'gate') {
     deny(reason);
   }
   const feat = feature();
-  if (args[0] === 'retries' && feat) {
-    const r = readState(retryFile(feat));
-    if (r === null) {
-      deny(`Retry limit: the retry record for ${feat} is unreadable, so no further attempt can be allowed. `
-        + `Delete ${retryFile(feat)} to reset it.`);
-    }
-    if (redCount(r, feat) >= MAX_RED) {
-      // A team without architect has nobody to rethink the plan (#106, contract section 5).
-      const team = teamOf();
-      const next = team && !team.roles.includes('architect')
-        ? "There is no architect in this run's team, so the user decides"
-        : 'The architect rethinks plan.md or tasks.md (the new audit resets the count), or the user decides';
-      deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
-        + `Stop and report back; do not try to reset the count. ${next}, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
-    }
-  }
+  if (args[0] === 'retries' && feat) retryLimit(feat);
   if (agentId && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
     if (start) writeJson(baseFile(agentKey), start);
@@ -1332,6 +1319,24 @@ if (mode === 'gate') {
   const scopeAt = args.indexOf('scope');
   if (scopeAt < 0 || event !== 'PreToolUse' || !SCOPED_TOOLS.test(str(input.tool_name) ?? '')) process.exit(0);
   scopeCheck(args.slice(scopeAt + 1));
+}
+
+// The retry limit: deny once implementer (agent or role, #341) reported RESULT: RED MAX_RED times in a row on
+// the current plan and tasks, or when the count cannot be read.
+function retryLimit(feat) {
+  const r = readState(retryFile(feat));
+  if (r === null) {
+    deny(`Retry limit: the retry record for ${feat} is unreadable, so no further attempt can be allowed. `
+      + `Delete ${retryFile(feat)} to reset it.`);
+  }
+  if (redCount(r, feat) < MAX_RED) return;
+  // A team without architect has nobody to rethink the plan (#106, contract section 5).
+  const team = teamOf();
+  const next = team && !team.roles.includes('architect')
+    ? "There is no architect in this run's team, so the user decides"
+    : 'The architect rethinks plan.md or tasks.md (the new audit resets the count), or the user decides';
+  deny(`Retry limit: implementer reported RESULT: RED ${MAX_RED} times in a row on ${feat} with the current plan and tasks. `
+    + `Stop and report back; do not try to reset the count. ${next}, and only the user retries unchanged by deleting ${retryFile(feat)}.`);
 }
 
 // #242: after two spec-auditor FAILs in a row, the main session's next launch of it is refused until the user
