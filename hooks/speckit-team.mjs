@@ -36,6 +36,7 @@
 //                           is not this install alone (mixed builds, a second install of another build, a project
 //                           install in a folder Claude Code has not trusted); `note:` lines otherwise.
 //   check team              the same, then `state:` lines for /speckit-team's step 0: working tree, constitution, branch
+//   check [team] --project <name>  the same, then the project mode's block; exit 1 with its refusal line (#338)
 //   decisions --recommended Not a hook: /speckit-team's plan stop runs it when every answer is the recommended option.
 //                           Records the answers in plan.md and applies the recommended `Spec:` lines to spec.md, or
 //                           changes nothing and exits 1. `gate` refuses a spec-auditor launch while a decision is open
@@ -1124,6 +1125,12 @@ if (mode === 'check') {
   const self = STAMP.exec(readOr(fileURLToPath(import.meta.url), ''));
   if (!self) projectRefuse('this hook is not an installed copy (it carries no build stamp). Install the team with node install.mjs and run the skill from it.');
   const [, version, build] = self;
+  // #338: `check [team] --project <name>` also prints the project mode's block, so a skill's first step is one call.
+  const team = args[0] === 'team';
+  const rest = args.slice(team ? 1 : 0);
+  if (rest.length && (rest[0] !== '--project' || rest.length !== 2)) {
+    projectRefuse(`takes [team] and at most --project <name>, not ${rest.join(' ')}. Projects: ${projectNames().join(', ') || 'none'}.`);
+  }
   const here = fwdPath(TEAM_DIR);
   const problems = []; const notes = [];
   const other = installAt(TEAM_DIR).filter((f) => f.build !== build);
@@ -1158,7 +1165,10 @@ if (mode === 'check') {
     if (mine !== build) notes.push(`note: the installed team is build ${build}, not this checkout's (build ${mine}): run node install.mjs to run what is checked out.`);
   }
   if (problems.length) projectSay(problems.map((p) => `speckit-team: check: ${p}`).join('\n'), 1);
-  projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes, ...(args[0] === 'team' ? repoState() : [])].join('\n'), 0);
+  const shown = rest.length ? renderProject(rest[1]) : null;
+  if (shown?.refused) projectRefuse(shown.refused);
+  projectSay([`speckit-team: check: ok, speckit-agents ${version} build ${build} in ${here}`, ...notes, ...(team ? repoState() : []),
+    ...(shown ? [shown.block] : [])].join('\n'), 0);
 }
 
 // The tools a scope rule judges: the writer agents' frontmatter matcher for it before #337.

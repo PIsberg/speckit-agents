@@ -80,8 +80,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - At most 4 questions per AskUserQuestion call, all before the next launch. text.
 
 ### skills/speckit-team/SKILL.md: 0. Preconditions
-<!-- fingerprint: fc4f8c5d -->
+<!-- fingerprint: 629dc2fc -->
 - Run `check team` first, alone, and stop on exit 1. script `check`, pinned (#230).
+- With `--project`, the same call takes `--project '<name>'` and prints the block too (#338). script `check`, pinned.
 - Stop without `.specify/`. script `check` (exit 1 names it); every hook is off there anyway.
 - Note that `/clear` saves tokens. text.
 - Ask about a dirty tree. script `check team` (the `state:` line names the files), pinned.
@@ -113,8 +114,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `--project`: the block is already in the session from `## Project` step 2; never pasted into a role call's `args` (#335). pinned.
 
 ### skills/speckit-team/SKILL.md: Project
-<!-- fingerprint: ea58ddb5 -->
-- Check the name, run `project`, act on its exit status and output, ask before `--init`. script `project`, pinned.
+<!-- fingerprint: 3e980d17 -->
+- Check the name, read the block from step 0's `check team --project`, act on its exit status and output, ask before `--init`. script `check`, `project`, pinned (#338).
 
 ### skills/speckit-team/SKILL.md: 0b. Constitution (only while it is the template)
 <!-- fingerprint: 6ecca909 -->
@@ -175,15 +176,15 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `--project` is one word, checked before launch. script `project`, pinned.
 
 ### skills/speckit-patch/SKILL.md: 1. Preconditions
-<!-- fingerprint: a984e98c -->
-- Run `check` first and stop on exit 1. script `check`, pinned (#230).
+<!-- fingerprint: ea0a7836 -->
+- Run `check` first and stop on exit 1; with a project, `check --project '<name>'` (#338). script `check`, pinned (#230).
 - Stop without `.specify/`. pinned.
 - List a dirty tree's files and ask. text; the hook leaves them out of the record.
 - Say how to bring foreground launches back. text.
 
 ### skills/speckit-patch/SKILL.md: 2. Before launching
-<!-- fingerprint: cd7f4d94 -->
-- Run `project` and act on its answer. script `project`, pinned.
+<!-- fingerprint: 6c361382 -->
+- Act on the project block step 1's `check --project` printed. script `check`, `project`, pinned (#338).
 - Note the start, the hook's hash and the remote-tracking refs. pinned.
 - Branch `patch/<slug>` from the current commit. text; visible.
 
