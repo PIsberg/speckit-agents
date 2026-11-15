@@ -68,10 +68,14 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
     : fs.readdirSync(specs).sort().map((f) => `specs/${f}`);
   const patterns = testPatterns(repo);
   const isTest = (rel) => patterns.some((re) => re.test(rel));
+  const taskText = new Map(dirs.map((dir) => [dir, readOr(path.join(repo, `${dir}/tasks.md`), null)]));
+  // #342: every test path a finished test task names that is not on disk, asked of git in one call, not one each.
+  const missing = [...new Set([...taskText.values()].filter((t) => t !== null)
+    .flatMap((text) => tasksOf(text).filter((t) => t.done && writesTests(t.text)).flatMap((t) => t.text.match(PATHS) ?? []))
+    .filter((rel) => isTest(rel) && !fs.existsSync(path.join(repo, rel))))];
+  const everTracked = trackedOf(repo, missing);
   // Outside a git repo every missing path counts, since nothing tells a built file from an example.
-  const inGit = spawnSync('git', ['rev-parse', '--git-dir'], { cwd: repo }).status === 0;
-  const tracked = (rel) => !inGit
-    || spawnSync('git', ['log', '--all', '--format=%H', '-1', '--', rel], { cwd: repo, encoding: 'utf8' }).stdout.trim() !== '';
+  const tracked = (rel) => !everTracked || everTracked.has(rel);
   const problems = []; let features = 0; let tasks = 0;
   // A feature's number is its folder's leading digits. A line names one when that number stands alone,
   // once requirement and story IDs (FR-001, SC-006, US3-1) are taken out: FR-001 does not name 001.
@@ -86,7 +90,7 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   for (const dir of dirs) {
     const feature = path.posix.basename(dir);
     const file = `${dir}/tasks.md`;
-    const text = readOr(path.join(repo, file), null);
+    const text = taskText.get(dir);
     if (text === null) continue;
     features++;
     // #299: an ID any task of the feature excuses is owed by no test task of it, as at spec level.
@@ -115,6 +119,22 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   }
   if (spec) for (const dir of dirs) problems.push(...specDrift(repo, dir, { isTest, namedIn, number }));
   return { features, tasks, problems };
+}
+
+// The paths of rels that some commit on any ref ever touched, or null outside a git repo. One `git log` for
+// all of them (#342; a call per path cost 150 to 190 ms each on Windows). --no-renames lists a renamed-away
+// path under its old name too; --relative keeps names relative to repo when it is a subdirectory.
+function trackedOf(repo, rels) {
+  const seen = new Set();
+  if (!rels.length) return seen;
+  if (spawnSync('git', ['rev-parse', '--git-dir'], { cwd: repo }).status !== 0) return null;
+  // Chunked, so that a long list stays under Windows' command line limit.
+  for (let i = 0; i < rels.length; i += 200) {
+    const r = spawnSync('git', ['log', '--all', '--no-renames', '--relative', '--format=', '--name-only', '-z', '--', ...rels.slice(i, i + 200)],
+      { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+    for (const name of (r.stdout ?? '').split(/[\0\n]/)) if (name) seen.add(name);
+  }
+  return seen;
 }
 
 // The IDs a task's `No test: <reason>` excuses: the last one before it, in its own clause or the one before
