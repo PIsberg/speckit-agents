@@ -88,9 +88,12 @@ the background (see Handoffs). AskUserQuestion takes at most 4 questions per cal
 in as many calls as it takes, all before the next launch.
 
 ## 0. Preconditions
-- Run `node "{{HOOK}}" check team` in one Bash call with nothing else in it. On exit 1, show its lines and
-  stop with nothing launched: the team that would run is not this install alone (#230), or the repository
-  has no `.specify/` (the user runs `specify init --here --integration claude`). On exit 0, show any
+- Run `node "{{HOOK}}" check team` in one Bash call with nothing else in it; with `--project <name>`, after
+  `## Project` step 1, run `node "{{HOOK}}" check team --project '<name>'` instead, which also prints the
+  project block. On exit 1, show its lines and
+  stop with nothing launched: the team that would run is not this install alone (#230), the repository
+  has no `.specify/` (the user runs `specify init --here --integration claude`), or the project was
+  refused (`## Project` step 3 first). On exit 0, show any
   `note:` line, then go on. Its `state:` lines answer the two bullets that quote one: run no other
   command for this step.
 - The conversation holds nothing but this run. If it already holds other work, tell the user once,
@@ -196,17 +199,16 @@ Before anything is launched:
 1. Check `<name>` against the project name pattern (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, letters,
    digits, `-` and `_` only, at most 64 characters). If invalid, tell the user in one line that `<name>`
    is not a valid project name: letters, digits, - and _ only, and stop with nothing launched.
-2. In one Bash call, run `node "{{HOOK}}" project '<name>'` (with `'<name>'` single-quoted, so no
-   untrusted name reaches the shell unchecked).
+2. Step 0's call, `check team --project '<name>'` (with `'<name>'` single-quoted, so no untrusted name
+   reaches the shell unchecked), prints the block too: no separate call.
 3. If it exits with a non-zero status:
    - If the output contains `no project <name> in .specify/projects/; create it with --init.`: ask the
      user once with AskUserQuestion whether to create it (`Create project <name>?`). On yes, run
      `node "{{HOOK}}" project '<name>' --init`, show its output line, and stop with nothing launched so
      the user can write the project's rules first. On no, stop with nothing launched.
-   - Otherwise (or if the output's first line does not start `Project `), show what it printed and
-     stop before any launch.
-4. If it exits 0 and the first line starts `Project <name>:`, tell the user in one line the start notice
-   from the header line (for example, `Project billing: 2 knowledge files, instructions 812 bytes.`).
+   - Otherwise, show what it printed and stop before any launch.
+4. If it exits 0 with a line that starts `Project <name>:`, tell the user in one line the start notice
+   from that header line (for example, `Project billing: 2 knowledge files, instructions 812 bytes.`).
 
 ## 0b. Constitution (only while it is the template)
 Run this step only when the team has architect, spec-auditor or spec-gatekeeper, the roles that

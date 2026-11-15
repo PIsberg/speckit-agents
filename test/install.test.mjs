@@ -2179,6 +2179,75 @@ test('check team: a problem still exits 1 and prints no state line', () => {
   assert.doesNotMatch(r.stdout, /^state:/m);
 });
 
+// #338: with --project the skill's step 0 and its project block were two Bash calls, two responses that each
+// re-read the conversation. `check team --project <name>` answers both in one.
+const checkWith = (installDir, repo, cfg, ...args) => spawnSync(process.execPath, [path.join(installDir, 'hooks', 'speckit-team.mjs'), 'check', ...args], {
+  cwd: repo, encoding: 'utf8', input: '', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg },
+});
+test('#338: check team --project prints the state lines and the project block in one call', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  assert.equal(install(cfg).status, 0);
+  fs.mkdirSync(path.join(repo, '.specify', 'projects', 'billing'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.specify', 'projects', 'billing', 'instructions.md'), 'Amounts are integer cents.\n');
+  commitAll(repo);
+  const r = checkWith(cfg, repo, cfg, 'team', '--project', 'billing');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /^speckit-team: check: ok, /m);
+  assert.match(r.stdout, /^state: working tree clean$/m);
+  assert.match(r.stdout, /^Project billing: 0 knowledge files, instructions 27 bytes\.$/m);
+  assert.match(r.stdout, /Amounts are integer cents\./);
+  const project = spawnSync(process.execPath, [path.join(cfg, 'hooks', 'speckit-team.mjs'), 'project', 'billing'], { cwd: repo, encoding: 'utf8', input: '' });
+  assert.ok(r.stdout.endsWith(project.stdout), 'the block is the project mode\'s, unchanged, at the end');
+  // The fast track's check takes it too, without state lines.
+  const plain = checkWith(cfg, repo, cfg, '--project', 'billing');
+  assert.equal(plain.status, 0, plain.stdout);
+  assert.doesNotMatch(plain.stdout, /^state:/m);
+  assert.ok(plain.stdout.endsWith(project.stdout), plain.stdout);
+});
+
+test('#338: check --project exits 1 on a project it refuses, and on a check problem without the block', () => {
+  const cfg = claudeDir();
+  const repo = specRepo();
+  assert.equal(install(cfg).status, 0);
+  commitAll(repo);
+  const missing = checkWith(cfg, repo, cfg, 'team', '--project', 'nope');
+  assert.equal(missing.status, 1, missing.stdout);
+  assert.match(missing.stdout, /no project nope in \.specify\/projects\/; create it with --init\./);
+  assert.doesNotMatch(missing.stdout, /^state:/m);
+  for (const bad of [['--project'], ['--project', 'a;b'], ['--project', 'x', 'extra']]) {
+    const r = checkWith(cfg, repo, cfg, 'team', ...bad);
+    assert.equal(r.status, 1, `${bad.join(' ')}: ${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /^speckit-team: check: ok/m, bad.join(' '));
+  }
+  const project = path.join(repo, '.claude');
+  assert.equal(install(project).status, 0);
+  trust(cfg, repo);
+  restamp(project, 'ffffffffffff');
+  fs.mkdirSync(path.join(repo, '.specify', 'projects', 'billing'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.specify', 'projects', 'billing', 'instructions.md'), 'Rules.\n');
+  const problem = checkWith(cfg, repo, cfg, 'team', '--project', 'billing');
+  assert.equal(problem.status, 1, problem.stdout);
+  assert.match(problem.stdout, /two installs of the team/);
+  assert.doesNotMatch(problem.stdout, /^Project billing/m);
+});
+
+test('#338: both skills get the project block from their check call, not a second Bash call', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const team = fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8');
+  const step0 = flat(skillSection(team, '## 0. Preconditions'));
+  assert.match(step0, /check team --project '<name>'/, 'step 0 runs the combined call with --project');
+  const proj = flat(skillSection(team, '## Project'));
+  assert.doesNotMatch(proj, /run `node "[^"]+" project '<name>'`/, 'no separate project call');
+  assert.match(proj, /project '<name>' --init/, 'creating a project is still its own call');
+  assert.match(proj, /line that starts `Project <name>:`/, 'the header is not the first line any more');
+  const patch = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  const pre = flat(skillSection(patch, '## 1. Preconditions'));
+  assert.match(pre, /check --project '<name>'/);
+  assert.doesNotMatch(flat(skillSection(patch, '## 2. Before launching')), /run `node "[^"]+" project '<name>'`/);
+});
+
 test('#230: the hook as checked out, not installed, refuses the check', () => {
   const r = spawnSync(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'check'], { cwd: specRepo(), encoding: 'utf8', input: '' });
   assert.equal(r.status, 1, r.stdout);

@@ -1000,7 +1000,7 @@ Activate it for a run with `--project <name>`:
 
 #### What an agent gets
 
-Before anything is launched, the skill checks the project with `node hooks/speckit-team.mjs project <name>`. If valid, the hook's `SubagentStart` event injects the project block into the agent's prompt as `additionalContext` for all eight agents (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `spec-gatekeeper`, `security-reviewer`, and `patcher`).
+Before anything is launched, the skill checks the project in its first Bash call, `node hooks/speckit-team.mjs check team --project <name>` (`check --project <name>` for `/speckit-patch`), which prints the same block as `project <name>` after the install check, so a run with a project starts in one call, not two ([#338](https://github.com/PIsberg/speckit-agents/issues/338)). If valid, the hook's `SubagentStart` event injects the project block into the agent's prompt as `additionalContext` for all eight agents (`product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`, `spec-gatekeeper`, `security-reviewer`, and `patcher`).
 
 The injected block contains:
 1. The project header with the name, instruction byte size, and sorted list of knowledge files with byte sizes.
@@ -1070,7 +1070,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
 | `start` | `settings.json`: `SubagentStart` of the eight agents | records where product-owner and architect start for their Stop's `lane only`; injects the session's project block as `additionalContext` for all eight when a project is active (007); never decides |
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
-| `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest. `check team`, which `/speckit-team` runs, adds one `state:` line each for the working tree, the constitution (rules, template or missing) and the branch, so step 0 is one call ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)) |
+| `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest. `check team`, which `/speckit-team` runs, adds one `state:` line each for the working tree, the constitution (rules, template or missing) and the branch, so step 0 is one call ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)). `--project <name>` after either adds the `project` mode's block, or exits 1 with its refusal line ([#338](https://github.com/PIsberg/speckit-agents/issues/338)) |
 | `decisions --recommended` | CLI: the plan stop of `/speckit-team`, when every answer is the recommended option | hand-written edits at the plan stop: it records each answer in `plan.md` and applies the recommended options' `Spec:` lines to `spec.md`, or changes nothing and names the line it could not place (exit 1). The `Skill\|Agent` `gate` refuses a spec-auditor launch while `plan.md` still lists an open decision, so a failed record is not followed by an audit of an unsettled plan ([measurements](docs/measurements.md#the-plan-stop-in-one-call)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds, or an FR of its `spec.md` in no test line naming the feature's number that no task excuses with `No test: <reason>` ([#235](https://github.com/PIsberg/speckit-agents/issues/235)) (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents` |
@@ -1570,13 +1570,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 615 tests:
+`npm test` runs 618 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 209 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 134 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -2180,9 +2180,9 @@ The project's `instructions.md` file exceeds the 8,192-byte limit. Shorten the i
 
 A project may hold at most 100 knowledge files. Consolidate documents or remove unused ones.
 
-### Permission prompt on `node "{{HOOK}}" project '<name>'`
+### Permission prompt on `node "{{HOOK}}" check team --project '<name>'`
 
-In an interactive session, Claude Code may prompt to confirm running the hook to check project context. Choose Allow to let the skill inspect the project.
+In an interactive session, Claude Code may prompt to confirm running the hook to check project context (`check --project '<name>'` under `/speckit-patch`, `project '<name>' --init` when creating one). Choose Allow to let the skill inspect the project.
 
 ## Known limits
 

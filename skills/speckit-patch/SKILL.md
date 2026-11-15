@@ -14,8 +14,10 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
 `--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before launching: say why and list available projects by running `node "{{HOOK}}" project`. Check `<name>` against the project name pattern (`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`, letters, digits, `-` and `_` only, at most 64 characters). If invalid, tell the user in one line that `<name>` is not a valid project name and stop with nothing launched.
 
 ## 1. Preconditions
-- Run `node "{{HOOK}}" check` in one Bash call. On exit 1, show its lines and stop with nothing launched:
-  the team that would run is not this install alone (#230). On exit 0, show any `note:` line, then go on.
+- Run `node "{{HOOK}}" check` in one Bash call; if a project is active, `node "{{HOOK}}" check --project '<name>'`
+  (single-quoted), which also prints its block. On exit 1, show its lines and stop with nothing launched:
+  the team that would run is not this install alone (#230), or the project was refused (step 2 first).
+  On exit 0, show any `note:` line, then go on.
 - `.specify/` exists. If not, stop: the fast track's hooks are inactive without it.
 - If the working tree is dirty, list the files, say they will not be counted or committed, and ask
   before going on.
@@ -26,7 +28,7 @@ commits. Hooks and limits: the README.md of the speckit-agents repo.
   launches back. Then go on.
 
 ## 2. Before launching
-- If a project is active (`--project <name>` was given): in one Bash call, run `node "{{HOOK}}" project '<name>'` (single-quoted). If it exits non-zero:
+- If a project is active (`--project <name>` was given): step 1's `check --project '<name>'` printed its block. If it exited non-zero:
   - If the output contains `no project <name> in .specify/projects/; create it with --init.`: ask the user once with AskUserQuestion whether to create it (`Create project <name>?`). On yes, run `node "{{HOOK}}" project '<name>' --init`, show its output line, and stop with nothing launched. On no, stop with nothing launched.
   - Otherwise, show what it printed and stop on exit 1 before creating the branch.
   If it exits 0, tell the user in one line the active project from the header line before launching.
