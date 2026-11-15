@@ -5,8 +5,9 @@
 // enough (the drift report of google/elephant-goldfish-model, docs/designs/drift_report.md).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import cp, { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +59,31 @@ test('drift: in a git repo, a path git never tracked is an example, not a file t
   const tasks = '- [X] T001 Test FR-001 in `test/sum.test.js` with an input like `test/fixtures/x.bin`\n';
   const r = drift(repo(tasks, { 'test/sum.test.js': SUM_TEST }, { removed: ['test/other.test.js'] }));
   assert.deepEqual(r.problems, []);
+});
+
+// #342: a `git log --all` per missing path was 90% of a drift(spec) call on this repo (5 calls, ~800 ms of
+// ~880 ms for feature 010 on Windows). One call answers for every missing path, with the same outcome.
+test('drift (#342): gone, renamed-away and never-tracked paths across tasks are told apart with one git log', () => {
+  const tasks = '- [X] T001 Test FR-001 in `test/a.test.js` and `test/gone.test.js`, input `test/fixtures/x.bin`\n'
+    + '- [X] T002 Test FR-001 in `test/moved.test.js`, like `test/never.test.js`\n'
+    + '- [X] T003 Test FR-001 in `test/b.test.js` with `test/fixtures/y.bin`\n';
+  const dir = repo(tasks, { 'test/a.test.js': SUM_TEST, 'test/b.test.js': SUM_TEST }, { removed: ['test/gone.test.js'] });
+  fs.writeFileSync(path.join(dir, 'test', 'moved.test.js'), SUM_TEST);
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-qm', 'moved');
+  git(dir, 'mv', 'test/moved.test.js', 'test/renamed.test.js');
+  git(dir, 'commit', '-qm', 'rename');
+  const logs = [];
+  const orig = cp.spawnSync;
+  cp.spawnSync = (cmd, args, ...rest) => { if (cmd === 'git' && args.includes('log')) logs.push(args.join(' ')); return orig(cmd, args, ...rest); };
+  syncBuiltinESMExports();
+  let r;
+  try { r = drift(dir); } finally { cp.spawnSync = orig; syncBuiltinESMExports(); }
+  assert.deepEqual(r.problems.sort(), [
+    'specs/001-sum/tasks.md T001: test/gone.test.js is gone',
+    'specs/001-sum/tasks.md T002: test/moved.test.js is gone',
+  ]);
+  assert.equal(logs.length, 1, logs.join('\n'));
 });
 
 test('drift: success criteria (SC-) are not looked for in tests, only requirements (FR-)', () => {

@@ -1156,3 +1156,23 @@ Run B printed `trust for .../live-1111-kill-a/repo was left by a run that ended 
 $0.17; A's cost is not known, since it was killed before it reported one. 1 pair of runs. What stays
 unshown is a write-back later than the undo's 10 s recheck, which no run has produced since the
 recheck went in.
+
+## The drift check's git calls (#342)
+
+Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`
+call per feature (as the hook makes at spec-gatekeeper's APPROVED), timed in process with every
+`git` subprocess wrapped; two passes each, on an idle machine.
+
+| Feature | Before: `git log` calls, their time, total | After: one `git log`, its time, total |
+|---|---|---|
+| 010-context-cost-stats | 5, 756 to 805 ms, 851 to 907 ms | 182 to 193 ms, 288 to 301 ms |
+| 003-fast-track-patch | 7, 1,262 to 1,311 ms, 1,366 to 1,417 ms | 222 to 254 ms, 331 to 360 ms |
+| 009-skill-agents-team | none, 100 ms | none, 79 to 82 ms |
+
+Before, `tracked()` ran `git log --all -1 -- <path>` for each test path a finished task names that is not
+on disk, 150 to 190 ms each; reading files (23 to 31 ms), `git ls-files` (33 to 42 ms) and the regexes
+#333 had already compiled once were the rest. Now one `git log --all --no-renames --name-only` over all of
+those paths answers for them together, and a feature with no missing path runs no `git log` and no
+`rev-parse`. The problems found were the same on all 12 calls (the whole repo, and each feature with
+`spec`), compared against main's module. Held by `test/drift.test.mjs` (#342): one `git log` for a
+gone, a renamed-away and two never-tracked paths across three tasks.
