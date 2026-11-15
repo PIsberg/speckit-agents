@@ -1363,7 +1363,7 @@ test("team (#101): once the request's team has spec-auditor, a Team line cannot 
   const out = agentLaunch(dir, 'go\nTeam: test-writer, implementer');
   assert.ok(!denied(out), 'the launch itself is never denied');
   assert.match(msg(out), /speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on\. A new \/speckit-team request chooses a new team\./);
-  assert.deepEqual(teamRecord(dir).roles, ALL_ROLES, 'the record is unchanged');
+  assert.deepEqual(teamRecord(dir).roles, ['spec-auditor', 'test-writer', 'implementer'], '#331: spec-auditor is kept, the rest is the line\'s');
   assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
   // A Team line that keeps spec-auditor may still narrow the rest.
   agentLaunch(dir, 'go\nTeam: product-owner, architect, spec-auditor, implementer');
@@ -1376,6 +1376,27 @@ test("team (#101): once the request's team has spec-auditor, a Team line cannot 
   // Another session's typed command changes nothing here.
   typedTeam(dir, 'other work', { session_id: 's2' });
   assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer']);
+});
+
+// #331: every notice of one launch is said, and the record is written, whichever notice comes first.
+test('#331: a launch that drops spec-auditor still records the narrowed team, and says every notice it has', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'go');
+  const drop = agentLaunch(dir, 'go\nTeam: test-writer, implementer\nProject: nope');
+  assert.match(msg(drop), /the Team line drops spec-auditor/);
+  assert.match(msg(drop), /team for this session: spec-auditor, test-writer, implementer; audit gate on/);
+  assert.match(msg(drop), /the Project line names nope, which is not a project/);
+  assert.deepEqual(teamRecord(dir).roles, ['spec-auditor', 'test-writer', 'implementer']);
+  // A no-agents request turned into a team run says so, after the team notice or the bad-line notice.
+  for (const [line, first] of [['Team: test-writer, implementer', /team for this session: test-writer, implementer; audit gate off/],
+    ['Team: nobody', /the Team line names nobody, not a team role/]]) {
+    typedTeam(dir, '--team noagents add a file');
+    assert.equal(teamRecord(dir).noagents, true);
+    const out = agentLaunch(dir, `go\n${line}`);
+    assert.match(msg(out), first, line);
+    assert.match(msg(out), /a team agent was launched in a no-agents request; the full team's gates apply from here/, line);
+    assert.equal(teamRecord(dir).noagents, undefined, line);
+  }
 });
 
 test('team noagents: a typed /speckit-team --team noagents opens the main session\'s /speckit-implement, and nothing else', () => {
@@ -2978,6 +2999,36 @@ test('#316: the next role call is denied once for the same lines, leaves the rol
   assert.equal(roleRec(dir).role, 'implementer');
 });
 
+// #334: the test-writer role's RED on a parse or name error, or a missing test module, ran no expectation. As
+// for the agent (#240): sent back once at Stop or denied once at the next role call, then said.
+test('#334: the test-writer role\'s RED on a SyntaxError is sent back once at Stop, then the hand-on', () => {
+  const { dir, put, t } = testWriterRole();
+  put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  say(t, 'test/a.test.mjs:3\nSyntaxError: Unexpected token )\n\nRED');
+  const first = stopRole(dir);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /Your RED reports SyntaxError: the test file did not run/);
+  assert.ok(hasRole(dir), 'the role still acts');
+  const second = stopRole(dir);
+  assert.match(reasonOf(second), HAND_ON_MSG('test-writer', 'RED'));
+  assert.match(msg(second), /reported RED on SyntaxError, which is not red for the right reason/);
+});
+
+test('#334: the next role call is denied once on a RED with a missing test module; a missing production module is red', () => {
+  const { dir, put, t } = testWriterRole();
+  put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  say(t, "Error: Cannot find module './helpers.test.mjs'\nRequire stack:\n- " + path.join(dir, 'test', 'a.test.mjs') + '\n\nRED');
+  const first = callWithArgs(dir, 'speckit-role-implementer', t, 'T002');
+  assert.ok(denied(first), JSON.stringify(first));
+  assert.match(reasonOf(first), /Cannot find module test\/helpers\.test\.mjs, a test file/);
+  assert.equal(roleRec(dir).role, 'test-writer');
+  assert.ok(!denied(callWithArgs(dir, 'speckit-role-implementer', t, 'T002')));
+  const b = testWriterRole();
+  b.put('test/a.test.mjs', "test('001 FR-001 adds', () => {});\n");
+  say(b.t, "Error: Cannot find module '../src/a.mjs'\nRequire stack:\n- " + path.join(b.dir, 'test', 'a.test.mjs') + '\n\nRED');
+  assert.match(reasonOf(stopRole(b.dir)), HAND_ON_MSG('test-writer', 'RED'));
+});
+
 // #185: the gatekeeper's report and the orchestrator's hand-over can share one response, so the word is
 // the response's last standalone APPROVED or REJECTED line, not its very last line.
 test('#185: a spec-gatekeeper word followed by hand-over text in the same response is recorded', () => {
@@ -3120,13 +3171,10 @@ test('#261: a role Stop where the skill may go to the user is let through', () =
   const cases = [
     ['product-owner', 'Questions below.\n\nREADY FOR PLAN'],
     ['architect', 'Round 1: stub T002; red T001; green T002\n\nREADY FOR PLAN'],
-    ['spec-auditor', 'H1: plan contradicts FR-002.\n\nVERDICT: FAIL'],
-    ['spec-auditor', 'VERDICT: PASS\n\nOn re-reading, H1 holds.\n\nVERDICT: FAIL'],
     ['test-writer', 'FR-004 cannot be expressed.\n\nBLOCKED'],
-    ['test-writer', 'Fixed the import.\n\nFIXED'],
     ['test-writer', 'RED\n\nThen T003 turned out to need a fixture.\n\nBLOCKED'],
-    ['implementer', 'T002 still fails.\n\nRESULT: RED'],
     ['implementer', 'Two tests are still RED in CI, working on it.'],
+    ['spec-gatekeeper', 'Every task is ticked.\n\nAPPROVED'],
     ['implementer', ''],
   ];
   for (const [role, last] of cases) {
@@ -3137,6 +3185,72 @@ test('#261: a role Stop where the skill may go to the user is let through', () =
     assert.notEqual(stop?.decision, 'block', `${role} ${JSON.stringify(last)}: ${JSON.stringify(stop)}`);
     assert.ok(!hasRole(dir), role);
   }
+});
+
+// #332: steps 3 and 6 go on without a Stop after a first FAIL, a REJECTED, a FIXED and a RESULT: RED under the
+// retry limit, so those Stops are handed on too. A second FAIL and a third RED in a row go to the user.
+test('#332: a role Stop on a first VERDICT: FAIL, REJECTED, FIXED or RESULT: RED is sent back once', () => {
+  const cases = [
+    ['spec-auditor', 'H1: plan contradicts FR-002.\n\nVERDICT: FAIL', 'VERDICT: FAIL'],
+    ['spec-auditor', 'VERDICT: PASS\n\nOn re-reading, H1 holds.\n\nVERDICT: FAIL', 'VERDICT: FAIL'],
+    ['spec-gatekeeper', 'T003 is open.\n\n**REJECTED**', 'REJECTED'],
+    ['test-writer', 'Fixed the import.\n\nFIXED', 'FIXED'],
+    ['implementer', 'T002 still fails.\n\nRESULT: RED', 'RESULT: RED'],
+  ];
+  for (const [role, last, word] of cases) {
+    const { dir } = repo();
+    skillAgentsTeam(dir);
+    putRole(dir, role);
+    const stop = stopRole(dir, { last_assistant_message: last });
+    assert.equal(stop?.decision, 'block', `${role} ${JSON.stringify(last)}: ${JSON.stringify(stop)}`);
+    assert.match(stop.reason, HAND_ON_MSG(role, word), role);
+    assert.ok(!hasRole(dir), role);
+    assert.ok(!decided(stopRole(dir, { last_assistant_message: last, stop_hook_active: true })), `${role}: once only`);
+  }
+});
+
+const auditCount = (dir) => readState(path.join(stateDir(dir), 'audit', '001-demo.json'))?.fails ?? 0;
+test('#332: the spec-auditor role\'s FAILs are counted, and the second in a row goes to the user', () => {
+  const { dir, t } = auditorRole();
+  say(t, 'H1 open.\n\nVERDICT: FAIL');
+  assert.match(reasonOf(stopRole(dir)), HAND_ON_MSG('spec-auditor', 'VERDICT: FAIL'));
+  assert.equal(auditCount(dir), 1);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t })));
+  say(t, 'H1 still open.\n\nVERDICT: FAIL');
+  const second = stopRole(dir);
+  assert.notEqual(second?.decision, 'block', JSON.stringify(second));
+  assert.equal(auditCount(dir), 2);
+  // A PASS clears the count, as the agent's does.
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t })));
+  say(t, 'All good.\n\nVERDICT: PASS');
+  assert.equal(stopRole(dir)?.decision, 'block');
+  assert.equal(auditCount(dir), 0);
+});
+
+const redCountOf = (dir) => readState(path.join(stateDir(dir), 'retries', '001-demo.json'))?.red?.length ?? 0;
+test('#332: the implementer role\'s REDs are counted per role, GREEN resets, and the third RED in a row goes to the user', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  const stopOn = (last) => { putRole(dir, 'implementer'); return stopRole(dir, { last_assistant_message: last }); };
+  assert.match(reasonOf(stopOn('RESULT: RED')), HAND_ON_MSG('implementer', 'RESULT: RED'));
+  assert.equal(redCountOf(dir), 1);
+  assert.match(reasonOf(stopOn('RESULT: GREEN')), HAND_ON_MSG('implementer', 'RESULT: GREEN'));
+  assert.equal(redCountOf(dir), 0, 'GREEN resets');
+  stopOn('RESULT: RED');
+  assert.match(reasonOf(stopOn('Still failing.\n\nRESULT: RED')), HAND_ON_MSG('implementer', 'RESULT: RED'));
+  const third = stopOn('RESULT: RED');
+  assert.notEqual(third?.decision, 'block', JSON.stringify(third));
+  assert.equal(redCountOf(dir), 3);
+  assert.match(msg(third), /implementer role reported RESULT: RED 3 times in a row/);
+  // A role closed by the next Skill call counts too, once.
+  const r = repo();
+  skillAgentsTeam(r.dir);
+  pass(r.dir);
+  const t = transcriptIn(r.dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(r.dir, 'speckit-role-implementer', { transcript_path: t })));
+  say(t, 'T002 fails.\n\nRESULT: RED');
+  assert.ok(!decided(skillCall(r.dir, 'speckit-role-implementer', { transcript_path: t })));
+  assert.equal(redCountOf(r.dir), 1);
 });
 
 test('#261: a role that ended with an earlier prompt, or wrote outside its lane, gets no hand-on block', () => {
