@@ -224,6 +224,44 @@ test('the pane folds finished task sections, marks the next task, and shows all 
   }
 })
 
+// #346: docked 25 rows tall, a 40-task section drew its title and nothing under it, and the arrows moved
+// nothing. The pane fits the task list into the rows its body has, follows the next task, and pages.
+test('#346 a task list taller than the pane shows a window over it, paged by its buttons and the wheel', async ($, on) => {
+  const many = '## Phase 1: Setup\n- [x] T001 Create package.json\n## Phase 2: Story\n'
+    + Array.from({ length: 40 }, (_, i) => `- [${i < 2 ? 'x' : ' '}] T${String(i + 2).padStart(3, '0')} Task ${i + 2}\n`).join('')
+  await world(on, { [`${ROOT}/${FEATURE}/tasks.md`]: many })
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  const roomy = { ...pane, props: { ...pane.props, scroll: { offset: 0, bodyRows: 30 } } }
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'speckit-board', surface, ...PANE, ...roomy } as never)
+    const label = async (key: string) => (await ui.findAll({ type: 'Button' })).find(x => x.key === key)?.props.label
+    // The next task is in view with the row before it; the end of the list is not.
+    expect(await ui.find({ type: 'Text', text: /^\s*▶ T004 Task 4$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /T003 Task 3$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /T041/ })).toBeUndefined()
+    expect(await label('tasks-up')).toBe('↑ 3 more')
+    expect(await label('tasks-down')).toMatch(/^↓ \d+ more$/)
+    expect((await ui.findAll({ type: 'Button' })).find(x => x.key === 'tasks-down')?.props.hotkey).toBe('d')
+    // Paging down reaches the last task, and the down row goes.
+    for (let i = 0; i < 10 && await label('tasks-down'); i++) await ui.press({ key: 'tasks-down' })
+    expect(await label('tasks-down')).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /T041 Task 41$/ })).toBeDefined()
+    // Paging up reaches the first section, and the up row goes.
+    for (let i = 0; i < 10 && await label('tasks-up'); i++) await ui.press({ key: 'tasks-up' })
+    expect(await label('tasks-up')).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: 'Phase 1: Setup' })).toBeDefined()
+    // The wheel over the pane moves the window by its rows, and the engine's own window stays put.
+    const wheel = await $.ui.scroll({ component: 'Pane', requestId: 'speckit-board', offset: 0, by: 5, bodyRows: 30, contentRows: 30, origin: { kind: 'person' } } as never)
+    expect(wheel).toEqual({})
+    expect(await label('tasks-up')).toBe('↑ 5 more')
+    // Showing every task follows the next one again.
+    await ui.press({ key: 'tasks' })
+    await ui.press({ key: 'tasks' })
+    expect(await label('tasks-up')).toBe('↑ 3 more')
+    await ui.unmount()
+  }
+})
+
 // Opened inline above the prompt, a pane is a third of the terminal tall unless it asks: live, the
 // buttons and every task were below its fold.
 test('the pane asks for the rows it draws, and for more when it shows every task', async ($, on) => {

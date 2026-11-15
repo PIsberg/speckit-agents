@@ -369,6 +369,19 @@ export function taskSections(tasks: readonly SpeckitTask[], isAllShown: boolean)
   })
 }
 
+// #346: the rows of a task list of `total` rows that a pane with `room` rows left for it shows, as
+// [start, end). A list that fits shows whole. A longer one spends one row on the paging buttons, which
+// say how many rows are above and below, and shows at least one task row. `offset` is the first row
+// the person paged or scrolled to; null follows `focus` (the next task's row), with the row before it
+// when there is room for three.
+export type TaskWindow = { start: number; end: number; above: number; below: number }
+export function taskWindow(total: number, room: number, focus: number, offset: number | null): TaskWindow {
+  if (total <= room) return { start: 0, end: total, above: 0, below: 0 }
+  const shown = Math.max(1, room - 1)
+  const start = Math.max(0, Math.min(total - shown, offset ?? focus - (shown >= 3 ? 1 : 0)))
+  return { start, end: start + shown, above: start, below: total - start - shown }
+}
+
 export type BandItem =
   | { kind: 'feature' | 'sep' | 'bar' | 'count'; text: string }
   | { kind: 'phase'; text: string; state: SpeckitPhaseState; isHead: boolean }

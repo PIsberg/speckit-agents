@@ -1433,10 +1433,13 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     other. The word takes the glyph's color, except that `RED` is always red and `GREEN` always
     green, so a test-writer's `RED` reads `✓ RED` with a green tick and a red word. The latest six
     show, and the rest are counted;
-  - the buttons (`refresh`, `all tasks`, `toggle band`, `clear`, `close`), and last the tasks of `tasks.md` by section, the part a short terminal cuts off.
+  - the buttons (`refresh`, `all tasks`, `toggle band`, `clear`, `close`), and last the tasks of `tasks.md` by section.
     A finished section, and one not started past the next task, folds to its title and count, and
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
-    Code draws inline code.
+    Code draws inline code. A list taller than the rows the pane has left shows a window over it,
+    opened at the next task, under one row of paging buttons, `↑ n more` (`u`) and `↓ n more` (`d`);
+    the wheel over the pane moves it too, and `all tasks` goes back to the next task. Before, a short
+    terminal cut the list off with nothing to scroll ([#346](https://github.com/PIsberg/speckit-agents/issues/346)).
 
   Inline above the prompt the pane asks for the rows it draws, rather than the third of the
   terminal it gets unasked.
@@ -1535,7 +1538,7 @@ installs can still remove it.
 
 The stats are held by the mod's unit tests; the hand check in `specs/010-context-cost-stats/quickstart.md` has not been run.
 
-**Automated.** `claude plugin validate` and `claude plugin test` (165 tests, both run by `npm test`,
+**Automated.** `claude plugin validate` and `claude plugin test` (167 tests, both run by `npm test`,
 in CI on Linux, macOS and Windows), and `tsc` on the mod against the types Claude Code lays beside
 it (a CI step on Linux, since `npm test` needs no network). `--board`, a rerun, `--no-board` and
 `--uninstall` run the real `claude plugin` commands against throwaway config dirs in
@@ -1577,7 +1580,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 209 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 167 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |

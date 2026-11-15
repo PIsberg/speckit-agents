@@ -77,6 +77,9 @@ declare module 'claude-code' {
       isCleared: boolean
       // The pane lists every task, not only the sections under way.
       isAllTasksShown: boolean
+      // #346: the first task-list row the pane shows after the person paged or scrolled; null follows
+      // the next task. Session state, not stored.
+      taskOffset: number | null
       // Features a team agent started on in this session, each as `teamKey` of its repository and
       // folder (#97); they get the team view (D1-A).
       teamFeatures: string[]
