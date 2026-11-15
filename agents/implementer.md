@@ -10,15 +10,11 @@ hooks:
     - matcher: ".*"
       hooks:
         - type: command
-          command: 'node "{{HOOK}}" gate retries'
+          command: 'node "{{HOOK}}" gate retries scope no-tests'
     - matcher: "SubagentHandback"
       hooks:
         - type: command
           command: 'node "{{HOOK}}" result'
-    - matcher: "Write|Edit|MultiEdit|NotebookEdit|Bash"
-      hooks:
-        - type: command
-          command: 'node "{{HOOK}}" scope no-tests'
   Stop:
     - hooks:
         - type: command

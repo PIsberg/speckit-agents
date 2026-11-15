@@ -525,12 +525,17 @@ test('#209 #210: every team agent with Bash runs its scope hook on Bash, and the
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
   const expected = { 'product-owner': 'only specs/ .specify/feature.json', architect: 'only specs/ CLAUDE.md', 'test-writer': 'tests',
     implementer: 'no-tests', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
+  // #337: test-writer and implementer run their scope rule in the gate's process, one node per tool call.
+  const gated = { 'test-writer': 'gate scope', implementer: 'gate retries scope' };
   for (const [a, rule] of Object.entries(expected)) {
     const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n');
     const fm = text.slice(0, text.indexOf('\n---', 4));
-    const entry = new RegExp(`- matcher: "([^"]+)"\\n\\s+hooks:\\n\\s+- type: command\\n\\s+command: 'node "${hookPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" scope ${rule}'`).exec(fm);
-    assert.ok(entry, `${a}: a scope ${rule} entry`);
-    assert.ok(entry[1].split('|').includes('Bash'), `${a}: its scope matcher "${entry[1]}" covers Bash`);
+    const entry = new RegExp(`- matcher: "([^"]+)"\\n\\s+hooks:\\n\\s+- type: command\\n\\s+command: 'node "${hookPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" ${gated[a] ?? 'scope'} ${rule}'`).exec(fm);
+    assert.ok(entry, `${a}: a ${gated[a] ?? 'scope'} ${rule} entry`);
+    if (gated[a]) {
+      assert.equal(entry[1], '.*', `${a}: the gate's matcher, every tool`);
+      assert.equal(fm.match(/\.mjs" (?:scope|gate)\b/g)?.length, 1, `${a}: no second gate or scope entry, so one process per tool call`);
+    } else assert.ok(entry[1].split('|').includes('Bash'), `${a}: its scope matcher "${entry[1]}" covers Bash`);
     assert.ok(fm.indexOf(entry[0]) > fm.indexOf('PreToolUse:') && (fm.indexOf('  Stop:') < 0 || fm.indexOf(entry[0]) < fm.indexOf('  Stop:')), `${a}: at PreToolUse`);
     if (rule === 'none') assert.match(fm, /^disallowedTools:.*\bWrite\b/m, `${a}: scope none only for an agent that cannot write`);
   }
@@ -762,7 +767,8 @@ test('installed hook commands run through a shell from a path with a space', { s
   install(dir);
   const text = fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8');
   const commands = [...text.matchAll(/command: '(.+)'/g)].map((m) => m[1]);
-  assert.equal(commands.length, 5);
+  // gate retries scope, result, lane, and result at Stop: #337 merged gate and scope into one command.
+  assert.equal(commands.length, 4);
   for (const cmd of commands) {
     // Claude Code runs hook commands in a shell (Git Bash on Windows). Outside a Spec Kit repo the
     // hook must exit 0, so this catches quoting and space-in-path breakage. It cannot catch the

@@ -1052,8 +1052,8 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | Mode | Wired to | What it stops |
 |---|---|---|
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | writing outside their prefixes, with a write tool or a Bash command that names the file ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)) |
-| `scope tests` | test-writer: same | writing production code, or Spec Kit and project paths under `.specify/` |
-| `scope no-tests` | implementer: same | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
+| `scope tests` | test-writer: run inside its `gate` entry as `gate scope tests`, on `Write|Edit|MultiEdit|NotebookEdit|Bash` only ([#337](https://github.com/PIsberg/speckit-agents/issues/337)) | writing production code, or Spec Kit and project paths under `.specify/` |
+| `scope no-tests` | implementer: run inside its `gate retries` entry as `gate retries scope no-tests`, on the same tools (#337) | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
 | `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
 | `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, a production change with no test file unless the report has a `No test: <reason>` line (#243), and no accepted record unless the run is within budget |
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
@@ -1061,7 +1061,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | every `scope` rule | all five writing agents, and the three read-only ones on Bash | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
 | `scope role` | `--team skill-agents`: each role skill's frontmatter, PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | the acting role writing outside its lane (the same rule as its agent's `scope`, a twin of `ROLE_LANES`), or any write by a read-only role, through a write tool or Bash as `scope none` reads it |
 | `lane role` | `--team skill-agents`: each role skill's frontmatter, Stop | finishing a role with out-of-lane changes; ending the turn, once per role call, on a report the skill goes on from (`VERDICT: PASS`, `RESULT: STUB`, `RED`, `RESULT: GREEN`, #261; a first `VERDICT: FAIL`, `REJECTED`, `FIXED`, a `RESULT: RED` under the retry limit, #332); records spec-auditor's verdict and spec-gatekeeper's word from its messages, the next Skill call's first `args` line and the Stop's last message. A turn that loaded several role skills runs one process per skill at each Stop; one of them sends each block back ([#284](https://github.com/PIsberg/speckit-agents/issues/284)) |
-| `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback` | doing anything before the audit passed (reporting back is never blocked) |
+| `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback`; its entry carries the agent's scope rule (`gate scope tests`), which it applies to a write or Bash call after the gate lets it through, so one process decides both (#337: about 120 instead of 225 ms of hook processes per write on Windows) | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
 | `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it only records the launch's `Team:` line, and on a typed `/speckit-team` it only starts a new team record (`noagents`, or none); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
@@ -1569,11 +1569,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 612 tests:
+`npm test` runs 614 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 206 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 208 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 134 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
