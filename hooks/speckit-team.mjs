@@ -698,6 +698,11 @@ function recordReport(rec, last = null, where = 'stop') {
       return;
     }
     writeJson(verdictFile(feat), { verdict, feature: feat, fingerprint: fingerprint(feat), at, agent_id: null, role: rec.role });
+    // #332: FAILs in a row, as the agent's (#242), counted once per role record; a PASS clears the count.
+    if (claimed(rec, 'count')) {
+      if (verdict === 'PASS') fs.rmSync(auditFile(feat), { force: true });
+      else writeJson(auditFile(feat), { feature: feat, fails: (Number(auditRecord(feat).fails) || 0) + 1, approved: false, at });
+    }
     addNote(`spec-auditor role recorded VERDICT: ${verdict} for ${feat}`);
     return;
   }
@@ -761,6 +766,74 @@ function sendBackOnce(rec, why) {
   return true;
 }
 
+// #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
+// test file (#245): a RED for a production file not written yet is valid.
+const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
+const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? missingTestModule(text);
+const redFaultWhy = (fault) => `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `
+  + 'Fix that error so the test runs and fails on its expectation, then send the full report.';
+// Kept once per reporter and fault in ends/red-faults.json: the Stop after a hand-back repeats the same report.
+// `row` names the reporter: an agent's agent_id, or (#334) a role's start, role_at. Returns the note to say.
+function keepRedFault(row, who) {
+  const file = path.join(stateDir, 'ends', 'red-faults.json');
+  const kept = readState(file);
+  const rows = Array.isArray(kept) ? kept : [];
+  if (!rows.some((r) => r?.agent_id === row.agent_id && r?.role_at === row.role_at && r?.fault === row.fault)) {
+    writeJson(file, [...rows, { ...row, at: new Date().toISOString() }]);
+  }
+  return `speckit-team: ${who} reported RED on ${row.fault}, which is not red for the right reason. Kept in ends/red-faults.json.`;
+}
+
+// #245: a missing module that the repo's test patterns call a test file (a helper, a fixture), as
+// "Cannot find module <path>, a test file", or null. Only a path the error names is judged: Node ESM's
+// absolute path, a relative one resolved against Node CJS's Require stack, else a relative one with its
+// leading ./ and ../ dropped (as a report paraphrases it), or a Python module. A package name, or a path
+// outside the repo, is no fault: refusing a valid RED is worse than letting a broken one through.
+const NODE_MISSING = /Cannot find module '?([^'\s]+?)'?(?: imported from [^\r\n]+)?[ \t]*(?:\r?\n[ \t]*Require stack:[ \t]*\r?\n[ \t]*- ([^\r\n]+))?(?=\s|$)/g;
+const PY_MISSING = /No module named '([\w.]+)'/g;
+// The path comes from a report the model wrote, so it is compared as text and never touched: no fs call
+// on it, and a UNC or device path (\\host\share, //host, \\?\, \\.\) is refused before path.resolve, since
+// on Windows opening one connects to that host and offers the user's NTLM credentials. Only the root is
+// resolved, with the session's cwd: a test run prints paths as the cwd spells them (/var for /private/var
+// on macOS, a short RUNNER~1 folder on Windows), so the root as the cwd spells it is matched as well.
+let rootFormsMemo;
+function rootForms() {
+  if (rootFormsMemo) return rootFormsMemo;
+  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
+  const forms = [root, real(root)];
+  const up = path.relative(real(cwd), real(root));
+  if (path.isAbsolute(cwd) && !/^[\\/]{2}/.test(cwd) && !path.isAbsolute(up) && /^(\.\.([\\/]|$))*$/.test(up)) forms.push(path.resolve(cwd, up));
+  return (rootFormsMemo = [...new Set(forms)]);
+}
+function repoRelative(abs) {
+  if (/^[\\/]{2}/.test(abs)) return null;
+  const p = path.resolve(abs);
+  if (/^[\\/]{2}/.test(p)) return null;
+  for (const base of rootForms()) {
+    const rel = path.relative(base, p);
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
+  }
+  return null;
+}
+function missingTestModule(text) {
+  for (const [, spec, from] of String(text).matchAll(NODE_MISSING)) {
+    let file = spec;
+    // A file URL with a host names a share; only a local one (file:///) is read.
+    if (spec.startsWith('file:')) { try { file = /^file:\/\/\//i.test(spec) ? fileURLToPath(spec) : ''; } catch { file = ''; } }
+    let rel = null;
+    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) rel = repoRelative(file);
+    // With a Require stack, the requiring file is the only base: one that is a share or not absolute is no fault.
+    else if (/^\.\.?[\\/]/.test(file) && from) rel = path.isAbsolute(from.trim()) ? repoRelative(path.join(path.dirname(from.trim()), file)) : null;
+    else if (/^\.\.?[\\/]/.test(file)) rel = path.posix.normalize(fwdPath(file)).replace(/^(\.\.?\/)+/, '');
+    if (rel && isTest(rel)) return `Cannot find module ${rel}, a test file`;
+  }
+  for (const [, mod] of String(text).matchAll(PY_MISSING)) {
+    const rel = `${mod.replaceAll('.', '/')}.py`;
+    if (isTest(rel)) return `No module named '${mod}', a test file`;
+  }
+  return null;
+}
+
 // Close the acting role (contract section 6) at a Skill call ('skill': denies on a lane violation, else
 // returns) or at Stop ('stop': blocks on one, else removes the record and ends the hook).
 // `gate`, given at a Skill call, runs once the record is known live and before its lane is judged: a spec,
@@ -791,24 +864,23 @@ function closeRole(rec, at, gate = null) {
   }
   // #316: the test-writer role's RED or FIXED, as the agent's at `ends` (#315): blocked once at Stop, denied
   // once at the next role call (the record keeps it, so the same call made again goes through), then said.
+  // #334: first, as the agent's (#240), a RED on a parse or name error or a missing test module.
   if (rec.role === 'test-writer') {
-    const texts = [...((rec.offset === null ? null : roleTexts(rec.transcript, rec.offset)) ?? []),
-      at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] : str(input.last_assistant_message)].filter(Boolean);
-    const word = texts.map(lastWord).reverse().find((w) => END_WORDS['test-writer'].includes(w));
+    const { text, word } = roleReport(rec, at);
     const feat = feature() ?? rec.feature;
+    const fault = word === 'RED' ? redFaultIn(text) : null;
+    if (fault) {
+      refuseOnce(rec, at, 'fault', redFaultWhy(fault));
+      addNote(keepRedFault({ agent_id: null, role_at: rec.at ?? null, fault }, 'the test-writer role'));
+    }
     const cited = feat && (word === 'RED' || word === 'FIXED') ? driftOf(feat, false) : null;
     if (cited?.failed) addNote(citedUnchecked('the test-writer role', word, cited.failed));
     if (cited?.problems?.length) {
-      const why = citedRefusal(word, cited.problems);
-      if (at === 'skill') {
-        const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
-        let kept = !sent.includes('cited');
-        if (kept) { try { writeJson(roleFile(id), { ...rec, sentBack: [...sent, 'cited'] }); } catch { kept = false; } }
-        if (kept) deny(why);
-      } else if (sendBackOnce(rec, 'cited')) block(why);
+      refuseOnce(readState(roleFile(id)) ?? rec, at, 'cited', citedRefusal(word, cited.problems));
       addNote(citedStands('the test-writer role', word, cited.problems));
     }
   }
+  if (rec.role === 'implementer') countResult(rec, roleReport(rec, at).word);
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
   if (at === 'stop') {
     const word = handOnWord(rec);
@@ -825,16 +897,58 @@ function closeRole(rec, at, gate = null) {
   return done();
 }
 
-// #261: the report words /speckit-team goes on from without a Stop (steps 3 to 5), and every word each of
-// those roles may end on, so that a later word that may go to the user (BLOCKED after RED) wins.
-const HAND_ON = { 'test-writer': ['RED'], implementer: ['RESULT: STUB', 'RESULT: GREEN'] };
+// Send a role's report back once for `key` ('fault', 'cited'): blocked at Stop, denied at the next role call.
+// At a call the record keeps the key, so the same call made again goes through. Returns when it stands.
+function refuseOnce(rec, at, key, why) {
+  if (at !== 'skill') { if (sendBackOnce(rec, key)) block(why); return; }
+  const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
+  if (sent.includes(key)) return;
+  try { writeJson(roleFile(str(input.session_id)), { ...rec, sentBack: [...sent, key] }); } catch { return; }
+  deny(why);
+}
+// The closing test-writer or implementer role's report: the last of its texts (and the closing call's) that
+// ends on one of its words, and that word; { text: '', word: undefined } without one.
+function roleReport(rec, at) {
+  const texts = [...((rec.offset === null ? null : roleTexts(rec.transcript, rec.offset)) ?? []),
+    at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] : str(input.last_assistant_message)].filter(Boolean);
+  const text = [...texts].reverse().find((t) => END_WORDS[rec.role].includes(lastWord(t))) ?? '';
+  return { text, word: text ? lastWord(text) : undefined };
+}
+// #332: the implementer role's REDs in a row, in the agent's retry record (`result`): GREEN clears it, STUB
+// leaves it. Counted once per role record (#284: every role skill's Stop hook runs at one Stop).
+function countResult(rec, word) {
+  const feat = feature() ?? rec.feature;
+  if (!feat || !word || word === 'RESULT: STUB' || !claimed(rec, 'count')) return;
+  const f = retryFile(feat);
+  if (word === 'RESULT: GREEN') { fs.rmSync(f, { force: true }); return; }
+  const prev = readState(f);
+  if (prev === null) { addNote(`speckit-team: the implementer role reported RESULT: RED, but the retry record ${f} is unreadable; delete it to reset the count.`); return; }
+  const red = [...(redCount(prev, feat) ? prev.red : []), `role:${rec.at ?? new Date().toISOString()}`];
+  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  if (red.length >= MAX_RED) {
+    addNote(`speckit-team: the implementer role reported RESULT: RED ${red.length} times in a row on ${feat}: the retry limit. Do not call it again; `
+      + 'the architect rethinks plan.md or tasks.md (a new audit resets the count), or the user decides.');
+  }
+}
+
+// #261: the report words /speckit-team goes on from without a Stop, and every word each of those roles may
+// end on, so that a later word that may go to the user (BLOCKED after RED) wins. #332: steps 3 and 6 go on
+// from a FAIL, a REJECTED, a FIXED and a RED too, except a FAIL or a RED at its limit, which go to the user.
+const HAND_ON = { 'test-writer': ['RED', 'FIXED'], implementer: ['RESULT: STUB', 'RESULT: GREEN', 'RESULT: RED'] };
 const END_WORDS = { 'test-writer': ['RED', 'BLOCKED', 'FIXED'], implementer: ['RESULT: STUB', 'RESULT: GREEN', 'RESULT: RED'] };
 // The hand-on word the closing role's last message ends its report with, or null.
 function handOnWord(rec) {
   const text = str(input.last_assistant_message) ?? roleTexts(rec.transcript, rec.offset)?.pop() ?? '';
-  if (rec.role === 'spec-auditor') return verdictIn(text) === 'PASS' ? 'VERDICT: PASS' : null;
+  const feat = feature() ?? rec.feature;
+  if (rec.role === 'spec-auditor') {
+    const verdict = verdictIn(text);
+    if (verdict === 'PASS') return 'VERDICT: PASS';
+    return verdict === 'FAIL' && !(feat && Number(auditRecord(feat).fails) >= AUDIT_FAIL_LIMIT) ? 'VERDICT: FAIL' : null;
+  }
+  if (rec.role === 'spec-gatekeeper') return lastGatekeeperWord(text) === 'REJECTED' ? 'REJECTED' : null;
   if (!Object.hasOwn(HAND_ON, rec.role)) return null;
   const word = text.split('\n').map(lastWord).reverse().find((w) => END_WORDS[rec.role].includes(w));
+  if (word === 'RESULT: RED' && feat && redCount(readState(retryFile(feat)), feat) >= MAX_RED) return null;
   return HAND_ON[rec.role].includes(word) ? word : null;
 }
 
@@ -1115,31 +1229,30 @@ if (mode === 'gate') {
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
     if (role === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
-    let projectNote = null;
+    // #331: every notice is collected and said once at the end, after the record is written.
     const named = parseProject(input.tool_input.prompt);
     fs.rmSync(projectFile(id), { force: true });
     if (named) {
       const r = renderProject(named);
-      if (r.refused) projectNote = `speckit-team: the Project line names ${named}, which is not a project (${r.refused}); agents start without project context`;
+      if (r.refused) addNote(`speckit-team: the Project line names ${named}, which is not a project (${r.refused}); agents start without project context`);
       else writeJson(projectFile(id), { session_id: id, name: named, at: new Date().toISOString() });
     }
-    const say = (m) => emit({ systemMessage: [projectNote, m].filter(Boolean).join('\n') });
-    if (role === 'patcher') { if (projectNote) say(null); process.exit(0); }
+    if (role === 'patcher') finish();
     const team = parseTeam(input.tool_input.prompt);
     // No Team line, or one naming a non-role: the full team (FR-002).
-    const roles = team && !('bad' in team) ? team.roles : CORE_ROLES;
+    let roles = team && !('bad' in team) ? team.roles : CORE_ROLES;
     const was = teamOf();
     // Within a request the team never loses spec-auditor once it has it (#101); a typed /speckit-team
-    // starts the next request.
+    // starts the next request. The rest of the line still narrows the team.
     if (was?.roles.includes('spec-auditor') && !roles.includes('spec-auditor')) {
-      say("speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team.");
+      roles = TEAM_ROLES.filter((r) => r === 'spec-auditor' || roles.includes(r));
+      addNote("speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team.");
     }
     writeJson(teamFile(id), { session_id: id, roles, at: new Date().toISOString() });
-    if (team && 'bad' in team) say(`speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply`);
-    if (team) say(`speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}`);
-    if (was?.noagents) say("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
-    if (projectNote) say(null);
-    process.exit(0);
+    if (team && 'bad' in team) addNote(`speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply`);
+    else if (team) addNote(`speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}`);
+    if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
+    finish();
   }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {
     const ti = input.tool_input || {};
@@ -1435,61 +1548,6 @@ if (mode === 'result') {
 
 // A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
 // so the agent finishes and resends; never twice, so it is never gagged.
-// #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
-// test file (#245): a RED for a production file not written yet is valid.
-const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
-const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? missingTestModule(text);
-
-// #245: a missing module that the repo's test patterns call a test file (a helper, a fixture), as
-// "Cannot find module <path>, a test file", or null. Only a path the error names is judged: Node ESM's
-// absolute path, a relative one resolved against Node CJS's Require stack, else a relative one with its
-// leading ./ and ../ dropped (as a report paraphrases it), or a Python module. A package name, or a path
-// outside the repo, is no fault: refusing a valid RED is worse than letting a broken one through.
-const NODE_MISSING = /Cannot find module '?([^'\s]+?)'?(?: imported from [^\r\n]+)?[ \t]*(?:\r?\n[ \t]*Require stack:[ \t]*\r?\n[ \t]*- ([^\r\n]+))?(?=\s|$)/g;
-const PY_MISSING = /No module named '([\w.]+)'/g;
-// The path comes from a report the model wrote, so it is compared as text and never touched: no fs call
-// on it, and a UNC or device path (\\host\share, //host, \\?\, \\.\) is refused before path.resolve, since
-// on Windows opening one connects to that host and offers the user's NTLM credentials. Only the root is
-// resolved, with the session's cwd: a test run prints paths as the cwd spells them (/var for /private/var
-// on macOS, a short RUNNER~1 folder on Windows), so the root as the cwd spells it is matched as well.
-let rootFormsMemo;
-function rootForms() {
-  if (rootFormsMemo) return rootFormsMemo;
-  const real = (p) => { try { return fs.realpathSync.native(p); } catch { return p; } };
-  const forms = [root, real(root)];
-  const up = path.relative(real(cwd), real(root));
-  if (path.isAbsolute(cwd) && !/^[\\/]{2}/.test(cwd) && !path.isAbsolute(up) && /^(\.\.([\\/]|$))*$/.test(up)) forms.push(path.resolve(cwd, up));
-  return (rootFormsMemo = [...new Set(forms)]);
-}
-function repoRelative(abs) {
-  if (/^[\\/]{2}/.test(abs)) return null;
-  const p = path.resolve(abs);
-  if (/^[\\/]{2}/.test(p)) return null;
-  for (const base of rootForms()) {
-    const rel = path.relative(base, p);
-    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) return fwdPath(rel).replace(/^\.claude\/worktrees\/[^/]+\//, '');
-  }
-  return null;
-}
-function missingTestModule(text) {
-  for (const [, spec, from] of String(text).matchAll(NODE_MISSING)) {
-    let file = spec;
-    // A file URL with a host names a share; only a local one (file:///) is read.
-    if (spec.startsWith('file:')) { try { file = /^file:\/\/\//i.test(spec) ? fileURLToPath(spec) : ''; } catch { file = ''; } }
-    let rel = null;
-    if (path.isAbsolute(file) || /^[A-Za-z]:[\\/]/.test(file)) rel = repoRelative(file);
-    // With a Require stack, the requiring file is the only base: one that is a share or not absolute is no fault.
-    else if (/^\.\.?[\\/]/.test(file) && from) rel = path.isAbsolute(from.trim()) ? repoRelative(path.join(path.dirname(from.trim()), file)) : null;
-    else if (/^\.\.?[\\/]/.test(file)) rel = path.posix.normalize(fwdPath(file)).replace(/^(\.\.?\/)+/, '');
-    if (rel && isTest(rel)) return `Cannot find module ${rel}, a test file`;
-  }
-  for (const [, mod] of String(text).matchAll(PY_MISSING)) {
-    const rel = `${mod.replaceAll('.', '/')}.py`;
-    if (isTest(rel)) return `No module named '${mod}', a test file`;
-  }
-  return null;
-}
-
 if (mode === 'ends') {
   const viaHandback = event === 'PreToolUse';
   const record = args[0] === '--record';
@@ -1505,23 +1563,12 @@ if (mode === 'ends') {
     const asked1 = path.join(stateDir, 'agents', `${agentKey}.red-asked`);
     if (!fs.existsSync(asked1)) {
       writeJson(asked1, {});
-      const why = `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `
-        + 'Fix that error so the test runs and fails on its expectation, then send the full report.';
+      const why = redFaultWhy(fault);
       if (viaHandback) deny(why);
       if (!input.stop_hook_active) block(why);
     }
   }
-  // Kept once per agent and fault: the Stop after a hand-back repeats the same report.
-  let faultNote = null;
-  if (fault) {
-    const file = path.join(stateDir, 'ends', 'red-faults.json');
-    const kept = readState(file);
-    const rows = Array.isArray(kept) ? kept : [];
-    if (!rows.some((r) => r?.agent_id === (agentId ?? null) && r?.fault === fault)) {
-      writeJson(file, [...rows, { agent_id: agentId ?? null, fault, at: new Date().toISOString() }]);
-    }
-    faultNote = `speckit-team: ${who} reported RED on ${fault}, which is not red for the right reason. Kept in ends/red-faults.json.`;
-  }
+  const faultNote = fault ? keepRedFault({ agent_id: agentId ?? null, fault }, who) : null;
   // #315: test-writer's RED or FIXED while a ticked test task cites an ID none of its test files holds. Sent
   // back once per agent, while it has the files open; after that the report goes through and the message says
   // what is missing, which spec-gatekeeper's APPROVED is refused for (#228). BLOCKED is never checked.
