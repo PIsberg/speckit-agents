@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   TEAM, ancestors, bandLayout, boardText, derivePhases, featureDir, fingerprint, nextStep, outcomeOf, parseTasks, redCount, roleColor,
-  noticeText, statusLine, taskSections, teamRole, toneOf,
+  noticeText, statusLine, taskSections, taskWindow, teamRole, toneOf,
   NO_STATS, addUsage, agentStats, costBar, dollars, estimateUsd, priceOf, readUsage, shortCount, statsView,
 } from '../hooks/model'
 import type { BandItem, BoardInputs, Mark } from '../hooks/model'
@@ -219,6 +219,31 @@ test('the next step follows the pipeline, and names the next task while building
   // The pane draws the task as it draws the task list.
   expect(nextStep(board({ tasks: SLICE }), []).task).toMatchObject({ id: 'T002', isParallel: true })
   expect(nextStep(board({ tasks: SLICE, verdict: undefined }), []).task).toBeUndefined()
+})
+
+// #346: a docked pane 25 rows tall drew a 45-task section's title and nothing under it, and the arrows
+// moved nothing. The task list takes the rows left: one for the paging buttons, the rest a window.
+test('#346 the task window fits the room, keeps the focus row in view, and counts what is above and below', () => {
+  // A list that fits shows whole, with no paging row.
+  expect(taskWindow(5, 5, 3, null)).toEqual({ start: 0, end: 5, above: 0, below: 0 })
+  // Following the focus: the row before it first; one row of the room goes to the paging buttons.
+  expect(taskWindow(50, 10, 20, null)).toEqual({ start: 19, end: 28, above: 19, below: 22 })
+  expect(taskWindow(50, 10, 1, null)).toEqual({ start: 0, end: 9, above: 0, below: 41 })
+  expect(taskWindow(50, 10, 49, null)).toEqual({ start: 41, end: 50, above: 41, below: 0 })
+  // With room for one task only, that is the focus itself.
+  expect(taskWindow(50, 2, 25, null)).toEqual({ start: 25, end: 26, above: 25, below: 24 })
+  // An offset the person chose wins over the focus, clamped to the list.
+  expect(taskWindow(50, 10, 20, 0)).toEqual({ start: 0, end: 9, above: 0, below: 41 })
+  expect(taskWindow(50, 10, 20, 999)).toEqual({ start: 41, end: 50, above: 41, below: 0 })
+  expect(taskWindow(50, 10, 20, -4)).toEqual({ start: 0, end: 9, above: 0, below: 41 })
+  // Every window fits its room with its paging row, and shows at least one task row.
+  for (const room of [-2, 0, 1, 2, 3, 7]) {
+    for (const at of [null, 0, 10, 49]) {
+      const w = taskWindow(50, room, 25, at)
+      expect(w.end - w.start + 1).toBeLessThanOrEqual(Math.max(2, room))
+      expect(w.end).toBeGreaterThan(w.start)
+    }
+  }
 })
 
 test('task sections fold what is finished or not started yet', () => {

@@ -1,13 +1,14 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState, SpeckitStats } from '../types'
+import type { SpeckitAgent, SpeckitBoard, SpeckitPhase, SpeckitPhaseState, SpeckitStats, SpeckitTask } from '../types'
 import {
   COLOR, ENDED_UNREPORTED, GLYPH, MAX_RED, MISSING, TONE_COLOR, TONE_GLYPH, wordColor, bandLayout, bar, boardText, current,
   NO_STATS, addUsage, agentStats, costBar, COST_REFERENCE, dollars, readUsage, statsView,
   derivePhases, featureDir, fingerprint, fingerprintFiles, nextStep, nextTask, outcomeOf, parseTasks, redCount,
-  ancestors, clearFailedText, clearText, noticeText, roleColor, since, spinnerAt, statusLine, taskSections, teamRole, toneOf,
+  ancestors, clearFailedText, clearText, noticeText, roleColor, since, spinnerAt, statusLine, taskSections, taskWindow, teamRole, toneOf,
 } from './model'
+import type { TaskSection } from './model'
 
 const PANE = 'speckit-board'
 const POLL_MS = 4000
@@ -23,6 +24,8 @@ const isCleared = atom({ plugin: 'speckit-board', key: 'isCleared' } as const, f
 // Features a team agent started on in this session (D1-A); clear does not touch it.
 const teamFeatures = atom({ plugin: 'speckit-board', key: 'teamFeatures' } as const, [])
 const isAllTasksShown = atom({ plugin: 'speckit-board', key: 'isAllTasksShown' } as const, false)
+// #346: the first task-list row the person paged or scrolled to; null follows the next task.
+const taskOffset = atom({ plugin: 'speckit-board', key: 'taskOffset' } as const, null)
 // The session's context, tokens and cost (010); session state, never stored.
 const stats = atom({ plugin: 'speckit-board', key: 'stats' } as const, NO_STATS)
 
@@ -284,6 +287,31 @@ function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: 
   return 2 + b.phases.length + 3 + teamRows + 1 + taskCount + 4
 }
 
+// #346: the task list as the pane draws it, one entry a row: each section's title, then its tasks while
+// it is open. `focus` is the next task's row, or 0.
+type TaskRow = { section: TaskSection } | { section: TaskSection; task: SpeckitTask }
+function taskRows(b: SpeckitBoard, isAll: boolean): { rows: TaskRow[]; focus: number } {
+  const next = nextTask(b.tasks)
+  const rows = taskSections(b.tasks, isAll).flatMap((section): TaskRow[] => [{ section }, ...(section.isOpen ? section.tasks.map(task => ({ section, task })) : [])])
+  return { rows, focus: Math.max(0, rows.findIndex(r => 'task' in r && r.task === next)) }
+}
+
+// The window over the task list in a body of `bodyRows` rows: what the rest of the pane leaves it. A
+// surface that gives no rows (a test, an older engine) gets the whole list, as before.
+function taskView(b: SpeckitBoard, team: readonly SpeckitAgent[], isAll: boolean, bodyRows: number | undefined, offset: number | null) {
+  const { rows, focus } = taskRows(b, isAll)
+  const room = bodyRows === undefined ? rows.length : bodyRows - (paneRows(b, team, isAll, false) - rows.length)
+  // Where a move to `target` lands, clamped to the list, so that a stored offset never runs past it.
+  const clamp = (target: number) => taskWindow(rows.length, room, focus, target).start
+  return { rows, clamp, ...taskWindow(rows.length, room, focus, offset) }
+}
+
+// A page up or down: the task rows the window shows, less one kept in view.
+async function pageTasks($: EngineInterface, view: ReturnType<typeof taskView>, dir: -1 | 1) {
+  const page = Math.max(1, view.end - view.start - 1)
+  await update($, taskOffset, () => view.clamp(view.start + dir * page))
+}
+
 // Asked again for a pane already open, it takes the new rows (and keeps the person's own size).
 async function openPane($: EngineInterface) {
   const rows = paneRows(await read($, board), await read($, agents), await read($, isAllTasksShown), await read($, isCleared))
@@ -499,6 +527,17 @@ export const register: Register = on => {
     )
   })
 
+  // #346: the wheel or a scroll key over the pane moves the task window while the list does not fit; the
+  // pane's own window then fits its body and stays put. A list that fits leaves the move to the engine.
+  on('ui.scroll', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
+    const b = await read($, board)
+    if (!b || await read($, isCleared)) return next(e)
+    const view = taskView(b, await read($, agents), await read($, isAllTasksShown), e.bodyRows, await read($, taskOffset))
+    if (view.above + view.below === 0) return next(e)
+    await update($, taskOffset, () => view.clamp(view.start + e.by))
+    return {}
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const b = await read($, board)
@@ -537,6 +576,7 @@ export const register: Register = on => {
     // Running agents first, then the latest started; the state keeps more than the pane draws.
     const rows = [...team].reverse().sort((x, y) => Number(y.isRunning) - Number(x.isRunning))
     const barWidth = Math.max(6, Math.min(24, e.props.bodyColumns - 30))
+    const tasksView = taskView(b, team, isAll, e.props.scroll?.bodyRows, await read($, taskOffset))
     const view = statsView(await read($, stats))
     const markColor = (m: string) => (m === 'critical' ? 'error' : m === 'high' ? 'warning' : 'claude')
     const word = (m: string) => (m ? ` ${m}` : '')
@@ -638,36 +678,46 @@ export const register: Register = on => {
           <Button key="refresh" label="refresh" hotkey="r" onPress={() => refreshAsked($)} />
           <Button
             key="tasks" label={isAll ? 'fold tasks' : 'all tasks'} hotkey="a"
-            onPress={async () => { await update($, isAllTasksShown, v => !v); await openPane($) }}
+            onPress={async () => { await update($, isAllTasksShown, v => !v); await update($, taskOffset, () => null); await openPane($) }}
           />
           <Button key="band" label="toggle band" hotkey="t" onPress={() => toggleBand($)} />
           <Button key="clear" label="clear" hotkey="c" onPress={() => pressClear($)} />
           <Button key="close" label="close" role="dismiss" onPress={() => $.ui.close({ id: PANE })} />
         </Box>
 
-        {/* Finished sections, and those not started past the next task, fold to their title and count. */}
+        {/* Finished sections, and those not started past the next task, fold to their title and count. A
+            list taller than the rows left shows a window over it, the next task in view (#346). */}
         <Box flexDirection="column">
-          {taskSections(b.tasks, isAll).map(s => {
-            const state: SpeckitPhaseState = s.done === s.total ? 'done' : s.done > 0 ? 'active' : 'todo'
-            return (
-              <Box key={`sec:${s.title}`} flexDirection="column">
-                <Box flexDirection="row" columnGap={1}>
+          {/* One row of paging buttons, first, so that a body cut short never hides them. */}
+          {tasksView.above + tasksView.below > 0 && (
+            <Box flexDirection="row" columnGap={1}>
+              {tasksView.above > 0 && <Button key="tasks-up" label={`↑ ${tasksView.above} more`} hotkey="u" dimColor onPress={() => pageTasks($, tasksView, -1)} />}
+              {tasksView.below > 0 && <Button key="tasks-down" label={`↓ ${tasksView.below} more`} hotkey="d" dimColor onPress={() => pageTasks($, tasksView, 1)} />}
+            </Box>
+          )}
+          {tasksView.rows.slice(tasksView.start, tasksView.end).map(r => {
+            const s = r.section
+            if (!('task' in r)) {
+              const state: SpeckitPhaseState = s.done === s.total ? 'done' : s.done > 0 ? 'active' : 'todo'
+              return (
+                <Box key={`sec:${s.title}`} flexDirection="row" columnGap={1}>
                   <Text color={COLOR[state]}>{GLYPH[state]}</Text>
                   <Box flexShrink={1}><Text bold={s.isOpen} dimColor={!s.isOpen} wrap="truncate-end">{s.title || 'Tasks'}</Text></Box>
                   <Box flexShrink={0}><Text dimColor>{s.done}/{s.total}</Text></Box>
                 </Box>
-                {s.isOpen && s.tasks.map(t => (
-                  <Text wrap="truncate-end" dimColor={t.isDone}>
-                    <Text color={t.isDone ? 'success' : t === next ? 'claude' : 'subtle'}>
-                      {t.isDone ? '  ✓ ' : t === next ? '  ▶ ' : '  ○ '}
-                    </Text>
-                    <Text bold={!t.isDone}>{t.id}</Text>
-                    {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
-                    {' '}
-                    {taskText(t.text)}
-                  </Text>
-                ))}
-              </Box>
+              )
+            }
+            const t = r.task
+            return (
+              <Text key={`task:${s.title}:${t.id}`} wrap="truncate-end" dimColor={t.isDone}>
+                <Text color={t.isDone ? 'success' : t === next ? 'claude' : 'subtle'}>
+                  {t.isDone ? '  ✓ ' : t === next ? '  ▶ ' : '  ○ '}
+                </Text>
+                <Text bold={!t.isDone}>{t.id}</Text>
+                {t.isParallel ? <Text color="suggestion"> [P]</Text> : ''}
+                {' '}
+                {taskText(t.text)}
+              </Text>
             )
           })}
         </Box>
