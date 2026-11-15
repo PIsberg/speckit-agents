@@ -496,7 +496,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
 | Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185). spec-auditor's FAILs in a row are counted as the agent's are (#332) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Hand-on | a role whose turn ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN`, where the skill has no Stop: its Stop is sent back, once per role call, so the run goes on without you (#261); so is one on a first `VERDICT: FAIL`, a `REJECTED`, a `FIXED` or a `RESULT: RED` under the retry limit, which the skill routes without a Stop too ([#332](https://github.com/PIsberg/speckit-agents/issues/332)). A second FAIL in a row and a third RED in a row go to you | the response that Stop costs, which a typed "go on" would cost too: asking for the next call in the report's own response was tried and dropped, as in its one run the audit and the gatekeeper wrote no report ([measurements](docs/measurements.md#where-a-skill-agents-run-stops-261)) |
-| Retry limit | the implementer role's `RESULT: RED` reports in a row are counted in the same retry record as the agent's (GREEN clears it), and the third one is said and not handed on (#332) | a fourth implementer call: nothing denies the role skill at the limit, the skill stops itself |
+| Retry limit | the implementer role's `RESULT: RED` reports in a row are counted in the same retry record as the agent's (GREEN clears it), and the third one is said and not handed on (#332); a fourth `speckit-role-implementer` call is denied with the agent's text until a revised plan or tasks pass a new audit, or you delete the record ([#341](https://github.com/PIsberg/speckit-agents/issues/341)) | the limit inside a role call: the agent's `gate retries` denies every tool, the role's limit applies only at its Skill call |
 | Context | nothing | every role sees this conversation, with the session's `CLAUDE.md`, on the session's model; read-only roles lose the `omitClaudeMd` isolation |
 | Tool list | a read-only role's Write and Edit are denied, and so is a Bash command that writes in the repo | each agent's tool list: a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked |
 
@@ -1178,7 +1178,8 @@ attempt, not two. A report made while the audit gate is closed is not counted: t
 never got to work.
 
 After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
-and says why. The count belongs to the plan and tasks it was made on (the audit fingerprint), so
+and says why. Under `--team skill-agents` the gate denies the next `speckit-role-implementer` Skill
+call instead, with the same text ([#341](https://github.com/PIsberg/speckit-agents/issues/341)). The count belongs to the plan and tasks it was made on (the audit fingerprint), so
 the way forward is to send the failing task to the architect: the revised `plan.md` or `tasks.md`
 needs a new audit and starts the count from zero. Or the user decides, and to retry unchanged
 deletes `.git/speckit-team/retries/<feature>.json`. In a run whose team has no architect, the
@@ -1569,11 +1570,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 614 tests:
+`npm test` runs 615 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 208 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 209 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 134 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 165 tests under `claude plugin test` |
@@ -2198,8 +2199,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   crashed on all of these, which allowed the action without a word.
 - **`--team skill-agents` trades isolation for cost.** Every role runs on the session's model, with
   the session's `CLAUDE.md`, and sees the whole conversation; the hook enforces lanes, the audit
-  gate at each Skill call, and the verdict records, and counts the retry limit without denying a
-  fourth call; not the report's last line or tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
+  gate and the retry limit at each Skill call, and the verdict records; not the report's last line or tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
 - **Role skills are not denied outside a Spec Kit repo.** Inside one, the hook denies a
   `speckit-role-<role>` call outside a typed `/speckit-team --team skill-agents` request. In a repo
   without `.specify/` every hook mode exits with no output, as the constitution requires of the team

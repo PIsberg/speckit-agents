@@ -29,8 +29,9 @@ hook keeps a role record from the role's Skill call to the end of that turn (its
 back once a Stop on a report the pipeline goes on from (`VERDICT: PASS`, `RESULT: STUB`, `RED`,
 `RESULT: GREEN`, #261; a first `VERDICT: FAIL`, `REJECTED`, `FIXED`, a `RESULT: RED` under the limit,
 #332), and the
-Skill call passes the audit gate before test-writer, implementer and spec-gatekeeper. Not enforced:
-the retry limit (counted, never denied), the report's last line, each role's own context and tool list. See the README's
+Skill call passes the audit gate before test-writer, implementer and spec-gatekeeper, and the retry limit
+before implementer (#341). Not enforced:
+the report's last line, each role's own context and tool list. See the README's
 "Running the roles as skills".
 
 ## Security Reviewer Dual-Gate Lifecycle

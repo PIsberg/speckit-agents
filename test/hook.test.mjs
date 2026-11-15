@@ -3310,6 +3310,31 @@ test('#332: the implementer role\'s REDs are counted per role, GREEN resets, and
   assert.equal(redCountOf(r.dir), 1);
 });
 
+// #341: at the retry limit the hook refuses a fourth implementer role call, as `gate retries` refuses the agent
+// every tool; before, the limit held only as far as the main session followed the skill.
+test('#341: a fourth implementer role call after three REDs in a row is denied until plan or tasks change', () => {
+  const { dir, write: w } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  const call = (name = 'speckit-role-implementer') => skillCall(dir, name, { transcript_path: t });
+  for (let i = 0; i < 2; i++) {
+    assert.ok(!decided(call()), `call ${i + 1}`);
+    say(t, 'T002 fails.\n\nRESULT: RED');
+  }
+  assert.ok(!decided(call()), 'two REDs leave the third call open');
+  say(t, 'T002 fails.\n\nRESULT: RED');
+  const fourth = call();
+  assert.ok(denied(fourth), JSON.stringify(fourth));
+  assert.match(whyDenied(fourth), /Retry limit: implementer reported RESULT: RED 3 times in a row on .*001-demo.*architect rethinks/s);
+  assert.equal(redCountOf(dir), 3, 'the third RED, closed by this call, was counted first');
+  assert.ok(denied(call()), 'and the next one too');
+  assert.ok(!denied(call('speckit-role-architect')), 'the architect can still rethink');
+  w(`${FEAT}/tasks.md`, '- [ ] T001 write test\n- [ ] T002 implement, smaller\n');
+  pass(dir);
+  assert.ok(!decided(call()), 'a revised plan or tasks with a new audit resets the count');
+});
+
 test('#261: a role that ended with an earlier prompt, or wrote outside its lane, gets no hand-on block', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
