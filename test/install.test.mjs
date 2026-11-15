@@ -1871,8 +1871,12 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /stops? .{0,40}hold/i);
   assert.match(sec, /side-by-side question is not asked|does not ask the side-by-side question/i);
   assert.match(sec, /--project/);
-  assert.match(sec, /node "\{\{HOOK\}\}" project|`project` output|project CLI output/i);
-  assert.match(sec, /## No agents/, 'the project block is read as ## No agents step 1');
+  // #335: the block is already in the session from ## Project step 2: no project command without a name (it
+  // exits 1), and no copy of the block in every role call's args.
+  assert.match(sec, /## Project` step 2/);
+  assert.doesNotMatch(sec, /node "\{\{HOOK\}\}" project`/, 'no project command without a name');
+  assert.match(sec, /never (paste|put) .{0,40}into .{0,40}`args`/i, 'the block is never pasted into args');
+  assert.match(sec, /## No agents/, 'the project block is followed as ## No agents step 1');
   // #176: security-reviewer runs only with --security, at both points.
   assert.match(sec, /With `--security`, security-reviewer runs at both points/);
   assert.doesNotMatch(sec.replace(/With `--security`, security-reviewer runs at both points/, ''), /security-reviewer/, 'security-reviewer is named only with --security');
