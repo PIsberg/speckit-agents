@@ -1451,6 +1451,10 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     opened at the next task, under one row of paging buttons, `↑ n more` (`u`) and `↓ n more` (`d`);
     the wheel over the pane moves it too, and `all tasks` goes back to the next task. Before, a short
     terminal cut the list off with nothing to scroll ([#346](https://github.com/PIsberg/speckit-agents/issues/346)).
+    A body too short for the rows above the list as well drops, in turn, the blank rows between the
+    parts, the context and cost rows, and the Team rows of finished agents (the running ones and the
+    count of the rest stay), until the paging row and one task fit
+    ([#347](https://github.com/PIsberg/speckit-agents/issues/347)).
 
   Inline above the prompt the pane asks for the rows it draws, rather than the third of the
   terminal it gets unasked.
@@ -1591,7 +1595,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 213 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
-| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 167 tests under `claude plugin test` |
+| [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 168 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
