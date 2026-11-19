@@ -941,7 +941,10 @@ first for a change in behaviour, the skill's checks against its own notes before
 never merging. The hook's part is that no accepted record exists unless the end check accepted the
 run. One of those rules has a hook behind it (#243): a run that changes production lines with no
 test file changed is stopped at the end, unless the report has a `No test: <reason>` line for a
-change with no behaviour (a typo, a comment, a config value). Whether a test that came with the
+change with no behaviour (a typo, a comment, a config value). A report sent through `SubagentHandback`
+keeps its line for the Stop that follows it, which runs the end check again on the agent's last
+message ([#354](https://github.com/PIsberg/speckit-agents/issues/354): that message need not repeat
+the line, and the Stop removed the run's accepted record). Whether a test that came with the
 change fails first is not checked.
 
 - **Verified live (2026-10-10, Claude Code 2.1.296, [Live results](docs/live-results.md)):** one fix
@@ -1222,7 +1225,7 @@ Verdicts, retry counts, the gatekeeper's last word and per-agent start points li
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, where
 an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `drift` fields,
 `agents/`, `team/`: one small record per session that launched a team role or typed
-`--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run, and `patch-accepted.json`, one
+`--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run (and, after a hand-back, a `<key>.handback.json` that says only whether its report had a `No test:` line, [#354](https://github.com/PIsberg/speckit-agents/issues/354)), and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
@@ -1573,12 +1576,12 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 619 tests:
+`npm test` runs 621 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 209 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 76 | the same for the fast track's `patch` mode |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 167 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
