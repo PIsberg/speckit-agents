@@ -311,6 +311,87 @@ test('scope none on Bash (#209): a read-only agent runs checks but writes nothin
   assert.match(msg(run(dir, ro, { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: ['rm', 'x'] } })), /tool_input\.command is (an array|object)/);
 });
 
+// #352: xargs options that take a value (-n 1, -I {}) were read as the command, so `xargs -n 1 rm` looked
+// like it ran `1`; only find's first -exec was read; and git archive -o, format-patch, a diff's --output
+// and worktree add wrote files scope never saw. A writing role's xargs or find with targets only the run can
+// tell stays allowed, as `echo x > "$OUT"` is: its lane check at Stop sees what the command did.
+test('scope on Bash (#352): xargs with valued options, every find -exec, and git commands that write a named file', () => {
+  const { dir, write: w } = repo();
+  w('test/a.test.js', 'test("a");\n');
+  const ro = ['scope', 'none'];
+  for (const command of [
+    'find . | xargs -n 1 rm',
+    'find . | xargs -I {} rm {}',
+    'find src -print0 | xargs -0 -n1 rm -f',
+    'ls | xargs --max-args 1 rm',
+    'ls | xargs -0rn 1 rm',
+    'ls | xargs -P 4 -L 1 -- rm',
+    'find . -name x -exec echo {} \\; -exec rm {} \\;',
+    'git archive -o src/out.tar HEAD',
+    'git archive --output=src/out.tar HEAD',
+    'git -C src archive -o out.tar HEAD',
+    'git format-patch -o specs/ -1',
+    'git format-patch --output-directory=specs -1',
+    'git format-patch -1',
+    'git diff --output=notes.txt',
+    'git log -p --output notes.txt',
+    // git takes a long option by any prefix it can tell apart, and find writes the file -fprint names.
+    'git archive --o=src/out.tar HEAD',
+    'git archive --outp src/out.tar HEAD',
+    'git format-patch --output-dir=specs -1',
+    'git diff --out=notes.txt',
+    'find . -fprint notes.txt',
+    'find . -name x -fprintf notes.txt %p',
+    'find . -fls notes.txt',
+    'ls | xargs --max-a 1 rm',
+    'ls | xargs --max-ar=1 --null rm',
+    'git archive -vo src/out.tar HEAD',
+    'git archive -9osrc/out.tar HEAD',
+    // --stdout counts only where git would read it: the last of --stdout and --no-stdout, not an option's value.
+    'git format-patch --stdout --no-stdout -1',
+    'git format-patch --subject-prefix --stdout -1',
+    'git format-patch --stdout -o specs -1',
+    'git format-patch --subject-p --stdout -1',
+    'git format-patch --to --stdout -1',
+    'git format-patch -Sfoo/../.. -1',
+    'ls | xargs -in rm x',
+    'ls | xargs xargs rm',
+    'ls | xargs find -delete',
+    'find . -exec sh -c \'rm "$1"\' _ {} \\;',
+    'git format-patch --stdout --no-std -1',
+  ]) {
+    const out = bash(dir, ro, command, { agent_type: 'spec-gatekeeper' });
+    assert.ok(denied(out), command);
+    assert.match(whyDenied(out), /^spec-gatekeeper is a read-only role and writes no files/, command);
+  }
+  for (const command of [
+    'git ls-files | xargs -0',
+    'git ls-files | xargs -n 1 echo',
+    'git ls-files | xargs -I {} grep -l x {}',
+    'find . -name x -exec grep -l y {} \\;',
+    'git format-patch --stdout -1',
+    'git format-patch -1 --stdout',
+    'git format-patch --to x --stdout HEAD~2',
+    'git archive HEAD | tar -t',
+    'git archive -o ../outside.tar HEAD',
+    'git diff --stat',
+    'git log --oneline -5',
+    'find . -fprint ../outside.txt',
+  ]) {
+    assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, command);
+  }
+  const impl = ['scope', 'no-tests'];
+  for (const command of ['git archive -o test/out.tar HEAD', 'git format-patch -o test/ -1', 'git worktree add test/wt', 'git worktree add --reas x test/wt', 'git diff --output=test/a.test.js']) {
+    const out = bash(dir, impl, command, { agent_type: 'implementer' });
+    assert.ok(denied(out), `implementer: ${command}`);
+    assert.match(whyDenied(out), /^implementer may not change tests/, command);
+  }
+  assert.equal(bash(dir, impl, 'find . -name "*.pyc" -delete', { agent_type: 'implementer' }), null, 'a writing role: the lane check at Stop sees it');
+  const arch = ['scope', 'only', 'specs/', 'CLAUDE.md'];
+  assert.match(whyDenied(bash(dir, arch, 'git archive -o src/x.tar HEAD', { agent_type: 'architect' })), /architect may only write specs\/, CLAUDE\.md; src\/x\.tar is outside that lane/);
+  assert.equal(bash(dir, arch, 'git format-patch -o specs/patches -1', { agent_type: 'architect' }), null, 'architect: inside its lane');
+});
+
 test('scope role on Bash (#209, #210): the acting role skill is held to its lane through Bash too', () => {
   const { dir } = repo();
   const roleBash = (command) => bash(dir, ['scope', 'role'], command, { session_id: 's1' });
