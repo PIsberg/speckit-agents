@@ -258,7 +258,7 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
     if (err) return { turns, session, stopped: `turn ${n + 1}: ${err}` };
     if (ended(res, n)) break;
     if (n > 0 && res?.num_turns === 1) {
-      return { turns, session, stopped: `turn ${n + 1}: the session made no tool call on the answer, so the answer did not answer what it asked (#325): ${String(res.result ?? '').replace(/s+/g, ' ').slice(-300)}` };
+      return { turns, session, stopped: `turn ${n + 1}: the session made no tool call on the answer, so the answer did not answer what it asked (#325): ${String(res.result ?? '').replace(/\s+/g, ' ').slice(-300)}` };
     }
   }
   return { turns, session, stopped: null };

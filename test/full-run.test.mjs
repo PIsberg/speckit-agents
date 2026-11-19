@@ -576,6 +576,10 @@ test('full run: an answer the session only talks back to stops the run there, an
   assert.equal(drift.calls.length, 3, 'no further answer is sent');
   assert.match(a.stopped, /^turn 3: the session made no tool call on the answer/);
   assert.match(a.stopped, /Which do you want\?/, 'what it asked is in the failure');
+  // #355: the question's whitespace is folded to one space per run, and its letters are left alone.
+  const asked = { session_id: 'sess', total_cost_usd: 0.1, num_turns: 1, result: 'Should I skip\n\nthe   skills?' };
+  const spaced = canned([turn(3), turn(2), asked]);
+  assert.match(runTurns({ maxTurns: 8, promptFor, invoke: spaced.invoke, ended: () => false, ...quiet }).stopped, /: Should I skip the skills\?$/);
 
   // The request itself may be answered with a question (which team?) and nothing else.
   const first = canned([turn(1), turn(9), turn(4)]);
