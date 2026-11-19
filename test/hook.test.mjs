@@ -3277,7 +3277,8 @@ test('#332: the spec-auditor role\'s FAILs are counted, and the second in a row 
   const second = stopRole(dir);
   assert.notEqual(second?.decision, 'block', JSON.stringify(second));
   assert.equal(auditCount(dir), 2);
-  // A PASS clears the count, as the agent's does.
+  // A PASS clears the count, as the agent's does. The third audit needs the user's approval first (#353).
+  assert.equal(spawnSync('node', [HOOK, 'audit', '--approve'], { cwd: dir, encoding: 'utf8' }).status, 0);
   assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t })));
   say(t, 'All good.\n\nVERDICT: PASS');
   assert.equal(stopRole(dir)?.decision, 'block');
@@ -3586,4 +3587,31 @@ test('a spec-auditor launch is refused while plan.md has open decisions, and let
   assert.equal(denied(launch()), false, 'recorded: the audit may run');
   const empty = decisionsRepo(PLAN(['## Open Decisions', '', 'None.']));
   assert.equal(denied(run(empty, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: 'spec-auditor', prompt: 'audit the spec' } })), false, 'a section that lists no decision holds nothing up');
+});
+
+// #353: holdAudit ran only at an Agent launch, so in --team skill-agents the spec-auditor role was called
+// past a plan's open decisions and past the two-FAIL limit (#242) with no approval.
+test('#353: a spec-auditor role call is held like the agent launch: two FAILs in a row until --approve, and open decisions', () => {
+  const { dir, t } = auditorRole();
+  const call = (id) => skillCall(dir, 'speckit-role-spec-auditor', { transcript_path: t, tool_use_id: id });
+  say(t, 'H1 open.\n\nVERDICT: FAIL');
+  assert.ok(!decided(call('toolu_2')), 'one FAIL: the next audit may run');
+  say(t, 'H1 still open.\n\nVERDICT: FAIL');
+  const third = call('toolu_3');
+  assert.ok(denied(third), JSON.stringify(third));
+  assert.match(whyDenied(third), /VERDICT: FAIL 2 times in a row on .*001-demo.*audit --approve/s);
+  assert.equal(auditCount(dir), 2, 'the FAIL this call closed was counted first');
+  assert.ok(!denied(skillCall(dir, 'speckit-role-architect', { transcript_path: t })), 'the architect can still revise');
+  assert.equal(spawnSync('node', [HOOK, 'audit', '--approve'], { cwd: dir, encoding: 'utf8' }).status, 0);
+  assert.ok(!denied(call('toolu_4')), 'approved: one call goes ahead');
+  assert.ok(denied(call('toolu_5')), 'the approval is spent');
+
+  const r = repo();
+  skillAgentsTeam(r.dir);
+  r.write(`${FEAT}/plan.md`, PLAN(['## Open Decisions', '', ...D1]));
+  const t2 = transcriptIn(r.dir, [userRow('typed')]);
+  const held = skillCall(r.dir, 'speckit-role-spec-auditor', { transcript_path: t2 });
+  assert.ok(denied(held), JSON.stringify(held));
+  assert.match(whyDenied(held), /plan\.md still has open decisions \(D1\)/);
+  assert.ok(!denied(skillCall(r.dir, 'speckit-role-architect', { transcript_path: t2 })), 'the architect can still settle them');
 });

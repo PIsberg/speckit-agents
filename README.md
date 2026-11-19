@@ -494,7 +494,7 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 |---|---|---|
 | Lane | each role's write scope, and its lane check when it closes | a role's lane after a turn that ended without a Stop (an interrupt, an API error): its lane check and report do not run |
 | Audit gate | before test-writer, implementer and spec-gatekeeper, at their Skill call | on each tool call inside test-writer and implementer: a spec, plan or tasks edit there is caught when the next of them, or spec-gatekeeper, starts |
-| Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185). spec-auditor's FAILs in a row are counted as the agent's are (#332) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
+| Verdict | spec-auditor's `VERDICT:` and spec-gatekeeper's word are read from the role's messages, from the first `args` line of the next Skill call (the skill starts it with the report's last line, because the transcript may not hold the message yet), and from the Stop's last message, and recorded; the gatekeeper's word is the last line that is only `APPROVED` or `REJECTED`, so hand-over text after it in the same response does not hide it (#185). spec-auditor's FAILs in a row are counted as the agent's are (#332), and a third `speckit-role-spec-auditor` call after two is denied until `audit --approve`, as is one while `plan.md` has open decisions, as the agent's launch is ([#353](https://github.com/PIsberg/speckit-agents/issues/353)) | that a report ends in its word: nothing refuses a report once, as `ends` does for an agent |
 | Hand-on | a role whose turn ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN`, where the skill has no Stop: its Stop is sent back, once per role call, so the run goes on without you (#261); so is one on a first `VERDICT: FAIL`, a `REJECTED`, a `FIXED` or a `RESULT: RED` under the retry limit, which the skill routes without a Stop too ([#332](https://github.com/PIsberg/speckit-agents/issues/332)). A second FAIL in a row and a third RED in a row go to you | the response that Stop costs, which a typed "go on" would cost too: asking for the next call in the report's own response was tried and dropped, as in its one run the audit and the gatekeeper wrote no report ([measurements](docs/measurements.md#where-a-skill-agents-run-stops-261)) |
 | Retry limit | the implementer role's `RESULT: RED` reports in a row are counted in the same retry record as the agent's (GREEN clears it), and the third one is said and not handed on (#332); a fourth `speckit-role-implementer` call is denied with the agent's text until a revised plan or tasks pass a new audit, or you delete the record ([#341](https://github.com/PIsberg/speckit-agents/issues/341)) | the limit inside a role call: the agent's `gate retries` denies every tool, the role's limit applies only at its Skill call |
 | Context | nothing | every role sees this conversation, with the session's `CLAUDE.md`, on the session's model; read-only roles lose the `omitClaudeMd` isolation |
@@ -1152,7 +1152,8 @@ starts when you type `/speckit-team`, which removes the session's record. Typed 
 `/speckit-implement` or Claude's `speckit-implement` call reads: they pass without an audit until
 your next `/speckit-team` or a launch of a team role.
 
-Two `VERDICT: FAIL`s in a row on one feature (a PASS clears the count) stop the next spec-auditor launch:
+Two `VERDICT: FAIL`s in a row on one feature (a PASS clears the count) stop the next spec-auditor launch
+(or `speckit-role-spec-auditor` call, [#353](https://github.com/PIsberg/speckit-agents/issues/353)):
 the hook refuses it and names the command that lets one audit through, `audit --approve`. The skill runs
 that command only after you answer yes to AskUserQuestion, and the approval covers one launch, kept by
 the launch's `tool_use_id`: with the team installed for you and in the project, Claude Code runs the
@@ -1576,11 +1577,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 621 tests:
+`npm test` runs 622 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 209 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 210 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 167 tests under `claude plugin test` |
