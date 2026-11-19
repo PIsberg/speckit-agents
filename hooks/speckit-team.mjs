@@ -1294,6 +1294,9 @@ if (mode === 'gate') {
       auditGate();
       // #341: the agent's `gate retries` limit, on the role's call. After closeRole, which counts the RED it closes.
       if (roleSkill === 'implementer' && feature()) retryLimit(feature());
+      // #353: the audit's holds (open decisions, the two-FAIL limit of #242) on the role's call, as on the
+      // agent's launch. After closeRole, which counts the FAIL it closes.
+      if (roleSkill === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
       const start = startRecord();
       if (start) {
         const transcript = str(input.transcript_path);
