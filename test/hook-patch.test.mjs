@@ -1155,6 +1155,47 @@ test('patch end: every patch call removes the accepted record (research R15)', (
   assert.equal(record(e), null, 'unusable start record');
 });
 
+// #354: the SubagentStop that follows a handback is the same report, but the end check read the agent's
+// last message, which need not repeat the handback's `No test:` line, and removed the accepted record.
+test('patch end (#354): the Stop after a handback keeps its No test: line; the end check still runs in full', () => {
+  const { dir } = fresh();
+  begin(dir);
+  put(dir, 'src/a.js', nl(3, 'a'));
+  noStop(hand(dir, { tool_input: { message: 'Fixed.\nNo test: a comment only\nDONE' } }), 'an exempt change');
+  assert.ok(record(dir), 'accepted at the handback');
+  const after = stop(dir, { last_assistant_message: '' });
+  noStop(after, 'the Stop after it');
+  assert.match(msg(after), /The end check accepted the run/);
+  assert.ok(record(dir), 'still accepted after the Stop');
+  assert.equal(undoRecord(dir).outcome, 'accepted');
+
+  // A tool call after the handback is new work, with a new report: the old line no longer counts.
+  put(dir, 'src/b.js', nl(3, 'b'));
+  okBash(dir, 'work after the handback');
+  assert.match(msg(stop(dir, { last_assistant_message: 'More.\nDONE' })), /no test file changed/);
+  assert.equal(record(dir), null);
+
+  // A second handback is a new report: one without the line is checked as it is.
+  const again = fresh().dir;
+  begin(again);
+  put(again, 'src/a.js', nl(3, 'a'));
+  noStop(hand(again, { tool_input: { message: 'Fixed.\nNo test: a comment only\nDONE' } }));
+  assert.match(msg(hand(again, { tool_input: { message: 'Fixed.\nDONE' } })), /no test file changed/);
+  assert.match(msg(stop(again, { last_assistant_message: '' })), /no test file changed/);
+});
+
+// The marker is in a folder patcher's shell can write. It may only stand in for the report's line: a forged
+// marker beside a forged accepted record must not keep the Stop from checking the run.
+test('patch end (#354): a forged handback marker and accepted record do not survive the Stop\'s end check', () => {
+  const { dir } = fresh();
+  begin(dir);
+  fs.appendFileSync(path.join(dir, CONST), 'extra\n');
+  fs.writeFileSync(path.join(stateDir(dir), 'patch', 'p1.handback.json'), '{"noTest":true}');
+  fs.writeFileSync(acceptedFile(dir), JSON.stringify({ key: 'p1', sha: startSha(dir), files: [CONST], untracked: [], lines: 0, filesTouched: 0 }));
+  isBlocked(stop(dir), new RegExp(esc(CONST)));
+  assert.equal(record(dir), null, 'the forged record is gone');
+});
+
 test('patch end: no start record for the key exits with no output', () => {
   const { dir } = fresh();
   assert.equal(stop(dir), null);

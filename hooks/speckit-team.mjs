@@ -27,7 +27,8 @@
 //                           or it runs a history/remote command or a wholesale restore; run a Bash command it lets
 //                           through with git's network transports off (in bypassPermissions, or where the installed
 //                           settings.json allows the export line); SubagentHandback, SubagentStop and
-//                           Stop: the end check (protected files, commits, the installed team's hashes, budget, a production change with no test unless the report says `No test:`) and the accepted record
+//                           Stop: the end check (protected files, commits, the installed team's hashes, budget, a production change with no test unless the report says `No test:`) and the accepted record;
+//                           the Stop after a handback counts the handback's `No test:` line (#354)
 //   project <name> [--init] Not a hook: the skills run it from Bash. Prints the project's block (feature 007) or one
 //                           refusal line, exit 0 or 1; --init creates .specify/projects/<name>/ with a starter file
 //   relay                   PostToolUse of Agent in the main session: hands it what the hooks said inside its
@@ -1703,6 +1704,10 @@ if (mode === 'lane') {
 // The fast track: patcher's change since its first tool call must stay within PATCH_LINES production
 // lines in PATCH_FILES production files. Tests and docs do not count (FR-005).
 const patchFile = (key) => path.join(stateDir, 'patch', `${key}.json`);
+// #354: whether a handback's report had its `No test:` line, for the Stop after it, which is the same report
+// but reads the agent's last message. Only that: the Stop runs the whole end check again, so a marker
+// patcher's shell wrote grants no more than the line would.
+const handbackFile = (key) => path.join(stateDir, 'patch', `${key}.handback.json`);
 const HEX64 = /^[0-9a-f]{64}$/;
 function stateOf(rel) {
   try { return createHash('sha256').update(fs.readFileSync(path.join(root, rel))).digest('hex'); } catch { return null; }
@@ -2428,7 +2433,8 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   // behaviour change from a typo, so a production change with no test file in the run is stopped, unless the
   // report says why it has none: a line `No test: <reason>`. A docs-only change has no production lines to check.
   const tests = testsAt(start.sha);
-  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !NO_TEST_LINE.test(reportText(viaHandback))) {
+  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !NO_TEST_LINE.test(reportText(viaHandback))
+    && !(!viaHandback && readState(handbackFile(key))?.noTest === true)) {
     end('stopped', `fast track stopped: ${m.lines} changed production lines and no test file changed. A change in behaviour needs a regression test, shown failing. `
       + 'If the change has no behaviour (a typo, a comment, a config value), the report says so in a line `No test: <reason>`. '
       + 'Nothing was committed; the work is uncommitted in the working tree. Write the test or add that line, then run the change again.'
@@ -2482,17 +2488,20 @@ function letThrough() {
 }
 
 if (mode === 'patch') {
-  // Every call removes the accepted record and the undo record: each stands only while the last call was an end check.
   const acceptedFile = path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json');
   const undoFile = path.join(path.dirname(acceptedFile), 'patch-undo.json');
-  fs.rmSync(acceptedFile, { force: true });
-  fs.rmSync(undoFile, { force: true });
   const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
   const isEnd = viaHandback || event !== 'PreToolUse';
   const key = keyOf(agentId ?? str(input.session_id));
+  // Every call removes the accepted record and the undo record: each stands only while the last call was an end check.
+  fs.rmSync(acceptedFile, { force: true });
+  fs.rmSync(undoFile, { force: true });
   if (!key) noDecision('no agent_id or session_id to keep the start record under');
+  // #354: a tool call is new work, so its report is a new one: the last handback's `No test:` line no longer counts.
+  if (!isEnd) fs.rmSync(handbackFile(key), { force: true });
   const f = patchFile(key);
   if (isEnd && !fs.existsSync(f)) process.exit(0);
+  if (viaHandback) writeJson(handbackFile(key), { noTest: NO_TEST_LINE.test(reportText(true)), at: new Date().toISOString() });
   if (!fs.existsSync(f)) {
     const sha = git(root, 'rev-parse', 'HEAD');
     if (!sha) deny('Fast track: this repo has no commit to measure the change from. Commit first, or use /speckit-team.');
