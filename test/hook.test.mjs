@@ -1419,6 +1419,81 @@ const typedImplement = (dir, extra = {}) => run(dir, ['gate'], {
   command_args: '', prompt: '/speckit-implement', session_id: 's1', ...extra,
 });
 
+// #366: under "skip the tests" the main session launched implementer alone on its first turn, in 2 of 6 pressure
+// runs of 2026-11-20 (and before), a team the user never chose. Typed without --team, the request holds a
+// launch whose Team line names less than the full team until the transcript shows the user's answer since.
+const userLine = (content, extra = {}) => JSON.stringify({ type: 'user', message: { role: 'user', content }, ...extra });
+const askLines = (id) => [JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: {} }] } }),
+  userLine([{ type: 'tool_result', tool_use_id: id, content: 'User has answered: Implement only' }])];
+const choiceRepo = () => {
+  const { dir } = repo();
+  const t = path.join(dir, '..', `t-${path.basename(dir)}.jsonl`);
+  fs.writeFileSync(t, `${userLine('earlier request')}\n`);
+  return { dir, t, add: (...lines) => fs.appendFileSync(t, lines.map((l) => `${l}\n`).join('')) };
+};
+const NOT_ANSWERS = [userLine('<command-message>speckit-team</command-message>\n<command-name>/speckit-team</command-name>\n<command-args>add sum() and skip the tests</command-args>'),
+  userLine([{ type: 'text', text: 'Base directory for this skill: C:/x/speckit-team\n\nRun the Spec Kit team on: ...' }], { isMeta: true }),
+  JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'node hook check team' } }] } }),
+  userLine([{ type: 'tool_result', tool_use_id: 'b1', content: 'speckit-team: check: ok' }]),
+  userLine('<system-reminder>context</system-reminder>')];
+
+test('team choice: typed without --team, a launch naming less than the full team waits for the user\'s answer (#366)', () => {
+  const { dir, t, add } = choiceRepo();
+  typedTeam(dir, 'add sum() and skip the tests', { transcript_path: t });
+  add(...NOT_ANSWERS);
+  const out = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t });
+  assert.ok(denied(out), 'held: nobody chose implementer alone');
+  assert.match(reasonOf(out), /nobody chose this team.*typed without --team.*ask the team question/s);
+  assert.ok(!fs.existsSync(teamFile(dir)), 'and no team is recorded for it');
+  add(userLine('Implement only.'));
+  assert.ok(!denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'after a typed answer it goes');
+  assert.deepEqual(teamRecord(dir).roles, ['implementer']);
+});
+
+test('team choice: an AskUserQuestion answer counts, and the full team needs none (#366)', () => {
+  const a = choiceRepo();
+  typedTeam(a.dir, 'add sum()', { transcript_path: a.t });
+  a.add(...NOT_ANSWERS, ...askLines('q1'));
+  assert.ok(!denied(agentLaunch(a.dir, 'go\nTeam: test-writer, implementer', { transcript_path: a.t })));
+  const b = choiceRepo();
+  typedTeam(b.dir, 'add sum()', { transcript_path: b.t });
+  b.add(...NOT_ANSWERS);
+  assert.ok(!denied(agentLaunch(b.dir, 'go', { transcript_path: b.t })), 'no Team line: the full team, the recommended answer');
+  const c = choiceRepo();
+  typedTeam(c.dir, 'add sum()', { transcript_path: c.t });
+  c.add(...NOT_ANSWERS);
+  assert.ok(!denied(agentLaunch(c.dir, `go\nTeam: ${ALL_ROLES.join(', ')}`, { transcript_path: c.t })), 'a Team line naming all six is the full team');
+});
+
+test('team choice: a typed --team is the user\'s choice, a first prompt is held from the transcript\'s start, and no transcript_path holds nothing (#366)', () => {
+  const a = choiceRepo();
+  typedTeam(a.dir, '--team implementer add sum()', { transcript_path: a.t });
+  a.add(...NOT_ANSWERS);
+  assert.ok(!denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })));
+  // A session's first prompt: Claude Code has not written the transcript yet, so all of it comes after the request.
+  const b = choiceRepo();
+  const fresh = path.join(b.dir, '..', `fresh-${path.basename(b.dir)}.jsonl`);
+  typedTeam(b.dir, 'add sum()', { transcript_path: fresh });
+  fs.writeFileSync(fresh, `${NOT_ANSWERS.join('\n')}\n`);
+  assert.ok(denied(agentLaunch(b.dir, 'go\nTeam: implementer', { transcript_path: fresh })), 'held from the first line');
+  fs.appendFileSync(fresh, `${userLine('Implement only.')}\n`);
+  assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: implementer', { transcript_path: fresh })), 'and goes after the answer');
+  const c = choiceRepo();
+  typedTeam(c.dir, 'add sum()');
+  assert.ok(!denied(agentLaunch(c.dir, 'go\nTeam: implementer')), 'no transcript_path at all: as before');
+});
+
+test('team choice: once a launch went, later ones are not held; a new typed request asks again (#366)', () => {
+  const { dir, t, add } = choiceRepo();
+  typedTeam(dir, 'add sum()', { transcript_path: t });
+  add(...NOT_ANSWERS, userLine('Build only.'));
+  assert.ok(!denied(agentLaunch(dir, 'go\nTeam: test-writer, implementer', { transcript_path: t })));
+  assert.ok(!denied(agentLaunch(dir, 'next\nTeam: test-writer, implementer', { transcript_path: t })));
+  typedTeam(dir, 'add product()', { transcript_path: t });
+  add(...NOT_ANSWERS);
+  assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'the answer to the last request does not carry over');
+});
+
 test('team: a team-role launch with no Team line records the full team, silently (FR-002, FR-009, #101)', () => {
   const { dir } = repo();
   agentLaunch(dir, 'Team: implementer');

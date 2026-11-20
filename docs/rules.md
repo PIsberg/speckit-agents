@@ -94,7 +94,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - How `--team`, `--security` and `--project` are read, and the refusals before any launch. pinned.
 - `noagents` is chosen only by typing it. hook `gate` (reads the typed command at `UserPromptExpansion`).
 - `skill-agents` is chosen only by typing it. hook `gate` (denies a role skill outside a typed `--team skill-agents`).
-- With no `--team`, one question, full team first. pinned.
+- With no `--team`, one question, full team first. pinned; hook `gate` refuses a launch whose `Team:` line names less than the full team until the user's answer is in the transcript after the typed request (#366).
 - Without product-owner, a `team/` branch before the first launch. pinned.
 - One line naming the team and what is skipped. pinned.
 
