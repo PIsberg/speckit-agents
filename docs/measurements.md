@@ -252,7 +252,7 @@ fell only from $1.90 to $1.83, because that architect planned 8 tasks instead of
 share grew by $0.24. One run each, on one constitution: how often the check saves a round
 elsewhere is not measured.
 
-On 2026-11-20 the check was run on a second constitution, `library`, whose five MUST rules the request does not mention: first audit PASS in 6 of 6 runs, every rule built ([The constitution self-check on another constitution](#the-constitution-self-check-on-another-constitution-42)).
+On 2026-11-20 the check was run on a second constitution, `library`, whose five MUST rules the request does not mention: first audit PASS in 6 of 6 runs with the check and 3 of 3 without it, every rule built either way ([The constitution self-check on another constitution](#the-constitution-self-check-on-another-constitution-42)).
 
 ## Project knowledge context cost
 
@@ -1234,12 +1234,14 @@ What it does not show. One fixture, one model, agents mode only; the skill-agent
 `tools/full-run.mjs --constitution library`: the fixture's request (`sum()`) against a constitution
 with five MUST rules it does not mention (a `TypeError` naming the parameter, an `## API` entry in
 `README.md`, a `CHANGELOG.md` line, tests for every error, no dependencies), with the architect's
-self-check (step 4 of `agents/architect.md`) in place.
+self-check (step 4 of `agents/architect.md`) in place, and in the last row from a worktree of `6d68788` with
+step 4 removed (checked in each run's installed `architect.md`), the owner's team reinstalled from it for those runs.
 
 | Runs | First audit | Architect launches | Architect input | Rules met in the build | Cost |
 |---|---|---|---|---|---|
 | 3, `--out` outside Temp | PASS 3/3 | 1 each | 0.23M to 0.50M | 5/5 in all 3 | $1.43 to $1.78 |
 | 3, `--out` in Temp | PASS 3/3 | 1, 2 and 2 | 0.24M; 0.33M + 0.08M; 0.28M + 0.08M | 5/5 in all 3 | $1.49 to $1.87 |
+| 3 without the self-check, `--out` outside Temp | PASS 3/3 | 1 each | 0.24M to 0.27M | 5/5 in all 3 | $1.39 to $1.47 |
 
 Every run ended `APPROVED`. "Rules met" was read from the scratch repos: `README.md` has `## API`,
 `CHANGELOG.md` names `sum` under `Unreleased`, `src/math.js` throws `TypeError` and a test asserts
@@ -1248,9 +1250,12 @@ was written to `C:\tmp`, not after a failed audit. In one of them, `decisions --
 architect's `Spec: under ## Assumptions` line, and the gate held the audit until the main session wrote
 the record by hand ([#365](https://github.com/PIsberg/speckit-agents/issues/365), fixed in PR #364).
 
-What it shows. With the check, the first audit passed on a constitution the fixture was not written for,
-6 of 6, and the architect planned all five rules every time. What it does not show: what the check costs
-or saves, which needs the arm without it (still owed).
+What it shows. The first audit passed on a constitution the fixture was not written for in 6 of 6 runs
+with the check and 3 of 3 without it, and the architect planned all five rules every time either way. On
+this constitution and request the check saved no audit round; the runs without it cost $1.39 to $1.47,
+those with it $1.43 to $1.78, and the architect read 0.24M to 0.27M without it, 0.23M to 0.50M with it. The three first-audit FAILs on rule VIII that led to
+the check (2026-10-07 and 2026-10-08) were on this repository's own constitution; this one is not shown
+to need it. What it does not show: a constitution whose rules a plan misses; 3 runs per arm.
 
 ### Side by side on slices that take minutes (#114)
 

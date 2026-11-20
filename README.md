@@ -1269,6 +1269,14 @@ once. Four full headless runs of a small feature cost $1.83 to $3.98, and one fa
 $0.064. The runs, what each cost, and which rule each finding led to are in
 [Measurements](docs/measurements.md).
 
+The architect checks every MUST rule of the constitution against its tasks before it reports, a rule
+that came from three first audits failed on one rule of this repository's constitution. On a second
+constitution with five rules the request does not mention, the first audit passed in 6 of 6 runs with
+the check and 3 of 3 without it, every rule built either way, and the architect read 0.23M to 0.50M
+with it and 0.24M to 0.27M without (2026-11-20, [#42](https://github.com/PIsberg/speckit-agents/issues/42),
+[the runs](docs/measurements.md#the-constitution-self-check-on-another-constitution-42)). The check stays:
+nothing shows it costs a round, and the case it was written for is one this constitution does not have.
+
 The agents that write also carry your personal `~/.claude/CLAUDE.md` on every launch, which no agent
 setting can drop on its own: `omitClaudeMd` takes the project's file too. A 19,610-byte file came to
 an estimated 8% to 9% of a full run's input
