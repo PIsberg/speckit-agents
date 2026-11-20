@@ -2851,6 +2851,7 @@ test('#178: malformed transcript rows are skipped and the role\'s verdict around
 test('009 T016 contract 6 step 2: no VERDICT line records nothing and says so, naming the role skill', () => {
   const { dir, t } = auditorRole();
   say(t, 'I looked at everything and it seems fine.');
+  assert.equal(stopRole(dir)?.decision, 'block', 'sent back once for its VERDICT line (#351)');
   const out = stopRole(dir);
   assert.equal(verdictRec(dir), null);
   assert.match(msg(out), /speckit-role-spec-auditor/);
@@ -2860,6 +2861,7 @@ test('009 T016 contract 6 step 2: no VERDICT line records nothing and says so, n
 
 test('009 T016 contract 6 step 2: a PASS above the offset is ignored', () => {
   const { dir } = auditorRole([assistantRow('earlier turn\nVERDICT: PASS')]);
+  assert.equal(stopRole(dir)?.decision, 'block', 'sent back once for its VERDICT line (#351)');
   const out = stopRole(dir);
   assert.equal(verdictRec(dir), null);
   assert.match(msg(out), /speckit-role-spec-auditor/);
@@ -2975,6 +2977,7 @@ test('009 T025 contract 6: args a number or an array never crashes and records n
   for (const args of [5, ['VERDICT: PASS'], { a: 1 }]) {
     const { dir, t } = auditorRole();
     say(t, 'No findings.');
+    assert.ok(denied(callWithArgs(dir, 'speckit-role-architect', t, args)), 'denied once for its VERDICT line (#351)');
     const out = callWithArgs(dir, 'speckit-role-architect', t, args);
     assert.ok(!denied(out), JSON.stringify(out));
     assert.equal(verdictRec(dir), null, JSON.stringify(args));
@@ -3001,12 +3004,14 @@ test('009 T025 contract 6 step 2: a call denied for want of a VERDICT leaves the
 test('009 T025 contract 6 step 2: the none-found message at a Skill call names args and the role skill; at Stop it is the T016 one', () => {
   const { dir, t } = auditorRole();
   say(t, 'No findings.');
+  assert.ok(denied(callWithArgs(dir, 'speckit-role-architect', t, '<inputs>')), 'denied once for its VERDICT line (#351)');
   const out = callWithArgs(dir, 'speckit-role-architect', t, '<inputs>');
   assert.match(msg(out), /args/);
   assert.match(msg(out), /speckit-role-spec-auditor/);
   assert.doesNotMatch(msg(out), /@agent-spec-auditor/);
   const b = auditorRole();
   say(b.t, 'No findings.');
+  assert.equal(stopRole(b.dir, { last_assistant_message: 'nothing to see' })?.decision, 'block', 'sent back once (#351)');
   const stop = stopRole(b.dir, { last_assistant_message: 'nothing to see' });
   assert.match(msg(stop), /speckit-role-spec-auditor/);
   assert.doesNotMatch(msg(stop), /\bargs\b/);
@@ -3695,4 +3700,65 @@ test('#353: a spec-auditor role call is held like the agent launch: two FAILs in
   assert.ok(denied(held), JSON.stringify(held));
   assert.match(whyDenied(held), /plan\.md still has open decisions \(D1\)/);
   assert.ok(!denied(skillCall(r.dir, 'speckit-role-architect', { transcript_path: t2 })), 'the architect can still settle them');
+});
+
+// #351: a role closed by the next Skill call skipped two checks the Stop (and the agent) has: the gatekeeper's
+// drifted APPROVED was recorded as REJECTED with only a note, and a report with no end word was never sent
+// back. Both are now refused once there too, as #316 refuses the test-writer role's RED: the call is denied,
+// the role stays the acting one, and the same call made again goes through.
+test('#351: the spec-gatekeeper role\'s drifted APPROVED denies the next role call once, then is recorded as REJECTED', () => {
+  const { dir } = driftRepo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper', { transcript_path: t })));
+  say(t, 'Every task is ticked.\n\nAPPROVED');
+  const first = callWithArgs(dir, 'speckit-role-security-reviewer', t, 'APPROVED');
+  assert.ok(denied(first), JSON.stringify(first));
+  assert.match(reasonOf(first), /T001: FR-001 is in none of test\/a\.test\.mjs/);
+  assert.equal(roleRec(dir).role, 'spec-gatekeeper', 'the gatekeeper still acts');
+  assert.equal(endsRec(dir), null, 'nothing recorded yet');
+  const again = callWithArgs(dir, 'speckit-role-security-reviewer', t, 'APPROVED');
+  assert.ok(!denied(again), JSON.stringify(again));
+  assert.match(msg(again), /recorded as REJECTED/);
+  assert.equal(endsRec(dir).word, 'REJECTED');
+  assert.equal(endsRec(dir).claimed, 'APPROVED');
+});
+
+test('#351: a role report with no end word is sent back once at Stop and denied once at the next role call', () => {
+  const roles = [
+    ['spec-auditor', 'speckit-role-architect', /VERDICT: PASS, VERDICT: FAIL/],
+    ['spec-gatekeeper', 'speckit-role-security-reviewer', /APPROVED, REJECTED/],
+    ['test-writer', 'speckit-role-implementer', /RED, BLOCKED, FIXED/],
+    ['implementer', 'speckit-role-spec-gatekeeper', /RESULT: STUB, RESULT: GREEN, RESULT: RED/],
+  ];
+  for (const [role, next, words] of roles) {
+    for (const where of ['stop', 'skill']) {
+      const { dir } = repo();
+      skillAgentsTeam(dir);
+      pass(dir);
+      const t = transcriptIn(dir, [userRow('typed')]);
+      assert.ok(!decided(skillCall(dir, `speckit-role-${role}`, { transcript_path: t })), `${role}: its call`);
+      say(t, 'Worked on it.');
+      const label = `${role} at ${where}`;
+      const first = where === 'stop' ? stopRole(dir, { last_assistant_message: 'Worked on it.' }) : callWithArgs(dir, next, t, 'Worked on it.');
+      assert.ok(where === 'stop' ? first?.decision === 'block' : denied(first), `${label}: ${JSON.stringify(first)}`);
+      assert.match(reasonOf(first), new RegExp(`^The ${role} role's report has no final line that is exactly one of: `), label);
+      assert.match(reasonOf(first), words, label);
+      if (where === 'skill') assert.match(reasonOf(first), /Start the `args` of this Skill call with/, label);
+      assert.equal(roleRec(dir).role, role, `${label}: the role still acts`);
+      const again = where === 'stop' ? stopRole(dir, { last_assistant_message: 'Worked on it.' }) : callWithArgs(dir, next, t, 'Worked on it.');
+      assert.ok(again?.decision !== 'block' && !denied(again), `${label}, again: ${JSON.stringify(again)}`);
+      // As the agent's `result`: a report still without its RESULT line counts as RED.
+      if (role === 'implementer') assert.equal(redCountOf(dir), 1, `${label}: counted as RED`);
+    }
+  }
+  // Control: a report that ends in its word goes through the first time.
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  pass(dir);
+  const t = transcriptIn(dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-test-writer', { transcript_path: t })));
+  say(t, 'The spec contradicts itself.\n\nBLOCKED');
+  assert.ok(!decided(callWithArgs(dir, 'speckit-role-implementer', t, 'BLOCKED')));
 });

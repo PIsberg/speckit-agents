@@ -691,6 +691,7 @@ function recordReport(rec, last = null, where = 'stop') {
     const verdict = verdictIn(texts.join('\n'));
     if (!verdict) {
       if (read === null) return unread();
+      refuseOnce(rec, where, 'word', noWordWhy(rec.role, where));
       addNote('speckit-team: no VERDICT line was found in the spec-auditor role\'s turn, so nothing was recorded. '
         + 'Call the Skill speckit-role-spec-auditor again and end its report with `VERDICT: PASS` or `VERDICT: FAIL`'
         + (where === 'skill' ? ', and start the `args` of the next Skill call with that line.' : '.'));
@@ -716,14 +717,16 @@ function recordReport(rec, last = null, where = 'stop') {
   const word = [...texts].reverse().map(lastGatekeeperWord).find(Boolean);
   if (!word) {
     if (read === null) return unread();
+    refuseOnce(rec, where, 'word', noWordWhy(rec.role, where));
     addNote('speckit-team: the spec-gatekeeper role ended without a final APPROVED or REJECTED line, so no word was recorded.');
     return;
   }
   if (!feat) { addNote(`speckit-team: the spec-gatekeeper role's ${word} was not recorded: no active feature.`); return; }
-  // #228, as for the agent: sent back once at Stop (the role stays the acting one), then recorded as REJECTED.
+  // #228, as for the agent: sent back once at Stop, or denied once at the next role call (#351), the role
+  // staying the acting one; then recorded as REJECTED.
   const drifted = word === 'APPROVED' ? driftOf(feat) : null;
   if (drifted?.problems?.length) {
-    if (where === 'stop' && sendBackOnce(rec, 'drift')) block(driftRefusal('the spec-gatekeeper role', drifted.problems));
+    refuseOnce(rec, where, 'drift', driftRefusal('the spec-gatekeeper role', drifted.problems));
     writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: null, role: rec.role });
     addNote(`speckit-team: the spec-gatekeeper role's APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}`);
     return;
@@ -871,6 +874,15 @@ function closeRole(rec, at, gate = null) {
   // #316: the test-writer role's RED or FIXED, as the agent's at `ends` (#315): blocked once at Stop, denied
   // once at the next role call (the record keeps it, so the same call made again goes through), then said.
   // #334: first, as the agent's (#240), a RED on a parse or name error or a missing test module.
+  // #351: a test-writer or implementer report with none of its words, as `ends` and `result` refuse the agent's
+  // once. Only when the role's texts could be read: an unreadable transcript cannot tell a report without one.
+  const said = rec.role === 'test-writer' || rec.role === 'implementer' ? roleReport(rec, at).word : null;
+  const unsaid = said === undefined && rec.offset !== null && roleTexts(rec.transcript, rec.offset) !== null;
+  if (unsaid) {
+    refuseOnce(rec, at, 'word', noWordWhy(rec.role, at));
+    addNote(`speckit-team: the ${rec.role} role ended without a final line that is one of: ${END_WORDS[rec.role].join(', ')}`
+      + (rec.role === 'implementer' ? ', so it counts as RESULT: RED, as the agent\'s report does.' : '.'));
+  }
   if (rec.role === 'test-writer') {
     const { text, word } = roleReport(rec, at);
     const feat = feature() ?? rec.feature;
@@ -886,7 +898,7 @@ function closeRole(rec, at, gate = null) {
       addNote(citedStands('the test-writer role', word, cited.problems));
     }
   }
-  if (rec.role === 'implementer') countResult(rec, roleReport(rec, at).word);
+  if (rec.role === 'implementer') countResult(rec, unsaid ? 'RESULT: RED' : said);
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
   if (at === 'stop') {
     const word = handOnWord(rec);
@@ -905,6 +917,13 @@ function closeRole(rec, at, gate = null) {
 
 // Send a role's report back once for `key` ('fault', 'cited'): blocked at Stop, denied at the next role call.
 // At a call the record keeps the key, so the same call made again goes through. Returns when it stands.
+// #351: why a role's report is sent back for its missing end word, in the words of the agent's `ends`.
+function noWordWhy(role, at) {
+  const words = { 'spec-auditor': ['VERDICT: PASS', 'VERDICT: FAIL'], 'spec-gatekeeper': ['APPROVED', 'REJECTED'], ...END_WORDS }[role];
+  return `The ${role} role's report has no final line that is exactly one of: ${words.join(', ')}. `
+    + (at === 'skill' ? "Start the `args` of this Skill call with the report's last line, that word, and make the call again."
+      : 'End the report with that line.');
+}
 function refuseOnce(rec, at, key, why) {
   if (at !== 'skill') { if (sendBackOnce(rec, key)) block(why); return; }
   const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
