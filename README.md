@@ -1449,7 +1449,9 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
     `all tasks` unfolds them. The next task is marked `▶`, and a task's `code` is drawn as Claude
     Code draws inline code. A list taller than the rows the pane has left shows a window over it,
     opened at the next task, under one row of paging buttons, `↑ n more` (`u`) and `↓ n more` (`d`);
-    the wheel over the pane moves it too, and `all tasks` goes back to the next task. Before, a short
+    the wheel over the pane moves it too, and `all tasks` goes back to the next task. The hotkeys reach
+    the pane once it has the keyboard: ctrl+x tab gives it to the band while the band shows buttons, so
+    hide the band first (ctrl+x ctrl+a, or its `[ hide ]`) ([live](docs/live-results.md#the-board)). Before, a short
     terminal cut the list off with nothing to scroll ([#346](https://github.com/PIsberg/speckit-agents/issues/346)).
     A body too short for the rows above the list as well drops, in turn, the blank rows between the
     parts, the context and cost rows, the Team rows of finished agents (the running ones and the
