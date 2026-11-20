@@ -549,7 +549,8 @@ recommended` under each decision, renames the section `## Decisions` and puts th
 into the spec, or changes nothing and names the line it could not place (the architect writes each option as
 a list item, `- **A (recommended): <option>**` then `- **B: <option>**`, and the command also reads
 `Option A` and a bold paragraph without the bullet, [#306](https://github.com/PIsberg/speckit-agents/issues/306),
-[#310](https://github.com/PIsberg/speckit-agents/issues/310); in the full run of 2026-10-24
+[#310](https://github.com/PIsberg/speckit-agents/issues/310), and a `Spec: under` heading with or without its `#`
+markers, [#365](https://github.com/PIsberg/speckit-agents/issues/365); in the full run of 2026-10-24
 that was an architect and a product-owner for one edit each, 0.16M tokens; in the runs of 2026-11-08 and
 2026-11-10, 3 or 4 main-session responses with a script of its own). The hook refuses the audit's
 launch while `plan.md` still lists an open decision. Otherwise one architect
@@ -1295,8 +1296,12 @@ surfaced while recording the README's GIFs
 the same behaviour under `claude -p`, the third that a project's `.claude/settings.json` wins over
 `CLAUDE_CODE_FORK_SUBAGENT=1` in the environment. With fork subagents on, the waiting cost 14.45M
 of input, 24% of the main session, in the one interactive run measured
-([Feature 003](docs/measurements.md#feature-003-interactive)); the same run with them off is not measured
-([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
+([Feature 003](docs/measurements.md#feature-003-interactive)). On one small feature, interactive, Claude
+Code 2.1.329, the setting halved the main session's work: with fork subagents off (2 runs), 16 and 17
+main-session responses, 0.74M of main-session input each, no response that only waited; with them on
+(1 run), 31 responses, 1.17M, of which 7 waiting responses read 0.44M (37%)
+([Interactive, fork subagents on and off](docs/measurements.md#interactive-fork-subagents-on-and-off),
+[#66](https://github.com/PIsberg/speckit-agents/issues/66)).
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
@@ -1591,11 +1596,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 625 tests:
+`npm test` runs 630 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 213 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 214 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
@@ -1609,7 +1614,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 31 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 35 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
@@ -1867,6 +1872,17 @@ implementers went out in one response, each with `isolation: "worktree"`. `tools
 the same from any transcript: how many responses launched more than one agent, and how many agents
 ran in a worktree. `--two-slices` sends the same request with the plain answer, one at a time, and
 fails the run if agents went out together: the run to set against a side-by-side one.
+`--large-slices` swaps in two modules of six functions each (`src/stats.js` and `src/text.js`, from
+`request-large-slices.txt`): slices that take an agent minutes apiece, so side by side has something
+to save ([#114](https://github.com/PIsberg/speckit-agents/issues/114)). Alone it builds them one at a
+time; with `--side-by-side`, side by side. `--constitution <name>` lays
+`test/fixtures/full-run/constitutions/<name>.md` in place of the fixture's constitution, to measure the
+architect's constitution self-check on rules the request does not mention
+([#42](https://github.com/PIsberg/speckit-agents/issues/42)). `library`, the one there, asks for a
+`TypeError` on wrong input, an `## API` entry in `README.md`, a `CHANGELOG.md` line, a test for each
+error, and no dependencies. On Windows the run refuses an `--out` inside the Temp folder: Git Bash
+shows it as `/tmp`, and an agent that took its path from `pwd` wrote to `C:\tmp\...` instead, in 5
+of 9 runs of 2026-11-20.
 
 The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
 $4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand

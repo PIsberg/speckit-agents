@@ -210,6 +210,36 @@ rules in "4-5. Red and green" of [the skill](../skills/speckit-team/SKILL.md). A
 following them, and what side by side saves against what it costs, is
 [Side by side against one at a time](#side-by-side-against-one-at-a-time).
 
+## Interactive, fork subagents on and off
+
+Taken 2026-11-20 for [#66](https://github.com/PIsberg/speckit-agents/issues/66): three interactive
+`/speckit-team` sessions, Claude Code 2.1.329 on Windows 11, Sonnet main session, the owner's Claude
+login, `--permission-mode bypassPermissions` as in the headless runs, the team installed in the user
+config from the branch of PR #363 (`6d68788`). Each ran in a fresh scratch repo that
+`buildRepo()` of `tools/full-run.mjs` laid, with its one-function request (`sum()`). No person
+typed: a driver started `claude` under `ttyd` and spoke to it over `ttyd`'s websocket, pressed
+Enter at each AskUserQuestion dialog (the recommended option is the first), and typed the full run's
+answer when a turn ended with no dialog, until spec-gatekeeper's word was in the hook's record. The
+driver is not in the repository. Read with `node tools/usage.mjs` on each main transcript.
+
+| Run | Fork subagents | Main responses | Main input | Waiting responses | Launches | Agents' input | End |
+|---|---|--:|--:|--:|--:|--:|---|
+| 1 | off | 17 | 0.74M | 0 | 9 | 0.74M | APPROVED, 3/3 tasks |
+| 2 | off | 16 | 0.74M | 0 | 9 | 0.68M | APPROVED, 3/3 tasks |
+| 3 | on | 31 | 1.17M | 7, 0.44M (37%) | 7 | 0.71M | APPROVED, 4/4 tasks |
+
+- Off means `CLAUDE_CODE_FORK_SUBAGENT=0`: run 1 set it in the environment, run 2 took it from the
+  owner's `settings.json` (`install.mjs --no-fork`). Run 3 passed `--settings` with the variable at
+  `1`, which wins over the user's `settings.json`.
+- With fork subagents on, `tools/usage.mjs` still counts the 7 launches as foreground, since it reads
+  the Agent call's parameters, and the tool then has none (#64). The 7 responses that only waited
+  are where the background shows.
+- The same feature took 14 to 15 more main-session responses and 0.43M more main-session input with
+  fork subagents on, 58% more; the agents' own input was within 0.06M across the three runs. One run
+  with them on, two off, one small feature: the size of the gap is a single count, its direction
+  matches feature 003's interactive run (24% of the main session waiting).
+- Dollars were not recorded: an interactive transcript carries tokens, not the cost.
+
 ## The constitution check
 
 In each of the first three runs the first audit failed on the same CRITICAL finding: the plan's

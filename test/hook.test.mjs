@@ -3601,6 +3601,22 @@ test('decisions --recommended finds an option written as a bold paragraph, and t
   assert.ok(featFile(dir2, 'spec.md').includes('its first code point in'), 'the Spec: lines after the detail are still the option\'s');
 });
 
+// #365: in a paid run of 2026-11-20 the architect named the heading with its markers, "under ## Assumptions" and
+// "under ### Functional Requirements". The command found no such heading, changed nothing, and the gate refused
+// the audit while the decisions stayed open.
+test('decisions --recommended places a Spec: line whose heading is written with its # markers (#365)', () => {
+  const marked = D1.map((l) => l.replace('under Edge Cases', 'under ### Edge Cases'));
+  const dir = decisionsRepo(PLAN(['## Open Decisions', '', ...marked, ...D2]));
+  const r = decide(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(featFile(dir, 'spec.md').includes("- Capitalize of `''` is `''`.\n- A first letter outside the BMP"), featFile(dir, 'spec.md'));
+  const b = D1.map((l) => l.replace('(recommended)', '').replace('**B: the first code unit.**', '**B (recommended): the first code unit.**').replace('under Assumptions', 'under ## Assumptions'));
+  const dir2 = decisionsRepo(PLAN(['## Open Decisions', '', ...b, ...D2]));
+  const r2 = decide(dir2, '--recommended');
+  assert.equal(r2.status, 0, r2.stdout + r2.stderr);
+  assert.ok(featFile(dir2, 'spec.md').includes('- Inputs are valid.\n- The first character is the first UTF-16 code unit.'), featFile(dir2, 'spec.md'));
+});
+
 test('decisions --recommended moves the entries under a ## Decisions section that is already there', () => {
   const dir = decisionsRepo(PLAN(['## Decisions', '', '### D0: Earlier', '', 'Answer (2026-11-01): B', '', '## Open Decisions', ...D2]));
   const r = decide(dir, '--recommended');
