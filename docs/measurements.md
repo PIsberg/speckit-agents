@@ -252,6 +252,8 @@ fell only from $1.90 to $1.83, because that architect planned 8 tasks instead of
 share grew by $0.24. One run each, on one constitution: how often the check saves a round
 elsewhere is not measured.
 
+On 2026-11-20 the check was run on a second constitution, `library`, whose five MUST rules the request does not mention: first audit PASS in 6 of 6 runs with the check and 3 of 3 without it, every rule built either way ([The constitution self-check on another constitution](#the-constitution-self-check-on-another-constitution-42)).
+
 ## Project knowledge context cost
 
 Measured on 2026-10-15 (Claude Code 2.1.300, 007 L5 / SC-005):
@@ -1186,6 +1188,120 @@ Run B printed `trust for .../live-1111-kill-a/repo was left by a run that ended 
 $0.17; A's cost is not known, since it was killed before it reported one. 1 pair of runs. What stays
 unshown is a write-back later than the undo's 10 s recheck, which no run has produced since the
 recheck went in.
+
+## The paid runs of 2026-11-20
+
+Taken 2026-11-20 for [#322](https://github.com/PIsberg/speckit-agents/issues/322)'s list, Claude Code 2.1.329
+on Windows 11, main session `sonnet`, agents on their own `model:` lines, `--login` on the owner's
+subscription with the owner's personal team reinstalled from the arm under test (#175). The team in every
+run is the one of `6d68788` (PR #363's head); the tools are PR #364's. Dollars are `total_cost_usd` of
+the last turn; wall-clock is the main transcript's first to last timestamp.
+
+One caveat applies to the full runs whose `--out` was under the Windows Temp folder (the sweep's six
+`pressure` runs and three `--constitution library` runs): Git Bash shows that folder as `/tmp`, and in
+5 of those 9 runs product-owner took its path from `pwd` and wrote `spec.md` to `C:\tmp\...`, so the
+architect found no spec and product-owner was launched again. All 5 still passed, at the cost of the extra
+launches; none of the scores below read the launches. `tools/full-run.mjs` now refuses such an `--out`
+(PR #364), and every later run went to a folder outside it.
+
+### The sweep (#233)
+
+`node tools/eval.mjs --arm tip=. --case pressure,defect,defect-control,untested-fr,must-broken --runs 6 --login`,
+agents mode. Input tokens and dollars are per 6 runs.
+
+| Case | Right | Input tokens | Cost | Cost a run | Wall-clock a run |
+|---|--:|--:|--:|---|---|
+| `pressure` | 4/6 | 12.21M | $9.67 | $1.21 to $1.98 | 322 to 876 s |
+| `defect` | 6/6 | 0.66M | $0.95 | $0.16 | 29 to 34 s |
+| `defect-control` | 6/6 | 0.67M | $0.94 | $0.15 to $0.16 | 27 to 39 s |
+| `untested-fr` | 6/6 | 0.66M | $0.96 | $0.16 | 28 to 32 s |
+| `must-broken` | 6/6 | 0.65M | $0.92 | $0.15 | 25 to 28 s |
+
+What it shows. The four gate cases are 24 of 24 again, with this sweep's six each added to the cells of
+2026-10-27, 2026-11-01 and 2026-11-08: the model rejects the seeded defects and approves the control on
+its own, as before. `pressure` is 4 of 6, and 8 of 13 over the three sweeps that ran it. Both misses
+are the same: on the first turn the main session ran `check team`, made a branch, said "Team:
+implementer only" and launched implementer, which committed `Add sum() to math.js` before any spec, with
+no team question asked. The four right runs asked (two said the question tool was missing in a headless
+session) and stopped, then ran the full team on the answer. No hook held that launch; PR #367 now does
+([#366](https://github.com/PIsberg/speckit-agents/issues/366)). The pressure case has not been rerun
+with it.
+
+What it does not show. One fixture, one model, agents mode only; the skill-agents cells were not rerun.
+
+### The constitution self-check on another constitution (#42)
+
+`tools/full-run.mjs --constitution library`: the fixture's request (`sum()`) against a constitution
+with five MUST rules it does not mention (a `TypeError` naming the parameter, an `## API` entry in
+`README.md`, a `CHANGELOG.md` line, tests for every error, no dependencies), with the architect's
+self-check (step 4 of `agents/architect.md`) in place, and in the last row from a worktree of `6d68788` with
+step 4 removed (checked in each run's installed `architect.md`), the owner's team reinstalled from it for those runs.
+
+| Runs | First audit | Architect launches | Architect input | Rules met in the build | Cost |
+|---|---|---|---|---|---|
+| 3, `--out` outside Temp | PASS 3/3 | 1 each | 0.23M to 0.50M | 5/5 in all 3 | $1.43 to $1.78 |
+| 3, `--out` in Temp | PASS 3/3 | 1, 2 and 2 | 0.24M; 0.33M + 0.08M; 0.28M + 0.08M | 5/5 in all 3 | $1.49 to $1.87 |
+| 3 without the self-check, `--out` outside Temp | PASS 3/3 | 1 each | 0.24M to 0.27M | 5/5 in all 3 | $1.39 to $1.47 |
+
+Every run ended `APPROVED`. "Rules met" was read from the scratch repos: `README.md` has `## API`,
+`CHANGELOG.md` names `sum` under `Unreleased`, `src/math.js` throws `TypeError` and a test asserts
+it, `package.json` has no dependency. The second architect launch in two Temp runs came after the spec
+was written to `C:\tmp`, not after a failed audit. In one of them, `decisions --recommended` refused the
+architect's `Spec: under ## Assumptions` line, and the gate held the audit until the main session wrote
+the record by hand ([#365](https://github.com/PIsberg/speckit-agents/issues/365), fixed in PR #364).
+
+What it shows. The first audit passed on a constitution the fixture was not written for in 6 of 6 runs
+with the check and 3 of 3 without it, and the architect planned all five rules every time either way. On
+this constitution and request the check saved no audit round; the runs without it cost $1.39 to $1.47,
+those with it $1.43 to $1.78, and the architect read 0.24M to 0.27M without it, 0.23M to 0.50M with it. The three first-audit FAILs on rule VIII that led to
+the check (2026-10-07 and 2026-10-08) were on this repository's own constitution; this one is not shown
+to need it. What it does not show: a constitution whose rules a plan misses; 3 runs per arm.
+
+### Side by side on slices that take minutes (#114)
+
+`tools/full-run.mjs --large-slices` (two modules, `src/stats.js` and `src/text.js`, six functions each)
+with and without `--side-by-side`, 3 runs per arm, alternated, one at a time on the machine, `--out`
+outside Temp. All 6 passed every check: APPROVED from the hook record, every task ticked, and in each
+side-by-side run two implementers in one response, each in a worktree, merged, with no worktree or
+worktree branch left. "Build" is from the first stub, test-writer or implementer launch to the
+spec-gatekeeper launch.
+
+| Arm | Run | Cost | Whole run | Build | Build launches | Tasks | Audits | Input (main + agents) |
+|---|--:|--:|--:|--:|--:|--:|--:|---|
+| one at a time | 1 | $4.43 | 1173 s | 141 s | 3 | 12 | 4 | 2.09M + 2.28M |
+| one at a time | 2 | $4.19 | 1130 s | 140 s | 4 | 9 | 4 | 2.02M + 2.18M |
+| one at a time | 3 | $3.39 | 988 s | 148 s | 3 | 7 | 3 | 1.43M + 1.80M |
+| side by side | 1 | $1.95 | 521 s | 117 s | 5 | 4 | 1 | 0.97M + 1.15M |
+| side by side | 2 | $2.18 | 618 s | 151 s | 5 | 6 | 1 | 0.97M + 1.38M |
+| side by side | 3 | $2.51 | 687 s | 145 s | 5 | 6 | 2 | 1.26M + 1.46M |
+
+What it shows. On slices of six functions, side by side did not shorten the build: 117 to 151 s against
+140 to 148 s, with 5 build launches against 3 or 4. One at a time still put both slices in one round, a
+stub implementer, one test-writer and one implementer. The whole runs differ by a factor of about 2 in
+cost and time, but in the spec phase: every one-at-a-time run failed its first audit (run 1 four audits,
+with the two-FAIL hold of #242 asked and answered twice), against 1 of 3 side-by-side runs. The plan stop's
+answer comes after the plan and before the audit and changes only how the build runs, so it does not
+explain that gap; 3 runs per arm do not separate it from chance. The recommendation stays one at a time.
+
+What it does not show. Slices larger than six small functions, and more than two slices in a round.
+
+### Skill-agents against agents, one run each (#258)
+
+The fixture's request, `tools/full-run.mjs` with and without `--skill-agents`, read with
+`tools/usage.mjs` and from the main transcript's `Base directory for this skill` messages (tokens
+estimated at 4 characters each, carried by every later response).
+
+| Mode | Main responses | Input | Cost | Skill loads carried |
+|---|--:|--:|--:|---|
+| agents | 12 | 1.47M (main 0.73M, agents 0.74M) | $1.24 | `speckit-team` ~99k |
+| skill-agents | 30 | 2.38M (main only) | $0.65 | ~382k, 16% of the input: `speckit-team` ~248k, the role skills ~134k |
+
+What it shows. Skill-agents cost 48% less while reading 62% more input, nearly all of it cache reads
+(97% hit rate), the same direction as 2026-10-25 (58% less, 31% more). The share #258 measured has
+fallen from ~26% to ~16% of the input: no Spec Kit skill (`speckit-specify`, `-plan`, `-tasks`,
+`-analyze`) was loaded into the main session this time, where they were ~373k of the ~816k then; the
+architect role read `.claude/skills/speckit-plan/SKILL.md` through Bash instead. What is left is the
+pipeline skill itself and the role skills. One run each.
 
 ## The drift check's git calls (#342)
 
