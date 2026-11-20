@@ -1107,14 +1107,21 @@ file it writes as it would judge a `Write` of that file, before anything runs:
 - the operands of `rm`, `rmdir`, `unlink`, `touch`, `mkdir`, `truncate`, `shred` and `tee`, both
   ends of `mv`, the destination of `cp`, `ln` and `install` (or `-t`'s folder), the files of
   `sed -i` and `perl -i`, and `dd of=`;
-- `git rm`, `git mv`, `git restore` and `git checkout` of paths (`--`, or a name that exists);
+- `git rm`, `git mv`, `git restore` and `git checkout` of paths (`--`, or a name that exists), and
+  the files git writes by name: any `--output` (`git diff`, `git log`), `git archive -o`, the folder
+  of `git format-patch -o` and of `git worktree add` (a folder judged by a file in it), a long
+  option read by any prefix of it, as git reads it (`--out=x`), and the file `find -fprint`,
+  `-fprintf` and `-fls` name ([#352](https://github.com/PIsberg/speckit-agents/issues/352));
 - after `cd`, `pushd` or `git -C`, paths from that folder; `sudo`, `env`, `nohup` and the like
   before a program are skipped.
 
 A here-document's body is text, unless a shell on its line reads it, and a `#` comment is skipped.
 A file git ignores (a test log, a coverage report) passes, because the lane check leaves it out too;
 the git directory never does.
-For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`) and a
+The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
+and every `-exec` of a `find`, not only the first (#352).
+For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
+`git format-patch` into the current folder) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
 still diffs what the command did. The read-only agents have no lane check, so `scope none` denies
 both, and allows every write outside the repo, such as a test log in a temp folder. A command it
@@ -1577,11 +1584,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 622 tests:
+`npm test` runs 623 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 210 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 211 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 167 tests under `claude plugin test` |

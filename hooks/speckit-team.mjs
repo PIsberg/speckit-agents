@@ -2062,7 +2062,8 @@ function readings(command) {
 
 // #209, #210: what a Bash command writes, before it runs. The targets of its redirections, and of the
 // commands that create, change or delete the files they name (rm, mv, cp, ln, install, touch, mkdir,
-// truncate, shred, tee, sed -i, perl -i, dd of=, git rm, mv, restore and checkout of paths), resolved
+// truncate, shred, tee, sed -i, perl -i, dd of=, git rm, mv, restore and checkout of paths, and the files
+// git archive, format-patch, worktree add and an --output write, #352), resolved
 // against the folder a cd or git -C before them moved to. `unknown` is a target only the run can tell
 // (a variable, a substitution, a cd into one, xargs or find feeding a writer); `tree` a git command that
 // changes the working tree or the history as a whole. Not a shell: what an interpreter writes (node -e,
@@ -2135,8 +2136,35 @@ function inPlaceFiles(prog, a) {
   }
   return inPlace ? (script ? pos : pos.slice(1)) : [];
 }
+// #352: the command xargs runs, after its options; one that takes a value (-n 1, -I {}, --max-args 1) takes
+// the next word with it unless the value is attached (-n1). No command means echo, which writes nothing.
+const XARGS_VALUED = 'adEILnPsJRS';
+// Long options by any prefix, as getopt_long reads them (`--max-a 1`); an ambiguous one fails and runs nothing.
+const XARGS_LONG_VALUED = ['--arg-file', '--delimiter', '--max-args', '--max-procs', '--max-chars', '--process-slot-var'];
+function xargsCommand(a) {
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '--') return a.slice(k + 1);
+    if (!w.startsWith('-') || w === '-') return a.slice(k);
+    if (w.startsWith('--')) { if (!w.includes('=') && XARGS_LONG_VALUED.some((n) => n.startsWith(w))) k++; continue; }
+    for (let c = 1; c < w.length; c++) {
+      // -e, -i and -l take an optional value, only attached: the rest of the word is theirs.
+      if ('eil'.includes(w[c])) break;
+      if (XARGS_VALUED.includes(w[c])) { if (c === w.length - 1) k++; break; }
+    }
+  }
+  return [];
+}
+// #352: a runner under xargs or -exec is read for what it runs in turn; a shell's script, run once per
+// input with the input as its arguments, is not read, so it counts as a write the run alone can tell.
 const writesUnseen = (words) => {
   const w = unprefixed(words); const p = program(w[0] ?? '');
+  if (p === 'xargs') return writesUnseen(xargsCommand(w.slice(1)));
+  if (p === 'find') {
+    const a = w.slice(1);
+    return a.some((x) => /^-(delete|fprint0?|fprintf|fls)$/.test(x)) || a.some((x, k) => /^-(exec|execdir|ok|okdir)$/.test(x) && writesUnseen(a.slice(k + 1)));
+  }
+  if (SHELLS.has(p)) return true;
   return EVERY_ARG.has(p) || TO_DEST.has(p) || p === 'git' || (p === 'dd' && w.some((x) => x.startsWith('of=')))
     || ((p === 'sed' || p === 'perl') && w.some((x) => /^-[a-zA-Z]*i|^--in-place/.test(x)));
 };
@@ -2180,11 +2208,17 @@ function bashWrites(command) {
       else at(dest);
     } else if (prog === 'sed' || prog === 'perl') inPlaceFiles(prog, a).forEach((w) => at(w));
     else if (prog === 'dd') a.filter((w) => w.startsWith('of=')).forEach((w) => at(w.slice(3)));
-    else if (prog === 'xargs' || prog === 'find') {
-      const rest = prog === 'xargs' ? a.slice(a.findIndex((w) => !w.startsWith('-'))) : a.slice(a.findIndex((w) => /^-(exec|execdir|ok|okdir)$/.test(w)) + 1);
-      if ((prog === 'find' && a.includes('-delete')) || ((prog === 'xargs' || a.some((w) => /^-(exec|execdir|ok|okdir)$/.test(w))) && writesUnseen(rest))) {
-        found.unknown.push(`what ${prog} hands to ${rest[0] ?? 'it'}`);
-      }
+    else if (prog === 'xargs') {
+      const rest = xargsCommand(a);
+      if (writesUnseen(rest)) found.unknown.push(`what xargs hands to ${rest[0]}`);
+    } else if (prog === 'find') {
+      // Every -exec, not only the first (#352): `-exec echo {} ; -exec rm {} ;` runs both.
+      const runs = a.flatMap((w, k) => (/^-(exec|execdir|ok|okdir)$/.test(w) ? [a.slice(k + 1)] : []));
+      const writer = runs.find((rest) => writesUnseen(rest));
+      // -fprint, -fprint0, -fprintf and -fls write the file they name.
+      a.forEach((w, k) => { if (/^-(fprint0?|fprintf|fls)$/.test(w) && a[k + 1] !== undefined) at(a[k + 1]); });
+      if (a.includes('-delete')) found.unknown.push('what find -delete removes');
+      else if (writer) found.unknown.push(`what find hands to ${writer[0]}`);
     } else if (prog === 'git') {
       let k = 1; let base = dir;
       while (k < words.length && words[k].startsWith('-')) {
@@ -2193,6 +2227,55 @@ function bashWrites(command) {
       }
       const sub = words[k]; const ga = words.slice(k + 1);
       if (sub === undefined) continue;
+      // #352: a file a git command writes by name: any --output (diff, log, show, format-patch), archive's -o,
+      // format-patch's -o or --output-directory (into the current folder without one, unless --stdout), and
+      // the folder worktree add or move fills. A folder is judged by a file in it, as the lane is by files.
+      // git takes a long option by any prefix of it (`--out=x`, `--output-dir x`); an ambiguous one fails and
+      // writes nothing, so reading every prefix as the option only errs toward a deny.
+      const longValue = (w, j, name) => {
+        const m = /^(--[a-z][a-z-]*)(?:=(.*))?$/s.exec(w);
+        if (!m || !name.startsWith(m[1])) return null;
+        return { long: m[1], value: m[2] ?? ga[j + 1] };
+      };
+      // -o in a group of short options (`-vo x`, `-9ox`), as git's option parser reads them.
+      const short = (w, j) => {
+        if (!/^-[^-]/.test(w)) return undefined;
+        const at0 = w.indexOf('o');
+        return at0 < 0 ? undefined : at0 === w.length - 1 ? ga[j + 1] : w.slice(at0 + 1);
+      };
+      if (sub === 'format-patch') {
+        // Every folder or file it names is judged. The patches go to the current folder too unless --stdout
+        // is certainly in force (git refuses -o with --stdout, so this only errs toward a deny): the last
+        // of --stdout and --no-stdout before `--`, after a word that cannot have taken it as its value (no
+        // word, a positional, or a commit count like -3). Its options are not listed here: diff options it
+        // takes (-S, -G, -O ...) carry values a word list would misread.
+        ga.forEach((w, j) => {
+          const o = longValue(w, j, '--output-directory');
+          if (o?.long === '--output') { if (o.value !== undefined) at(o.value, base); return; }
+          const d = o ? o.value : short(w, j);
+          if (d !== undefined) at(path.posix.join(d, '*.patch'), base);
+        });
+        const end = ga.includes('--') ? ga.indexOf('--') : ga.length;
+        const last = Math.max(ga.lastIndexOf('--stdout', end - 1), ga.lastIndexOf('--no-stdout', end - 1));
+        const before = ga[last - 1];
+        // A --no-s... word may be --no-stdout abbreviated, so with one the patches may land here.
+        const stdout = last >= 0 && ga[last] === '--stdout' && !ga.slice(0, end).some((w) => /^--no-s/.test(w))
+          && (before === undefined || !before.startsWith('-') || /^-\d+$/.test(before));
+        if (!stdout) found.unknown.push('the patch files git format-patch writes');
+      } else {
+        ga.forEach((w, j) => {
+          const o = longValue(w, j, '--output');
+          const f = o ? o.value : sub === 'archive' ? short(w, j) : undefined;
+          if (f !== undefined) at(f, base);
+        });
+      }
+      if (sub === 'worktree' && (ga[0] === 'add' || ga[0] === 'move')) {
+        // --reason by any prefix, as git reads it (`--reas x`).
+        const wa = ga.slice(1);
+        const pos = positionals(wa, ['-b', '-B', ...wa.filter((w) => /^--re[a-z-]*$/.test(w) && '--reason'.startsWith(w))]);
+        const made = ga[0] === 'add' ? pos[0] : pos[1];
+        if (made !== undefined) at(path.posix.join(made, '*'), base);
+      }
       if (sub.includes(DYN)) found.unknown.push(`git ${shown(sub)}`);
       else if (sub === 'rm' || sub === 'mv') positionals(ga).forEach((w) => at(w, base));
       else if (sub === 'restore') {
