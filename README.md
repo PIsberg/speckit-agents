@@ -690,6 +690,16 @@ one implementer, so it was a single round with nothing for side by side to save
 ([`docs/measurements.md`](docs/measurements.md), "The live runs of 2026-11-11"). The recommendation
 stays one at a time.
 
+Measured on 2026-11-20 with slices that take minutes (`tools/full-run.mjs --large-slices`: two modules
+of six functions each, Claude Code 2.1.329, one build of the team, 3 runs per arm, all passed): from the
+first build launch to the verify launch, one at a time took 140 to 148 s with 3 or 4 launches, side by
+side 117 to 151 s with 5. Side by side saved no build time on these slices either. The whole runs differed
+more ($3.39 to $4.43 one at a time, $1.95 to $2.51 side by side), but in the spec phase, before the
+plan stop's answer could matter: every one-at-a-time run failed its first audit and took 2 or 3 more
+audits, against 1 of 3 side-by-side runs ([#114](https://github.com/PIsberg/speckit-agents/issues/114);
+[the runs](docs/measurements.md#side-by-side-on-slices-that-take-minutes-114)). The recommendation
+stays one at a time.
+
 Claude Code does run them side by side: agents launched in one message overlap, in worktrees too,
 and the main session waits for all of them, checked against a fake API and pinned by
 [`test/e2e.test.mjs`](test/e2e.test.mjs) ([#40](https://github.com/PIsberg/speckit-agents/issues/40)).

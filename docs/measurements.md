@@ -1252,6 +1252,34 @@ What it shows. With the check, the first audit passed on a constitution the fixt
 6 of 6, and the architect planned all five rules every time. What it does not show: what the check costs
 or saves, which needs the arm without it (still owed).
 
+### Side by side on slices that take minutes (#114)
+
+`tools/full-run.mjs --large-slices` (two modules, `src/stats.js` and `src/text.js`, six functions each)
+with and without `--side-by-side`, 3 runs per arm, alternated, one at a time on the machine, `--out`
+outside Temp. All 6 passed every check: APPROVED from the hook record, every task ticked, and in each
+side-by-side run two implementers in one response, each in a worktree, merged, with no worktree or
+worktree branch left. "Build" is from the first stub, test-writer or implementer launch to the
+spec-gatekeeper launch.
+
+| Arm | Run | Cost | Whole run | Build | Build launches | Tasks | Audits | Input (main + agents) |
+|---|--:|--:|--:|--:|--:|--:|--:|---|
+| one at a time | 1 | $4.43 | 1173 s | 141 s | 3 | 12 | 4 | 2.09M + 2.28M |
+| one at a time | 2 | $4.19 | 1130 s | 140 s | 4 | 9 | 4 | 2.02M + 2.18M |
+| one at a time | 3 | $3.39 | 988 s | 148 s | 3 | 7 | 3 | 1.43M + 1.80M |
+| side by side | 1 | $1.95 | 521 s | 117 s | 5 | 4 | 1 | 0.97M + 1.15M |
+| side by side | 2 | $2.18 | 618 s | 151 s | 5 | 6 | 1 | 0.97M + 1.38M |
+| side by side | 3 | $2.51 | 687 s | 145 s | 5 | 6 | 2 | 1.26M + 1.46M |
+
+What it shows. On slices of six functions, side by side did not shorten the build: 117 to 151 s against
+140 to 148 s, with 5 build launches against 3 or 4. One at a time still put both slices in one round, a
+stub implementer, one test-writer and one implementer. The whole runs differ by a factor of about 2 in
+cost and time, but in the spec phase: every one-at-a-time run failed its first audit (run 1 four audits,
+with the two-FAIL hold of #242 asked and answered twice), against 1 of 3 side-by-side runs. The plan stop's
+answer comes after the plan and before the audit and changes only how the build runs, so it does not
+explain that gap; 3 runs per arm do not separate it from chance. The recommendation stays one at a time.
+
+What it does not show. Slices larger than six small functions, and more than two slices in a round.
+
 ### Skill-agents against agents, one run each (#258)
 
 The fixture's request, `tools/full-run.mjs` with and without `--skill-agents`, read with
