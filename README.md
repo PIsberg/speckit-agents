@@ -1295,8 +1295,12 @@ surfaced while recording the README's GIFs
 the same behaviour under `claude -p`, the third that a project's `.claude/settings.json` wins over
 `CLAUDE_CODE_FORK_SUBAGENT=1` in the environment. With fork subagents on, the waiting cost 14.45M
 of input, 24% of the main session, in the one interactive run measured
-([Feature 003](docs/measurements.md#feature-003-interactive)); the same run with them off is not measured
-([#66](https://github.com/PIsberg/speckit-agents/issues/66)).
+([Feature 003](docs/measurements.md#feature-003-interactive)). On one small feature, interactive, Claude
+Code 2.1.329, the setting halved the main session's work: with fork subagents off (2 runs), 16 and 17
+main-session responses, 0.74M of main-session input each, no response that only waited; with them on
+(1 run), 31 responses, 1.17M, of which 7 waiting responses read 0.44M (37%)
+([Interactive, fork subagents on and off](docs/measurements.md#interactive-fork-subagents-on-and-off),
+[#66](https://github.com/PIsberg/speckit-agents/issues/66)).
 
 While a foreground agent runs, the main session waits for it, so in an interactive session it
 answers what you type only after the agent reports. Between the stops listed above the skill never
