@@ -395,14 +395,14 @@ public repository. Only ideas: no code was copied from either.
 | Shape | seven subagents, each in a fresh context with only its launch prompt | seven role skills run in your session, one growing context |
 | Inspired by | [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) | [addyosmani/agent-skills](https://github.com/addyosmani/agent-skills) (111,114 stars on 2026-10-27, read with `gh api`) |
 | What was taken | reviewers that read only their target and the sources they are pointed at ([Context budget](#context-budget)); a reuse check before a new utility ([the spec-auditor](#the-audit-gate)); a human-decided CONTEST path for findings ([Routing findings](#routing-findings)); a drift report of specs against code ([Checking old features for drift](#checking-old-features-for-drift)); a parent-only marker that no agent may receive ([Full run with real models](#full-run-with-real-models)) | work done by skills loaded into the session instead of by launched agents; pressure cases where the request argues for skipping the process, scored with and without a change ([Scored cases and arms](#scored-cases-and-arms)); a lexical description-collision check over the skills; fresh-eyes review, rationalization tables and authoring rules, tracked as [#186](https://github.com/PIsberg/speckit-agents/issues/186), [#187](https://github.com/PIsberg/speckit-agents/issues/187) and [#189](https://github.com/PIsberg/speckit-agents/issues/189) |
-| Strength | independent review and the strongest guardrails: Claude Code holds each agent to its tools and the hooks end with it | no handoffs and no re-reading across roles; the one measured fixture run cost 58% less |
+| Strength | independent review and the strongest guardrails: Claude Code holds each agent to its tools and the hooks end with it | no handoffs and no re-reading across roles; the two measured fixture runs cost 58% and 48% less |
 | Weakness | lossy handoffs, and every launch pays for a fresh context | every role sees the whole conversation, so review is not independent, and several guardrails are prompt text ([the table](#running-the-roles-as-skills---team-skill-agents)) |
 
 The two modes share the hook, the audit gate, the lanes and the reports, so a feature can be built
 either way and judged by the same gate. [Agents or skills](#running-the-roles-as-skills---team-skill-agents)
 says which to choose; the numbers behind the table are in [`docs/measurements.md`](docs/measurements.md).
 
-What is and is not shown. Measured: the cost gap above, from one run per mode. Taken from the
+What is and is not shown. Measured: the cost gap above, from two runs per mode (2026-10-25 and 2026-11-20). Taken from the
 agent-skills repository so far: the harness ([#188](https://github.com/PIsberg/speckit-agents/issues/188)).
 The prompt changes it suggests (#186, #187) are only kept if the harness shows they change a verdict
 at a bounded cost, and their results go in [`docs/measurements.md`](docs/measurements.md) either way.
@@ -511,7 +511,8 @@ spec, plan or tasks made inside the build roles never reaches verification unaud
 audit denial of a `speckit-role-test-writer` call with no audit, and a Write outside architect's lane
 denied ([Live results](docs/live-results.md), "Skill-agents"). Measured: the same fixture request
 built once as the default team and once with `--team skill-agents`, 31% more input tokens and 58%
-less cost, one sample each ([`docs/measurements.md`](docs/measurements.md)). Covered by test only:
+less cost on 2026-10-25, 62% more and 48% less on 2026-11-20, one sample each per day
+([`docs/measurements.md`](docs/measurements.md#skill-agents-against-agents-one-run-each-258)). Covered by test only:
 the typed-form refusals, the install, rerun and uninstall of the role skills, the role record's
 close, the verdict and word records (the `args` line and the Stop's last message paths included), and the rest of the table; the
 end-to-end tests fire the role skills' hook entries against the real Claude Code. The role's end with its turn is read from Claude Code's `prompt_id`; end to end covers a resumed prompt ending the role, and the role staying live through a background task's notice, an auto-compaction and a message sent during its turn, each of which keeps the turn's `prompt_id` ([#184](https://github.com/PIsberg/speckit-agents/issues/184); a message typed into the TUI was probed by hand, through vhs). Not verified at all: an interrupt, an API error's StopFailure and an AskUserQuestion answer (read in the 2.1.293 bundle, never seen running).
@@ -1939,7 +1940,10 @@ rejected both in every scored run with the rule removed (3 of 3 and 2 of 2) and 
 (3 of 3 each), so neither was run to 6 ("The live sweep of 2026-11-08"). No case in the harness goes
 red without its guardrail: the gate's prompt rules and the hook are not shown to matter on these
 fixtures, with one model. `patch-bug` and `contest` scored 6 of 6 in the same sweep. Each is a rate on
-one fixture, not a hold.
+one fixture, not a hold. On 2026-11-20 (Claude Code 2.1.329) the four gate cases scored 6 of 6 again,
+$0.15 to $0.16 and 25 to 39 s a run; `pressure` scored 4 of 6, 8 of 13 over three sweeps, every miss
+since 2026-11-08 a launch of implementer alone that nobody chose, which the hook now holds
+([#366](https://github.com/PIsberg/speckit-agents/issues/366); [the sweep](docs/measurements.md#the-sweep-233)).
 
 ```sh
 node tools/eval.mjs --out /tmp/eval --arm baseline=ref:main --arm treatment=. --case defect,defect-control,pressure --runs 6 --login
