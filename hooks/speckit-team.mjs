@@ -1431,7 +1431,8 @@ function recordRecommended(planText, specText, planRel, specRel, day) {
       continue;
     }
     const lines = spec.split('\n');
-    const h = lines.findIndex((l) => title(l) === e.heading.trim().toLowerCase());
+    // #365: a heading may be named with its markers, "under ## Assumptions", as well as without.
+    const h = lines.findIndex((l) => title(l) === e.heading.trim().replace(/^#{1,6}\s+/, '').toLowerCase());
     if (h < 0) { problems.push(`${e.id}: ${specRel} has no heading "${e.heading}"`); continue; }
     let stop = lines.findIndex((l, n) => n > h && (/^#{1,6}\s/.test(l) || /^---\s*$/.test(l)));
     if (stop < 0) stop = lines.length;
