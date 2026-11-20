@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -588,4 +588,35 @@ test('full run: an answer the session only talks back to stops the run there, an
   // A last turn of one response that ends the run is the run's end, not a question.
   const last = canned([turn(3), turn(1)]);
   assert.equal(runTurns({ maxTurns: 8, promptFor, invoke: last.invoke, ended: (res, n) => n === 1, ...quiet }).stopped, null);
+});
+
+// #42: the architect's constitution self-check, measured on a constitution other than the fixture's own.
+// --constitution <name> lays test/fixtures/full-run/constitutions/<name>.md in place of it; nothing else changes.
+test('full run: --constitution lays another fixture constitution, and an unknown one is refused (#42)', () => {
+  assert.equal(args(['--out', 'x']).constitution, null, 'the fixture constitution unless told otherwise');
+  assert.equal(args(['--out', 'x', '--constitution', 'library']).constitution, 'library');
+  assert.throws(() => args(['--out', 'x', '--constitution', 'nope']), /unknown constitution nope; known: library/);
+  assert.throws(() => args(['--out', 'x', '--constitution', '../constitution']), /unknown constitution/);
+  const read = (o) => { const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-c-')), 'repo'); buildRepo(repo, o); return fs.readFileSync(path.join(repo, '.specify', 'memory', 'constitution.md'), 'utf8'); };
+  const own = read({});
+  const other = read({ constitution: 'library' });
+  assert.equal(own, fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'full-run', 'constitution.md'), 'utf8'));
+  assert.equal(other, fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'full-run', 'constitutions', 'library.md'), 'utf8'));
+  assert.notEqual(other, own);
+  assert.match(other, /MUST/, 'it has MUST rules for the self-check to check');
+  assert.doesNotMatch(other, /\[[A-Z_0-9]+\]/, 'and no template placeholder left');
+});
+
+// #114: slices that take one agent minutes each, so building them side by side has something to save.
+// --large-slices sends a two-module request of several functions each and implies --two-slices.
+test('full run: --large-slices sends a two-file request with several functions a file and implies two slices (#114)', () => {
+  const o = args(['--out', 'x', '--large-slices']);
+  assert.deepEqual([o.largeSlices, o.twoSlices, o.sideBySide], [true, true, false]);
+  assert.deepEqual([args(['--out', 'x', '--large-slices', '--side-by-side']).sideBySide, args(['--out', 'x']).largeSlices], [true, false]);
+  const small = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-s-')), 'repo'), { twoSlices: true }).request;
+  const { request } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-l-')), 'repo'), { twoSlices: true, largeSlices: true });
+  assert.notEqual(request, small);
+  const files = [...new Set(request.match(/src\/\w+\.js/g))];
+  assert.equal(files.length, 2, 'two slices, each in a file of its own');
+  assert.ok((request.match(/\b[a-z][A-Za-z]*\([a-z, ]*\)/g) ?? []).length >= 10, 'at least five functions a slice');
 });

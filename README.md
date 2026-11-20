@@ -1591,7 +1591,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 625 tests:
+`npm test` runs 627 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1609,7 +1609,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 31 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 33 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--large-slices` and `--constitution`, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
@@ -1867,6 +1867,15 @@ implementers went out in one response, each with `isolation: "worktree"`. `tools
 the same from any transcript: how many responses launched more than one agent, and how many agents
 ran in a worktree. `--two-slices` sends the same request with the plain answer, one at a time, and
 fails the run if agents went out together: the run to set against a side-by-side one.
+`--large-slices` swaps in two modules of six functions each (`src/stats.js` and `src/text.js`, from
+`request-large-slices.txt`): slices that take an agent minutes apiece, so side by side has something
+to save ([#114](https://github.com/PIsberg/speckit-agents/issues/114)). Alone it builds them one at a
+time; with `--side-by-side`, side by side. `--constitution <name>` lays
+`test/fixtures/full-run/constitutions/<name>.md` in place of the fixture's constitution, to measure the
+architect's constitution self-check on rules the request does not mention
+([#42](https://github.com/PIsberg/speckit-agents/issues/42)). `library`, the one there, asks for a
+`TypeError` on wrong input, an `## API` entry in `README.md`, a `CHANGELOG.md` line, a test for each
+error, and no dependencies.
 
 The agents run on their own `model:` lines; `--model` is the main session's. A run costs about $2 to
 $4 ([Four full runs](docs/measurements.md#four-full-runs)). The workflow runs on Linux only, by hand

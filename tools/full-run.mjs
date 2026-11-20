@@ -3,6 +3,7 @@
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
 //   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
+//                         [--large-slices] [--constitution library]
 //                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken|neighbour|other-fr|contest|patch-bug] [--claim] [--team-root <checkout>]
 //
 // It builds a scratch Spec Kit repo in <dir>/repo from this checkout's Spec Kit files and
@@ -63,14 +64,15 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}) {
+export function buildRepo(repo, { twoSlices = false, largeSlices = false, constitution = null, case: name = 'clean' } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
     fs.cpSync(path.join(ROOT, '.claude', 'skills', d), path.join(repo, '.claude', 'skills', d), { recursive: true });
   }
   fs.mkdirSync(path.join(repo, '.specify', 'memory'), { recursive: true });
-  fs.copyFileSync(path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
+  // #42: --constitution lays another of the fixture's constitutions, to measure the architect's self-check on rules it was not written for.
+  fs.copyFileSync(constitution ? path.join(FIXTURE, 'constitutions', `${constitution}.md`) : path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
   for (const rel of ['CLAUDE.md', 'package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, rel), path.join(repo, rel), { recursive: true });
   // #247: the patch case starts from a sum() whose empty case throws, with a test that does not try it.
   if (CASES[name]?.patch) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
@@ -119,7 +121,8 @@ export function buildRepo(repo, { twoSlices = false, case: name = 'clean' } = {}
   }
   if (CASES[name]?.contest) return { request: `/speckit-team ${fs.readFileSync(path.join(FIXTURE, 'contest', 'request.txt'), 'utf8').trim()}` };
   if (CASES[name]?.patch) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'patch', 'request.txt'), 'utf8').trim()}` };
-  const base = fs.readFileSync(path.join(FIXTURE, twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
+  // #114: --large-slices asks for two modules of six functions each, slices that take an agent minutes apiece.
+  const base = fs.readFileSync(path.join(FIXTURE, largeSlices ? 'request-large-slices.txt' : twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
   return { request: name === 'pressure' ? `${base} ${fs.readFileSync(path.join(FIXTURE, 'pressure.txt'), 'utf8').trim()}` : base };
 }
 
@@ -407,18 +410,24 @@ export function trustFolder(confFile, repo, opts = {}) {
 }
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--case') { if (!CASES[v]) throw new Error(`unknown case ${v}; known: ${Object.keys(CASES).join(', ')}`); o.case = v; } else if (k === '--team-root') o.teamRoot = path.resolve(v);
     else if (k === '--claim') { o.claim = true; i--; }
+    else if (k === '--large-slices') { o.largeSlices = true; o.twoSlices = true; i--; }
+    else if (k === '--constitution') {
+      const known = fs.readdirSync(path.join(FIXTURE, 'constitutions')).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)).sort();
+      if (!known.includes(v)) throw new Error(`unknown constitution ${v}; known: ${known.join(', ')}`);
+      o.constitution = v;
+    }
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--two-slices | --side-by-side]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>]');
   return o;
 }
 
@@ -430,7 +439,7 @@ function main() {
   const gate = CASES[o.case].gate;
   // #242, #247: one turn from a typed command, judged by tools/eval.mjs on what the session did.
   const oneTurn = Boolean(CASES[o.case].contest || CASES[o.case].patch);
-  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, case: o.case });
+  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case });
   const head0 = git(repo, 'rev-parse', 'HEAD').trim();
   const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
