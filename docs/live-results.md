@@ -577,9 +577,20 @@ on `--model haiku`, $0.045 in all.
   standalone pane 8 body rows, though the pane asked for more. Before the fix in #361's last commit,
   header, the four phase rows and the buttons took 7, and the box showed `[ ↑ 4 more ] [ ↓ 42 more ]`
   and no task. With it, the pane kept only `◐ build` of the phases, and showed the paging row and
-  T003 to T005 with `▶ T004`. Not seen: paging by `d` and `u` inline. ctrl+x tab did not give the
-  pane the keyboard in this run (the keys went to the prompt), and the wheel is still unchecked: vhs
-  sends none.
+  T003 to T005 with `▶ T004`. That run did not page: ctrl+x tab went to the band, which still had
+  buttons, so `d` and `u` landed in the prompt. The same afternoon, on the same build, with the band
+  hidden first (ctrl+x ctrl+a, as `tools/live-board.mjs` does for the pane): ctrl+x tab, then `d`,
+  `d` and `u` moved the window to T005 to T007, T007 to T009 and back to T005 to T007, with the
+  paging row counting `↑ 5 more`, `↑ 7 more`, `↑ 5 more`. The prompt stayed empty.
+- **The wheel over the task window ([#348](https://github.com/PIsberg/speckit-agents/issues/348)).**
+  The same day and setup, with the keys replaced by the mouse report a terminal sends for a wheel
+  notch, as for the click of #117: an SGR wheel event (`ESC [ < 65 ; 40 ; 20 M` down, 64 up), typed
+  with no delay so the bytes arrive together, at row 20, inside the pane's box (rows 16 to 25 of 26).
+  Down, down, up moved the window from T003 to T005 to T006 to T008, T009 to T011 and back to T006 to
+  T008, 3 rows a notch. A wheel-down at row 5, over the transcript, left the window where it was, and
+  none of the report's characters reached the prompt. Run twice, with and without
+  `CLAUDE_CODE_NO_FLICKER=1`, with the same result. vhs has no mouse, so a terminal's translation of
+  a physical wheel was not exercised; the bytes it would send were.
 
 - **The `[ clear ]` button, interactive ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).**
   On 2026-10-12 (Windows 11, Claude Code 2.1.296, vhs 0.11.0), at $0: an interactive session 140
