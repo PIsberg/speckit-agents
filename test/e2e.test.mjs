@@ -1076,12 +1076,15 @@ test('after a full-team launch, a Team line without spec-auditor leaves the audi
 });
 
 // #100, 006 live check L4: in an interactive session the request starts with a typed /speckit-team
-// and the team question's Build only answer becomes a Team line. Fork subagents are on there, so
+// and the team question's Build only answer, typed as the next prompt, becomes a Team line. Fork subagents are on there, so
 // test-writer and implementer run in the background; their gates must still find the team that the
 // main session's launch recorded under its session id. With SPECKIT_E2E_NO_HOOK=1 nothing is recorded.
 test('with fork subagents on, as in an interactive session, a Build only team opens the audit gate for test-writer and implementer (#100)', { skip: noClaude, timeout: 180_000 }, async () => {
   const s = setup();
   const team = 'Team: test-writer, implementer';
+  const env = { CLAUDE_CODE_FORK_SUBAGENT: '1' };
+  // The team question ends the first turn; the answer comes as the next prompt, which #366 waits for.
+  const asked = await session(s, { [MAIN]: [say('Which team should run?')] }, { prompt: `/speckit-team ${MAIN}`, env });
   const r = await session(s, {
     [MAIN]: [
       teamAgent('e2e test-writer', `e2e test-writer: go\n${team}`),
@@ -1089,7 +1092,7 @@ test('with fork subagents on, as in an interactive session, a Build only team op
     ],
     'e2e test-writer': [call('Read', { file_path: spec(s) })],
     'e2e implementer': [call('Read', { file_path: spec(s) })],
-  }, { prompt: `/speckit-team ${MAIN}`, env: { CLAUDE_CODE_FORK_SUBAGENT: '1' } });
+  }, { prompt: 'Build only.', args: ['--resume', sessionId(asked)], idBase: 100, env });
   assert.equal(launch(r)?.is_backgrounded, true, story(r));
   for (const who of ['e2e test-writer', 'e2e implementer']) {
     assert.doesNotMatch(lastResult(r.requests[who][1]), /Implementation gate/, `${who}\n${story(r)}`);
@@ -1141,6 +1144,20 @@ test('a typed /speckit-team --team noagents lets the main session call speckit-i
   const first = await session(s, script, { prompt: `/speckit-team --project demo --team noagents ${MAIN}` });
   assert.doesNotMatch(lastResult(first.requests[MAIN][1]), /Implementation gate/, story(first));
   assert.equal(state(s, 'team', `${sessionId(first)}.json`).noagents, true, story(first));
+});
+
+// #366: typed without --team, the request records where the transcript stood; a launch naming less than the
+// full team is denied until the user's answer is in the transcript after it. Here the answer is the next
+// prompt of a resumed headless session, as in the pressure runs of 2026-11-20 that launched implementer alone.
+test('#366 a smaller team typed without --team waits for the user\'s answer: denied on the first turn, let through after it', { skip: noClaude, timeout: 240_000 }, async () => {
+  const s = setup();
+  const script = { [MAIN]: [teamAgent('e2e test-writer', 'e2e test-writer: go\nTeam: test-writer, implementer')], 'e2e test-writer': [say('RED')] };
+  const first = await session(s, script, { prompt: `/speckit-team ${MAIN}` });
+  assert.match(lastResult(first.requests[MAIN][1]), /nobody chose this team/, story(first));
+  assert.equal(first.requests['e2e test-writer'].length, 0, `no agent ran:\n${story(first)}`);
+  const answered = await session(s, script, { prompt: 'Build only.', args: ['--resume', sessionId(first)], idBase: 100 });
+  assert.doesNotMatch(lastResult(answered.requests[MAIN][1]), /nobody chose this team/, story(answered));
+  assert.ok(answered.requests['e2e test-writer'].length >= 1, `the agent ran after the answer:\n${story(answered)}`);
 });
 
 // 007 (US1, contracts/project.md section 5): the launch's Project line is recorded by the Agent gate, and

@@ -508,6 +508,8 @@ if (mode === 'relay') {
     `speckit-team: the team's hooks said this to the agents that just ran; it reached only their transcripts, so act on it here:\n${rows.join('\n')}` } });
 }
 const teamFile = (sessionId) => path.join(stateDir, 'team', `${sessionId}.json`);
+// #366: a request typed without --team, whose team the user has not chosen yet: where its transcript stood then.
+const choiceFile = (sessionId) => path.join(stateDir, 'choice', `${sessionId}.json`);
 // 009: the role acting in a skill-agents request's main session (data-model.md).
 const roleFile = (sessionId) => path.join(stateDir, 'role', `${sessionId}.json`);
 // #284: every role skill loaded in a turn leaves its own `lane role` Stop hook, and Claude Code starts them
@@ -642,6 +644,28 @@ function linesAfter(file, offset) {
     const buf = fs.readFileSync(file);
     return lines(buf.subarray(Number.isInteger(offset) && offset > 0 ? offset : 0).toString('utf8'));
   } catch { return null; }
+}
+// #366: whether the user answered since the request was typed: a prompt of theirs, or the result of an
+// AskUserQuestion call. The command's expansion, the skill's text, reminders and hook feedback are not answers.
+// A transcript that cannot be read proves nothing either way, so it holds nothing (hooks fail open).
+const NOT_AN_ANSWER = /^(<|Base directory for this skill|Stop hook feedback|\[Request interrupted)/;
+function answeredSince(rec) {
+  const entries = Number.isInteger(rec?.offset) ? linesAfter(rec.transcript, rec.offset) : null;
+  if (!entries) return true;
+  const asks = new Set();
+  for (const l of entries) {
+    let e;
+    try { e = JSON.parse(l); } catch { continue; }
+    const content = e?.message?.content;
+    if (e?.type === 'assistant' && Array.isArray(content)) for (const c of content) if (c?.type === 'tool_use' && c.name === 'AskUserQuestion') asks.add(c.id);
+    if (e?.type !== 'user' || e.isMeta === true) continue;
+    const parts = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
+    for (const c of parts) {
+      if (c?.type === 'tool_result' && asks.has(c.tool_use_id)) return true;
+      if (c?.type === 'text' && typeof c.text === 'string' && c.text.trim() && !NOT_AN_ANSWER.test(c.text.trimStart())) return true;
+    }
+  }
+  return false;
 }
 // The role ended when the record holds a prompt_id and this call carries another: a new prompt is a new turn.
 // A record or input without a string prompt_id leaves the role live.
@@ -1240,8 +1264,18 @@ if (mode === 'gate') {
     if (!id || !SESSION_ID.test(id)) process.exit(0);
     fs.rmSync(teamFile(id), { force: true });
     fs.rmSync(projectFile(id), { force: true });
+    fs.rmSync(choiceFile(id), { force: true });
     dropRoleFiles(id);
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
+    // #366: without --team the skill asks which team runs; record where the transcript stood, so a launch of a
+    // smaller team can be held until the user's answer is in it.
+    if (roles === null) {
+      const t = str(input.transcript_path);
+      let offset = null;
+      // A session's first prompt comes before its transcript exists: everything in it is after the request.
+      try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, at: new Date().toISOString() });
+    }
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
     const nextWord = (afterTeam[afterTeam.indexOf('--team') + 2] ?? '').toLowerCase();
@@ -1278,6 +1312,17 @@ if (mode === 'gate') {
     }
     if (role === 'patcher') finish();
     const team = parseTeam(input.tool_input.prompt);
+    // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
+    const choice = readState(choiceFile(id));
+    if (choice !== undefined) {
+      const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
+      if (smaller && !answeredSince(choice)) {
+        deny('speckit-team: nobody chose this team. The request was typed without --team and no answer has come since, '
+          + 'so ask the team question (## Team of the skill) and stop; launch with this Team: line only after the user has answered. '
+          + 'The full team, the recommended option, needs no answer.');
+      }
+      fs.rmSync(choiceFile(id), { force: true });
+    }
     // No Team line, or one naming a non-role: the full team (FR-002).
     let roles = team && !('bad' in team) ? team.roles : CORE_ROLES;
     const was = teamOf();
