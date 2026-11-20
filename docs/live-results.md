@@ -570,6 +570,17 @@ on `--model haiku`, $0.045 in all.
 
 ## The board
 
+- **The task window, seated inline ([#348](https://github.com/PIsberg/speckit-agents/issues/348), [#347](https://github.com/PIsberg/speckit-agents/issues/347)).**
+  On 2026-11-20 (Windows 11, Claude Code 2.1.329, vhs 0.12.1), at $0: a copy of
+  `tools/live-board.mjs` with a 46-task `tasks.md` (two ticked), 100 columns wide and without
+  fullscreen, so the pane opened inline above the prompt, in a box, not docked. The box gave the
+  standalone pane 8 body rows, though the pane asked for more. Before the fix in #361's last commit,
+  header, the four phase rows and the buttons took 7, and the box showed `[ ↑ 4 more ] [ ↓ 42 more ]`
+  and no task. With it, the pane kept only `◐ build` of the phases, and showed the paging row and
+  T003 to T005 with `▶ T004`. Not seen: paging by `d` and `u` inline. ctrl+x tab did not give the
+  pane the keyboard in this run (the keys went to the prompt), and the wheel is still unchecked: vhs
+  sends none.
+
 - **The `[ clear ]` button, interactive ([#84](https://github.com/PIsberg/speckit-agents/issues/84)).**
   On 2026-10-12 (Windows 11, Claude Code 2.1.296, vhs 0.11.0), at $0: an interactive session 140
   columns wide that vhs drove against a fake API, in a throwaway Spec Kit repo with the team installed

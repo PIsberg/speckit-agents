@@ -262,6 +262,62 @@ test('#346 a task list taller than the pane shows a window over it, paged by its
   }
 })
 
+// #347: #346 fitted the task list into the body, but not the rows above it: the header, phases, stats,
+// Team and buttons take 13 to 20 rows with the blank ones between them, so a shorter body still lost
+// the paging row and the tasks. In a short body the pane drops, in turn, the blank rows, the context and
+// cost rows, and the Team rows of finished agents, until one task row and the paging row fit.
+test('#347 a short body drops the blank rows, then the stats, then the finished agents, and keeps a task in view', EVENT_HEAVY, async ($, on) => {
+  await world(on)
+  on('classic.SubagentStart', () => ({}))
+  on('classic.SubagentStop', () => ({}))
+  await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+  for (let n = 1; n <= 3; n++) {
+    await $.classic.SubagentStart({ agent_id: `i${n}`, agent_type: 'implementer' } as never)
+    await $.classic.SubagentStop(stop(`i${n}`, 'implementer', 'RESULT: GREEN'))
+  }
+  await $.classic.SubagentStart({ agent_id: 't1', agent_type: 'test-writer' } as never)
+  // Header 2, phases 6, stats 2, Team 1 + 4, buttons 1, five blank rows: 21 above the 4 task rows.
+  const at = async (bodyRows: number) => {
+    const ui = await $.ui.mount({ plugin: 'speckit-board', surface: 'terminal', ...PANE, ...pane, props: { ...pane.props, scroll: { offset: 0, bodyRows } } } as never)
+    const seen = {
+      gap: (await ui.find({ type: 'Box' }))?.props.gap,
+      stats: !!(await ui.find({ type: 'Text', text: 'context' })),
+      implementers: (await ui.findAll({ type: 'Text', text: 'implementer' })).length,
+      writer: !!(await ui.find({ type: 'Text', text: 'test-writer' })),
+      earlier: (await ui.find({ type: 'Text', text: /^\+\d+ earlier$/ }))?.text,
+      next: !!(await ui.find({ type: 'Text', text: /^\s*▶ T002 \[P\] Test greet$/ })),
+    }
+    await ui.unmount()
+    return seen
+  }
+  expect(await at(30)).toEqual({ gap: 1, stats: true, implementers: 3, writer: true, earlier: undefined, next: true })
+  expect(await at(22)).toEqual({ gap: 0, stats: true, implementers: 3, writer: true, earlier: undefined, next: true })
+  expect(await at(16)).toEqual({ gap: 0, stats: false, implementers: 3, writer: true, earlier: undefined, next: true })
+  expect(await at(14)).toEqual({ gap: 0, stats: false, implementers: 0, writer: true, earlier: '+3 earlier', next: true })
+})
+
+// #347, seen live inline at 100 columns (2.1.329, #348): the standalone pane got 8 rows. Header, four
+// phases and the buttons took 7, so the paging row showed and no task did. Last, the pane keeps only
+// the phase in progress, so the task list still gets its rows.
+test('#347 a body too short for every phase keeps only the current one, and the next task in view', async ($, on) => {
+  await world(on, {}, NO_RECORDS)
+  await start($)
+  const at = async (bodyRows: number) => {
+    const ui = await $.ui.mount({ plugin: 'speckit-board', surface: 'terminal', ...PANE, ...pane, props: { ...pane.props, scroll: { offset: 0, bodyRows } } } as never)
+    const seen = {
+      spec: !!(await ui.find({ type: 'Text', text: 'spec' })),
+      build: !!(await ui.find({ type: 'Text', text: 'build' })),
+      next: !!(await ui.find({ type: 'Text', text: /^\s*▶ T002 \[P\] Test greet$/ })),
+      // The kit does not cut the tree at the body, so whether the window fits shows in its paging row.
+      paged: (await ui.findAll({ type: 'Button' })).some(x => x.key === 'tasks-down'),
+    }
+    await ui.unmount()
+    return seen
+  }
+  expect(await at(9)).toEqual({ spec: true, build: true, next: true, paged: true })
+  expect(await at(8)).toEqual({ spec: false, build: true, next: true, paged: false })
+})
+
 // Opened inline above the prompt, a pane is a third of the terminal tall unless it asks: live, the
 // buttons and every task were below its fold.
 test('the pane asks for the rows it draws, and for more when it shows every task', async ($, on) => {

@@ -276,15 +276,42 @@ async function poll($: EngineInterface) {
 // The rows the pane's tree takes, so a pane seated inline above the prompt opens tall enough to show
 // it whole rather than the third of the terminal it gets unasked (the dock ignores it). It follows
 // the tree in the Pane hook row for row: the header, the phases, the team, the buttons and the task
-// sections, a blank row between each two.
-function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean, isClearedNow: boolean): number {
+// sections, a blank row between each two; in a short body, what `fit` keeps of them (#347).
+function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: boolean, isClearedNow: boolean, fit: PaneFit = FULL_FIT): number {
   if (!b) return 2
   // The cleared pane: its title, its line and the buttons.
   if (isClearedNow) return 5
   const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
-  if (b.isStandalone) return 2 + b.phases.length + 3 + 1 + taskCount + 3
-  const teamRows = 1 + (team.length === 0 ? 1 : Math.min(team.length, TEAM_ROWS) + (team.length > TEAM_ROWS ? 1 : 0))
-  return 2 + b.phases.length + 3 + teamRows + 1 + taskCount + 4
+  const stats = fit.isStatsShown ? 2 + fit.gap : 0
+  const phases = fit.isPhasesWhole ? b.phases.length : 1
+  if (b.isStandalone) return 2 + phases + stats + 1 + taskCount + 3 * fit.gap
+  const shown = teamShown(team, fit).length
+  const teamRows = 1 + (team.length === 0 ? 1 : shown + (team.length > shown ? 1 : 0))
+  return 2 + phases + stats + teamRows + 1 + taskCount + 4 * fit.gap
+}
+
+// #347: what the pane keeps in a body too short for all of it. #346 fits the task list into what the rest
+// leaves, but the rest is 13 to 20 rows with its blank rows; in a shorter body the paging row and the
+// tasks were cut off. So the pane drops, in turn, the blank rows between its parts, the context and cost
+// rows, the Team rows of finished agents (the running ones and the count of the rest stay), and every
+// phase row but the current one (inline at 100 columns the body was 8 rows, #348), taking the first that
+// leaves the task list its paging row and one task. Header and buttons stay.
+type PaneFit = { gap: 0 | 1; isStatsShown: boolean; isTeamWhole: boolean; isPhasesWhole: boolean }
+const FULL_FIT: PaneFit = { gap: 1, isStatsShown: true, isTeamWhole: true, isPhasesWhole: true }
+const FITS: readonly PaneFit[] = [FULL_FIT, { ...FULL_FIT, gap: 0 }, { ...FULL_FIT, gap: 0, isStatsShown: false },
+  { gap: 0, isStatsShown: false, isTeamWhole: false, isPhasesWhole: true },
+  { gap: 0, isStatsShown: false, isTeamWhole: false, isPhasesWhole: false }]
+function paneFit(b: SpeckitBoard, team: readonly SpeckitAgent[], isAll: boolean, bodyRows: number | undefined): PaneFit {
+  if (bodyRows === undefined) return FULL_FIT
+  const tasks = taskRows(b, isAll).rows.length
+  const needs = (fit: PaneFit) => paneRows(b, team, isAll, false, fit) - tasks + Math.min(tasks, 2)
+  return FITS.find(fit => needs(fit) <= bodyRows) ?? FITS[FITS.length - 1]!
+}
+// The agents the Team rows draw: running first, then the latest started, at most TEAM_ROWS; in a short
+// body only the running ones.
+function teamShown(team: readonly SpeckitAgent[], fit: PaneFit): SpeckitAgent[] {
+  const rows = [...team].reverse().sort((x, y) => Number(y.isRunning) - Number(x.isRunning))
+  return (fit.isTeamWhole ? rows : rows.filter(a => a.isRunning)).slice(0, TEAM_ROWS)
 }
 
 // #346: the task list as the pane draws it, one entry a row: each section's title, then its tasks while
@@ -300,7 +327,7 @@ function taskRows(b: SpeckitBoard, isAll: boolean): { rows: TaskRow[]; focus: nu
 // surface that gives no rows (a test, an older engine) gets the whole list, as before.
 function taskView(b: SpeckitBoard, team: readonly SpeckitAgent[], isAll: boolean, bodyRows: number | undefined, offset: number | null) {
   const { rows, focus } = taskRows(b, isAll)
-  const room = bodyRows === undefined ? rows.length : bodyRows - (paneRows(b, team, isAll, false) - rows.length)
+  const room = bodyRows === undefined ? rows.length : bodyRows - (paneRows(b, team, isAll, false, paneFit(b, team, isAll, bodyRows)) - rows.length)
   // Where a move to `target` lands, clamped to the list, so that a stored offset never runs past it.
   const clamp = (target: number) => taskWindow(rows.length, room, focus, target).start
   return { rows, clamp, ...taskWindow(rows.length, room, focus, offset) }
@@ -573,8 +600,10 @@ export const register: Register = on => {
     const progress = `${done}/${b.tasks.length}`
     const next = nextTask(b.tasks)
     const step = nextStep(b, team.filter(a => a.isRunning).map(a => a.type))
-    // Running agents first, then the latest started; the state keeps more than the pane draws.
-    const rows = [...team].reverse().sort((x, y) => Number(y.isRunning) - Number(x.isRunning))
+    // Running agents first, then the latest started; the state keeps more than the pane draws, and a
+    // short body less (#347).
+    const fit = paneFit(b, team, isAll, e.props.scroll?.bodyRows)
+    const shown = teamShown(team, fit)
     const barWidth = Math.max(6, Math.min(24, e.props.bodyColumns - 30))
     const tasksView = taskView(b, team, isAll, e.props.scroll?.bodyRows, await read($, taskOffset))
     const view = statsView(await read($, stats))
@@ -593,7 +622,7 @@ export const register: Register = on => {
     }
 
     return (
-      <Box flexDirection="column" gap={1}>
+      <Box flexDirection="column" gap={fit.gap}>
         <Box flexDirection="column">
           <Text bold color="claude" wrap="truncate-end">SPEC KIT · {b.feature}</Text>
           <Text wrap="truncate-end">
@@ -604,7 +633,7 @@ export const register: Register = on => {
 
         {/* The pipeline, one phase a row with its note: the build row carries the tasks and the REDs. */}
         <Box flexDirection="column">
-          {b.phases.map(p => {
+          {b.phases.filter(p => fit.isPhasesWhole || p === head).map(p => {
             const isBuilding = p.id === 'build' && b.tasks.length > 0
             const note = isBuilding && p.note === progress ? '' : p.note
             return (
@@ -628,7 +657,7 @@ export const register: Register = on => {
         </Box>
 
         {/* The session's context and cost: one state, the band's and the status answer's figures. */}
-        <Box flexDirection="column">
+        {fit.isStatsShown && <Box flexDirection="column">
           <Box flexDirection="row" columnGap={1}>
             <Box width={8} flexShrink={0}><Text>context</Text></Box>
             {view.context.fill !== undefined && <Text color={markColor(view.context.mark)}>{bar(view.context.fill, 1, barWidth)}</Text>}
@@ -642,13 +671,13 @@ export const register: Register = on => {
             {view.cost.fill !== undefined && <Text dimColor>of {dollars(COST_REFERENCE)}</Text>}
             <Text dimColor>· {view.tokens}</Text>
           </Box>
-        </Box>
+        </Box>}
 
         {/* The live parts before the task list: a pane taller than the terminal loses its bottom. */}
         {!b.isStandalone && <Box flexDirection="column">
           <Text bold>Team</Text>
           {team.length === 0 && <Text dimColor>no team agent has run this session</Text>}
-          {rows.slice(0, TEAM_ROWS).map(a => {
+          {shown.map(a => {
             const tone = toneOf(a.type, a.outcome)
             const color = a.isRunning ? 'claude' : TONE_COLOR[tone]
             const asked = a.description ? ` · ${a.description}` : ''
@@ -671,7 +700,7 @@ export const register: Register = on => {
               </Box>
             )
           })}
-          {rows.length > TEAM_ROWS && <Text dimColor>+{rows.length - TEAM_ROWS} earlier</Text>}
+          {team.length > shown.length && <Text dimColor>+{team.length - shown.length} earlier</Text>}
         </Box>}
 
         <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
