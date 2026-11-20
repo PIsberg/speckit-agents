@@ -409,6 +409,17 @@ export function trustFolder(confFile, repo, opts = {}) {
   };
 }
 
+// Seen 2026-11-20: with --out under the Windows Temp folder, Git Bash's pwd prints it as /tmp/..., an agent
+// passed that path to Write, and Claude Code wrote C:\tmp\... instead; in 5 of 9 runs product-owner's spec never
+// reached the scratch repo and was written again. A message for such a folder on Windows, else null.
+export function tempOutProblem(out, { platform = process.platform, tmp = os.tmpdir() } = {}) {
+  if (platform !== 'win32') return null;
+  const rel = path.win32.relative(tmp.toLowerCase(), out.toLowerCase());
+  if (rel.startsWith('..') || path.win32.isAbsolute(rel)) return null;
+  return `--out ${out} is in the Temp folder (${tmp}), which Git Bash shows as /tmp: an agent that takes its path from pwd `
+    + 'then writes to C:\\tmp\\... instead of the scratch repo. Use a folder outside it.';
+}
+
 export function args(argv) {
   const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false };
   for (let i = 0; i < argv.length; i += 2) {
@@ -434,6 +445,8 @@ export function args(argv) {
 function main() {
   const o = args(process.argv.slice(2));
   if (!o.login && !process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not set (or pass --login to use your own Claude Code login)');
+  const tempProblem = tempOutProblem(o.out);
+  if (tempProblem) throw new Error(tempProblem);
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
   const gate = CASES[o.case].gate;

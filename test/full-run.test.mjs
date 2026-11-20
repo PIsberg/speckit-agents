@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -619,4 +619,25 @@ test('full run: --large-slices sends a two-file request with several functions a
   const files = [...new Set(request.match(/src\/\w+\.js/g))];
   assert.equal(files.length, 2, 'two slices, each in a file of its own');
   assert.ok((request.match(/\b[a-z][A-Za-z]*\([a-z, ]*\)/g) ?? []).length >= 10, 'at least five functions a slice');
+});
+
+// Seen 2026-11-20: with --out under the Windows Temp folder, Git Bash's pwd prints it as /tmp/..., an agent
+// passed that path to Write, and Claude Code wrote C:\tmp\... instead: in 5 of 9 runs product-owner's spec
+// never reached the scratch repo and was written again. The run refuses such a folder on Windows.
+test('full run: on Windows an --out under the Temp folder is refused, anywhere else is not', () => {
+  const tmp = 'C:\\Users\\me\\AppData\\Local\\Temp';
+  assert.match(tempOutProblem('C:\\Users\\me\\AppData\\Local\\Temp\\run1', { platform: 'win32', tmp }), /Temp folder.*\/tmp.*C:\\tmp/s);
+  assert.match(tempOutProblem('c:\\users\\ME\\appdata\\local\\temp\\x\\y', { platform: 'win32', tmp }) ?? '', /Temp folder/, 'case does not matter on Windows');
+  assert.equal(tempOutProblem(tmp, { platform: 'win32', tmp }) === null, false, 'the folder itself too');
+  assert.equal(tempOutProblem('C:\\dev\\runs\\1', { platform: 'win32', tmp }), null);
+  assert.equal(tempOutProblem('C:\\Users\\me\\AppData\\Local\\Temporary\\1', { platform: 'win32', tmp }), null, 'a sibling whose name starts the same is not under it');
+  assert.equal(tempOutProblem('/tmp/run1', { platform: 'linux', tmp: '/tmp' }), null, 'elsewhere /tmp is /tmp');
+});
+
+test('full run: the command refuses an --out under the Temp folder before writing anything', { skip: process.platform !== 'win32' && 'the Temp folder is /tmp itself only on Windows' }, () => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skfull-temp-')), 'run');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'full-run.mjs'), '--out', out], { env: { ...process.env, ANTHROPIC_API_KEY: 'not-a-key' }, encoding: 'utf8' });
+  assert.equal(r.status, 2, r.stdout + r.stderr);
+  assert.match(r.stderr, /Temp folder/);
+  assert.ok(!fs.existsSync(out), 'nothing written');
 });
