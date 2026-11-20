@@ -283,21 +283,24 @@ function paneRows(b: SpeckitBoard | null, team: readonly SpeckitAgent[], isAll: 
   if (isClearedNow) return 5
   const taskCount = taskSections(b.tasks, isAll).reduce((n, s) => n + 1 + (s.isOpen ? s.tasks.length : 0), 0)
   const stats = fit.isStatsShown ? 2 + fit.gap : 0
-  if (b.isStandalone) return 2 + b.phases.length + stats + 1 + taskCount + 3 * fit.gap
+  const phases = fit.isPhasesWhole ? b.phases.length : 1
+  if (b.isStandalone) return 2 + phases + stats + 1 + taskCount + 3 * fit.gap
   const shown = teamShown(team, fit).length
   const teamRows = 1 + (team.length === 0 ? 1 : shown + (team.length > shown ? 1 : 0))
-  return 2 + b.phases.length + stats + teamRows + 1 + taskCount + 4 * fit.gap
+  return 2 + phases + stats + teamRows + 1 + taskCount + 4 * fit.gap
 }
 
 // #347: what the pane keeps in a body too short for all of it. #346 fits the task list into what the rest
 // leaves, but the rest is 13 to 20 rows with its blank rows; in a shorter body the paging row and the
 // tasks were cut off. So the pane drops, in turn, the blank rows between its parts, the context and cost
-// rows, and the Team rows of finished agents (the running ones and the count of the rest stay), taking
-// the first that leaves the task list its paging row and one task. Header, phases and buttons stay.
-type PaneFit = { gap: 0 | 1; isStatsShown: boolean; isTeamWhole: boolean }
-const FULL_FIT: PaneFit = { gap: 1, isStatsShown: true, isTeamWhole: true }
-const FITS: readonly PaneFit[] = [FULL_FIT, { gap: 0, isStatsShown: true, isTeamWhole: true },
-  { gap: 0, isStatsShown: false, isTeamWhole: true }, { gap: 0, isStatsShown: false, isTeamWhole: false }]
+// rows, the Team rows of finished agents (the running ones and the count of the rest stay), and every
+// phase row but the current one (inline at 100 columns the body was 8 rows, #348), taking the first that
+// leaves the task list its paging row and one task. Header and buttons stay.
+type PaneFit = { gap: 0 | 1; isStatsShown: boolean; isTeamWhole: boolean; isPhasesWhole: boolean }
+const FULL_FIT: PaneFit = { gap: 1, isStatsShown: true, isTeamWhole: true, isPhasesWhole: true }
+const FITS: readonly PaneFit[] = [FULL_FIT, { ...FULL_FIT, gap: 0 }, { ...FULL_FIT, gap: 0, isStatsShown: false },
+  { gap: 0, isStatsShown: false, isTeamWhole: false, isPhasesWhole: true },
+  { gap: 0, isStatsShown: false, isTeamWhole: false, isPhasesWhole: false }]
 function paneFit(b: SpeckitBoard, team: readonly SpeckitAgent[], isAll: boolean, bodyRows: number | undefined): PaneFit {
   if (bodyRows === undefined) return FULL_FIT
   const tasks = taskRows(b, isAll).rows.length
@@ -630,7 +633,7 @@ export const register: Register = on => {
 
         {/* The pipeline, one phase a row with its note: the build row carries the tasks and the REDs. */}
         <Box flexDirection="column">
-          {b.phases.map(p => {
+          {b.phases.filter(p => fit.isPhasesWhole || p === head).map(p => {
             const isBuilding = p.id === 'build' && b.tasks.length > 0
             const note = isBuilding && p.note === progress ? '' : p.note
             return (

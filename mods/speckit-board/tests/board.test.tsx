@@ -296,6 +296,28 @@ test('#347 a short body drops the blank rows, then the stats, then the finished 
   expect(await at(14)).toEqual({ gap: 0, stats: false, implementers: 0, writer: true, earlier: '+3 earlier', next: true })
 })
 
+// #347, seen live inline at 100 columns (2.1.329, #348): the standalone pane got 8 rows. Header, four
+// phases and the buttons took 7, so the paging row showed and no task did. Last, the pane keeps only
+// the phase in progress, so the task list still gets its rows.
+test('#347 a body too short for every phase keeps only the current one, and the next task in view', async ($, on) => {
+  await world(on, {}, NO_RECORDS)
+  await start($)
+  const at = async (bodyRows: number) => {
+    const ui = await $.ui.mount({ plugin: 'speckit-board', surface: 'terminal', ...PANE, ...pane, props: { ...pane.props, scroll: { offset: 0, bodyRows } } } as never)
+    const seen = {
+      spec: !!(await ui.find({ type: 'Text', text: 'spec' })),
+      build: !!(await ui.find({ type: 'Text', text: 'build' })),
+      next: !!(await ui.find({ type: 'Text', text: /^\s*▶ T002 \[P\] Test greet$/ })),
+      // The kit does not cut the tree at the body, so whether the window fits shows in its paging row.
+      paged: (await ui.findAll({ type: 'Button' })).some(x => x.key === 'tasks-down'),
+    }
+    await ui.unmount()
+    return seen
+  }
+  expect(await at(9)).toEqual({ spec: true, build: true, next: true, paged: true })
+  expect(await at(8)).toEqual({ spec: false, build: true, next: true, paged: false })
+})
+
 // Opened inline above the prompt, a pane is a third of the terminal tall unless it asks: live, the
 // buttons and every task were below its fold.
 test('the pane asks for the rows it draws, and for more when it shows every task', async ($, on) => {
