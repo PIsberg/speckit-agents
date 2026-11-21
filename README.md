@@ -451,7 +451,9 @@ option, needs no answer. Typed with `--team <roles>`, the roles you typed are he
 launch whose `Team:` line drops one of them is refused until you answer since the request, so a
 first line without spec-auditor cannot switch the audit gate off for a request where you named it
 ([#373](https://github.com/PIsberg/speckit-agents/issues/373)). A line naming more roles than you
-typed, or `security-reviewer` from `--security`, goes.
+typed, or `security-reviewer` from `--security`, goes. A session transcript Claude Code has not written yet
+holds no answer: the first launch can come before it is on disk, and the hold once read that as answered and
+let the team through ([#397](https://github.com/PIsberg/speckit-agents/issues/397), traced on CI's macOS runner).
 
 `/speckit-team --team noagents <request>` runs no agent at all. The session runs Spec Kit's own
 skills itself, `speckit-specify`, `speckit-plan`, `speckit-tasks` and `speckit-implement` in that
@@ -1675,11 +1677,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 657 tests:
+`npm test` runs 658 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 233 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 234 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
