@@ -1080,6 +1080,40 @@ test('#371: spec-gatekeeper\'s APPROVED on a spec whose FR IDs the drift check c
   assert.match(msg(out), /recorded without the spec-level drift check: specs\/001-demo\/spec\.md names FR-001 but defines none/);
 });
 
+// #380: per-agent markers and per-session records were never removed (147 files over 6 weeks in one checkout). The
+// SubagentStart entry prunes what is older than 30 days, at most once a day, and never a feature's standing.
+test('#380: SubagentStart prunes per-agent and per-session records older than 30 days, once a day, and keeps the standing', () => {
+  const { dir } = repo();
+  const sd = stateDir(dir);
+  const old = (Date.now() - 40 * 86400000) / 1000;
+  const put = (rel, age) => { const f = path.join(sd, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, '{}'); if (age) fs.utimesSync(f, age, age); return f; };
+  const stale = ['agents/a1.ends-ok', 'agents/a1.json', 'team/s0.json', 'project/s0.json', 'choice/s0.json', 'patch/p1.json'].map((r) => put(r, old));
+  const fresh = ['agents/a2.result', 'team/s1.json'].map((r) => put(r));
+  const standing = ['verdicts/001-demo.json', 'retries/001-demo.json', 'ends/001-demo.json', 'audit/001-demo.json'].map((r) => put(r, old));
+  const start = () => run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'test-writer', agent_id: 'tw1', session_id: 's1' });
+  assert.equal(start(), null, 'never a decision');
+  for (const f of stale) assert.equal(fs.existsSync(f), false, `${f} pruned`);
+  for (const f of [...fresh, ...standing]) assert.equal(fs.existsSync(f), true, `${f} kept`);
+  const later = put('agents/a3.result', old);
+  start();
+  assert.equal(fs.existsSync(later), true, 'not again within a day');
+});
+
+test('#380: a state folder that cannot be listed is skipped, and the start goes on', () => {
+  const { dir } = repo();
+  const sd = stateDir(dir);
+  fs.mkdirSync(sd, { recursive: true });
+  fs.writeFileSync(path.join(sd, 'agents'), 'not a folder');
+  const old = (Date.now() - 40 * 86400000) / 1000;
+  fs.mkdirSync(path.join(sd, 'team'), { recursive: true });
+  fs.writeFileSync(path.join(sd, 'team', 's0.json'), '{}');
+  fs.utimesSync(path.join(sd, 'team', 's0.json'), old, old);
+  const out = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'test-writer', agent_id: 'tw1', session_id: 's1' });
+  assert.equal(decided(out), false);
+  assert.doesNotMatch(msg(out), /internal error/);
+  assert.equal(fs.existsSync(path.join(sd, 'team', 's0.json')), false, 'the other folders are still pruned');
+});
+
 test('#370: a resumed implementer\'s every RED counts, and the third closes the gate for it', () => {
   const { dir } = repo();
   pass(dir);

@@ -1806,7 +1806,30 @@ if (mode === 'ends') {
 // entry records it here, at SubagentStart, for the lane check at their Stop (#88). Never a decision.
 // The same entry starts every team agent with its session's project, if the launch named one (feature
 // 007): the block goes to the agent as additionalContext. Never a decision.
+// #380: per-agent markers (agents/), per-session records (team/, project/, choice/) and the fast track's start records
+// (patch/) are kept only while a run may still read them. The SubagentStart entry, one process per launch, removes those
+// older than PRUNE_DAYS, at most once a day (a .pruned stamp). Never verdicts/, retries/, ends/ or audit/: they hold a
+// feature's standing. Nothing here may throw, since a hook that crashes fails open.
+const PRUNE_DAYS = 30;
+const DAY_MS = 86400000;
+function pruneState(now = Date.now()) {
+  if (!fs.existsSync(stateDir)) return;
+  const stamp = path.join(stateDir, '.pruned');
+  try { if (now - fs.statSync(stamp).mtimeMs < DAY_MS) return; } catch { /* never pruned here */ }
+  const cutoff = now - PRUNE_DAYS * DAY_MS;
+  for (const d of ['agents', 'team', 'project', 'choice', 'patch']) {
+    let names;
+    try { names = fs.readdirSync(path.join(stateDir, d)); } catch { continue; }
+    for (const n of names) {
+      const f = path.join(stateDir, d, n);
+      try { const s = fs.lstatSync(f); if (s.isFile() && s.mtimeMs < cutoff) fs.rmSync(f, { force: true }); } catch { /* the next file */ }
+    }
+  }
+  try { fs.writeFileSync(stamp, new Date(now).toISOString()); } catch { /* pruned again on the next launch */ }
+}
+
 if (mode === 'start') {
+  pruneState();
   const type = str(input.agent_type);
   if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
