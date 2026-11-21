@@ -70,8 +70,10 @@ jobs:
       - name: Install eslint and typescript (Linux)
         if: runner.os == 'Linux'
         run: npm ci --ignore-scripts --no-audit --no-fund
+      # Not on latest.yml's legs (inputs.claude-code set): Claude Code 2.1.330 lays no types in a session that is not
+      # logged in, so the step cannot run there (#399). It stays required on every push and pull request.
       - name: Type-check the board mod (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && inputs.claude-code == ''
         shell: bash
         run: |
           CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-types" claude --plugin-dir mods/speckit-board -p "/speckit-board refresh" > /dev/null || true

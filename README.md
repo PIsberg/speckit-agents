@@ -1742,7 +1742,9 @@ types and newer ones ([#362](https://github.com/PIsberg/speckit-agents/issues/36
 (`@anthropic-ai/claude-code@latest`) and the newest stable Node (`'*'`; `current` gave a v27 alpha), every Tuesday and by hand (`workflow_dispatch`), and on
 a pull request that changes it; it is never required for a pull request. It calls `test.yml` with two inputs,
 a Claude Code dist-tag and a Node channel, which a push or a pull request leaves empty, so both stay one set of
-jobs. Claude Code is installed with `--allow-scripts=@anthropic-ai/claude-code`: npm 11 and later run a global
+jobs. The board mod's type-check does not run on its legs: Claude Code 2.1.330 lays no types in a session
+that is not logged in ([#399](https://github.com/PIsberg/speckit-agents/issues/399)), so it stays a
+pinned-version check. Claude Code is installed with `--allow-scripts=@anthropic-ai/claude-code`: npm 11 and later run a global
 package's install scripts only when allowed, and its postinstall places the native binary (the first run of
 `latest.yml` failed on all legs with "claude native binary not installed"). A failed scheduled or manual run opens one issue, `[P2] ci: the suite fails on the newest Claude Code or
 Node (latest.yml)`, or comments on it while it is open
