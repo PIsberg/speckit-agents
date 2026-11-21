@@ -8,6 +8,16 @@ import { fingerprint, fingerprintFiles } from '../hooks/model'
 declare function setTimeout(callback: (value?: unknown) => void, ms: number): unknown
 
 const ROOT = '/repo'
+
+// agent.list's answer. Claude Code after 2.1.293 (the pinned version CI type-checks against) made
+// eight more AgentInfo fields required (#362). They come in through a spread, which TypeScript does
+// not check for excess properties, so the mock fits the old types and the new; the board reads only
+// id, description and status.
+const NEWER_AGENT_FIELDS = { kind: 'local_agent', label: '', startTime: 0, cwd: ROOT, tokenCount: 0, hasRow: true } as const
+const agentInfo = (id: string, type: string, description: string, status: AgentInfo['status']): AgentInfo => {
+  const newer = { ...NEWER_AGENT_FIELDS, taskStatus: status === 'waiting' || status === 'idle' ? 'running' : status, tokenSamples: [] as number[] }
+  return { ...newer, id, type, description, status }
+}
 // A second Spec Kit repo, with a feature of the same name.
 const OTHER = '/other'
 const FEATURE = 'specs/001-x'
@@ -377,9 +387,9 @@ test('the pane puts the running team agent and its controls before the task list
 test('the team rows say what each agent was asked and whether its word is good for its role', async ($, on) => {
   await world(on)
   on('agent.list', () => ({ value: [
-    { id: 't1', type: 'test-writer', description: 'Red tests for T002', status: 'running' },
-    { id: 'i1', type: 'implementer', description: 'Green T003 greet', status: 'running' },
-  ] satisfies AgentInfo[] }))
+    agentInfo('t1', 'test-writer', 'Red tests for T002', 'running'),
+    agentInfo('i1', 'implementer', 'Green T003 greet', 'running'),
+  ] }))
   on('classic.SubagentStart', () => ({}))
   on('classic.SubagentStop', () => ({}))
   await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
@@ -516,10 +526,10 @@ for (const status of ['killed', 'failed'] as const) {
     on('classic.SubagentStart', () => ({}))
     await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
     await $.classic.SubagentStart({ agent_id: 'a1', agent_type: 'spec-auditor' } as never)
-    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status: 'running' }]
+    listed = [agentInfo('a1', 'spec-auditor', 'audit', 'running')]
     await poll(seen.clock, 4000, () => true)
     expect(seen.status.at(-1)).toBe('001-x · ◐ audit · 1/3 tasks · RED 1/3')
-    listed = [{ id: 'a1', type: 'spec-auditor', description: 'audit', status }]
+    listed = [agentInfo('a1', 'spec-auditor', 'audit', status)]
     const ended = '001-x · ○ audit · 1/3 tasks · RED 1/3'
     await poll(seen.clock, 4000, () => seen.status.at(-1) === ended)
     expect(seen.status.at(-1)).toBe(ended)
@@ -1808,9 +1818,9 @@ test('010 US4-1 US4-2 US4-3 FR-007 an ended team row ends with its own tokens an
   const seen = await world(on)
   seen.usage.answer = () => sessionUsage({ percent: 50, usd: 2.5 })
   on('agent.list', () => ({ value: [
-    { id: 't1', type: 'test-writer', description: 'Red tests for T002', status: 'running' },
-    { id: 'i1', type: 'implementer', description: 'Green T003 greet', status: 'running' },
-  ] satisfies AgentInfo[] }))
+    agentInfo('t1', 'test-writer', 'Red tests for T002', 'running'),
+    agentInfo('i1', 'implementer', 'Green T003 greet', 'running'),
+  ] }))
   on('classic.SubagentStart', () => ({}))
   on('classic.SubagentStop', () => ({}))
   await start($)

@@ -1681,6 +1681,10 @@ npm ci
 npx --no-install tsc -p mods/speckit-board --noEmit
 ```
 
+A newer `claude` lays newer types, in which `AgentInfo` has more required fields; the mod's tests build
+its `agent.list` answers with `agentInfo()`, which fills them, so the check passes against the pinned
+types and newer ones ([#362](https://github.com/PIsberg/speckit-agents/issues/362)).
+
 Last on Linux it lints the tracked JavaScript with the same eslint that
 [`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs at each commit, configured by
 [`eslint.config.mjs`](eslint.config.mjs) with `@eslint/js`'s recommended rules written out, so
