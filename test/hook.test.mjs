@@ -123,6 +123,37 @@ test('.specify/test-paths adds repo-specific test patterns', () => {
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'checks/golden.txt')));
 });
 
+// #372: the built-in patterns call every path under testing/, fixtures/, spec/ or e2e/ a test, and test-paths could only
+// add. A repo keeping production files there had implementer denied them and test-writer let in. A `!` line takes
+// the paths it matches out of the test lane, after every pattern that adds.
+test('#372: a ! line in .specify/test-paths takes production folders out of the test lane', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  const files = ['src/mylib/testing/assertions.py', 'api/spec/openapi.yaml', 'db/fixtures/seed.sql', 'packages/e2e/src/index.ts'];
+  const as = (type, args, f) => denied(run(dir, args, { hook_event_name: 'PreToolUse', tool_name: 'Write', agent_type: type, agent_id: type, tool_input: { file_path: path.join(dir, f) } }));
+  for (const f of files) assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], f), `${f} is a test by default`);
+  w('.specify/test-paths', '# production folders\n!^src/mylib/testing/\n!^api/spec/\n  !^db/fixtures/\n!^packages/e2e/src/\n');
+  for (const f of files) {
+    assert.equal(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], f), false, `implementer writes ${f}`);
+    assert.equal(as('test-writer', ['gate', 'scope', 'tests'], f), true, `test-writer may not write ${f}`);
+  }
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'db/test/seed.test.js'), 'other tests stay tests');
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/golden.txt') === false);
+  w('.specify/test-paths', '^checks/\n!^checks/tools/\n');
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/golden.txt'), 'an added pattern still adds');
+  assert.equal(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/tools/run.sh'), false, 'and a ! line takes out of it too');
+});
+
+test('#372: a ! line that is no regex, or empty, closes the test lanes and names the line', () => {
+  const { dir, write: w } = repo();
+  for (const [text, line] of [['!(unclosed\n', 1], ['^checks/\n!\n', 2]]) {
+    w('.specify/test-paths', text);
+    const out = write(dir, ['scope', 'no-tests'], 'src/main/App.java');
+    assert.ok(denied(out), text);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, new RegExp(`test-paths line ${line} `));
+  }
+});
+
 // A line that was not a valid regex crashed scope, and a crashed hook lets the write through: one typo
 // in test-paths, or one written there by implementer, opened every test file to it.
 test('an invalid .specify/test-paths line closes the test lanes and names the line', () => {

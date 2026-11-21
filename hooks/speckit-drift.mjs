@@ -45,10 +45,16 @@ const writesTests = (text) => /\btests?\b/i.test(text.split(/[(:]/)[0].split(PAT
 
 const readOr = (f, d) => { try { return fs.readFileSync(f, 'utf8'); } catch { return d; } };
 
+// A `!` line takes the paths it matches out, after every pattern that adds (#372), as in the hook. A line that is no
+// regex is the hook's to report; here it is skipped.
 function testPatterns(repo) {
-  const extra = readOr(path.join(repo, '.specify', 'test-paths'), '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-    .flatMap((l) => { try { return [new RegExp(l)]; } catch { return []; } });
-  return [...TEST_PATTERNS, ...extra];
+  const add = [...TEST_PATTERNS]; const drop = [];
+  for (const l of readOr(path.join(repo, '.specify', 'test-paths'), '').split(/\r?\n/).map((x) => x.trim())) {
+    if (!l || l.startsWith('#')) continue;
+    const src = l.startsWith('!') ? l.slice(1).trim() : l;
+    try { if (src) (l.startsWith('!') ? drop : add).push(new RegExp(src)); } catch { /* the hook names it */ }
+  }
+  return (rel) => add.some((re) => re.test(rel)) && !drop.some((re) => re.test(rel));
 }
 
 // Each task with the lines that continue it, up to the next task, heading or blank line.
@@ -71,8 +77,7 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   if (!only && !hasSpecs) throw new Error(`no specs/ in ${repo}`);
   const dirs = only ? [only.replace(/\\/g, '/').replace(/\/+$/, '')]
     : fs.readdirSync(specs).sort().map((f) => `specs/${f}`);
-  const patterns = testPatterns(repo);
-  const isTest = (rel) => patterns.some((re) => re.test(rel));
+  const isTest = testPatterns(repo);
   const taskText = new Map(dirs.map((dir) => [dir, readOr(path.join(repo, `${dir}/tasks.md`), null)]));
   // #342: every test path a finished test task names that is not on disk, asked of git in one call, not one each.
   const missing = [...new Set([...taskText.values()].filter((t) => t !== null)

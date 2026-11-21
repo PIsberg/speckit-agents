@@ -127,6 +127,12 @@ test('drift: an unticked task is not built yet, and a test path the repo adds in
   assert.match(r.problems[0], /T002: checks\/sum_check\.js is gone/);
 });
 
+test('drift (#372): a path a ! line of .specify/test-paths takes out is no test file to the check', () => {
+  const tasks = '- [x] T001 Tests for FR-001 in `fixtures/sum.test.js`\n';
+  assert.equal(drift(repo(tasks, {})).problems.length, 1, 'a test path by default, and gone');
+  assert.deepEqual(drift(repo(tasks, { '.specify/test-paths': '!^fixtures/\n' })).problems, [], 'not a test path once taken out');
+});
+
 test('drift: the command exits 1 on drift, 0 without, and 2 where there are no features', () => {
   const run = (dir) => spawnSync(process.execPath, [TOOL, dir], { encoding: 'utf8' });
   const clean = run(repo(SUM_TASKS, { 'test/sum.test.js': SUM_TEST }));

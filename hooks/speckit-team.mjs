@@ -432,25 +432,33 @@ function isTeamFile(abs) {
 }
 
 // A line that is not a valid regex leaves the test lanes undecidable: scope denies and lane says it
-// could not run, instead of crashing, which would let every write through.
+// could not run, instead of crashing, which would let every write through. A line starting `!` takes the paths
+// it matches out of the tests, after every pattern that adds, built-in or not (#372): a production folder named
+// testing/, fixtures/, spec/ or e2e/. A bare `!` would take out every path, so it is a bad line too.
 function parseTestPaths(text) {
-  const patterns = [...TEST_PATTERNS]; const bad = [];
+  const patterns = [...TEST_PATTERNS]; const drops = []; const bad = [];
   text.split('\n').forEach((l, i) => {
     const t = l.trim();
     if (!t || t.startsWith('#')) return;
-    try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
+    const drop = t.startsWith('!');
+    const src = drop ? t.slice(1).trim() : t;
+    try {
+      if (!src) throw new Error('empty');
+      (drop ? drops : patterns).push(new RegExp(src));
+    } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
   });
-  return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
+  const isTest = (rel) => patterns.some((re) => re.test(rel)) && !drops.some((re) => re.test(rel));
+  return { isTest, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
 }
 // Read once per run, from the working tree.
 const testPaths = parseTestPaths(readOr(path.join(root, '.specify', 'test-paths'), ''));
-const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+const isTest = testPaths.isTest;
 // The same patterns as committed at a revision: the fast track measures with the rules the run started under.
 const testsAtMemo = new Map();
 function testsAt(rev) {
   if (!testsAtMemo.has(rev)) {
     const t = parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '');
-    testsAtMemo.set(rev, { isTest: (rel) => t.patterns.some((re) => re.test(rel)), bad: t.bad });
+    testsAtMemo.set(rev, { isTest: t.isTest, bad: t.bad });
   }
   return testsAtMemo.get(rev);
 }
