@@ -645,7 +645,7 @@ function linesAfter(file, offset) {
   try {
     const buf = fs.readFileSync(file);
     return lines(buf.subarray(Number.isInteger(offset) && offset > 0 ? offset : 0).toString('utf8'));
-  } catch { return null; }
+  } catch (e) { return e?.code === 'ENOENT' ? [] : null; }
 }
 // #366: whether the user answered since the request was typed: a prompt of theirs, or the result of an
 // AskUserQuestion call. The command's expansion, the skill's text, reminders and hook feedback are not answers.
