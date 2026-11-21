@@ -127,6 +127,12 @@ test('drift: an unticked task is not built yet, and a test path the repo adds in
   assert.match(r.problems[0], /T002: checks\/sum_check\.js is gone/);
 });
 
+test('drift (#372): a path a ! line of .specify/test-paths takes out is no test file to the check', () => {
+  const tasks = '- [x] T001 Tests for FR-001 in `fixtures/sum.test.js`\n';
+  assert.equal(drift(repo(tasks, {})).problems.length, 1, 'a test path by default, and gone');
+  assert.deepEqual(drift(repo(tasks, { '.specify/test-paths': '!^fixtures/\n' })).problems, [], 'not a test path once taken out');
+});
+
 test('drift: the command exits 1 on drift, 0 without, and 2 where there are no features', () => {
   const run = (dir) => spawnSync(process.execPath, [TOOL, dir], { encoding: 'utf8' });
   const clean = run(repo(SUM_TASKS, { 'test/sum.test.js': SUM_TEST }));
@@ -167,7 +173,7 @@ test('drift (#228): one feature checks only that feature, wherever its directory
   write('work/003-x/tasks.md', '- [X] T001 Test FR-001 in `test/x.test.js`\n');
   write('test/x.test.js', '// nothing\n');
   assert.deepEqual(drift(dir, { feature: 'work/003-x' }).problems, ['work/003-x/tasks.md T001: FR-001 is in none of test/x.test.js']);
-  assert.deepEqual(drift(dir, { feature: 'specs/009-none' }), { features: 0, tasks: 0, problems: [] });
+  assert.deepEqual(drift(dir, { feature: 'specs/009-none' }), { features: 0, tasks: 0, problems: [], unchecked: [] });
 });
 
 // A docs or measurement task names test files too ("held by `test/install.test.mjs`", "run
@@ -211,6 +217,35 @@ test('drift (#235): with spec, every FR of spec.md needs a test line naming its 
   assert.deepEqual(drift(repo(tasks, files), { feature: 'specs/001-sum' }).problems, []);
   // A feature without spec.md has nothing to check at spec level.
   assert.deepEqual(drift(repo(tasks, { 'test/sum.test.js': files['test/sum.test.js'] }), { feature: 'specs/001-sum', spec: true }).problems, []);
+});
+
+// #371: the spec level read only `**FR-001**` as a requirement, and both levels only three digits. A spec bolding the
+// colon too (`**FR-001:**`), a plain list item, a fourth digit or a lettered sub-requirement had no requirement
+// to check, and APPROVED was recorded in silence.
+test('drift (#371): a requirement bolded with its colon, a plain list item, four digits or a letter suffix is checked too', () => {
+  const at = (line, tests) => drift(repo('- [X] T001 implement\n', { 'specs/001-sum/spec.md': `# Spec\n\n${line}\n`, 'test/sum.test.js': tests }),
+    { feature: 'specs/001-sum', spec: true });
+  for (const line of ['- **FR-001**: adds.', '- **FR-001:** adds.', '- FR-001: adds.', '1. FR-001: adds.', '- **FR-1001**: adds.', '- **FR-001a**: adds.']) {
+    const id = /FR-\w+/.exec(line)[0];
+    assert.deepEqual(at(line, '// names no requirement\n').problems.map((p) => p.split(':')[0]), [`specs/001-sum/spec.md ${id}`], line);
+    assert.deepEqual(at(line, `// 001 ${id}\n`).problems, [], `${line} held by a test line`);
+  }
+  assert.equal(at('- **FR-001a**: adds.', '// 001 FR-001\n').problems.length, 1, 'FR-001 does not hold FR-001a');
+  assert.equal(at('- **FR-001**: adds.', '// 001 FR-001a\n').problems.length, 1, 'nor FR-001a FR-001');
+  const tasks = '- [X] T001 Tests for FR-001a and FR-1001 in `test/sum.test.js`\n';
+  assert.deepEqual(drift(repo(tasks, { 'test/sum.test.js': '// FR-001a\n' })).problems,
+    ['specs/001-sum/tasks.md T001: FR-1001 is in none of test/sum.test.js'], 'the task level cites them too');
+});
+
+test('drift (#371): a spec that names FR IDs but defines none the check reads says so instead of passing', () => {
+  const at = (spec) => drift(repo('- [X] T001 implement\n', { 'specs/001-sum/spec.md': spec, 'test/sum.test.js': '// none\n' }),
+    { feature: 'specs/001-sum', spec: true });
+  const r = at('# Spec\n\n| ID | Requirement |\n|---|---|\n| FR-001 | adds |\n| FR-002 | empty gives 0 |\n');
+  assert.deepEqual(r.problems, []);
+  assert.equal(r.unchecked.length, 1);
+  assert.match(r.unchecked[0], /^specs\/001-sum\/spec\.md names FR-001, FR-002 but defines none/);
+  assert.deepEqual(at('# Spec\n\nNo requirements yet.\n').unchecked, [], 'a spec with no FR ID has nothing to say');
+  assert.deepEqual(at('- **FR-001**: adds.\n').unchecked, [], 'nor one whose requirements were read');
 });
 
 // In the full run of 2026-11-08 the architect excused a process rule inside a test task: "Tests in
