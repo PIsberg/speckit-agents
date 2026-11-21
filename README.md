@@ -1739,10 +1739,12 @@ its `agent.list` answers with `agentInfo()`, which fills them, so the check pass
 types and newer ones ([#362](https://github.com/PIsberg/speckit-agents/issues/362)).
 
 [`.github/workflows/latest.yml`](.github/workflows/latest.yml) runs the same jobs on the newest Claude Code
-(`@anthropic-ai/claude-code@latest`) and the current Node, every Tuesday and by hand (`workflow_dispatch`), and on
+(`@anthropic-ai/claude-code@latest`) and the newest stable Node (`'*'`; `current` gave a v27 alpha), every Tuesday and by hand (`workflow_dispatch`), and on
 a pull request that changes it; it is never required for a pull request. It calls `test.yml` with two inputs,
 a Claude Code dist-tag and a Node channel, which a push or a pull request leaves empty, so both stay one set of
-jobs. A failed scheduled or manual run opens one issue, `[P2] ci: the suite fails on the newest Claude Code or
+jobs. Claude Code is installed with `--allow-scripts=@anthropic-ai/claude-code`: npm 11 and later run a global
+package's install scripts only when allowed, and its postinstall places the native binary (the first run of
+`latest.yml` failed on all legs with "claude native binary not installed"). A failed scheduled or manual run opens one issue, `[P2] ci: the suite fails on the newest Claude Code or
 Node (latest.yml)`, or comments on it while it is open
 ([#381](https://github.com/PIsberg/speckit-agents/issues/381); #280 was found on a developer's machine, not by CI).
 

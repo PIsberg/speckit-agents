@@ -13,7 +13,7 @@ on:
         type: string
         default: ''
       node-version:
-        description: 'A Node channel to run instead of the floor'
+        description: 'A Node version range to run instead of the floor'
         type: string
         default: ''
 
@@ -44,7 +44,9 @@ jobs:
         shell: bash
         env:
           CLAUDE_CODE_TAG: ${{ inputs.claude-code }}
-        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
+        # npm 11 and later run a global package's install scripts only when allowed, and Claude Code's postinstall
+        # places its native binary (#381: the newest Node's npm blocked it). npm 10 accepts the flag and runs them anyway.
+        run: npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
       # npm's Windows shim is claude.cmd, which the tests spawn without a shell. Put the binary
       # itself on PATH so they run instead of skipping.
       - name: Put the claude binary on PATH (Windows)
@@ -110,7 +112,7 @@ jobs:
       - name: Install Claude Code
         env:
           CLAUDE_CODE_TAG: ${{ inputs.claude-code }}
-        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
+        run: npm install -g --allow-scripts=@anthropic-ai/claude-code "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
       - name: Install vhs, ttyd and ffmpeg (Linux)
         if: runner.os == 'Linux'
         run: |

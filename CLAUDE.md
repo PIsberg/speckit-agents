@@ -56,7 +56,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one; `SPECKIT_E2E_TIME_SCALE=3`
   triples their timeouts and session kill timers (CI's Windows leg, #329).
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
-  the oldest supported, moved by hand; `latest.yml` runs the same jobs weekly on `latest` and the current Node, #381) and `SPECKIT_REQUIRE_CLAUDE=1` (those tests fail instead of
+  the oldest supported, moved by hand; `latest.yml` runs the same jobs weekly on `latest` and the newest stable Node, #381) and `SPECKIT_REQUIRE_CLAUDE=1` (those tests fail instead of
   skipping), then on Linux `npm ci` and type-checks the board mod:
   `npx --no-install tsc -p mods/speckit-board --noEmit`, after a
   `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with

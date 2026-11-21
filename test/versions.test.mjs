@@ -107,10 +107,11 @@ test('versions (#223): every statement of the Node floor equals package.json eng
 });
 
 // #381: test.yml runs on the oldest supported Claude Code and the Node floor. latest.yml calls the same jobs weekly with
-// channels, never versions: latest for Claude Code and current for Node, so nothing here is a second pin to move.
-test('versions (#381): latest.yml runs test.yml on the latest Claude Code and the current Node, by channel', () => {
+// channels, never versions: latest for Claude Code and '*' (the newest stable release) for Node, so nothing here is a second
+// pin to move. Not current: setup-node took it to v27.0.0-alpha.0.1.1, a prerelease.
+test('versions (#381): latest.yml runs test.yml on the latest Claude Code and the newest stable Node, by channel', () => {
   const latest = read('.github', 'workflows', 'latest.yml');
-  assert.match(latest, /uses: \.\/\.github\/workflows\/test\.yml\n\s+with:\n\s+claude-code: latest\n\s+node-version: current\n/);
+  assert.match(latest, /uses: \.\/\.github\/workflows\/test\.yml\n\s+with:\n\s+claude-code: latest\n\s+node-version: '\*'\n/);
   assert.match(latest, /schedule:/);
   assert.match(latest, /workflow_dispatch:/);
   assert.doesNotMatch(latest, /@anthropic-ai\/claude-code@|node-version: \d/, 'no version of its own');
@@ -118,5 +119,5 @@ test('versions (#381): latest.yml runs test.yml on the latest Claude Code and th
   assert.match(t, /workflow_call:\n\s+inputs:\n\s+claude-code:[\s\S]*?default: ''\n\s+node-version:[\s\S]*?default: ''/, 'both inputs default to the pinned versions');
   const installs = t.split('\n').filter((l) => /npm install -g .*claude-code/.test(l));
   assert.equal(installs.length, 2);
-  for (const l of installs) assert.match(l, /\$\{CLAUDE_CODE_TAG:-\$\(node -p "require\('\.\/package\.json'\)\.config\.claudeCode"\)\}/);
+  for (const l of installs) assert.match(l, /npm install -g --allow-scripts=@anthropic-ai\/claude-code "@anthropic-ai\/claude-code@\$\{CLAUDE_CODE_TAG:-\$\(node -p "require\('\.\/package\.json'\)\.config\.claudeCode"\)\}/);
 });

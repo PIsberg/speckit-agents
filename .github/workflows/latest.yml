@@ -1,10 +1,10 @@
 name: latest
 
-# The test workflow's jobs on the newest Claude Code and the current Node (#381). test.yml runs on the oldest Claude
+# The test workflow's jobs on the newest Claude Code and the newest stable Node (#381). test.yml runs on the oldest Claude
 # Code the team supports and on Node 22, the floor; users run the newest, whose hook events and fields are what the
 # e2e tests pin. #280 (the permissionMode cases failing on 2.1.319) was found on a developer's machine, not by CI.
-# Weekly and by hand, never required for a pull request. `latest` and `current` are channels, not versions, so
-# nothing here is a second pin to move (test/versions.test.mjs). A failed scheduled or manual run opens one issue,
+# Weekly and by hand, never required for a pull request. `latest` and '*' are a channel and a range, not versions,
+# so nothing here is a second pin to move (test/versions.test.mjs). Not `current`: setup-node took it to a v27 alpha. A failed scheduled or manual run opens one issue,
 # or comments on the open one. A pull request that changes this file runs it too, and files nothing.
 on:
   schedule:
@@ -26,7 +26,7 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       claude-code: latest
-      node-version: current
+      node-version: '*'
 
   report:
     needs: suite
@@ -46,7 +46,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           title='[P2] ci: the suite fails on the newest Claude Code or Node (latest.yml)'
-          body="The weekly run of the test jobs on the newest Claude Code and the current Node failed: $RUN_URL
+          body="The weekly run of the test jobs on the newest Claude Code and the newest stable Node failed: $RUN_URL
           Read the failing job's log, tell a break in Claude Code or Node from a flaky test, and re-rank this issue."
           n=$(gh issue list --state open --search "in:title latest.yml" --json number,title \
             --jq "map(select(.title == \"$title\")) | .[0].number // empty")
