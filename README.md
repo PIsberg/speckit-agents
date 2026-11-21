@@ -1236,7 +1236,11 @@ script or an interpreter run through Bash can change files no command names. So 
 already dirty. When the agent stops, `lane` diffs everything since then, committed or not, and
 blocks the stop if any changed file is outside the lane. The agent is told which files to restore.
 Files that were dirty before the agent started are ignored. If the agent stops a second time with
-the problem still there, the hook lets it finish with a WARNING rather than loop.
+the problem still there, the hook lets it finish with a WARNING rather than loop. The count is the
+lane check's own (`agents/<id>.lane-asked`), not Claude Code's `stop_hook_active`, which stays true
+for the rest of a turn another Stop hook continued: a test-writer sent back by `ends`, or an
+implementer by `result`, that then wrote outside its lane was only warned
+([#375](https://github.com/PIsberg/speckit-agents/issues/375)).
 
 For test-writer and implementer the gate records the start on their first tool call. product-owner
 and architect work before the audit and have no gate, so the `start` entry in `settings.json` records
@@ -1641,11 +1645,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 649 tests:
+`npm test` runs 650 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 228 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 229 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

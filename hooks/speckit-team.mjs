@@ -1801,11 +1801,20 @@ if (mode === 'lane') {
   const found = laneOutside(base, rule, prefixes, who);
   if ('problem' in found) emit({ systemMessage: `speckit-team: ${found.problem}` });
   const { outside } = found;
-  if (outside.length && !input.stop_hook_active) {
-    block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
-      + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
+  // #375: sent back once per lane record, counted in its own marker. Not stop_hook_active: Claude Code keeps it true
+  // for the rest of a turn another Stop hook (ends, result) continued, so lane would only warn about a file written
+  // after that. A marker that cannot be written falls back to the flag.
+  const asked = path.join(stateDir, 'agents', `${agentKey}.lane-asked`);
+  if (outside.length && !fs.existsSync(asked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(asked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) {
+      block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
+        + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
+    }
   }
   fs.rmSync(f, { force: true });
+  fs.rmSync(asked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
 }

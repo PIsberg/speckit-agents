@@ -844,6 +844,25 @@ test('lane check catches writes that bypassed Edit, including via Bash', () => {
   assert.equal(stop('t1', 'tests')?.decision, 'block', 'test-writer may not add production code');
 });
 
+// #375: test-writer and implementer have two Stop hooks. When ends or result sent the agent back first, Claude Code
+// keeps stop_hook_active true for the rest of the turn, so lane met its first violation with the flag set and only
+// warned. lane now counts its own send-back per agent: the first violation it finds blocks, the second warns.
+test('#375: lane sends a violation back once even when another Stop hook continued the agent first', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  const base = { agent_type: 'implementer', agent_id: 'laneA' };
+  run(dir, ['gate', 'retries', 'scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'x' }, ...base });
+  w('test/changed.test.js', '// a script wrote this\n');
+  const stop = () => run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', stop_hook_active: true, ...base });
+  const first = stop();
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /test\/changed\.test\.js/);
+  assert.match(stop().systemMessage, /WARNING: implementer left changes outside its lane/, 'never twice');
+  run(dir, ['gate', 'retries', 'scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'x' }, ...base });
+  w('test/again.test.js', '// and again\n');
+  assert.equal(stop()?.decision, 'block', 'a later lane record starts a new count');
+});
+
 // git diff detects renames by default and then names only the new path, so moving a failing test out
 // of the test tree (git mv, or delete plus create) passed the lane check as one new production file.
 test('lane check catches a test moved out of the test tree', () => {
