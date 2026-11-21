@@ -253,7 +253,7 @@ const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
 function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { return { problems: driftModule.drift(root, { feature: feat, spec }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
@@ -268,6 +268,8 @@ const citedRefusal = (word, problems) => `Your ${word} leaves requirements a tic
 const citedStands = (name, word, problems) => `speckit-team: ${name} reported ${word} with cited requirements no test names: ${problems.join('; ')}. `
   + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
 const citedUnchecked = (name, word, failed) => `speckit-team: the cited-ID check could not run (${failed}), so ${name}'s ${word} goes on without it.`;
+// #371: a spec whose FR IDs the check cannot read as requirements is recorded, and the user told so.
+const specUnread = (name, unchecked) => `speckit-team: ${name}'s APPROVED is recorded without the spec-level drift check: ${unchecked.join('; ')}`;
 const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
   + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
@@ -366,6 +368,21 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
 const stateDir = path.join(commonDir, 'speckit-team');
+// #370: an accepted report leaves a marker per agent (result, ends-ok), so the Stop that follows its hand-back is not
+// judged a second time. An agent that works again after one (resumed with SendMessage) makes a tool call first, which
+// ends the old report: every marker goes, so its next report is checked and counted afresh. A refusal's own marker
+// stays while no report was accepted, so a report is still sent back once, never twice. spec-auditor's verdict mode
+// keeps its own reset.
+if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
+  const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
+    try {
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+    } catch (e) {
+      addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
+    }
+  }
+}
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
@@ -415,25 +432,33 @@ function isTeamFile(abs) {
 }
 
 // A line that is not a valid regex leaves the test lanes undecidable: scope denies and lane says it
-// could not run, instead of crashing, which would let every write through.
+// could not run, instead of crashing, which would let every write through. A line starting `!` takes the paths
+// it matches out of the tests, after every pattern that adds, built-in or not (#372): a production folder named
+// testing/, fixtures/, spec/ or e2e/. A bare `!` would take out every path, so it is a bad line too.
 function parseTestPaths(text) {
-  const patterns = [...TEST_PATTERNS]; const bad = [];
+  const patterns = [...TEST_PATTERNS]; const drops = []; const bad = [];
   text.split('\n').forEach((l, i) => {
     const t = l.trim();
     if (!t || t.startsWith('#')) return;
-    try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
+    const drop = t.startsWith('!');
+    const src = drop ? t.slice(1).trim() : t;
+    try {
+      if (!src) throw new Error('empty');
+      (drop ? drops : patterns).push(new RegExp(src));
+    } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
   });
-  return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
+  const isTest = (rel) => patterns.some((re) => re.test(rel)) && !drops.some((re) => re.test(rel));
+  return { isTest, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
 }
 // Read once per run, from the working tree.
 const testPaths = parseTestPaths(readOr(path.join(root, '.specify', 'test-paths'), ''));
-const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+const isTest = testPaths.isTest;
 // The same patterns as committed at a revision: the fast track measures with the rules the run started under.
 const testsAtMemo = new Map();
 function testsAt(rev) {
   if (!testsAtMemo.has(rev)) {
     const t = parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '');
-    testsAtMemo.set(rev, { isTest: (rel) => t.patterns.some((re) => re.test(rel)), bad: t.bad });
+    testsAtMemo.set(rev, { isTest: t.isTest, bad: t.bad });
   }
   return testsAtMemo.get(rev);
 }
@@ -756,6 +781,7 @@ function recordReport(rec, last = null, where = 'stop') {
     return;
   }
   if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
+  if (drifted?.unchecked?.length) addNote(specUnread('the spec-gatekeeper role', drifted.unchecked));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
 }
 
@@ -800,9 +826,12 @@ function sendBackOnce(rec, why) {
 }
 
 // #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
-// test file (#245): a RED for a production file not written yet is valid.
-const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
-const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? missingTestModule(text);
+// test file (#245): a RED for a production file not written yet is valid. #374: a SyntaxError is a fault only as
+// the line a runtime prints for a file that does not parse, `SyntaxError: <message>` opening a line, after a
+// file:line (`test/a.test.mjs:1`), `Uncaught` or pytest's `E`; a test expecting one names it in its assertion.
+const RED_FAULTS = [/^[ \t>*-]*(?:(?:Uncaught|E|[^\s:]*[/\\.]\S*)[ \t]+)?(?<f>SyntaxError): \S/m,
+  /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
+const redFaultIn = (text) => { const m = RED_FAULTS.map((re) => text.match(re)).find(Boolean); return m ? (m.groups?.f ?? m[0]) : missingTestModule(text); };
 const redFaultWhy = (fault) => `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `
   + 'Fix that error so the test runs and fails on its expectation, then send the full report.';
 // Kept once per reporter and fault in ends/red-faults.json: the Stop after a hand-back repeats the same report.
@@ -1268,13 +1297,16 @@ if (mode === 'gate') {
     dropRoleFiles(id);
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     // #366: without --team the skill asks which team runs; record where the transcript stood, so a launch of a
-    // smaller team can be held until the user's answer is in it.
-    if (roles === null) {
+    // smaller team can be held until the user's answer is in it. #373: with --team and a list of team roles, the
+    // same record keeps them, so a launch whose Team line drops one is held the same way. A list the skill refuses
+    // (a word that is no team role) records nothing: no launch follows it.
+    const typedTeam = roles?.length && roles.every((r) => TEAM_ROLES.includes(r)) ? TEAM_ROLES.filter((r) => roles.includes(r)) : null;
+    if (roles === null || typedTeam) {
       const t = str(input.transcript_path);
       let offset = null;
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
-      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, at: new Date().toISOString() });
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), at: new Date().toISOString() });
     }
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
@@ -1314,7 +1346,16 @@ if (mode === 'gate') {
     const team = parseTeam(input.tool_input.prompt);
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
-    if (choice !== undefined) {
+    if (choice !== undefined && Array.isArray(choice?.typed)) {
+      // #373: the roles the user typed after --team, held until the user says otherwise.
+      const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
+      const dropped = choice.typed.filter((r) => CORE_ROLES.includes(r) && !launched.includes(r));
+      if (dropped.length && !answeredSince(choice)) {
+        deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
+          + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
+      }
+      fs.rmSync(choiceFile(id), { force: true });
+    } else if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
       if (smaller && !answeredSince(choice)) {
         deny('speckit-team: nobody chose this team. The request was typed without --team and no answer has come since, '
@@ -1706,8 +1747,8 @@ if (mode === 'ends') {
     }
     if (ok) writeJson(ok, {});
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
-    if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
-    const notes = [faultNote, citedNote].filter(Boolean);
+    const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
+      drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
     process.exit(0);
   }
