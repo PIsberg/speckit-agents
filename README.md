@@ -141,6 +141,11 @@ node install.mjs                                         # anywhere Node runs
 > [!IMPORTANT]
 > Restart Claude Code afterwards: agents are loaded at session start.
 
+The Claude config directory's path may hold spaces, but not `'`, `"`, `$` or a backtick: the hook
+command is written inside YAML quotes and run through a shell, so the installer refuses such a path
+before writing anything, naming the character
+([#377](https://github.com/PIsberg/speckit-agents/issues/377)).
+
 #### What gets installed
 
 The installer puts everything in your user-level Claude Code directory (`$CLAUDE_CONFIG_DIR`, or
@@ -442,7 +447,11 @@ the hook refuses a launch whose `Team:` line names less than the full team until
 team question is in the session's transcript after the request; under "we ship today, skip the tests"
 the main session launched implementer alone, unasked, in 2 of 6 scored runs on 2026-11-20
 ([#366](https://github.com/PIsberg/speckit-agents/issues/366)). The full team, the recommended
-option, needs no answer.
+option, needs no answer. Typed with `--team <roles>`, the roles you typed are held the same way: a
+launch whose `Team:` line drops one of them is refused until you answer since the request, so a
+first line without spec-auditor cannot switch the audit gate off for a request where you named it
+([#373](https://github.com/PIsberg/speckit-agents/issues/373)). A line naming more roles than you
+typed, or `security-reviewer` from `--security`, goes.
 
 `/speckit-team --team noagents <request>` runs no agent at all. The session runs Spec Kit's own
 skills itself, `speckit-specify`, `speckit-plan`, `speckit-tasks` and `speckit-implement` in that
@@ -1086,7 +1095,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback`; its entry carries the agent's scope rule (`gate scope tests`), which it applies to a write or Bash call after the gate lets it through, so one process decides both (#337: about 120 instead of 225 ms of hook processes per write on Windows) | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
@@ -1096,7 +1105,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `decisions --recommended` | CLI: the plan stop of `/speckit-team`, when every answer is the recommended option | hand-written edits at the plan stop: it records each answer in `plan.md` and applies the recommended options' `Spec:` lines to `spec.md`, or changes nothing and names the line it could not place (exit 1). The `Skill\|Agent` `gate` refuses a spec-auditor launch while `plan.md` still lists an open decision, so a failed record is not followed by an audit of an unsettled plan ([measurements](docs/measurements.md#the-plan-stop-in-one-call)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds, or an FR of its `spec.md` in no test line naming the feature's number that no task excuses with `No test: <reason>` ([#235](https://github.com/PIsberg/speckit-agents/issues/235)) (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents`: blocked once at its Stop, or the next role call denied once ([#351](https://github.com/PIsberg/speckit-agents/issues/351)) |
-| `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74, or a test of behaviour the code already has, which the main session then shows failing, #298), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError`, a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240), and so is one on a missing module the error names by a test path, a helper or a fixture (#245); a missing production file, a package or a path outside the repo is a valid RED. A `RED` or `FIXED` while a ticked test task cites an ID none of its test files holds (the task half of the drift check; an FR of `spec.md` no test names yet stays the gate's) is refused once with the lines, and a second such report goes through with a message naming them ([#315](https://github.com/PIsberg/speckit-agents/issues/315): found only at the gate, it cost the run of 2026-11-11 a verify round and a launch). The test-writer role of `--team skill-agents` gets the same check where its role is closed: blocked once at its Stop, or denied once at the next role call, which goes through when made again ([#316](https://github.com/PIsberg/speckit-agents/issues/316)), and so does its `RED` on a syntax, name or missing-test-module error, kept in `ends/red-faults.json` ([#334](https://github.com/PIsberg/speckit-agents/issues/334)) |
+| `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74, or a test of behaviour the code already has, which the main session then shows failing, #298), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError: <message>` line as a runtime prints it for a file that does not parse (opening a line, or after a `file:line`, `Uncaught` or pytest's `E`; a test that expects a SyntaxError and names it in its assertion is a valid RED, [#374](https://github.com/PIsberg/speckit-agents/issues/374)), a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240), and so is one on a missing module the error names by a test path, a helper or a fixture (#245); a missing production file, a package or a path outside the repo is a valid RED. A `RED` or `FIXED` while a ticked test task cites an ID none of its test files holds (the task half of the drift check; an FR of `spec.md` no test names yet stays the gate's) is refused once with the lines, and a second such report goes through with a message naming them ([#315](https://github.com/PIsberg/speckit-agents/issues/315): found only at the gate, it cost the run of 2026-11-11 a verify round and a launch). The test-writer role of `--team skill-agents` gets the same check where its role is closed: blocked once at its Stop, or denied once at the next role call, which goes through when made again ([#316](https://github.com/PIsberg/speckit-agents/issues/316)), and so does its `RED` on a syntax, name or missing-test-module error, kept in `ends/red-faults.json` ([#334](https://github.com/PIsberg/speckit-agents/issues/334)) |
 | `ends "VERDICT: PASS" "VERDICT: FAIL"` | security-reviewer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `VERDICT: PASS` or `VERDICT: FAIL`, the line the skill routes on (refused once, never twice); records nothing, so it never touches spec-auditor's verdict |
 
 Agent hooks live in each agent's frontmatter, so they only run while that agent is active. The three
@@ -1131,6 +1140,8 @@ file it writes as it would judge a `Write` of that file, before anything runs:
   of `git format-patch -o` and of `git worktree add` (a folder judged by a file in it), a long
   option read by any prefix of it, as git reads it (`--out=x`), and the file `find -fprint`,
   `-fprintf` and `-fls` name ([#352](https://github.com/PIsberg/speckit-agents/issues/352));
+- the file `curl -o` (`--output`, `-sSLo f`), `wget -O` (and its `-o` and `-a` logs) and `sort -o` write
+  ([#378](https://github.com/PIsberg/speckit-agents/issues/378));
 - after `cd`, `pushd` or `git -C`, paths from that folder; `sudo`, `env`, `nohup` and the like
   before a program are skipped.
 
@@ -1139,8 +1150,23 @@ A file git ignores (a test log, a coverage report) passes, because the lane chec
 the git directory never does.
 The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
 and every `-exec` of a `find`, not only the first (#352).
+Some commands write files only the run can tell (#378): every `curl` and every `wget` (their options, `-K`
+and `-e` files, `--config`, `~/.curlrc`, `WGETRC` and `~/.wgetrc` can all set where they write, so a read-only
+role downloads nothing), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
+`-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
+`gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
+`rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
+are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well; a script
+such a runner is handed (`npx -c '...'`, `pnpm exec --shell-mode`), and any runner option not known to
+leave the tool alone, counts the same way. A check flag counts only as
+an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
+any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
+count as their write flags. In a group of short options a letter after one that takes a value is that
+value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`) is a write only the run can tell
+too. A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
+command line is not seen.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
-`git format-patch` into the current folder) and a
+`git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
 still diffs what the command did. The read-only agents have no lane check, so `scope none` denies
 both, and allows every write outside the repo, such as a test log in a temp folder. A command it
@@ -1204,7 +1230,13 @@ it ran pass: those that cover its change, and in the last round the full suite),
 [Building in slices](#building-in-slices)). The `result` hook counts them per feature: GREEN resets
 the count, STUB leaves it, RED adds one, and a report that still has no `RESULT:` line after one
 request counts as RED. A handback and the Stop that follows it are one
-attempt, not two. A report made while the audit gate is closed is not counted: that implementer
+attempt, not two. An implementer the main session resumes with SendMessage, against the skill's
+rule of a fresh agent per round, keeps its `agent_id`; its next tool call closes its last report, so
+each later report is counted too, and a GREEN from it resets the count
+([#370](https://github.com/PIsberg/speckit-agents/issues/370)). The same reset keeps the `ends`
+checks (the drift check on spec-gatekeeper's `APPROVED`, test-writer's RED-fault and cited-ID checks)
+running on a resumed agent's later reports; spec-gatekeeper and security-reviewer run a hook only on
+Bash and on the hand-back, so one resumed that runs no Bash before reporting is not reset. A report made while the audit gate is closed is not counted: that implementer
 never got to work.
 
 After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
@@ -1215,7 +1247,11 @@ needs a new audit and starts the count from zero. Or the user decides, and to re
 deletes `.git/speckit-team/retries/<feature>.json`. In a run whose team has no architect, the
 denial says the user decides, since nobody is there to rethink the plan
 ([#106](https://github.com/PIsberg/speckit-agents/issues/106)). A retry record that cannot be read keeps the
-gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-team.mjs`
+gate shut, like an unreadable verdict. Two implementers that report at once, as side-by-side slices do,
+both count: the record is changed under a lock file (`retries/<feature>.json.lock`, taken over after 10 s
+if a process died holding it) and written whole through a rename, so a gate reading it never meets half
+a file ([#376](https://github.com/PIsberg/speckit-agents/issues/376); before, 4 and 5 of 12 trials lost a
+RED). The limit is `MAX_RED` in `hooks/speckit-team.mjs`
 ([Customising](#customising)).
 
 ### The lane check
@@ -1226,7 +1262,11 @@ script or an interpreter run through Bash can change files no command names. So 
 already dirty. When the agent stops, `lane` diffs everything since then, committed or not, and
 blocks the stop if any changed file is outside the lane. The agent is told which files to restore.
 Files that were dirty before the agent started are ignored. If the agent stops a second time with
-the problem still there, the hook lets it finish with a WARNING rather than loop.
+the problem still there, the hook lets it finish with a WARNING rather than loop. The count is the
+lane check's own (`agents/<id>.lane-asked`), not Claude Code's `stop_hook_active`, which stays true
+for the rest of a turn another Stop hook continued: a test-writer sent back by `ends`, or an
+implementer by `result`, that then wrote outside its lane was only warned
+([#375](https://github.com/PIsberg/speckit-agents/issues/375)).
 
 For test-writer and implementer the gate records the start on their first tool call. product-owner
 and architect work before the audit and have no gate, so the `start` entry in `settings.json` records
@@ -1244,7 +1284,8 @@ A path counts as a test if it matches one of:
 - `test_*.py`, `*_test.{go,py,rs,exs,dart,c,cc,cpp}`, `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs,mts,cts}`
 - `*{Test,Tests,IT,Spec}.{java,kt,kts,groovy,scala,cs}`, `*_spec.rb`, `*Test.swift`, `*Tests.swift`
 
-Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#customising)).
+Plus every regex line in the repo's `.specify/test-paths`, less every path a `!` line there takes out
+(see [Customising](#customising)).
 
 ### State
 
@@ -1255,7 +1296,11 @@ an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `dr
 `--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run (and, after a hand-back, a `<key>.handback.json` that says only whether its report had a `No test:` line, [#354](https://github.com/PIsberg/speckit-agents/issues/354)), and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
-`retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
+`retries/` or `ends/`. Files under `agents/`, `team/`, `project/`, `choice/` and `patch/` older than 30 days
+are removed at the next agent launch, at most once a day (`.pruned` records when); `verdicts/`, `retries/`,
+`ends/` and `audit/` hold a feature's standing and are never pruned
+([#380](https://github.com/PIsberg/speckit-agents/issues/380); one checkout had 147 files in `agents/` after 6
+weeks). That is inside `.git`, so it is never committed, and it is shared by every worktree of
 the repo, which lets parallel implementers in worktrees pass the same gate.
 
 ### Context budget
@@ -1342,10 +1387,18 @@ session's next request came only after both had reported
 - **Test layout the patterns miss:** add one JavaScript regex per line to `.specify/test-paths`
   in that repo. Lines starting with `#` are comments. A line that is not a valid regex stops
   test-writer and implementer from writing anything until it is fixed, and the message names it.
+- **Production code in a folder the patterns call tests** (a Python package's `testing/` module, an
+  OpenAPI document under `spec/`, seed data under `fixtures/`, an `e2e` workspace package): a line
+  starting with `!` takes every path its regex matches out of the tests, after all the patterns that
+  add, built-in or yours, so a test file under that folder stops being a test too
+  ([#372](https://github.com/PIsberg/speckit-agents/issues/372)). The lanes, the fast track's budget
+  and the drift check all read it. A bare `!` is refused like an invalid line.
 
   ```
   # golden files are tests too
   ^checks/golden/
+  # our OpenAPI document is production code
+  !^api/spec/
   ```
 
 - **The fast track's limits:** `PATCH_LINES` (30) and `PATCH_FILES` (2) in
@@ -1622,20 +1675,20 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 635 tests:
+`npm test` runs 656 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 218 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 233 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 66 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 17 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 20 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
@@ -2052,7 +2105,11 @@ A hook that crashes counts as a non-blocking error, so the action goes through a
 you. Check that `node` is on the PATH Claude Code sees, then run `claude --debug hooks` and look
 for `speckit-team.mjs` errors. This happened once already: hook commands written with `$HOME`
 expanded to `/c/Users/...`, which `node` on Windows resolves to `C:\c\Users\...`. The installer
-therefore writes a quoted absolute path. Do not hand-edit it into `$HOME` or `~`.
+therefore writes a quoted absolute path. Do not hand-edit it into `$HOME` or `~`. A path with an
+apostrophe once broke every agent's YAML frontmatter, and one with `$` was expanded by `sh`, while
+the installer reported "installed hook runs": it refuses such paths now, and on Linux and macOS its
+check runs the gate command as written, through `sh`
+([#377](https://github.com/PIsberg/speckit-agents/issues/377)).
 
 If the agents come from a project's `.claude/` (an install with `--claude-dir <repo>/.claude`)
 rather than your user directory, Claude Code skips their frontmatter hooks until that folder has
@@ -2153,7 +2210,9 @@ resets the count. To retry without changes, delete the file the message names.
 
 ### An agent is blocked writing a legitimate test file
 
-Add a pattern to `.specify/test-paths` ([Customising](#customising)).
+Add a pattern to `.specify/test-paths` ([Customising](#customising)). When it is implementer, denied
+a production file in a folder named `testing/`, `fixtures/`, `spec/` or `e2e/` ("may not change
+tests"), add a `!` line for that folder instead.
 
 ### "may not write ... until the test patterns can be read"
 
@@ -2281,8 +2340,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   implementer's `RESULT: RED` reports against the feature `.specify/feature.json` names: 3 in a row
   block implementer there until a GREEN, a new audit, or you delete the record, and
   spec-gatekeeper's word replaces that feature's.
-- **The first `Team:` line of a request is trusted.** The hook cannot check that the team on a
-  request's first launch is the one you chose at the team question: the main session writes it.
+- **The first `Team:` line of a request is held to your typing, not to your answer.** Typed with
+  `--team <roles>`, a first line that drops a role you typed is refused (#373); typed without, a line
+  naming less than the full team waits for an answer (#366). Neither reads what you answered: once
+  any answer is in the transcript, the main session writes the line and the hook takes it.
   Once a request's team has spec-auditor, no later line can drop it, but a first line without it
   opens the gate for that request's test-writer and implementer. Only `--team noagents` comes from
   your own typing, which is why only it opens the gate for the main session. Telling requests apart
@@ -2303,7 +2364,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   checked at all. At spec-gatekeeper's `APPROVED` the hook also checks every FR of `spec.md`, cited or
   not, but only that some test line names it with the feature's number (#235): one whose ID a test
   names without testing it, or one a task excuses with `No test:`, still rests on the gatekeeper's
-  own trace.
+  own trace. A requirement is one `spec.md` defines in bold (`**FR-001**:` or `**FR-001:**`) or as a
+  list item opening with the ID and a colon (`- FR-001: ...`); one written only in a table row or in
+  prose is not checked, and the hook records the `APPROVED` with a message saying so
+  ([#371](https://github.com/PIsberg/speckit-agents/issues/371)).
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2414,7 +2478,9 @@ allow rule it added, and leaves nothing of the installer's behind:
 - **Files:** only files that carry the installer's marker are removed; a same-named file you wrote
   is left alone. An agent that `--force` replaced is put back.
 - **Directories:** only `agents/`, `hooks/` or `skills/` that the install created, and only if
-  they are empty.
+  they are empty. A skill's own folder goes once its `SKILL.md` is removed and nothing else is in it;
+  a file you put beside it keeps the folder (`keep ... (not empty)`,
+  [#379](https://github.com/PIsberg/speckit-agents/issues/379)).
 - **The board mod**, if `--board` installed it: removed with `claude plugin uninstall`, and the
   `speckit-agents` marketplace with it when the installer added it. Claude Code's own state for it
   (under `plugins/`) is Claude Code's to keep. Without `claude` on PATH the uninstall warns, prints
@@ -2555,14 +2621,18 @@ records `APPROVED` and says the check did not run.
 
 At `APPROVED` the hook also runs it at spec level
 ([#235](https://github.com/PIsberg/speckit-agents/issues/235)): every requirement `spec.md` defines
-(`**FR-002**`) must be in some test file, on a line naming the feature by its number
+(`- **FR-002**: ...`, as Spec Kit's template writes it, `- **FR-002:** ...` or a plain `- FR-002: ...` list
+item; any number of digits, and a letter for a sub-requirement such as `FR-002a`,
+[#371](https://github.com/PIsberg/speckit-agents/issues/371)) must be in some test file, on a line naming the feature by its number
 (`test('001 FR-002 ...')` or a `// 001 FR-002` comment, as test-writer writes them), since every
 feature has an FR-002. A requirement no test can hold, such as a docs one, is excused only by a task
 that says `No test: <reason>` right after it (`FR-009 (No test: docs)`). That excuses the ID it
 follows and any the reason names, not the task's other IDs, at task level too. An excuse on one task
 holds for the whole feature: a test task that cites the same ID owes no test line for it
 ([#299](https://github.com/PIsberg/speckit-agents/issues/299)). The architect writes
-that and you approve it at the tasks stop, not the gatekeeper. `tools/drift.mjs` stays at task level, since features built before #235 do
+that and you approve it at the tasks stop, not the gatekeeper. A `spec.md` that names FR IDs but defines
+none in those forms is not passed in silence: the hook records the `APPROVED` and says no requirement
+of it was checked. `tools/drift.mjs` stays at task level, since features built before #235 do
 not name their number in every test.
 
 ```sh

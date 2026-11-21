@@ -808,6 +808,24 @@ test('--dry-run writes nothing', () => {
 });
 
 // A mistyped flag was ignored, so `--dryrun` wrote everything and `--unistall` installed.
+// #377: every agent and role skill carries the hook command in a single-quoted YAML scalar, with the path in double
+// quotes, and settings.json's gates run it through sh. An apostrophe ended the YAML scalar, and a $ or a backtick
+// was expanded by sh, yet the install said "installed hook runs". Such a path is refused before anything is written.
+test('#377: a config directory whose path holds an apostrophe, a double quote, $ or a backtick is refused, nothing written', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'skq-'));
+  const chars = process.platform === 'win32' ? ["'", '$', '`'] : ["'", '"', '$', '`'];
+  for (const ch of chars) {
+    const dir = path.join(base, `o${ch}brien`, '.claude');
+    const r = install(dir);
+    assert.equal(r.status, 1, `${ch}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`holds ${ch === '$' ? '\\$' : ch}, which`));
+    assert.equal(fs.existsSync(dir), false, `${ch}: nothing written`);
+  }
+  const spaced = path.join(base, 'with space', '.claude');
+  assert.equal(install(spaced, '--no-board').status, 0, 'a space is fine');
+  assert.equal(install(path.join(base, "o'brien", '.claude'), '--uninstall').status, 0, 'uninstall of such a path is not refused');
+});
+
 test('an unknown argument, or --claude-dir followed by a flag, is refused before anything is written', () => {
   for (const typo of ['--dryrun', '--unistall', 'uninstall', '--board=yes']) {
     const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
@@ -865,6 +883,23 @@ test('a settings.json that is JSON but not settings is left alone too', () => {
 
 // Uninstall leaves the config as it found it (SC-009 as the owner decided on 2026-10-06): the same
 // settings, in their own formatting, and no file or directory of the installer's left behind.
+// #379: uninstall removed each installed skill by removing its folder, recursively, so a file somebody put beside an
+// installed SKILL.md went with it. It removes SKILL.md, then the folder only once it is empty.
+test('#379: uninstall keeps a file somebody put in an installed skill folder, and the folder with it', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir, '--no-board').status, 0);
+  const notes = path.join(dir, 'skills', 'speckit-team', 'my-notes.md');
+  fs.writeFileSync(notes, 'mine\n');
+  const dry = install(dir, '--uninstall', '--dry-run');
+  assert.match(dry.stdout, /keep\s+.*speckit-team \(not empty\)/);
+  const r = install(dir, '--uninstall');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fs.readFileSync(notes, 'utf8'), 'mine\n', 'the file stays');
+  assert.equal(fs.existsSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md')), false, 'the installed SKILL.md goes');
+  assert.match(r.stdout, /keep\s+.*speckit-team \(not empty\)/);
+  assert.equal(fs.existsSync(path.join(dir, 'skills', 'speckit-triage')), false, 'an installed skill folder with nothing else in it goes');
+});
+
 test('install then uninstall into an empty config dir leaves it empty', () => {
   const dir = claudeDir();
   assert.deepEqual(roundTrip(dir), []);
