@@ -62,7 +62,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 ### skills/speckit-team/SKILL.md: Handoffs
 <!-- fingerprint: 0f6a576c -->
 - Launch every agent in the foreground; without a `run_in_background` parameter, end the turn and wait. pinned (`test/e2e.test.mjs` pins the parameter's behaviour); a breach costs tokens.
-- A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost).
+- A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost); a resumed agent's later reports are still checked and counted: hook `result` and `ends` close its last report at its next tool call (#370).
 - Do not ask an agent for more than its Report allows; one line before and after each launch. pinned.
 - Prompts carry only the role's Inputs; never paste the conversation or another full report. text, unseen (cost).
 - architect: a `dictated:` revision when the answers fix every edit. pinned.
