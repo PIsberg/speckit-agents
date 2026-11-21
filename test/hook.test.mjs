@@ -311,10 +311,14 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     'clang-format --i src/a.c', 'ruff check --fix-only src', 'ruff --fix src', 'rsync -a --exclude -n other/ src/', 'unzip a.zip -d -l',
     'unzip -d -l a.zip', 'patch -i --dry-run', 'tar --extr -f a.tar', 'sort --out=src/main/App.java x', 'awk --inc=inplace 1 src/main/App.java',
     'wget -O - --output-fi=src/main/w.log https://example.com/x',
+    // The second review: an awk option that takes no value, a check letter after a valued letter in one group (it is
+    // that option's value), wget --spider as another option's value, npx --call abbreviated, and an unknown runner option.
+    'awk -i inplace --posix 1 src/main/App.java', 'rsync -aen other/ src/', 'unzip -dl a.zip', 'wget --header --spider https://example.com/x',
+    'npx --cal "rm -rf src"', 'pnpm exec --shell-mode "rm -rf src"', 'npx --weird prettier --check src',
   ];
   for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
   const reads = [
-    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com', 'wget -O - https://example.com/x', 'wget --spider https://example.com',
+    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com', 'wget -O - https://example.com/x', 'wget -O /dev/null https://example.com',
     'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
     'prettier --check src', 'npx prettier --check src', 'eslint src', 'eslint --fix-dry-run src', 'gofmt -l src', 'black --check src', 'ruff check src', 'ruff format --check src',
     'rustfmt --check src/main.rs', 'cargo fmt --check', 'cargo fmt --all -- --check', 'clang-format src/a.c', 'terraform fmt -check', 'isort --check-only src', 'biome check src',

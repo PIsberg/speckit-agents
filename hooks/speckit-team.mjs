@@ -2335,11 +2335,14 @@ function unrunner(words) {
   if (['npm', 'pnpm', 'yarn'].includes(p) && ['exec', 'dlx', 'x'].includes(w[1])) w = w.slice(2);
   else if (['npx', 'pnpx', 'bunx'].includes(p)) w = w.slice(1);
   else return { words };
+  // Only options known to change nothing about what runs are skipped; any other (`--call` by any prefix, pnpm's
+  // `--shell-mode`, one not known here) may hand the runner a script, so it fails closed.
   let k = 0;
   while (k < w.length && w[k].startsWith('-')) {
     if (w[k] === '--') { k++; break; }
-    if (/^(-c|--call)(=|$)/.test(w[k])) return { words: [], script: true };
-    k += /^(-p|--package)$/.test(w[k]) ? 2 : 1;
+    if (/^(-p|--package)$/.test(w[k])) { k += 2; continue; }
+    if (/^(-y|--yes|--no|--no-install|-q|--quiet|-s|--silent|--ignore-existing|--bun|--package=.*)$/.test(w[k])) { k++; continue; }
+    return { words: [], script: true };
   }
   return { words: w.slice(k) };
 }
@@ -2383,6 +2386,13 @@ function formatterWrites(prog, a) {
   if (f.write) return a.some((w) => f.write.test(w));
   return !a.some((w) => f.check.test(w));
 }
+// Whether a short-option group (`-avn`) holds one of `letters` before a letter of `valued`, whose value is the rest
+// of the word (`-aen` is -a and -e with the value n).
+function groupHas(w, letters, valued) {
+  if (!/^-[^-]/.test(w)) return false;
+  for (const c of w.slice(1)) { if (valued.includes(c)) return false; if (letters.includes(c)) return true; }
+  return false;
+}
 // #378: whether tar extracts: its mode letters old style (`xzf`) or as options (`-x`, `--extract`, `--get`, by any
 // prefix getopt_long takes). A word that only looks like one errs toward a deny.
 const tarExtracts = (a) => (a[0] && !a[0].startsWith('-') ? /x/.test(a[0]) : false)
@@ -2414,26 +2424,23 @@ function toolWrites(prog, a) {
     out.targets = valuesOf('o', '--output').filter((v) => v !== '-');
     if (a.some((w) => /^-[A-Za-z]*O[A-Za-z]*$/.test(w) || /^--remote-name(-all)?$/.test(w))) out.unknown = 'the file curl -O names after its URL';
   } else if (prog === 'wget') {
+    // Without -O wget saves under the URL's name. --spider saves nothing, but wget has too many options taking a value
+    // to tell it from one's value, so it is not read: a read-only role's wget needs -O - (or -O /dev/null).
     const doc = valuesOf('O', '--output-document', true);
     out.targets = [...doc.filter((v) => v !== '-'), ...valuesOf('o', '--output-file', true), ...valuesOf('a', '--append-output', true)];
-    if (!doc.length && !a.some((w) => longIs(w, '--spider'))) out.unknown = 'the file wget saves under its URL\'s name';
+    if (!doc.length) out.unknown = 'the file wget saves under its URL\'s name';
   } else if (prog === 'sort') out.targets = valuesOf('o', '--output', true);
   else if (prog === 'awk' || prog === 'gawk') {
-    const inplace = a.some((w, k) => (w === '-i' || longIs(w, '--include')) && (w.includes('=') ? w.endsWith('=inplace') : a[k + 1] === 'inplace'))
-      || a.includes('-iinplace');
-    if (inplace) {
-      const script = a.some((w) => /^(-f|-e)$/.test(w) || longIs(w, '--file') || longIs(w, '--source'));
-      const pos = positionals(a, ['-f', '-v', '-F', '-i', '-e', ...a.filter((w) => !w.includes('=') && /^--/.test(w))]);
-      out.targets = (script ? pos : pos.slice(1)).filter((w) => !/^[A-Za-z_]\w*=/.test(w));
-    }
+    // Which operands are files depends on gawk's options; telling them apart is not worth a reader that can be wrong.
+    if (a.some((w) => /inplace/.test(w))) out.unknown = 'the files awk -i inplace rewrites';
   } else if (prog === 'patch') {
     if (!optionWords(a, { valued: PATCH_VALUED }).some((w) => longIs(w, '--dry-run', 5))) out.unknown = 'the files patch changes';
   } else if (prog === 'tar') {
     if (tarExtracts(a)) out.unknown = 'what tar extracts';
   } else if (prog === 'unzip') {
-    if (!optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' }).some((w) => /^-[A-Za-z]*[lptvZ]/.test(w))) out.unknown = 'what unzip extracts';
+    if (!optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' }).some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
   } else if (prog === 'rsync') {
-    if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || /^-[A-Za-z]*n[A-Za-z]*$/.test(w))) {
+    if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
       out.unknown = 'what rsync copies into its destination';
     }
   } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;

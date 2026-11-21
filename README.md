@@ -1140,8 +1140,8 @@ file it writes as it would judge a `Write` of that file, before anything runs:
   of `git format-patch -o` and of `git worktree add` (a folder judged by a file in it), a long
   option read by any prefix of it, as git reads it (`--out=x`), and the file `find -fprint`,
   `-fprintf` and `-fls` name ([#352](https://github.com/PIsberg/speckit-agents/issues/352));
-- the file `curl -o` (`--output`, `-sSLo f`), `wget -O` (and its `-o` and `-a` logs), `sort -o` and
-  `awk -i inplace` write ([#378](https://github.com/PIsberg/speckit-agents/issues/378));
+- the file `curl -o` (`--output`, `-sSLo f`), `wget -O` (and its `-o` and `-a` logs) and `sort -o` write
+  ([#378](https://github.com/PIsberg/speckit-agents/issues/378));
 - after `cd`, `pushd` or `git -C`, paths from that folder; `sudo`, `env`, `nohup` and the like
   before a program are skipped.
 
@@ -1151,15 +1151,17 @@ the git directory never does.
 The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
 and every `-exec` of a `find`, not only the first (#352).
 Some commands write files only the run can tell (#378): `curl -O` and a `wget` without `-O` (named after
-the URL), `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
+the URL; `--spider` too, so a read-only role checks a URL with `-O -`), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
 `-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
 `gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
 `rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
 are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well; a script
-such a runner is handed (`npx -c '...'`) is not read and counts the same way. A check flag counts only as
+such a runner is handed (`npx -c '...'`, `pnpm exec --shell-mode`), and any runner option not known to
+leave the tool alone, counts the same way. A check flag counts only as
 an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
-count as their write flags.
+count as their write flags. In a group of short options a letter after one that takes a value is that
+value (`rsync -aen` is no dry run).
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
