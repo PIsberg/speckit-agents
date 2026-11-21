@@ -141,6 +141,11 @@ node install.mjs                                         # anywhere Node runs
 > [!IMPORTANT]
 > Restart Claude Code afterwards: agents are loaded at session start.
 
+The Claude config directory's path may hold spaces, but not `'`, `"`, `$` or a backtick: the hook
+command is written inside YAML quotes and run through a shell, so the installer refuses such a path
+before writing anything, naming the character
+([#377](https://github.com/PIsberg/speckit-agents/issues/377)).
+
 #### What gets installed
 
 The installer puts everything in your user-level Claude Code directory (`$CLAUDE_CONFIG_DIR`, or
@@ -1649,13 +1654,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 651 tests:
+`npm test` runs 652 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 230 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 138 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -2079,7 +2084,11 @@ A hook that crashes counts as a non-blocking error, so the action goes through a
 you. Check that `node` is on the PATH Claude Code sees, then run `claude --debug hooks` and look
 for `speckit-team.mjs` errors. This happened once already: hook commands written with `$HOME`
 expanded to `/c/Users/...`, which `node` on Windows resolves to `C:\c\Users\...`. The installer
-therefore writes a quoted absolute path. Do not hand-edit it into `$HOME` or `~`.
+therefore writes a quoted absolute path. Do not hand-edit it into `$HOME` or `~`. A path with an
+apostrophe once broke every agent's YAML frontmatter, and one with `$` was expanded by `sh`, while
+the installer reported "installed hook runs": it refuses such paths now, and on Linux and macOS its
+check runs the gate command as written, through `sh`
+([#377](https://github.com/PIsberg/speckit-agents/issues/377)).
 
 If the agents come from a project's `.claude/` (an install with `--claude-dir <repo>/.claude`)
 rather than your user directory, Claude Code skips their frontmatter hooks until that folder has
