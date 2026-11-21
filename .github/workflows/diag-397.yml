@@ -19,6 +19,16 @@ jobs:
           node-version: 22
       - name: Install Claude Code
         run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
+      - name: The #366 case with the UserPromptExpansion hook 3 s slow, 5 times
+        env:
+          SPECKIT_REQUIRE_CLAUDE: '1'
+          SPECKIT_DIAG_DELAY: '3000'
+        run: |
+          for i in $(seq 1 5); do
+            export SPECKIT_TRACE="$RUNNER_TEMP/slow-$i.jsonl"
+            if node tools/test.mjs --test-name-pattern='#366 a smaller team' test/e2e.test.mjs > "$RUNNER_TEMP/slow-out-$i.txt" 2>&1; then echo "slow run $i: pass"; else echo "slow run $i: FAIL"; fi
+            echo "::group::slow run $i trace"; cut -c1-400 "$SPECKIT_TRACE" 2>/dev/null; echo "::endgroup::"
+          done
       - name: The #366 case, 20 times
         env:
           SPECKIT_REQUIRE_CLAUDE: '1'

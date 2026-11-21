@@ -1268,6 +1268,8 @@ if (mode === 'gate') {
     fs.rmSync(projectFile(id), { force: true });
     fs.rmSync(choiceFile(id), { force: true });
     dropRoleFiles(id);
+    // DIAGNOSTIC (#397): a slow UserPromptExpansion hook, to see whether Claude Code waits for it.
+    if (process.env.SPECKIT_DIAG_DELAY) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number(process.env.SPECKIT_DIAG_DELAY));
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     // #366: without --team the skill asks which team runs; record where the transcript stood, so a launch of a
     // smaller team can be held until the user's answer is in it.
