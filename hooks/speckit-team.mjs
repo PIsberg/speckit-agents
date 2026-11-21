@@ -491,6 +491,39 @@ function fingerprint(feat) {
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
+// #376: the retry record is read, added to and written back by every implementer's report. Two reports at once (slices
+// built side by side) each read the old list and one RED was lost, so the change runs under a lock file created with
+// wx, and the record is written to a temporary file and renamed over, so a reader never meets half a file. A lock
+// older than LOCK_STALE_MS was left by a process that died, and is taken over. One not freed within LOCK_WAIT_MS is
+// waited out no longer: the change runs unlocked, as before #376, and says so.
+const LOCK_WAIT_MS = 3000;
+const LOCK_STALE_MS = 10000;
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function locked(f, fn) {
+  const lock = `${f}.lock`;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  let held = false;
+  for (const until = Date.now() + LOCK_WAIT_MS; !held && Date.now() < until;) {
+    try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); held = true; } catch (e) {
+      if (e?.code !== 'EEXIST') break;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) { fs.rmSync(lock, { force: true }); continue; } } catch { /* freed meanwhile */ }
+      pause(10 + Math.floor(Math.random() * 20));
+    }
+  }
+  if (!held) addNote(`speckit-team: ${lock} was not freed within ${LOCK_WAIT_MS} ms, so the retry count was changed without it; a RED reported at the same moment may be lost.`);
+  try { return fn(); } finally { if (held) fs.rmSync(lock, { force: true }); }
+}
+function writeJsonAtomic(f, obj) {
+  const tmp = `${f}.${process.pid}.tmp`;
+  writeJson(tmp, obj);
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, f); return; } catch (e) {
+      // Windows refuses a rename over a file another process holds open without delete sharing: try again briefly.
+      if (i >= 20 || (e?.code !== 'EPERM' && e?.code !== 'EACCES' && e?.code !== 'EBUSY')) { fs.rmSync(tmp, { force: true }); throw e; }
+      pause(10);
+    }
+  }
+}
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
 // #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
 const AUDIT_FAIL_LIMIT = 2;
@@ -998,11 +1031,15 @@ function countResult(rec, word) {
   const feat = feature() ?? rec.feature;
   if (!feat || !word || word === 'RESULT: STUB' || !claimed(rec, 'count')) return;
   const f = retryFile(feat);
-  if (word === 'RESULT: GREEN') { fs.rmSync(f, { force: true }); return; }
-  const prev = readState(f);
-  if (prev === null) { addNote(`speckit-team: the implementer role reported RESULT: RED, but the retry record ${f} is unreadable; delete it to reset the count.`); return; }
-  const red = [...(redCount(prev, feat) ? prev.red : []), `role:${rec.at ?? new Date().toISOString()}`];
-  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  if (word === 'RESULT: GREEN') { locked(f, () => fs.rmSync(f, { force: true })); return; }
+  const red = locked(f, () => {
+    const prev = readState(f);
+    if (prev === null) return null;
+    const list = [...(redCount(prev, feat) ? prev.red : []), `role:${rec.at ?? new Date().toISOString()}`];
+    writeJsonAtomic(f, { feature: feat, fingerprint: fingerprint(feat), red: list });
+    return list;
+  });
+  if (red === null) { addNote(`speckit-team: the implementer role reported RESULT: RED, but the retry record ${f} is unreadable; delete it to reset the count.`); return; }
   if (red.length >= MAX_RED) {
     addNote(`speckit-team: the implementer role reported RESULT: RED ${red.length} times in a row on ${feat}: the retry limit. Do not call it again; `
       + 'the architect rethinks plan.md or tasks.md (a new audit resets the count), or the user decides.');
@@ -1668,17 +1705,22 @@ if (mode === 'result') {
   const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
   const f = retryFile(feat);
-  const prev = readState(f);
-  if (prev === null) {
+  // #376: read and written under the lock; emit exits the process, so nothing is said until the lock is freed.
+  const counted = locked(f, () => {
+    const prev = readState(f);
+    if (prev === null) return { unreadable: true };
+    if (result === 'STUB') return {};
+    if (result === 'GREEN') { fs.rmSync(f, { force: true }); return {}; }
+    const list = [...(redCount(prev, feat) ? prev.red : []), agentId ?? new Date().toISOString()];
+    writeJsonAtomic(f, { feature: feat, fingerprint: fingerprint(feat), red: list });
+    return { red: list };
+  });
+  if (counted.unreadable) {
     emit({ systemMessage: `speckit-team: implementer reported ${result}, but the retry record ${f} is unreadable; delete it to reset the count.` });
   }
   if (result === 'STUB') emit({ systemMessage: `implementer reported STUB for ${feat}; the retry count is unchanged.` });
-  if (result === 'GREEN') {
-    fs.rmSync(f, { force: true });
-    emit({ systemMessage: `implementer reported GREEN for ${feat}; the retry count is reset.` });
-  }
-  const red = [...(redCount(prev, feat) ? prev.red : []), agentId ?? new Date().toISOString()];
-  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  if (result === 'GREEN') emit({ systemMessage: `implementer reported GREEN for ${feat}; the retry count is reset.` });
+  const { red } = counted;
   emit({ systemMessage: red.length >= MAX_RED
     ? `implementer reported RED for ${feat} (${red.length} of ${MAX_RED}): retry limit reached. Route to the architect or the user.`
     : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
