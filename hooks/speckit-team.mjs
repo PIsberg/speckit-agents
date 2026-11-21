@@ -2421,10 +2421,10 @@ function toolWrites(prog, a) {
     return [];
   });
   if (prog === 'curl') {
+    // Like wget, curl writes through many options (-O, -D, -c, --trace, --stderr, --output-dir, ...), -K files and
+    // ~/.curlrc, so every curl is a write only the run can tell; the file -o names is judged as well.
     out.targets = valuesOf('o', '--output').filter((v) => v !== '-');
-    if (a.some((w) => /^-[A-Za-z]*O[A-Za-z]*$/.test(w) || /^--remote-name(-all)?$/.test(w))) out.unknown = 'the file curl -O names after its URL';
-    // -K and --config read a file of options, which can name an output.
-    else if (a.some((w) => groupHas(w, 'K', 'oOdeHuAxXTwrmEbcy') || w === '--config' || w.startsWith('--config='))) out.unknown = 'what curl --config sets it to write';
+    out.unknown = 'what curl writes';
   } else if (prog === 'wget') {
     // Where wget writes is set by its options (-O, the logs, --save-cookies, --warc-file and more), by -e commands, by
     // --config, and by WGETRC or ~/.wgetrc, which a command line does not show. So every wget is a write only the run

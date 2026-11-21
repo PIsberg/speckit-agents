@@ -1150,9 +1150,9 @@ A file git ignores (a test log, a coverage report) passes, because the lane chec
 the git directory never does.
 The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
 and every `-exec` of a `find`, not only the first (#352).
-Some commands write files only the run can tell (#378): `curl -O` (named after the URL), `curl -K` and
-`--config` (a file of options), every `wget` (its options, `-e` commands, `--config`, `WGETRC` and `~/.wgetrc`
-can all set where it writes; a read-only role fetches with `curl`), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
+Some commands write files only the run can tell (#378): every `curl` and every `wget` (their options, `-K`
+and `-e` files, `--config`, `~/.curlrc`, `WGETRC` and `~/.wgetrc` can all set where they write, so a read-only
+role downloads nothing), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
 `-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
 `gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
 `rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They

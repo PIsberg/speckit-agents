@@ -323,10 +323,14 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     // --warc-file), so every wget is a write only the run can tell; curl's -K and --config read a file of options.
     'WGETRC=w.rc wget -O - https://example.com/x', 'wget -O - --save-cookies src/main/c.txt https://example.com/x',
     'curl -K c.cfg https://example.com/x', 'curl --config c.cfg https://example.com/x',
+    // The fifth review: curl writes through -D, -c, --trace, --stderr, --output-dir and ~/.curlrc as well, so every curl
+    // is a write only the run can tell, as every wget is.
+    'curl -s -D src/main/h.txt https://example.com/x', 'curl -s -c src/main/jar https://example.com/x', 'curl -s --trace src/main/t https://example.com/x',
+    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com',
   ];
   for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
   const reads = [
-    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com',     'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
+        'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
     'prettier --check src', 'npx prettier --check src', 'eslint src', 'eslint --fix-dry-run src', 'gofmt -l src', 'black --check src', 'ruff check src', 'ruff format --check src',
     'rustfmt --check src/main.rs', 'cargo fmt --check', 'cargo fmt --all -- --check', 'clang-format src/a.c', 'terraform fmt -check', 'isort --check-only src', 'biome check src',
     'black --version', 'rustfmt --help', 'rsync -a -n --exclude x other/ src/', 'unzip -l -d out a.zip', 'gofmt -w=false src/main.go',
