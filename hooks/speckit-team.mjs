@@ -253,7 +253,7 @@ const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
 function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { return { problems: driftModule.drift(root, { feature: feat, spec }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
@@ -268,6 +268,8 @@ const citedRefusal = (word, problems) => `Your ${word} leaves requirements a tic
 const citedStands = (name, word, problems) => `speckit-team: ${name} reported ${word} with cited requirements no test names: ${problems.join('; ')}. `
   + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
 const citedUnchecked = (name, word, failed) => `speckit-team: the cited-ID check could not run (${failed}), so ${name}'s ${word} goes on without it.`;
+// #371: a spec whose FR IDs the check cannot read as requirements is recorded, and the user told so.
+const specUnread = (name, unchecked) => `speckit-team: ${name}'s APPROVED is recorded without the spec-level drift check: ${unchecked.join('; ')}`;
 const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
   + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
@@ -366,6 +368,21 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
 const stateDir = path.join(commonDir, 'speckit-team');
+// #370: an accepted report leaves a marker per agent (result, ends-ok), so the Stop that follows its hand-back is not
+// judged a second time. An agent that works again after one (resumed with SendMessage) makes a tool call first, which
+// ends the old report: every marker goes, so its next report is checked and counted afresh. A refusal's own marker
+// stays while no report was accepted, so a report is still sent back once, never twice. spec-auditor's verdict mode
+// keeps its own reset.
+if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
+  const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
+    try {
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+    } catch (e) {
+      addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
+    }
+  }
+}
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
@@ -415,25 +432,33 @@ function isTeamFile(abs) {
 }
 
 // A line that is not a valid regex leaves the test lanes undecidable: scope denies and lane says it
-// could not run, instead of crashing, which would let every write through.
+// could not run, instead of crashing, which would let every write through. A line starting `!` takes the paths
+// it matches out of the tests, after every pattern that adds, built-in or not (#372): a production folder named
+// testing/, fixtures/, spec/ or e2e/. A bare `!` would take out every path, so it is a bad line too.
 function parseTestPaths(text) {
-  const patterns = [...TEST_PATTERNS]; const bad = [];
+  const patterns = [...TEST_PATTERNS]; const drops = []; const bad = [];
   text.split('\n').forEach((l, i) => {
     const t = l.trim();
     if (!t || t.startsWith('#')) return;
-    try { patterns.push(new RegExp(t)); } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
+    const drop = t.startsWith('!');
+    const src = drop ? t.slice(1).trim() : t;
+    try {
+      if (!src) throw new Error('empty');
+      (drop ? drops : patterns).push(new RegExp(src));
+    } catch { bad.push(`.specify/test-paths line ${i + 1} \`${t}\``); }
   });
-  return { patterns, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
+  const isTest = (rel) => patterns.some((re) => re.test(rel)) && !drops.some((re) => re.test(rel));
+  return { isTest, bad: bad.length ? `${bad.join(', ')} ${bad.length > 1 ? 'are not valid regular expressions' : 'is not a valid regular expression'}` : null };
 }
 // Read once per run, from the working tree.
 const testPaths = parseTestPaths(readOr(path.join(root, '.specify', 'test-paths'), ''));
-const isTest = (rel) => testPaths.patterns.some((re) => re.test(rel));
+const isTest = testPaths.isTest;
 // The same patterns as committed at a revision: the fast track measures with the rules the run started under.
 const testsAtMemo = new Map();
 function testsAt(rev) {
   if (!testsAtMemo.has(rev)) {
     const t = parseTestPaths(git(root, 'cat-file', 'blob', `${rev}:.specify/test-paths`) ?? '');
-    testsAtMemo.set(rev, { isTest: (rel) => t.patterns.some((re) => re.test(rel)), bad: t.bad });
+    testsAtMemo.set(rev, { isTest: t.isTest, bad: t.bad });
   }
   return testsAtMemo.get(rev);
 }
@@ -466,6 +491,39 @@ function fingerprint(feat) {
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
+// #376: the retry record is read, added to and written back by every implementer's report. Two reports at once (slices
+// built side by side) each read the old list and one RED was lost, so the change runs under a lock file created with
+// wx, and the record is written to a temporary file and renamed over, so a reader never meets half a file. A lock
+// older than LOCK_STALE_MS was left by a process that died, and is taken over. One not freed within LOCK_WAIT_MS is
+// waited out no longer: the change runs unlocked, as before #376, and says so.
+const LOCK_WAIT_MS = 3000;
+const LOCK_STALE_MS = 10000;
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function locked(f, fn) {
+  const lock = `${f}.lock`;
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  let held = false;
+  for (const until = Date.now() + LOCK_WAIT_MS; !held && Date.now() < until;) {
+    try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); held = true; } catch (e) {
+      if (e?.code !== 'EEXIST') break;
+      try { if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) { fs.rmSync(lock, { force: true }); continue; } } catch { /* freed meanwhile */ }
+      pause(10 + Math.floor(Math.random() * 20));
+    }
+  }
+  if (!held) addNote(`speckit-team: ${lock} was not freed within ${LOCK_WAIT_MS} ms, so the retry count was changed without it; a RED reported at the same moment may be lost.`);
+  try { return fn(); } finally { if (held) fs.rmSync(lock, { force: true }); }
+}
+function writeJsonAtomic(f, obj) {
+  const tmp = `${f}.${process.pid}.tmp`;
+  writeJson(tmp, obj);
+  for (let i = 0; ; i++) {
+    try { fs.renameSync(tmp, f); return; } catch (e) {
+      // Windows refuses a rename over a file another process holds open without delete sharing: try again briefly.
+      if (i >= 20 || (e?.code !== 'EPERM' && e?.code !== 'EACCES' && e?.code !== 'EBUSY')) { fs.rmSync(tmp, { force: true }); throw e; }
+      pause(10);
+    }
+  }
+}
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
 // #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
 const AUDIT_FAIL_LIMIT = 2;
@@ -650,7 +708,10 @@ function linesAfter(file, offset) {
 // A transcript that cannot be read proves nothing either way, so it holds nothing (hooks fail open).
 const NOT_AN_ANSWER = /^(<|Base directory for this skill|Stop hook feedback|\[Request interrupted)/;
 function answeredSince(rec) {
-  const entries = Number.isInteger(rec?.offset) ? linesAfter(rec.transcript, rec.offset) : null;
+  // #397: a transcript that does not exist yet holds no answer. Claude Code writes it some time after the request, and a
+  // first launch can come before that; read as unreadable, it counted as answered and the hold failed open.
+  const unwritten = typeof rec?.transcript === 'string' && rec.transcript && !fs.existsSync(rec.transcript);
+  const entries = Number.isInteger(rec?.offset) ? (unwritten ? [] : linesAfter(rec.transcript, rec.offset)) : null;
   if (!entries) return true;
   const asks = new Set();
   for (const l of entries) {
@@ -756,6 +817,7 @@ function recordReport(rec, last = null, where = 'stop') {
     return;
   }
   if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
+  if (drifted?.unchecked?.length) addNote(specUnread('the spec-gatekeeper role', drifted.unchecked));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
 }
 
@@ -800,9 +862,12 @@ function sendBackOnce(rec, why) {
 }
 
 // #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
-// test file (#245): a RED for a production file not written yet is valid.
-const RED_FAULTS = [/\bSyntaxError\b/, /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
-const redFaultIn = (text) => RED_FAULTS.map((re) => text.match(re)).find(Boolean)?.[0] ?? missingTestModule(text);
+// test file (#245): a RED for a production file not written yet is valid. #374: a SyntaxError is a fault only as
+// the line a runtime prints for a file that does not parse, `SyntaxError: <message>` opening a line, after a
+// file:line (`test/a.test.mjs:1`), `Uncaught` or pytest's `E`; a test expecting one names it in its assertion.
+const RED_FAULTS = [/^[ \t>*-]*(?:(?:Uncaught|E|[^\s:]*[/\\.]\S*)[ \t]+)?(?<f>SyntaxError): \S/m,
+  /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
+const redFaultIn = (text) => { const m = RED_FAULTS.map((re) => text.match(re)).find(Boolean); return m ? (m.groups?.f ?? m[0]) : missingTestModule(text); };
 const redFaultWhy = (fault) => `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `
   + 'Fix that error so the test runs and fails on its expectation, then send the full report.';
 // Kept once per reporter and fault in ends/red-faults.json: the Stop after a hand-back repeats the same report.
@@ -969,11 +1034,15 @@ function countResult(rec, word) {
   const feat = feature() ?? rec.feature;
   if (!feat || !word || word === 'RESULT: STUB' || !claimed(rec, 'count')) return;
   const f = retryFile(feat);
-  if (word === 'RESULT: GREEN') { fs.rmSync(f, { force: true }); return; }
-  const prev = readState(f);
-  if (prev === null) { addNote(`speckit-team: the implementer role reported RESULT: RED, but the retry record ${f} is unreadable; delete it to reset the count.`); return; }
-  const red = [...(redCount(prev, feat) ? prev.red : []), `role:${rec.at ?? new Date().toISOString()}`];
-  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  if (word === 'RESULT: GREEN') { locked(f, () => fs.rmSync(f, { force: true })); return; }
+  const red = locked(f, () => {
+    const prev = readState(f);
+    if (prev === null) return null;
+    const list = [...(redCount(prev, feat) ? prev.red : []), `role:${rec.at ?? new Date().toISOString()}`];
+    writeJsonAtomic(f, { feature: feat, fingerprint: fingerprint(feat), red: list });
+    return list;
+  });
+  if (red === null) { addNote(`speckit-team: the implementer role reported RESULT: RED, but the retry record ${f} is unreadable; delete it to reset the count.`); return; }
   if (red.length >= MAX_RED) {
     addNote(`speckit-team: the implementer role reported RESULT: RED ${red.length} times in a row on ${feat}: the retry limit. Do not call it again; `
       + 'the architect rethinks plan.md or tasks.md (a new audit resets the count), or the user decides.');
@@ -1268,13 +1337,16 @@ if (mode === 'gate') {
     dropRoleFiles(id);
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     // #366: without --team the skill asks which team runs; record where the transcript stood, so a launch of a
-    // smaller team can be held until the user's answer is in it.
-    if (roles === null) {
+    // smaller team can be held until the user's answer is in it. #373: with --team and a list of team roles, the
+    // same record keeps them, so a launch whose Team line drops one is held the same way. A list the skill refuses
+    // (a word that is no team role) records nothing: no launch follows it.
+    const typedTeam = roles?.length && roles.every((r) => TEAM_ROLES.includes(r)) ? TEAM_ROLES.filter((r) => roles.includes(r)) : null;
+    if (roles === null || typedTeam) {
       const t = str(input.transcript_path);
       let offset = null;
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
-      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, at: new Date().toISOString() });
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), at: new Date().toISOString() });
     }
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
@@ -1314,7 +1386,16 @@ if (mode === 'gate') {
     const team = parseTeam(input.tool_input.prompt);
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
-    if (choice !== undefined) {
+    if (choice !== undefined && Array.isArray(choice?.typed)) {
+      // #373: the roles the user typed after --team, held until the user says otherwise.
+      const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
+      const dropped = choice.typed.filter((r) => CORE_ROLES.includes(r) && !launched.includes(r));
+      if (dropped.length && !answeredSince(choice)) {
+        deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
+          + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
+      }
+      fs.rmSync(choiceFile(id), { force: true });
+    } else if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
       if (smaller && !answeredSince(choice)) {
         deny('speckit-team: nobody chose this team. The request was typed without --team and no answer has come since, '
@@ -1627,17 +1708,22 @@ if (mode === 'result') {
   const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
   const f = retryFile(feat);
-  const prev = readState(f);
-  if (prev === null) {
+  // #376: read and written under the lock; emit exits the process, so nothing is said until the lock is freed.
+  const counted = locked(f, () => {
+    const prev = readState(f);
+    if (prev === null) return { unreadable: true };
+    if (result === 'STUB') return {};
+    if (result === 'GREEN') { fs.rmSync(f, { force: true }); return {}; }
+    const list = [...(redCount(prev, feat) ? prev.red : []), agentId ?? new Date().toISOString()];
+    writeJsonAtomic(f, { feature: feat, fingerprint: fingerprint(feat), red: list });
+    return { red: list };
+  });
+  if (counted.unreadable) {
     emit({ systemMessage: `speckit-team: implementer reported ${result}, but the retry record ${f} is unreadable; delete it to reset the count.` });
   }
   if (result === 'STUB') emit({ systemMessage: `implementer reported STUB for ${feat}; the retry count is unchanged.` });
-  if (result === 'GREEN') {
-    fs.rmSync(f, { force: true });
-    emit({ systemMessage: `implementer reported GREEN for ${feat}; the retry count is reset.` });
-  }
-  const red = [...(redCount(prev, feat) ? prev.red : []), agentId ?? new Date().toISOString()];
-  writeJson(f, { feature: feat, fingerprint: fingerprint(feat), red });
+  if (result === 'GREEN') emit({ systemMessage: `implementer reported GREEN for ${feat}; the retry count is reset.` });
+  const { red } = counted;
   emit({ systemMessage: red.length >= MAX_RED
     ? `implementer reported RED for ${feat} (${red.length} of ${MAX_RED}): retry limit reached. Route to the architect or the user.`
     : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
@@ -1706,8 +1792,8 @@ if (mode === 'ends') {
     }
     if (ok) writeJson(ok, {});
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
-    if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
-    const notes = [faultNote, citedNote].filter(Boolean);
+    const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
+      drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
     process.exit(0);
   }
@@ -1723,7 +1809,30 @@ if (mode === 'ends') {
 // entry records it here, at SubagentStart, for the lane check at their Stop (#88). Never a decision.
 // The same entry starts every team agent with its session's project, if the launch named one (feature
 // 007): the block goes to the agent as additionalContext. Never a decision.
+// #380: per-agent markers (agents/), per-session records (team/, project/, choice/) and the fast track's start records
+// (patch/) are kept only while a run may still read them. The SubagentStart entry, one process per launch, removes those
+// older than PRUNE_DAYS, at most once a day (a .pruned stamp). Never verdicts/, retries/, ends/ or audit/: they hold a
+// feature's standing. Nothing here may throw, since a hook that crashes fails open.
+const PRUNE_DAYS = 30;
+const DAY_MS = 86400000;
+function pruneState(now = Date.now()) {
+  if (!fs.existsSync(stateDir)) return;
+  const stamp = path.join(stateDir, '.pruned');
+  try { if (now - fs.statSync(stamp).mtimeMs < DAY_MS) return; } catch { /* never pruned here */ }
+  const cutoff = now - PRUNE_DAYS * DAY_MS;
+  for (const d of ['agents', 'team', 'project', 'choice', 'patch']) {
+    let names;
+    try { names = fs.readdirSync(path.join(stateDir, d)); } catch { continue; }
+    for (const n of names) {
+      const f = path.join(stateDir, d, n);
+      try { const s = fs.lstatSync(f); if (s.isFile() && s.mtimeMs < cutoff) fs.rmSync(f, { force: true }); } catch { /* the next file */ }
+    }
+  }
+  try { fs.writeFileSync(stamp, new Date(now).toISOString()); } catch { /* pruned again on the next launch */ }
+}
+
 if (mode === 'start') {
+  pruneState();
   const type = str(input.agent_type);
   if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
@@ -1760,11 +1869,20 @@ if (mode === 'lane') {
   const found = laneOutside(base, rule, prefixes, who);
   if ('problem' in found) emit({ systemMessage: `speckit-team: ${found.problem}` });
   const { outside } = found;
-  if (outside.length && !input.stop_hook_active) {
-    block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
-      + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
+  // #375: sent back once per lane record, counted in its own marker. Not stop_hook_active: Claude Code keeps it true
+  // for the rest of a turn another Stop hook (ends, result) continued, so lane would only warn about a file written
+  // after that. A marker that cannot be written falls back to the flag.
+  const asked = path.join(stateDir, 'agents', `${agentKey}.lane-asked`);
+  if (outside.length && !fs.existsSync(asked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(asked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) {
+      block(`Lane check: ${who} changed files outside its lane: ${outside.join(', ')}. `
+        + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
+    }
   }
   fs.rmSync(f, { force: true });
+  fs.rmSync(asked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
 }
@@ -2230,9 +2348,135 @@ const writesUnseen = (words) => {
     return a.some((x) => /^-(delete|fprint0?|fprintf|fls)$/.test(x)) || a.some((x, k) => /^-(exec|execdir|ok|okdir)$/.test(x) && writesUnseen(a.slice(k + 1)));
   }
   if (SHELLS.has(p)) return true;
+  const { words: run, script } = unrunner(w);
+  if (script || (run.length && toolWrites(program(run[0]), run.slice(1)))) return true;
   return EVERY_ARG.has(p) || TO_DEST.has(p) || p === 'git' || (p === 'dd' && w.some((x) => x.startsWith('of=')))
     || ((p === 'sed' || p === 'perl') && w.some((x) => /^-[a-zA-Z]*i|^--in-place/.test(x)));
 };
+// #378: the package runners that only run a tool's binary: npx, pnpx and bunx, and the exec and dlx of npm, pnpm and
+// yarn. The words of the tool they run, after their own options (-p and --package take a value). A script they run
+// (`npx -c '...'`, `--call`) is not read, so it comes back as `script`: a write only the run can tell.
+function unrunner(words) {
+  let w = words; const p = program(w[0] ?? '');
+  if (['npm', 'pnpm', 'yarn'].includes(p) && ['exec', 'dlx', 'x'].includes(w[1])) w = w.slice(2);
+  else if (['npx', 'pnpx', 'bunx'].includes(p)) w = w.slice(1);
+  else return { words };
+  // Only options known to change nothing about what runs are skipped; any other (`--call` by any prefix, pnpm's
+  // `--shell-mode`, one not known here) may hand the runner a script, so it fails closed.
+  let k = 0;
+  while (k < w.length && w[k].startsWith('-')) {
+    if (w[k] === '--') { k++; break; }
+    if (/^(-p|--package)$/.test(w[k])) { k += 2; continue; }
+    if (/^(-y|--yes|--no|--no-install|-q|--quiet|-s|--silent|--ignore-existing|--bun|--package=.*)$/.test(w[k])) { k++; continue; }
+    return { words: [], script: true };
+  }
+  return { words: w.slice(k) };
+}
+// A long option as getopt_long takes it: the whole name or any prefix of it of at least `min` characters, with its
+// value attached or as the next word. An ambiguous prefix fails in the tool and writes nothing, so reading it as
+// every option it could be only errs toward a deny.
+const longIs = (w, name, min = 4) => { const m = /^(--[A-Za-z][\w-]*)(=|$)/.exec(w); return Boolean(m) && m[1].length >= min && name.startsWith(m[1]); };
+// The words before `--` that are options, without the values of the options in `valued` (short ones as written,
+// long ones by name, abbreviations included): a check flag that is another option's value (`--exclude -n`) is not
+// one. `stop` is an option after which every word is an operand (unzip's -x).
+function optionWords(a, { valued = [], stop = null } = {}) {
+  const out = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '--' || (stop && w === stop)) break;
+    if (!w.startsWith('-') || w === '-') continue;
+    out.push(w);
+    if (w.includes('=')) continue;
+    if (valued.some((v) => (v.startsWith('--') ? longIs(w, v) : w === v || new RegExp(`^-[A-Za-z]*${v.slice(1)}$`).test(w)))) k++;
+  }
+  return out;
+}
+// #378: formatters and linters that write the files they are given when a flag says so (`write`), or unless a
+// flag says they only check (`check`). What they write depends on their config and the files they find, so it is
+// a write only the run can tell. Go and LLVM take a boolean flag with one dash or two, and `=true`.
+const BOOL_ON = '(=(1|t|true))?$';
+const FORMATTERS = {
+  prettier: { write: /^(--write|-w)$/ }, eslint: { write: /^--fix$/ }, stylelint: { write: /^--fix(=|$)/ }, standard: { write: /^--fix$/ },
+  xo: { write: /^--fix$/ }, tslint: { write: /^--fix$/ }, gofmt: { write: new RegExp(`^--?w${BOOL_ON}`, 'i') },
+  goimports: { write: new RegExp(`^--?w${BOOL_ON}`, 'i') }, 'clang-format': { write: new RegExp(`^--?i${BOOL_ON}`, 'i') },
+  autopep8: { write: /^(-i|--in-place)$/ }, black: { check: /^--(check|diff)$/ }, isort: { check: /^(--check-only|--check|-c|--diff)$/ },
+  rustfmt: { check: /^--check$/ }, dprint: { sub: 'fmt', check: /^--(check|diff)$/ },
+  ruff: { sub: 'format', check: /^--(check|diff)$/, fix: /^--(fix|fix-only)$/ }, cargo: { sub: 'fmt', check: /^--check$/ },
+  terraform: { sub: 'fmt', check: /^-(check|diff)$/ }, biome: { write: /^--(write|apply|apply-unsafe|fix)$/ },
+};
+function formatterWrites(prog, a) {
+  const f = FORMATTERS[prog];
+  if (!f || a.some((w) => /^(--version|--help|-h|-V)$/.test(w))) return false;
+  if (f.fix && a.some((w) => f.fix.test(w))) return true;
+  if (f.sub) return a[0] === f.sub && !a.some((w) => f.check.test(w));
+  if (f.write) return a.some((w) => f.write.test(w));
+  return !a.some((w) => f.check.test(w));
+}
+// Whether a short-option group (`-avn`) holds one of `letters` before a letter of `valued`, whose value is the rest
+// of the word (`-aen` is -a and -e with the value n).
+function groupHas(w, letters, valued) {
+  if (!/^-[^-]/.test(w)) return false;
+  for (const c of w.slice(1)) { if (valued.includes(c)) return false; if (letters.includes(c)) return true; }
+  return false;
+}
+// #378: whether tar extracts: its mode letters old style (`xzf`) or as options (`-x`, `--extract`, `--get`, by any
+// prefix getopt_long takes). A word that only looks like one errs toward a deny.
+const tarExtracts = (a) => (a[0] && !a[0].startsWith('-') ? /x/.test(a[0]) : false)
+  || a.some((w) => /^-[A-Za-z]*x/.test(w) || longIs(w, '--extract', 5) || longIs(w, '--get', 4));
+const RSYNC_VALUED = ['-e', '-f', '-B', '-T', '-M', '--exclude', '--include', '--filter', '--rsh', '--exclude-from', '--include-from',
+  '--files-from', '--log-file', '--log-file-format', '--temp-dir', '--partial-dir', '--backup-dir', '--compare-dest', '--copy-dest',
+  '--link-dest', '--suffix', '--chmod', '--chown', '--usermap', '--groupmap', '--password-file', '--out-format', '--max-size',
+  '--min-size', '--timeout', '--contimeout', '--port', '--sockopts', '--bwlimit', '--modify-window', '--iconv', '--rsync-path',
+  '--info', '--debug', '--skip-compress', '--block-size', '--max-delete', '--checksum-choice', '--compress-choice',
+  '--compress-level', '--outbuf', '--stop-after', '--stop-at', '--write-batch', '--only-write-batch', '--read-batch', '--protocol',
+  '--remote-option'];
+const PATCH_VALUED = ['-p', '-i', '-o', '-d', '-B', '-D', '-F', '-r', '-V', '-z', '-Y', '-g', '--strip', '--input', '--output',
+  '--directory', '--prefix', '--ifdef', '--fuzz', '--reject-file', '--version-control', '--suffix', '--basename-prefix', '--get',
+  '--quoting-style', '--reject-format', '--read-only'];
+// #378: what curl, wget, sort, awk -i inplace, patch, tar, unzip and rsync write: `targets` they name, and `unknown`
+// when only the run can tell (a file named by its URL, an archive's contents, a patch's files, a sync's destination).
+function toolWrites(prog, a) {
+  const out = { targets: [], unknown: null };
+  // The value of an option, attached (`-ofile`, `--output=file`) or as the next word, with short options grouped
+  // and the valued one last (`-sSLo file`); a long one by any prefix when the tool takes prefixes.
+  const valuesOf = (short, long, prefixes = false) => a.flatMap((w, k) => {
+    const isLong = long && (prefixes ? longIs(w, long) : w === long || w.startsWith(`${long}=`));
+    if (isLong) return w.includes('=') ? [w.slice(w.indexOf('=') + 1)] : a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && new RegExp(`^-[A-Za-z]*${short}$`).test(w)) return a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && w.startsWith(`-${short}`) && w.length > 2 && !w.startsWith('--')) return [w.slice(2)];
+    return [];
+  });
+  if (prog === 'curl') {
+    // Like wget, curl writes through many options (-O, -D, -c, --trace, --stderr, --output-dir, ...), -K files and
+    // ~/.curlrc, so every curl is a write only the run can tell; the file -o names is judged as well.
+    out.targets = valuesOf('o', '--output').filter((v) => v !== '-');
+    out.unknown = 'what curl writes';
+  } else if (prog === 'wget') {
+    // Where wget writes is set by its options (-O, the logs, --save-cookies, --warc-file and more), by -e commands, by
+    // --config, and by WGETRC or ~/.wgetrc, which a command line does not show. So every wget is a write only the run
+    // can tell; the files its options name are judged as well. A read-only role fetches with curl instead.
+    out.targets = [...valuesOf('O', '--output-document', true).filter((v) => v !== '-'), ...valuesOf('o', '--output-file', true),
+      ...valuesOf('a', '--append-output', true)];
+    out.unknown = 'what wget writes';
+  } else if (prog === 'sort') out.targets = valuesOf('o', '--output', true);
+  else if (prog === 'awk' || prog === 'gawk') {
+    // Which operands are files depends on gawk's options; telling them apart is not worth a reader that can be wrong.
+    if (a.some((w) => /inplace/.test(w))) out.unknown = 'the files awk -i inplace rewrites';
+  } else if (prog === 'patch') {
+    if (!optionWords(a, { valued: PATCH_VALUED }).some((w) => longIs(w, '--dry-run', 5))) out.unknown = 'the files patch changes';
+  } else if (prog === 'tar') {
+    if (tarExtracts(a)) out.unknown = 'what tar extracts';
+  } else if (prog === 'unzip') {
+    // unzip turns an option off with a - inside its group (`-l-`) or a doubled dash (`--l`): such a word fails closed.
+    const opts = optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' });
+    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
+  } else if (prog === 'rsync') {
+    if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
+      out.unknown = 'what rsync copies into its destination';
+    }
+  } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
+  return out.targets.length || out.unknown ? out : null;
+}
 function bashWrites(command) {
   const found = { targets: [], unknown: [], tree: [] };
   let dir = cwd;
@@ -2250,6 +2494,14 @@ function bashWrites(command) {
     const words = unprefixed(cmd);
     if (!words.length) continue;
     const prog = program(words[0]); const a = words.slice(1);
+    const { words: run, script } = unrunner(words);
+    if (script) { found.unknown.push(`the script ${prog} runs`); continue; }
+    const tool = run.length ? toolWrites(program(run[0]), run.slice(1)) : null;
+    if (tool) {
+      tool.targets.forEach((w) => at(w));
+      if (tool.unknown) found.unknown.push(tool.unknown);
+      continue;
+    }
     if (prog === 'cd' || prog === 'pushd') {
       const d = positionals(a)[0];
       if (d === undefined) dir = os.homedir();
