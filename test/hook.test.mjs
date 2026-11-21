@@ -305,6 +305,12 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     'prettier --write src/main/App.java', 'npx prettier -w src', 'npx --yes eslint --fix src', 'eslint --fix src', 'gofmt -w src/main.go', 'black src',
     'ruff format src', 'ruff check --fix src', 'rustfmt src/main.rs', 'cargo fmt', 'clang-format -i src/a.c', 'stylelint --fix "**/*.css"',
     'biome check --write src', 'terraform fmt', 'isort src', 'git ls-files | xargs prettier --write', 'find src -name "*.js" -exec eslint --fix {} +',
+    // The review of #390: a script npx runs, Go and LLVM flag forms, ruff's other fix flags, a check flag that is another
+    // option's value, and GNU long options abbreviated, as getopt_long takes them.
+    'npx -c "prettier --write src"', 'npx --call="sed -i s/a/b/ src/main/App.java"', 'gofmt -w=true src/main.go', 'gofmt --w src/main.go',
+    'clang-format --i src/a.c', 'ruff check --fix-only src', 'ruff --fix src', 'rsync -a --exclude -n other/ src/', 'unzip a.zip -d -l',
+    'unzip -d -l a.zip', 'patch -i --dry-run', 'tar --extr -f a.tar', 'sort --out=src/main/App.java x', 'awk --inc=inplace 1 src/main/App.java',
+    'wget -O - --output-fi=src/main/w.log https://example.com/x',
   ];
   for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
   const reads = [
@@ -312,7 +318,7 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
     'prettier --check src', 'npx prettier --check src', 'eslint src', 'eslint --fix-dry-run src', 'gofmt -l src', 'black --check src', 'ruff check src', 'ruff format --check src',
     'rustfmt --check src/main.rs', 'cargo fmt --check', 'cargo fmt --all -- --check', 'clang-format src/a.c', 'terraform fmt -check', 'isort --check-only src', 'biome check src',
-    'black --version', 'rustfmt --help',
+    'black --version', 'rustfmt --help', 'rsync -a -n --exclude x other/ src/', 'unzip -l -d out a.zip', 'gofmt -w=false src/main.go',
   ];
   for (const command of reads) assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, command);
   // A writing role is held to its lane by the files named; what only the run can tell is left to its lane check.

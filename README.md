@@ -1155,7 +1155,11 @@ the URL), `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, 
 `-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
 `gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
 `rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
-are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well.
+are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well; a script
+such a runner is handed (`npx -c '...'`) is not read and counts the same way. A check flag counts only as
+an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
+any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
+count as their write flags.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
