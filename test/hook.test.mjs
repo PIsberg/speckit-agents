@@ -319,11 +319,14 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     // that can name the output file.
     'unzip -l- a.zip', 'unzip --l a.zip', 'wget -O - -e output_document=src/main/App.java https://example.com/x',
     'wget -O - --execute=output_document=src/main/App.java https://example.com/x', 'wget -O - --config=w.rc https://example.com/x',
+    // The fourth review: wget reads WGETRC and ~/.wgetrc, and has options that write files of their own (--save-cookies,
+    // --warc-file), so every wget is a write only the run can tell; curl's -K and --config read a file of options.
+    'WGETRC=w.rc wget -O - https://example.com/x', 'wget -O - --save-cookies src/main/c.txt https://example.com/x',
+    'curl -K c.cfg https://example.com/x', 'curl --config c.cfg https://example.com/x',
   ];
   for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
   const reads = [
-    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com', 'wget -O - https://example.com/x', 'wget -O /dev/null https://example.com',
-    'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
+    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com',     'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
     'prettier --check src', 'npx prettier --check src', 'eslint src', 'eslint --fix-dry-run src', 'gofmt -l src', 'black --check src', 'ruff check src', 'ruff format --check src',
     'rustfmt --check src/main.rs', 'cargo fmt --check', 'cargo fmt --all -- --check', 'clang-format src/a.c', 'terraform fmt -check', 'isort --check-only src', 'biome check src',
     'black --version', 'rustfmt --help', 'rsync -a -n --exclude x other/ src/', 'unzip -l -d out a.zip', 'gofmt -w=false src/main.go',

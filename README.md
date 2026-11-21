@@ -1150,8 +1150,9 @@ A file git ignores (a test log, a coverage report) passes, because the lane chec
 the git directory never does.
 The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
 and every `-exec` of a `find`, not only the first (#352).
-Some commands write files only the run can tell (#378): `curl -O` and a `wget` without `-O` (named after
-the URL; `--spider` too, so a read-only role checks a URL with `-O -`), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
+Some commands write files only the run can tell (#378): `curl -O` (named after the URL), `curl -K` and
+`--config` (a file of options), every `wget` (its options, `-e` commands, `--config`, `WGETRC` and `~/.wgetrc`
+can all set where it writes; a read-only role fetches with `curl`), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
 `-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
 `gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
 `rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
@@ -1161,9 +1162,9 @@ leave the tool alone, counts the same way. A check flag counts only as
 an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
 count as their write flags. In a group of short options a letter after one that takes a value is that
-value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`), and a `wget` given
-`-e`, `--execute` or `--config` (wgetrc commands that can set where it writes), are writes only the run can
-tell too.
+value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`) is a write only the run can tell
+too. A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
+command line is not seen.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
