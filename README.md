@@ -1140,6 +1140,8 @@ file it writes as it would judge a `Write` of that file, before anything runs:
   of `git format-patch -o` and of `git worktree add` (a folder judged by a file in it), a long
   option read by any prefix of it, as git reads it (`--out=x`), and the file `find -fprint`,
   `-fprintf` and `-fls` name ([#352](https://github.com/PIsberg/speckit-agents/issues/352));
+- the file `curl -o` (`--output`, `-sSLo f`), `wget -O` (and its `-o` and `-a` logs), `sort -o` and
+  `awk -i inplace` write ([#378](https://github.com/PIsberg/speckit-agents/issues/378));
 - after `cd`, `pushd` or `git -C`, paths from that folder; `sudo`, `env`, `nohup` and the like
   before a program are skipped.
 
@@ -1148,8 +1150,14 @@ A file git ignores (a test log, a coverage report) passes, because the lane chec
 the git directory never does.
 The command `xargs` runs is read past its options, a value included (`xargs -n 1 rm`, `xargs -I {} rm {}`),
 and every `-exec` of a `find`, not only the first (#352).
+Some commands write files only the run can tell (#378): `curl -O` and a `wget` without `-O` (named after
+the URL), `patch` (not `--dry-run`), `tar` extracting, `unzip` (not `-l`, `-t`, `-p`, `-v`), `rsync` (not
+`-n`), and a formatter or linter that writes: `prettier --write`, `eslint --fix`, `stylelint --fix`,
+`gofmt -w`, `goimports -w`, `clang-format -i`, `biome --write`, `ruff check --fix`, and `black`, `isort`,
+`rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
+are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
-`git format-patch` into the current folder) and a
+`git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
 still diffs what the command did. The read-only agents have no lane check, so `scope none` denies
 both, and allows every write outside the repo, such as a test log in a temp folder. A command it
@@ -1654,11 +1662,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 652 tests:
+`npm test` runs 653 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 230 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 231 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 138 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

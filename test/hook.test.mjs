@@ -292,6 +292,34 @@ test('scope on Bash (#210): a write outside the lane is denied before it runs, w
 
 // #209: spec-auditor, spec-gatekeeper and security-reviewer have no Write or Edit, but Bash could still
 // change the repo, and no lane check runs at their Stop.
+// #378: commands that name the file they write, or that say they write, passed scope none: a gatekeeper running the
+// repo's gates by hand is one flag from `prettier --write` or `eslint --fix`, and nothing later sees what it changed.
+test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar -x, unzip, rsync and formatters that write', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  const writes = [
+    'sort -o src/main/App.java src/main/App.java', 'sort --output=src/main/App.java x', 'curl -o src/main/App.java https://example.com/x',
+    'curl -sSLo src/main/App.java https://example.com/x', 'curl --output src/main/App.java https://example.com/x', 'curl -O https://example.com/App.java',
+    'wget -O src/main/App.java https://example.com/x', 'wget https://example.com/App.java', 'awk -i inplace 1 src/main/App.java',
+    'patch -p1 src/main/App.java fix.diff', 'patch -p1 < fix.diff', 'tar -xf a.tar', 'tar xzf a.tgz', 'tar --extract --file a.tar', 'unzip -o a.zip', 'rsync -a other/ src/',
+    'prettier --write src/main/App.java', 'npx prettier -w src', 'npx --yes eslint --fix src', 'eslint --fix src', 'gofmt -w src/main.go', 'black src',
+    'ruff format src', 'ruff check --fix src', 'rustfmt src/main.rs', 'cargo fmt', 'clang-format -i src/a.c', 'stylelint --fix "**/*.css"',
+    'biome check --write src', 'terraform fmt', 'isort src', 'git ls-files | xargs prettier --write', 'find src -name "*.js" -exec eslint --fix {} +',
+  ];
+  for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
+  const reads = [
+    'curl -s https://example.com/x | head', 'curl -o /dev/null -w "%{http_code}" https://example.com', 'wget -O - https://example.com/x', 'wget --spider https://example.com',
+    'sort src/main/App.java', 'awk 1 src/main/App.java', 'patch --dry-run -p1 < fix.diff', 'tar -tf a.tar', 'tar tzf a.tgz', 'unzip -l a.zip', 'rsync -an other/ src/',
+    'prettier --check src', 'npx prettier --check src', 'eslint src', 'eslint --fix-dry-run src', 'gofmt -l src', 'black --check src', 'ruff check src', 'ruff format --check src',
+    'rustfmt --check src/main.rs', 'cargo fmt --check', 'cargo fmt --all -- --check', 'clang-format src/a.c', 'terraform fmt -check', 'isort --check-only src', 'biome check src',
+    'black --version', 'rustfmt --help',
+  ];
+  for (const command of reads) assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, command);
+  // A writing role is held to its lane by the files named; what only the run can tell is left to its lane check.
+  assert.ok(denied(bash(dir, ['scope', 'tests'], 'curl -o src/main/App.java https://example.com/x', { agent_type: 'test-writer' })));
+  assert.equal(bash(dir, ['scope', 'no-tests'], 'prettier --write src', { agent_type: 'implementer' }), null);
+});
+
 test('scope none on Bash (#209): a read-only agent runs checks but writes nothing in the repo', () => {
   const { dir } = repo();
   const ro = ['scope', 'none'];

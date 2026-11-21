@@ -2322,9 +2322,83 @@ const writesUnseen = (words) => {
     return a.some((x) => /^-(delete|fprint0?|fprintf|fls)$/.test(x)) || a.some((x, k) => /^-(exec|execdir|ok|okdir)$/.test(x) && writesUnseen(a.slice(k + 1)));
   }
   if (SHELLS.has(p)) return true;
+  const run = unrunner(w);
+  if (run.length && toolWrites(program(run[0]), run.slice(1))) return true;
   return EVERY_ARG.has(p) || TO_DEST.has(p) || p === 'git' || (p === 'dd' && w.some((x) => x.startsWith('of=')))
     || ((p === 'sed' || p === 'perl') && w.some((x) => /^-[a-zA-Z]*i|^--in-place/.test(x)));
 };
+// #378: the package runners that only run a tool's binary: npx, pnpx and bunx, and the exec and dlx of npm, pnpm and
+// yarn. The words of the tool they run, after their own options (-p and --package take a value).
+function unrunner(words) {
+  let w = words; const p = program(w[0] ?? '');
+  if (['npm', 'pnpm', 'yarn'].includes(p) && ['exec', 'dlx', 'x'].includes(w[1])) w = w.slice(2);
+  else if (['npx', 'pnpx', 'bunx'].includes(p)) w = w.slice(1);
+  else return words;
+  let k = 0;
+  while (k < w.length && w[k].startsWith('-')) { if (w[k] === '--') { k++; break; } k += /^(-p|--package|-c|--call)$/.test(w[k]) ? 2 : 1; }
+  return w.slice(k);
+}
+// #378: formatters and linters that write the files they are given when a flag says so (`write`), or unless a
+// flag says they only check (`check`). What they write depends on their config and the files they find, so it is
+// a write only the run can tell.
+const FORMATTERS = {
+  prettier: { write: /^(--write|-w)$/ }, eslint: { write: /^--fix$/ }, stylelint: { write: /^--fix(=|$)/ }, standard: { write: /^--fix$/ },
+  xo: { write: /^--fix$/ }, tslint: { write: /^--fix$/ }, gofmt: { write: /^-w$/ }, goimports: { write: /^-w$/ }, 'clang-format': { write: /^-i$/ },
+  autopep8: { write: /^(-i|--in-place)$/ }, black: { check: /^--(check|diff)$/ }, isort: { check: /^(--check-only|--check|-c|--diff)$/ },
+  rustfmt: { check: /^--check$/ }, dprint: { sub: 'fmt', check: /^--(check|diff)$/ },
+  ruff: { sub: 'format', check: /^--(check|diff)$/, fix: 'check' }, cargo: { sub: 'fmt', check: /^--check$/ },
+  terraform: { sub: 'fmt', check: /^-(check|diff)$/ }, biome: { write: /^--(write|apply|apply-unsafe|fix)$/ },
+};
+function formatterWrites(prog, a) {
+  const f = FORMATTERS[prog];
+  if (!f || a.some((w) => /^(--version|--help|-h|-V)$/.test(w))) return false;
+  if (f.fix && a[0] === f.fix) return a.some((w) => /^--fix$/.test(w));
+  if (f.sub) return a[0] === f.sub && !a.some((w) => f.check.test(w));
+  if (f.write) return a.some((w) => f.write.test(w));
+  return !a.some((w) => f.check.test(w));
+}
+// #378: the letters of tar's mode, old style (`xzf`) or as options (`-x`, `--extract`).
+const tarExtracts = (a) => (a[0] && !a[0].startsWith('-') ? /x/.test(a[0]) : false)
+  || a.some((w) => /^-[A-Za-z]*x/.test(w) || /^--(extract|get)$/.test(w));
+// #378: what curl, wget, sort, awk -i inplace, patch, tar, unzip and rsync write: `targets` they name, and `unknown`
+// when only the run can tell (a file named by its URL, an archive's contents, a patch's files, a sync's destination).
+function toolWrites(prog, a) {
+  const out = { targets: [], unknown: null };
+  // The value of an option, attached (`-ofile`, `--output=file`) or as the next word, with short options grouped
+  // and the valued one last (`-sSLo file`).
+  const valuesOf = (short, long) => a.flatMap((w, k) => {
+    if (long && w.startsWith(`${long}=`)) return [w.slice(long.length + 1)];
+    if (long && w === long) return a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && new RegExp(`^-[A-Za-z]*${short}$`).test(w)) return a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && w.startsWith(`-${short}`) && w.length > 2 && !w.startsWith('--')) return [w.slice(2)];
+    return [];
+  });
+  if (prog === 'curl') {
+    out.targets = valuesOf('o', '--output').filter((v) => v !== '-');
+    if (a.some((w) => /^-[A-Za-z]*O[A-Za-z]*$/.test(w) || /^--remote-name(-all)?$/.test(w))) out.unknown = 'the file curl -O names after its URL';
+  } else if (prog === 'wget') {
+    const doc = valuesOf('O', '--output-document');
+    out.targets = [...doc.filter((v) => v !== '-'), ...valuesOf('o', '--output-file'), ...valuesOf('a', '--append-output')];
+    if (!doc.length && !a.includes('--spider')) out.unknown = 'the file wget saves under its URL\'s name';
+  } else if (prog === 'sort') out.targets = valuesOf('o', '--output');
+  else if (prog === 'awk' || prog === 'gawk') {
+    const inplace = a.some((w, k) => (w === '-i' || w === '--include') && a[k + 1] === 'inplace') || /^(-iinplace|--include=inplace)$/.test(a.find((w) => /inplace/.test(w)) ?? '');
+    if (inplace) {
+      const script = a.some((w) => /^(-f|-e|--file|--source)$/.test(w) || /^--(file|source)=/.test(w));
+      const pos = positionals(a, ['-f', '-v', '-F', '-i', '-e', '--include', '--file', '--source', '--assign', '--field-separator']);
+      out.targets = (script ? pos : pos.slice(1)).filter((w) => !/^[A-Za-z_]\w*=/.test(w));
+    }
+  } else if (prog === 'patch') {
+    if (!a.some((w) => /^(--dry-run|-C|--check)$/.test(w))) out.unknown = 'the files patch changes';
+  } else if (prog === 'tar') {
+    if (tarExtracts(a)) out.unknown = 'what tar extracts';
+  } else if (prog === 'unzip') {
+    if (!a.some((w) => /^-[A-Za-z]*[lptvZ]/.test(w))) out.unknown = 'what unzip extracts';
+  } else if (prog === 'rsync') {
+    if (!a.some((w) => w === '--dry-run' || /^-[A-Za-z]*n[A-Za-z]*$/.test(w))) out.unknown = 'what rsync copies into its destination';
+  } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
+  return out.targets.length || out.unknown ? out : null;
+}
 function bashWrites(command) {
   const found = { targets: [], unknown: [], tree: [] };
   let dir = cwd;
@@ -2342,6 +2416,13 @@ function bashWrites(command) {
     const words = unprefixed(cmd);
     if (!words.length) continue;
     const prog = program(words[0]); const a = words.slice(1);
+    const run = unrunner(words);
+    const tool = run.length ? toolWrites(program(run[0]), run.slice(1)) : null;
+    if (tool) {
+      tool.targets.forEach((w) => at(w));
+      if (tool.unknown) found.unknown.push(tool.unknown);
+      continue;
+    }
     if (prog === 'cd' || prog === 'pushd') {
       const d = positionals(a)[0];
       if (d === undefined) dir = os.homedir();
