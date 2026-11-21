@@ -315,6 +315,10 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
     // that option's value), wget --spider as another option's value, npx --call abbreviated, and an unknown runner option.
     'awk -i inplace --posix 1 src/main/App.java', 'rsync -aen other/ src/', 'unzip -dl a.zip', 'wget --header --spider https://example.com/x',
     'npx --cal "rm -rf src"', 'pnpm exec --shell-mode "rm -rf src"', 'npx --weird prettier --check src',
+    // The third review: unzip negates an option with a - inside the group, and wget's -e and --config run wgetrc commands
+    // that can name the output file.
+    'unzip -l- a.zip', 'unzip --l a.zip', 'wget -O - -e output_document=src/main/App.java https://example.com/x',
+    'wget -O - --execute=output_document=src/main/App.java https://example.com/x', 'wget -O - --config=w.rc https://example.com/x',
   ];
   for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
   const reads = [

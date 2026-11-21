@@ -2429,6 +2429,8 @@ function toolWrites(prog, a) {
     const doc = valuesOf('O', '--output-document', true);
     out.targets = [...doc.filter((v) => v !== '-'), ...valuesOf('o', '--output-file', true), ...valuesOf('a', '--append-output', true)];
     if (!doc.length) out.unknown = 'the file wget saves under its URL\'s name';
+    // -e and --execute run wgetrc commands, and --config reads a file of them: any can set where wget writes.
+    else if (a.some((w) => groupHas(w, 'e', 'OoaPiBtTwQUlARDIX') || longIs(w, '--execute') || longIs(w, '--config'))) out.unknown = 'what wget -e or --config sets it to write';
   } else if (prog === 'sort') out.targets = valuesOf('o', '--output', true);
   else if (prog === 'awk' || prog === 'gawk') {
     // Which operands are files depends on gawk's options; telling them apart is not worth a reader that can be wrong.
@@ -2438,7 +2440,9 @@ function toolWrites(prog, a) {
   } else if (prog === 'tar') {
     if (tarExtracts(a)) out.unknown = 'what tar extracts';
   } else if (prog === 'unzip') {
-    if (!optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' }).some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
+    // unzip turns an option off with a - inside its group (`-l-`) or a doubled dash (`--l`): such a word fails closed.
+    const opts = optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' });
+    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
   } else if (prog === 'rsync') {
     if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
       out.unknown = 'what rsync copies into its destination';

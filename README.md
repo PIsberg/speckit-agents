@@ -1161,7 +1161,9 @@ leave the tool alone, counts the same way. A check flag counts only as
 an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
 count as their write flags. In a group of short options a letter after one that takes a value is that
-value (`rsync -aen` is no dry run).
+value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`), and a `wget` given
+`-e`, `--execute` or `--config` (wgetrc commands that can set where it writes), are writes only the run can
+tell too.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
 git command that rewrites the tree (`git checkout main`, `git stash`) pass, because their lane check
