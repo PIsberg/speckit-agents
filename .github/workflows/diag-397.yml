@@ -1,0 +1,41 @@
+name: diag-397
+
+# DIAGNOSTIC for #397, never merged: the #366 e2e case 20 times on macOS with the hook's trace, printed for each failure.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/diag-397.yml
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install Claude Code
+        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
+      - name: The #366 case, 20 times
+        env:
+          SPECKIT_REQUIRE_CLAUDE: '1'
+        run: |
+          fails=0
+          for i in $(seq 1 20); do
+            export SPECKIT_TRACE="$RUNNER_TEMP/trace-$i.jsonl"
+            if node tools/test.mjs --test-name-pattern='#366 a smaller team' test/e2e.test.mjs > "$RUNNER_TEMP/out-$i.txt" 2>&1; then
+              echo "run $i: pass"
+            else
+              fails=$((fails+1))
+              echo "::group::run $i: FAIL"
+              grep -E 'not ok|error:|exit 0' "$RUNNER_TEMP/out-$i.txt" | head -20
+              echo '--- trace ---'
+              cat "$SPECKIT_TRACE" 2>/dev/null || echo 'no trace'
+              echo "::endgroup::"
+            fi
+            if [ "$i" = 1 ]; then echo "::group::run 1 trace (for comparison)"; cat "$SPECKIT_TRACE" 2>/dev/null; echo "::endgroup::"; fi
+          done
+          echo "failures: $fails of 20"

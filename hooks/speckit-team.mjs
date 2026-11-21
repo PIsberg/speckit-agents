@@ -162,6 +162,8 @@ const WIRED = {
   relay: ['PostToolUse'],
 };
 const who = input.agent_type || 'the main session';
+// DIAGNOSTIC (#397, never merged): one JSON line per call to the file SPECKIT_TRACE names.
+const trace = (o) => { const f = process.env.SPECKIT_TRACE; if (!f) return; try { fs.appendFileSync(f, `${JSON.stringify({ t: Date.now(), pid: process.pid, mode, event, tool: input.tool_name ?? null, sid: input.session_id ?? null, tp: input.transcript_path ?? null, ...o })}\n`); } catch { /* diagnostic only */ } };
 
 const git = (cwd, ...a) => {
   try {
@@ -1275,6 +1277,7 @@ if (mode === 'gate') {
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
       if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, at: new Date().toISOString() });
+      trace({ phase: 'upe', offset, exists: t ? fs.existsSync(t) : null });
     }
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
@@ -1314,6 +1317,11 @@ if (mode === 'gate') {
     const team = parseTeam(input.tool_input.prompt);
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
+    {
+      const ents = choice && Number.isInteger(choice.offset) ? linesAfter(choice.transcript, choice.offset) : null;
+      const kinds = ents ? ents.map((l) => { try { const e = JSON.parse(l); const c = e?.message?.content; const tx = typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => p?.type + ':' + String(p?.text ?? p?.name ?? '').slice(0, 60)).join('|') : ''; return `${e.type}${e.isMeta ? '(meta)' : ''} ${tx.slice(0, 80)}`; } catch { return 'unparsed'; } }) : null;
+      trace({ phase: 'agent', choice: choice ?? 'none', team: team ?? null, answered: choice ? answeredSince(choice) : null, size: (() => { try { return fs.statSync(str(input.transcript_path)).size; } catch { return null; } })(), kinds });
+    }
     if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
       if (smaller && !answeredSince(choice)) {
