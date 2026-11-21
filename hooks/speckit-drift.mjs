@@ -30,7 +30,12 @@ const TEST_PATTERNS = [
   /Tests?\.swift$/,
 ];
 const TASK = /^\s*[-*]\s+\[([ xX])\]\s+(T\d+)\b/;
-const IDS = /\bFR-\d{3}\b/g;
+// A requirement ID: any number of digits and an optional letter for a sub-requirement (FR-001, FR-1001, FR-001a; #371).
+const IDS = /\bFR-\d+[a-z]?\b/g;
+const HAS_ID = /\bFR-\d+[a-z]?\b/;
+// What spec.md defines as a requirement (#371): the ID in bold, its colon outside or inside (`**FR-001**:`,
+// `**FR-001:**`), or a list item that opens with the ID and a colon (`- FR-001: ...`, `1. FR-001: ...`).
+const DEFINED = [/\*\*(FR-\d+[a-z]?):?\*\*/g, /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(FR-\d+[a-z]?)[ \t]*:/gm];
 // A repo-relative path with a directory and an extension, as tasks name files.
 const PATHS = /[\w.@-]+(?:\/[\w.@-]+)+\.\w+/g;
 // A test task says so in its opening words, before the first file it names, parenthesis or colon
@@ -40,10 +45,16 @@ const writesTests = (text) => /\btests?\b/i.test(text.split(/[(:]/)[0].split(PAT
 
 const readOr = (f, d) => { try { return fs.readFileSync(f, 'utf8'); } catch { return d; } };
 
+// A `!` line takes the paths it matches out, after every pattern that adds (#372), as in the hook. A line that is no
+// regex is the hook's to report; here it is skipped.
 function testPatterns(repo) {
-  const extra = readOr(path.join(repo, '.specify', 'test-paths'), '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-    .flatMap((l) => { try { return [new RegExp(l)]; } catch { return []; } });
-  return [...TEST_PATTERNS, ...extra];
+  const add = [...TEST_PATTERNS]; const drop = [];
+  for (const l of readOr(path.join(repo, '.specify', 'test-paths'), '').split(/\r?\n/).map((x) => x.trim())) {
+    if (!l || l.startsWith('#')) continue;
+    const src = l.startsWith('!') ? l.slice(1).trim() : l;
+    try { if (src) (l.startsWith('!') ? drop : add).push(new RegExp(src)); } catch { /* the hook names it */ }
+  }
+  return (rel) => add.some((re) => re.test(rel)) && !drop.some((re) => re.test(rel));
 }
 
 // Each task with the lines that continue it, up to the next task, heading or blank line.
@@ -66,8 +77,7 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   if (!only && !hasSpecs) throw new Error(`no specs/ in ${repo}`);
   const dirs = only ? [only.replace(/\\/g, '/').replace(/\/+$/, '')]
     : fs.readdirSync(specs).sort().map((f) => `specs/${f}`);
-  const patterns = testPatterns(repo);
-  const isTest = (rel) => patterns.some((re) => re.test(rel));
+  const isTest = testPatterns(repo);
   const taskText = new Map(dirs.map((dir) => [dir, readOr(path.join(repo, `${dir}/tasks.md`), null)]));
   // #342: every test path a finished test task names that is not on disk, asked of git in one call, not one each.
   const missing = [...new Set([...taskText.values()].filter((t) => t !== null)
@@ -76,7 +86,7 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   const everTracked = trackedOf(repo, missing);
   // Outside a git repo every missing path counts, since nothing tells a built file from an example.
   const tracked = (rel) => !everTracked || everTracked.has(rel);
-  const problems = []; let features = 0; let tasks = 0;
+  const problems = []; const unchecked = []; let features = 0; let tasks = 0;
   // A feature's number is its folder's leading digits. A line names one when that number stands alone,
   // once requirement and story IDs (FR-001, SC-006, US3-1) are taken out: FR-001 does not name 001.
   const number = (f) => /^(\d+)-/.exec(f)?.[1] ?? null;
@@ -84,7 +94,7 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   // #333: one RegExp per feature number, compiled once rather than once per line read.
   const knownRe = known.map((n) => [n, new RegExp(`(?<![\\w.])${n}(?!\\d)`)]);
   const namedIn = (line) => {
-    const bare = line.replace(/\b[A-Z]{1,4}\d*-\d+(?:-\d+)?\b/g, ' ');
+    const bare = line.replace(/\b[A-Z]{1,4}\d*-\d+[a-z]?(?:-\d+)?\b/g, ' ');
     return knownRe.filter(([, re]) => re.test(bare)).map(([n]) => n);
   };
   for (const dir of dirs) {
@@ -117,8 +127,14 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
       }
     }
   }
-  if (spec) for (const dir of dirs) problems.push(...specDrift(repo, dir, { isTest, namedIn, number }));
-  return { features, tasks, problems };
+  if (spec) {
+    for (const dir of dirs) {
+      const s = specDrift(repo, dir, { isTest, namedIn, number });
+      problems.push(...s.problems);
+      if (s.unchecked) unchecked.push(s.unchecked);
+    }
+  }
+  return { features, tasks, problems, unchecked };
 }
 
 // The paths of rels that some commit on any ref ever touched, or null outside a git repo. One `git log` for
@@ -159,20 +175,29 @@ export function excusedBy(text) {
 // names the feature by its number, since every feature has an FR-001; test-writer names tests that way.
 // A requirement no test can hold is excused only by a task's `No test: <reason>` (excusedBy), which the
 // architect writes and the user approves at the tasks stop. Test files are git's (tracked or not ignored),
-// or outside git every file under the repo but node_modules and dot folders.
+// or outside git every file under the repo but node_modules and dot folders. A spec that names FR IDs but
+// defines none in a form DEFINED reads is not passed in silence: `unchecked` says so (#371).
 function specDrift(repo, dir, { isTest, namedIn, number }) {
+  const none = { problems: [], unchecked: null };
   const text = readOr(path.join(repo, dir, 'spec.md'), null);
-  if (text === null) return [];
+  if (text === null) return none;
   const feature = path.posix.basename(dir);
   const num = number(feature);
-  const defined = [...new Set([...text.matchAll(/\*\*(FR-\d{3})\*\*/g)].map((m) => m[1]))];
-  if (!defined.length || !num) return [];
+  const defined = [...new Set(DEFINED.flatMap((re) => [...text.matchAll(re)].map((m) => m[1])))];
+  if (!defined.length) {
+    const named = [...new Set(text.match(IDS) ?? [])];
+    if (!named.length) return none;
+    const list = named.length > 5 ? `${named.slice(0, 5).join(', ')} and ${named.length - 5} more` : named.join(', ');
+    return { problems: [], unchecked: `${dir}/spec.md names ${list} but defines none the check reads (\`- **FR-001**: ...\`, \`- **FR-001:** ...\` or \`- FR-001: ...\`), so none of its requirements was checked against the tests` };
+  }
+  if (!num) return none;
   const excused = new Set(tasksOf(readOr(path.join(repo, dir, 'tasks.md'), '')).flatMap((t) => [...excusedBy(t.text)]));
   // #333: only a line with an FR ID can hold a requirement, so every other line skips namedIn.
   const lines = testFiles(repo).filter(isTest).flatMap((rel) => readOr(path.join(repo, rel), '').split(/\r?\n/))
-    .filter((l) => /\bFR-\d{3}\b/.test(l) && namedIn(l).includes(num));
-  return defined.filter((id) => { const re = new RegExp(`\\b${id}\\b`); return !excused.has(id) && !lines.some((l) => re.test(l)); })
+    .filter((l) => HAS_ID.test(l) && namedIn(l).includes(num));
+  const problems = defined.filter((id) => { const re = new RegExp(`\\b${id}\\b`); return !excused.has(id) && !lines.some((l) => re.test(l)); })
     .map((id) => `${dir}/spec.md ${id}: no test names it with ${num} (put "${num} ${id}" in a test's name or a comment, or give a task that cites it "No test: <reason>")`);
+  return { problems, unchecked: null };
 }
 
 function testFiles(repo) {

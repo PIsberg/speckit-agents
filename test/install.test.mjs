@@ -808,6 +808,24 @@ test('--dry-run writes nothing', () => {
 });
 
 // A mistyped flag was ignored, so `--dryrun` wrote everything and `--unistall` installed.
+// #377: every agent and role skill carries the hook command in a single-quoted YAML scalar, with the path in double
+// quotes, and settings.json's gates run it through sh. An apostrophe ended the YAML scalar, and a $ or a backtick
+// was expanded by sh, yet the install said "installed hook runs". Such a path is refused before anything is written.
+test('#377: a config directory whose path holds an apostrophe, a double quote, $ or a backtick is refused, nothing written', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'skq-'));
+  const chars = process.platform === 'win32' ? ["'", '$', '`'] : ["'", '"', '$', '`'];
+  for (const ch of chars) {
+    const dir = path.join(base, `o${ch}brien`, '.claude');
+    const r = install(dir);
+    assert.equal(r.status, 1, `${ch}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stderr, new RegExp(`holds ${ch === '$' ? '\\$' : ch}, which`));
+    assert.equal(fs.existsSync(dir), false, `${ch}: nothing written`);
+  }
+  const spaced = path.join(base, 'with space', '.claude');
+  assert.equal(install(spaced, '--no-board').status, 0, 'a space is fine');
+  assert.equal(install(path.join(base, "o'brien", '.claude'), '--uninstall').status, 0, 'uninstall of such a path is not refused');
+});
+
 test('an unknown argument, or --claude-dir followed by a flag, is refused before anything is written', () => {
   for (const typo of ['--dryrun', '--unistall', 'uninstall', '--board=yes']) {
     const dir = claudeDir({ hooks: { PreToolUse: [UNRELATED] } });
