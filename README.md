@@ -1204,7 +1204,13 @@ it ran pass: those that cover its change, and in the last round the full suite),
 [Building in slices](#building-in-slices)). The `result` hook counts them per feature: GREEN resets
 the count, STUB leaves it, RED adds one, and a report that still has no `RESULT:` line after one
 request counts as RED. A handback and the Stop that follows it are one
-attempt, not two. A report made while the audit gate is closed is not counted: that implementer
+attempt, not two. An implementer the main session resumes with SendMessage, against the skill's
+rule of a fresh agent per round, keeps its `agent_id`; its next tool call closes its last report, so
+each later report is counted too, and a GREEN from it resets the count
+([#370](https://github.com/PIsberg/speckit-agents/issues/370)). The same reset keeps the `ends`
+checks (the drift check on spec-gatekeeper's `APPROVED`, test-writer's RED-fault and cited-ID checks)
+running on a resumed agent's later reports; spec-gatekeeper and security-reviewer run a hook only on
+Bash and on the hand-back, so one resumed that runs no Bash before reporting is not reset. A report made while the audit gate is closed is not counted: that implementer
 never got to work.
 
 After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
@@ -1244,7 +1250,8 @@ A path counts as a test if it matches one of:
 - `test_*.py`, `*_test.{go,py,rs,exs,dart,c,cc,cpp}`, `*.{test,spec}.{js,ts,jsx,tsx,mjs,cjs,mts,cts}`
 - `*{Test,Tests,IT,Spec}.{java,kt,kts,groovy,scala,cs}`, `*_spec.rb`, `*Test.swift`, `*Tests.swift`
 
-Plus every regex line in the repo's `.specify/test-paths` (see [Customising](#customising)).
+Plus every regex line in the repo's `.specify/test-paths`, less every path a `!` line there takes out
+(see [Customising](#customising)).
 
 ### State
 
@@ -1342,10 +1349,18 @@ session's next request came only after both had reported
 - **Test layout the patterns miss:** add one JavaScript regex per line to `.specify/test-paths`
   in that repo. Lines starting with `#` are comments. A line that is not a valid regex stops
   test-writer and implementer from writing anything until it is fixed, and the message names it.
+- **Production code in a folder the patterns call tests** (a Python package's `testing/` module, an
+  OpenAPI document under `spec/`, seed data under `fixtures/`, an `e2e` workspace package): a line
+  starting with `!` takes every path its regex matches out of the tests, after all the patterns that
+  add, built-in or yours, so a test file under that folder stops being a test too
+  ([#372](https://github.com/PIsberg/speckit-agents/issues/372)). The lanes, the fast track's budget
+  and the drift check all read it. A bare `!` is refused like an invalid line.
 
   ```
   # golden files are tests too
   ^checks/golden/
+  # our OpenAPI document is production code
+  !^api/spec/
   ```
 
 - **The fast track's limits:** `PATCH_LINES` (30) and `PATCH_FILES` (2) in
@@ -1622,12 +1637,12 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 635 tests:
+`npm test` runs 646 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 218 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 78 | the same for the fast track's `patch` mode |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 225 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
@@ -1635,7 +1650,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 66 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 17 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 20 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
@@ -2153,7 +2168,9 @@ resets the count. To retry without changes, delete the file the message names.
 
 ### An agent is blocked writing a legitimate test file
 
-Add a pattern to `.specify/test-paths` ([Customising](#customising)).
+Add a pattern to `.specify/test-paths` ([Customising](#customising)). When it is implementer, denied
+a production file in a folder named `testing/`, `fixtures/`, `spec/` or `e2e/` ("may not change
+tests"), add a `!` line for that folder instead.
 
 ### "may not write ... until the test patterns can be read"
 
@@ -2303,7 +2320,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   checked at all. At spec-gatekeeper's `APPROVED` the hook also checks every FR of `spec.md`, cited or
   not, but only that some test line names it with the feature's number (#235): one whose ID a test
   names without testing it, or one a task excuses with `No test:`, still rests on the gatekeeper's
-  own trace.
+  own trace. A requirement is one `spec.md` defines in bold (`**FR-001**:` or `**FR-001:**`) or as a
+  list item opening with the ID and a colon (`- FR-001: ...`); one written only in a table row or in
+  prose is not checked, and the hook records the `APPROVED` with a message saying so
+  ([#371](https://github.com/PIsberg/speckit-agents/issues/371)).
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
@@ -2555,14 +2575,18 @@ records `APPROVED` and says the check did not run.
 
 At `APPROVED` the hook also runs it at spec level
 ([#235](https://github.com/PIsberg/speckit-agents/issues/235)): every requirement `spec.md` defines
-(`**FR-002**`) must be in some test file, on a line naming the feature by its number
+(`- **FR-002**: ...`, as Spec Kit's template writes it, `- **FR-002:** ...` or a plain `- FR-002: ...` list
+item; any number of digits, and a letter for a sub-requirement such as `FR-002a`,
+[#371](https://github.com/PIsberg/speckit-agents/issues/371)) must be in some test file, on a line naming the feature by its number
 (`test('001 FR-002 ...')` or a `// 001 FR-002` comment, as test-writer writes them), since every
 feature has an FR-002. A requirement no test can hold, such as a docs one, is excused only by a task
 that says `No test: <reason>` right after it (`FR-009 (No test: docs)`). That excuses the ID it
 follows and any the reason names, not the task's other IDs, at task level too. An excuse on one task
 holds for the whole feature: a test task that cites the same ID owes no test line for it
 ([#299](https://github.com/PIsberg/speckit-agents/issues/299)). The architect writes
-that and you approve it at the tasks stop, not the gatekeeper. `tools/drift.mjs` stays at task level, since features built before #235 do
+that and you approve it at the tasks stop, not the gatekeeper. A `spec.md` that names FR IDs but defines
+none in those forms is not passed in silence: the hook records the `APPROVED` and says no requirement
+of it was checked. `tools/drift.mjs` stays at task level, since features built before #235 do
 not name their number in every test.
 
 ```sh
