@@ -4,6 +4,18 @@ on:
   push:
     branches: [main]
   pull_request:
+  # latest.yml runs the same jobs weekly on the newest Claude Code and the current Node (#381). Left empty, as on a
+  # push or a pull request, the inputs keep the pinned versions: package.json's config.claudeCode and Node 22.
+  workflow_call:
+    inputs:
+      claude-code:
+        description: 'A Claude Code dist-tag to install instead of package.json config.claudeCode'
+        type: string
+        default: ''
+      node-version:
+        description: 'A Node channel to run instead of the floor'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -24,13 +36,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: ${{ inputs.node-version || 22 }}
       # The board mod's plugin API and `claude plugin test` start at the version package.json's
       # config.claudeCode names, the oldest the team supports; Dependabot leaves it alone. No login is
       # needed: the tests only validate, test and install plugins in throwaway config dirs.
       - name: Install Claude Code
         shell: bash
-        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
+        env:
+          CLAUDE_CODE_TAG: ${{ inputs.claude-code }}
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
       # npm's Windows shim is claude.cmd, which the tests spawn without a shell. Put the binary
       # itself on PATH so they run instead of skipping.
       - name: Put the claude binary on PATH (Windows)
@@ -92,9 +106,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: ${{ inputs.node-version || 22 }}
       - name: Install Claude Code
-        run: npm install -g "@anthropic-ai/claude-code@$(node -p "require('./package.json').config.claudeCode")"
+        env:
+          CLAUDE_CODE_TAG: ${{ inputs.claude-code }}
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_TAG:-$(node -p "require('./package.json').config.claudeCode")}"
       - name: Install vhs, ttyd and ffmpeg (Linux)
         if: runner.os == 'Linux'
         run: |

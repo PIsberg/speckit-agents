@@ -98,7 +98,25 @@ test('versions (#223): every statement of the Node floor equals package.json eng
   says(path.join('.specify', 'memory', 'constitution.md'), /\(Node (\d+) or newer\)/g);
   says('README.md', /badge\/Node-(\d+)%2B/g);
   says('README.md', /\[Node\]\(https:\/\/nodejs\.org\) (\d+)\+/g);
-  for (const f of WORKFLOWS) {
-    for (const m of read('.github', 'workflows', f).matchAll(/node-version: (\S+)/g)) assert.equal(m[1], floor, `${f} runs Node ${m[1]}`);
+  // test.yml takes a Node channel from latest.yml (#381): its fallback, the version every other run uses, is the floor.
+  for (const f of WORKFLOWS.filter((w) => w !== 'latest.yml')) {
+    for (const m of read('.github', 'workflows', f).matchAll(/node-version: (\$\{\{ inputs\.node-version \|\| (\d+) \}\}|\S+)/g)) {
+      assert.equal(m[2] ?? m[1], floor, `${f} runs Node ${m[1]}`);
+    }
   }
+});
+
+// #381: test.yml runs on the oldest supported Claude Code and the Node floor. latest.yml calls the same jobs weekly with
+// channels, never versions: latest for Claude Code and current for Node, so nothing here is a second pin to move.
+test('versions (#381): latest.yml runs test.yml on the latest Claude Code and the current Node, by channel', () => {
+  const latest = read('.github', 'workflows', 'latest.yml');
+  assert.match(latest, /uses: \.\/\.github\/workflows\/test\.yml\n\s+with:\n\s+claude-code: latest\n\s+node-version: current\n/);
+  assert.match(latest, /schedule:/);
+  assert.match(latest, /workflow_dispatch:/);
+  assert.doesNotMatch(latest, /@anthropic-ai\/claude-code@|node-version: \d/, 'no version of its own');
+  const t = read('.github', 'workflows', 'test.yml');
+  assert.match(t, /workflow_call:\n\s+inputs:\n\s+claude-code:[\s\S]*?default: ''\n\s+node-version:[\s\S]*?default: ''/, 'both inputs default to the pinned versions');
+  const installs = t.split('\n').filter((l) => /npm install -g .*claude-code/.test(l));
+  assert.equal(installs.length, 2);
+  for (const l of installs) assert.match(l, /\$\{CLAUDE_CODE_TAG:-\$\(node -p "require\('\.\/package\.json'\)\.config\.claudeCode"\)\}/);
 });

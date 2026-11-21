@@ -1675,7 +1675,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 656 tests:
+`npm test` runs 657 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1689,7 +1689,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 66 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 20 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
-| [`test/versions.test.mjs`](test/versions.test.mjs) | 7 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
+| [`test/versions.test.mjs`](test/versions.test.mjs) | 8 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
@@ -1738,6 +1738,14 @@ A newer `claude` lays newer types, in which `AgentInfo` has more required fields
 its `agent.list` answers with `agentInfo()`, which fills them, so the check passes against the pinned
 types and newer ones ([#362](https://github.com/PIsberg/speckit-agents/issues/362)).
 
+[`.github/workflows/latest.yml`](.github/workflows/latest.yml) runs the same jobs on the newest Claude Code
+(`@anthropic-ai/claude-code@latest`) and the current Node, every Tuesday and by hand (`workflow_dispatch`), and on
+a pull request that changes it; it is never required for a pull request. It calls `test.yml` with two inputs,
+a Claude Code dist-tag and a Node channel, which a push or a pull request leaves empty, so both stay one set of
+jobs. A failed scheduled or manual run opens one issue, `[P2] ci: the suite fails on the newest Claude Code or
+Node (latest.yml)`, or comments on it while it is open
+([#381](https://github.com/PIsberg/speckit-agents/issues/381); #280 was found on a developer's machine, not by CI).
+
 Last on Linux it lints the tracked JavaScript with the same eslint that
 [`.pre-commit-config.yaml`](.pre-commit-config.yaml) runs at each commit, configured by
 [`eslint.config.mjs`](eslint.config.mjs) with `@eslint/js`'s recommended rules written out, so
@@ -1755,7 +1763,7 @@ and is never red because a second copy lags behind; `test/versions.test.mjs` hol
 | Version | Pinned in | Moved by |
 |---|---|---|
 | eslint, typescript | `package.json` `devDependencies` and `package-lock.json`; CI and the pre-commit eslint hook run them from `node_modules` | Dependabot (npm) |
-| Claude Code in CI | `package.json` `config.claudeCode`, read by `test.yml` and `full-run.yml`: the oldest version the team supports | by hand, on purpose; Dependabot does not see it |
+| Claude Code in CI | `package.json` `config.claudeCode`, read by `test.yml` and `full-run.yml`: the oldest version the team supports; `latest.yml` passes the `latest` channel instead, which is no version | by hand, on purpose; Dependabot does not see it |
 | each GitHub Action | its `uses:` lines, a commit SHA; Dependabot bumps every copy in one pull request, and `github/codeql-action`'s steps as one group, since they must share a version (#146, #147 and #149 each failed alone) | Dependabot (github-actions) |
 | gitleaks, shellcheck, pre-commit-hooks | `.pre-commit-config.yaml` | Dependabot (pre-commit) |
 | vhs and its two checksums | the `live-board` job's `env:` in `test.yml` | by hand: a release binary Dependabot cannot see |
