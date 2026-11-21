@@ -149,6 +149,13 @@ test('patch: tests and docs do not count, a docs folder is not a doc rule (FR-00
   overBash(other.dir, /31 changed production lines in 1 files/);
 });
 
+test('patch (#372): a path a committed ! line takes out of the tests counts as production', () => {
+  const { dir } = fresh({ '.specify/test-paths': '!^src/mylib/testing/\n' });
+  begin(dir);
+  put(dir, 'src/mylib/testing/assertions.py', nl(31, 'a'));
+  overBash(dir, /31 changed production lines in 1 files/);
+});
+
 test('patch: test patterns come from the start commit, not the working tree (FR-005, decision 14 point 3)', () => {
   const { dir } = fresh({ '.specify/test-paths': '# none\n' });
   begin(dir);

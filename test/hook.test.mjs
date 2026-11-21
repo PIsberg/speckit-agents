@@ -123,6 +123,37 @@ test('.specify/test-paths adds repo-specific test patterns', () => {
   assert.ok(denied(write(dir, ['scope', 'no-tests'], 'checks/golden.txt')));
 });
 
+// #372: the built-in patterns call every path under testing/, fixtures/, spec/ or e2e/ a test, and test-paths could only
+// add. A repo keeping production files there had implementer denied them and test-writer let in. A `!` line takes
+// the paths it matches out of the test lane, after every pattern that adds.
+test('#372: a ! line in .specify/test-paths takes production folders out of the test lane', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  const files = ['src/mylib/testing/assertions.py', 'api/spec/openapi.yaml', 'db/fixtures/seed.sql', 'packages/e2e/src/index.ts'];
+  const as = (type, args, f) => denied(run(dir, args, { hook_event_name: 'PreToolUse', tool_name: 'Write', agent_type: type, agent_id: type, tool_input: { file_path: path.join(dir, f) } }));
+  for (const f of files) assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], f), `${f} is a test by default`);
+  w('.specify/test-paths', '# production folders\n!^src/mylib/testing/\n!^api/spec/\n  !^db/fixtures/\n!^packages/e2e/src/\n');
+  for (const f of files) {
+    assert.equal(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], f), false, `implementer writes ${f}`);
+    assert.equal(as('test-writer', ['gate', 'scope', 'tests'], f), true, `test-writer may not write ${f}`);
+  }
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'db/test/seed.test.js'), 'other tests stay tests');
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/golden.txt') === false);
+  w('.specify/test-paths', '^checks/\n!^checks/tools/\n');
+  assert.ok(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/golden.txt'), 'an added pattern still adds');
+  assert.equal(as('implementer', ['gate', 'retries', 'scope', 'no-tests'], 'checks/tools/run.sh'), false, 'and a ! line takes out of it too');
+});
+
+test('#372: a ! line that is no regex, or empty, closes the test lanes and names the line', () => {
+  const { dir, write: w } = repo();
+  for (const [text, line] of [['!(unclosed\n', 1], ['^checks/\n!\n', 2]]) {
+    w('.specify/test-paths', text);
+    const out = write(dir, ['scope', 'no-tests'], 'src/main/App.java');
+    assert.ok(denied(out), text);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, new RegExp(`test-paths line ${line} `));
+  }
+});
+
 // A line that was not a valid regex crashed scope, and a crashed hook lets the write through: one typo
 // in test-paths, or one written there by implementer, opened every test file to it.
 test('an invalid .specify/test-paths line closes the test lanes and names the line', () => {
@@ -963,6 +994,78 @@ test('handback and stop from the same implementer count once', () => {
   assert.ok(denied(implementerTool(dir)), 'the third one closes it');
 });
 
+// #370: an accepted report leaves a marker per agent, so the Stop after its hand-back is not judged twice. An agent
+// resumed with SendMessage works again under the same agent_id: its next tool call ends the old report, so every
+// later report is checked and counted. Before the fix four REDs from one agent counted as one.
+const toolAs = (dir, args, agent_id, tool_name = 'Bash') => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name, tool_input: { command: 'npm test', file_path: 'README.md' }, agent_id,
+});
+const stopAs = (dir, args, agent_id, last_assistant_message) => run(dir, args, { hook_event_name: 'SubagentStop', agent_id, last_assistant_message });
+
+test('#371: spec-gatekeeper\'s APPROVED on a spec whose FR IDs the drift check cannot read is recorded with a message', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n| FR-001 | must work |\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 implement\n');
+  commitAll(r, 'feat');
+  const out = stopAs(r.dir, ['ends', '--record', 'APPROVED', 'REJECTED'], 'gk1', 'fine\nAPPROVED');
+  assert.equal(out?.decision, undefined);
+  assert.match(msg(out), /recorded without the spec-level drift check: specs\/001-demo\/spec\.md names FR-001 but defines none/);
+});
+
+test('#370: a resumed implementer\'s every RED counts, and the third closes the gate for it', () => {
+  const { dir } = repo();
+  pass(dir);
+  for (let i = 1; i <= 3; i++) {
+    if (i > 1) assert.equal(toolAs(dir, ['gate', 'retries', 'scope', 'no-tests'], 'i1'), null, 'two REDs leave its gate open');
+    assert.match(report(dir, 'still failing\n\nRESULT: RED', 'i1').systemMessage, new RegExp(`${i} of 3`));
+    assert.equal(stopAs(dir, ['result'], 'i1', 'RESULT: RED'), null, 'the Stop after the hand-back is the same report');
+  }
+  assert.ok(denied(toolAs(dir, ['gate', 'retries', 'scope', 'no-tests'], 'i1')), 'the same agent is held at the limit');
+});
+
+test('#370: a resumed implementer\'s GREEN resets the count', () => {
+  const { dir } = repo();
+  pass(dir);
+  report(dir, 'RESULT: RED', 'i1');
+  toolAs(dir, ['gate', 'retries'], 'i1');
+  report(dir, 'RESULT: RED', 'i1');
+  toolAs(dir, ['gate', 'retries'], 'i1');
+  assert.match(report(dir, 'fixed\n\nRESULT: GREEN', 'i1').systemMessage, /retry count is reset/);
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'retries', '001-demo.json')), false);
+});
+
+test('#370: a resumed spec-gatekeeper\'s APPROVED is drift-checked and replaces its REJECTED', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 Tests in test/a.test.js for FR-001\n');
+  r.write('test/a.test.js', '// names no requirement\n');
+  commitAll(r, 'feat');
+  const ends = ['ends', '--record', 'APPROVED', 'REJECTED'];
+  const recorded = () => JSON.parse(fs.readFileSync(path.join(stateDir(r.dir), 'ends', '001-demo.json'), 'utf8'));
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'FR-001 has no test\nREJECTED'), null);
+  assert.equal(recorded().word, 'REJECTED');
+  toolAs(r.dir, ['scope', 'none'], 'gk1');
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED')?.decision, 'block', 'the drift check runs on the resumed report');
+  r.write('test/a.test.js', '// 001 FR-001\n');
+  commitAll(r, 'test names FR-001');
+  toolAs(r.dir, ['scope', 'none'], 'gk1');
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED'), null);
+  assert.equal(recorded().word, 'APPROVED', 'the later word is recorded');
+});
+
+test('#370: a resumed test-writer\'s RED on a parse error is sent back again; a refusal is still never repeated', () => {
+  const { dir } = repo();
+  pass(dir);
+  const ends = ['ends', 'RED', 'BLOCKED', 'FIXED'];
+  const send = (message, agent_id) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const broken = 'test/a.test.mjs:1 SyntaxError: Unexpected token \')\'\n\nRED';
+  assert.ok(denied(send(broken, 'tw1')));
+  toolAs(dir, ['gate', 'scope', 'tests'], 'tw1', 'Read');
+  assert.equal(denied(send(broken, 'tw1')), false, 'the same report sent again goes through: never gagged');
+  toolAs(dir, ['gate', 'scope', 'tests'], 'tw1', 'Read');
+  assert.ok(denied(send(broken, 'tw1')), 'after a resume, a new report is checked again');
+});
+
 test('a report without a RESULT line is sent back once, then counts as RED', () => {
   const { dir } = repo();
   pass(dir);
@@ -1150,7 +1253,9 @@ test('#228 FR-001: spec-gatekeeper\'s APPROVED is refused at hand-back while a c
   assert.equal(send('FR-001 has no test that would fail (owner: test-writer)\n\nREJECTED', 'gk1'), null);
   assert.equal(endsWord(dir).word, 'REJECTED');
   put('test/a.test.mjs', "test('FR-001 sum does not import capitalize', () => {});\n");
-  assert.equal(send('All covered.\n\nAPPROVED', 'gk2'), null, 'APPROVED goes through once the test holds the ID');
+  const approved = send('All covered.\n\nAPPROVED', 'gk2');
+  assert.equal(decided(approved), false, 'APPROVED goes through once the test holds the ID');
+  assert.match(msg(approved), /names FR-001 but defines none/, 'the helper spec names FR-001 in prose only (#371)');
   assert.equal(endsWord(dir).word, 'APPROVED');
 });
 
@@ -1492,6 +1597,43 @@ test('team choice: once a launch went, later ones are not held; a new typed requ
   typedTeam(dir, 'add product()', { transcript_path: t });
   add(...NOT_ANSWERS);
   assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'the answer to the last request does not carry over');
+});
+
+// #373: typed with --team <roles>, the first Team line was taken as the main session wrote it, so a line dropping
+// spec-auditor switched the audit gate off for a request whose user had typed it. The typed roles are held: a launch
+// whose Team line drops one of them waits for the user's answer, as #366 holds a team nobody chose.
+test('#373: a Team line that drops a role the user typed after --team is denied, and no team is recorded', () => {
+  const { dir, t, add } = choiceRepo();
+  typedTeam(dir, `--team ${ALL_ROLES.join(',')} add a sum function`, { transcript_path: t });
+  add(...NOT_ANSWERS);
+  const out = agentLaunch(dir, 'Team: implementer\nBuild it.', { transcript_path: t });
+  assert.ok(denied(out), 'held: the user typed six roles');
+  assert.match(reasonOf(out), /typed --team .*drops product-owner, architect, spec-auditor, test-writer, spec-gatekeeper/s);
+  assert.ok(!fs.existsSync(teamFile(dir)), 'no team is recorded, so the full gates still apply');
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+  assert.ok(!denied(agentLaunch(dir, 'Build it.', { transcript_path: t })), 'no Team line, the full team, goes');
+});
+
+test('#373: the typed roles, or more, go; --security and a user\'s answer since let a line through too', () => {
+  const a = choiceRepo();
+  typedTeam(a.dir, '--team implementer,test-writer add sum()', { transcript_path: a.t });
+  a.add(...NOT_ANSWERS);
+  assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })), 'test-writer dropped');
+  assert.ok(!denied(agentLaunch(a.dir, 'go\nTeam: test-writer, implementer', { transcript_path: a.t })));
+  assert.deepEqual(teamRecord(a.dir).roles, ['test-writer', 'implementer']);
+  const b = choiceRepo();
+  typedTeam(b.dir, '--security --team test-writer,implementer add sum()', { transcript_path: b.t });
+  b.add(...NOT_ANSWERS);
+  assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: b.t })));
+  const c = choiceRepo();
+  typedTeam(c.dir, '--team spec-auditor,test-writer,implementer add sum()', { transcript_path: c.t });
+  c.add(...NOT_ANSWERS);
+  assert.ok(denied(agentLaunch(c.dir, 'go\nTeam: test-writer, implementer', { transcript_path: c.t })));
+  c.add(userLine('Drop the audit, just build it.'));
+  assert.ok(!denied(agentLaunch(c.dir, 'go\nTeam: test-writer, implementer', { transcript_path: c.t })), 'the user answered since');
+  const d = choiceRepo();
+  typedTeam(d.dir, '--team implementer,nobody add sum()', { transcript_path: d.t });
+  assert.ok(!denied(agentLaunch(d.dir, 'go\nTeam: implementer', { transcript_path: d.t })), 'a list the skill refuses records nothing');
 });
 
 test('team: a team-role launch with no Team line records the full team, silently (FR-002, FR-009, #101)', () => {
