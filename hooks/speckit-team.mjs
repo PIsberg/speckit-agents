@@ -253,7 +253,7 @@ const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
 function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { return { problems: driftModule.drift(root, { feature: feat, spec }).problems }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
@@ -268,6 +268,8 @@ const citedRefusal = (word, problems) => `Your ${word} leaves requirements a tic
 const citedStands = (name, word, problems) => `speckit-team: ${name} reported ${word} with cited requirements no test names: ${problems.join('; ')}. `
   + 'spec-gatekeeper\'s APPROVED is refused while they stand.';
 const citedUnchecked = (name, word, failed) => `speckit-team: the cited-ID check could not run (${failed}), so ${name}'s ${word} goes on without it.`;
+// #371: a spec whose FR IDs the check cannot read as requirements is recorded, and the user told so.
+const specUnread = (name, unchecked) => `speckit-team: ${name}'s APPROVED is recorded without the spec-level drift check: ${unchecked.join('; ')}`;
 const driftUnchecked = (name, failed) => `speckit-team: the drift check could not run (${failed}), so ${name}'s APPROVED is `
   + 'recorded without it. Reinstall the team (node install.mjs) to put speckit-drift.mjs beside the hook.';
 
@@ -366,6 +368,21 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
 const stateDir = path.join(commonDir, 'speckit-team');
+// #370: an accepted report leaves a marker per agent (result, ends-ok), so the Stop that follows its hand-back is not
+// judged a second time. An agent that works again after one (resumed with SendMessage) makes a tool call first, which
+// ends the old report: every marker goes, so its next report is checked and counted afresh. A refusal's own marker
+// stays while no report was accepted, so a report is still sent back once, never twice. spec-auditor's verdict mode
+// keeps its own reset.
+if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
+  const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
+    try {
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+    } catch (e) {
+      addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
+    }
+  }
+}
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
@@ -756,6 +773,7 @@ function recordReport(rec, last = null, where = 'stop') {
     return;
   }
   if (drifted?.failed) addNote(driftUnchecked('the spec-gatekeeper role', drifted.failed));
+  if (drifted?.unchecked?.length) addNote(specUnread('the spec-gatekeeper role', drifted.unchecked));
   writeJson(endsFile(feat), { word, feature: feat, at, agent_id: null, role: rec.role });
 }
 
@@ -1706,8 +1724,8 @@ if (mode === 'ends') {
     }
     if (ok) writeJson(ok, {});
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
-    if (drifted?.failed) emit({ systemMessage: driftUnchecked(gk, drifted.failed) });
-    const notes = [faultNote, citedNote].filter(Boolean);
+    const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
+      drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
     process.exit(0);
   }
