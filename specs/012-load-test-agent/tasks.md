@@ -210,6 +210,26 @@ held to its lane in a real session, and the skill stops on its FAIL.
   agents/load-tester.md section and each changed skills/speckit-team/SKILL.md section
   (`test/rules.test.mjs` prints the fingerprints).
 
+## Phase 9: Fix: the verdict case's script
+
+**Slice X1** (FR-006, constitution I and II): owner test-writer, sent to correct an existing test, ends
+`FIXED`. The defect is in the test's script, not in agents/load-tester.md or hooks/speckit-team.mjs:
+the case at test/e2e.test.mjs:1454 passes `{ permissionMode: 'auto' }` (:1460) with plain-text `say`
+reports, and under `auto` Claude Code withholds a subagent's plain-text report (plan.md, Design,
+Verdict). The send-back assertion (:1461) already passes; only the main session's result (:1462) fails.
+
+- [ ] T026 [US1] Correct the FR-006 case in test/e2e.test.mjs (:1454), within that one test so the test
+  counts README.md and CLAUDE.md state do not move. Covers FR-006 and both `ends` entries of
+  agents/load-tester.md (frontmatter :17, PreToolUse SubagentHandback, and :23, Stop), which CLAUDE.md "Verify" asks an e2e case of.
+  (a) Stop entry: drop the `{ permissionMode: 'auto' }` option and keep the two `say` reports and both
+  assertions as they are (pattern: the spec-gatekeeper case at :784). (b) SubagentHandback entry: a
+  second `session` in the same test under `{ permissionMode: 'auto' }` whose two reports are
+  `call('SubagentHandback', { message })`, the send-back read with `lastResult` on the subagent's
+  second request and `NOT MEASURED` with `shown` on `r.requests[MAIN][1]` (pattern: the spec-auditor case
+  at :729). Helpers: `session` :242 (its `permissionMode` option), `call` :182, `say` :181, `agent` :189,
+  `shown` :194, `lastResult` :198, `story` :307, `recordPass` :81, `MAIN` :180. Show the case passing on the current code and failing with
+  `SPECKIT_E2E_NO_HOOK=1`; both were seen on 2026-11-22 against a scratch copy of the file.
+
 ## Dependencies & Execution Order
 
 - F1 before U1a (ROLE_LANES and the e2e case use lane `load`); U1a before every other slice (the agent
@@ -223,6 +243,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 | 1 | F1, U1a, U1b, U1c | T007 (agents/load-tester.md with its marker and `name:` line only) | T001, T003, T004, T005, T006, T008, T010 | T002, T007, T009, T011 |
 | 2 | U2, U3a, U3b, U4 | none | T012, T014, T016, T018 | T013, T015, T017, T019 |
 | 3 | U5, P1, P2 | T023 (`LOAD_WORDS`, `gateWord`'s `words` and `lastLineOnly` options, `loadRequest`, the `role` option) | T020, T022, T024 | T021, T023, T025 |
+| 4 | X1 | none | T026 (a correction: ends `FIXED`, not `RED`) | none |
 
 `[P]` slices (U1c, U3a, P1) touch files no other slice of their round touches; the rest of each round
 shares `agents/load-tester.md`, `test/install.test.mjs` or `hooks/speckit-team.mjs` and runs in task

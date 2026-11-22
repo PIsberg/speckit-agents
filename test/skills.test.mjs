@@ -44,10 +44,10 @@ export function collisions(skills, limit) {
   return out;
 }
 
-test('skills: there are three user skills and seven role skills, each with a description', () => {
+test('skills: there are three user skills and eight role skills, each with a description', () => {
   const skills = installed();
   assert.deepEqual(skills.filter((s) => !s.name.startsWith('speckit-role-')).map((s) => s.name).filter((n) => !n.startsWith('speckit-') || USER_SKILLS.includes(n)), USER_SKILLS.slice().sort());
-  assert.equal(skills.filter((s) => s.name.startsWith('speckit-role-')).length, 7);
+  assert.equal(skills.filter((s) => s.name.startsWith('speckit-role-')).length, 8);
   for (const s of skills) assert.ok(s.description.length > 20, `${s.name} has a description`);
 });
 
