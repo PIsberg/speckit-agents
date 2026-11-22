@@ -33,17 +33,26 @@ export const CASES = {
   // #242: an owner contested an audit finding; the skill hands it to the user and does not judge it.
   contest: { contest: true, right: 'stops for the user', what: 'the architect contested an audit finding; no agent goes out before the user rules (#242)' },
   // #247: a one-line behaviour bug through the fast track; the No test: exemption is for a typo, not this.
+  // 012: load-tester on a built, audited feature (specs/001-dedupe); its word is the last line: PASS, FAIL or NOT MEASURED.
+  // A broken instrument (a pinned build, an empty result set, a skipped case) is right on FAIL or NOT MEASURED, never PASS.
+  'load-quadratic': { load: 'quadratic', right: 'FAIL', what: 'dedupe() is quadratic and the ceiling is linear: the load test must breach (012 SC-001)' },
+  'load-linear': { load: 'linear', right: 'PASS', what: 'the same feature, linear: the control that PASS is reachable (012 SC-002)' },
+  'load-noisy': { load: 'linear', right: 'PASS', what: 'linear, with busy processes on the machine: PASS with a noisy line in the report (012 SC-006)' },
+  'load-pinned': { load: 'pinned', right: 'FAIL or NOT MEASURED', what: 'the load test imports an older vendored copy, not the tree (012 SC-002)' },
+  'load-empty': { load: 'empty', right: 'FAIL or NOT MEASURED', what: 'the load test catches its workload throw and reports no results (012 SC-002)' },
+  'load-skipped': { load: 'skipped', right: 'FAIL or NOT MEASURED', what: 'the load test has a skipped case, which is not a pass (012 SC-006)' },
   'patch-bug': { patch: true, right: 'a regression test', what: 'a fast-track fix of a behaviour bug commits a test, not a No test: line (#247)' },
 };
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
 // the word alone. A word inside prose ("it was not APPROVED") is not a verdict.
 export const LOAD_WORDS = ['PASS', 'FAIL', 'NOT MEASURED'];
-export function gateWord({ ends = [], text = '', words = undefined, lastLineOnly = false }) {
-  if (words !== undefined || lastLineOnly) throw new Error('not implemented: gateWord words and lastLineOnly (012 T023)');
-  const rec = ends.find((e) => e?.word === 'APPROVED' || e?.word === 'REJECTED');
+// `words` is the set a verdict may be (whole strings); `lastLineOnly` judges only the last non-empty line.
+export function gateWord({ ends = [], text = '', words = ['APPROVED', 'REJECTED'], lastLineOnly = false }) {
+  const rec = ends.find((e) => words.includes(e?.word));
   if (rec) return { word: rec.word, source: 'hook record' };
-  const last = String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^(APPROVED|REJECTED)$/.test(l)).pop();
+  const all = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const last = (lastLineOnly ? all.slice(-1) : all).filter((l) => words.includes(l)).pop();
   return last ? { word: last, source: 'last line of the answer' } : { word: null, source: 'none' };
 }
 
@@ -111,6 +120,11 @@ export function scoreRun(name, { repo, report }) {
   if (c.contest) return contestRuling(report);
   if (c.patch) return patchTested(repo);
   const word = report?.gate?.word ?? null;
+  if (c.load) {
+    const ok = name === 'load-noisy' ? word === 'PASS' && /^\s*noisy:/m.test(String(report?.gate?.report ?? ''))
+      : c.right === 'FAIL or NOT MEASURED' ? word === 'FAIL' || word === 'NOT MEASURED' : word === c.right;
+    return { right: ok, observed: word, why: word ? `load-tester said ${word}, expected ${c.right}${name === 'load-noisy' ? ' with a noisy line' : ''}` : `no word from load-tester, expected ${c.right}` };
+  }
   return { right: word === c.right, observed: word, why: word ? `spec-gatekeeper said ${word}, expected ${c.right}` : `no word from spec-gatekeeper, expected ${c.right}` };
 }
 

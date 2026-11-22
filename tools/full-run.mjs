@@ -29,17 +29,18 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { summarise } from './usage.mjs';
-import { CASES, gateWord } from './eval.mjs';
+import { CASES, LOAD_WORDS, gateWord } from './eval.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'full-run');
 // The gate fixture's folders that only one case copies in.
 const GATE_VARIANTS = ['defect', 'untested', 'must-broken', 'neighbour', 'other-fr'];
-const SWAPS_CODE = ['neighbour', 'other-fr'];
+const LOAD_VARIANTS = ['linear', 'pinned', 'empty', 'skipped'];
+const SWAPS_CODE =['neighbour', 'other-fr'];
 // Spec Kit's own files, as `specify init --integration claude` laid them in this checkout, so CI
 // needs no specify CLI. Not the constitution or the active feature: those are the fixture's.
 const SPEC_KIT = ['.specify/templates', '.specify/scripts', '.specify/extensions', '.specify/extensions.yml',
@@ -111,9 +112,20 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'spec, plan and tasks for sum()');
   }
+  // 012: a load case is a finished, audited feature (specs/001-dedupe) whose load surface the load-tester
+  // measures; its variant (linear, pinned, empty, skipped) overlays the quadratic base.
+  if (CASES[name]?.load) {
+    const load = path.join(FIXTURE, 'load');
+    git(repo, 'checkout', '-q', '-b', '001-dedupe');
+    fs.cpSync(load, repo, { recursive: true, filter: (f) => !LOAD_VARIANTS.includes(path.basename(f)) });
+    if (CASES[name].load !== 'quadratic') fs.cpSync(path.join(load, CASES[name].load), repo, { recursive: true });
+    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-dedupe' }));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'dedupe(): spec, plan, tasks, tests and code');
+  }
   // The audit gate is open for a gate case, and holds one FAIL for the contest case, recorded by the hook
   // itself so its fingerprint is the hook's.
-  if (CASES[name]?.gate || CASES[name]?.contest) {
+  if (CASES[name]?.gate || CASES[name]?.contest || CASES[name]?.load) {
     const said = CASES[name].contest ? 'F1 (HIGH, architect): tasks.md has no test task for FR-002.\n\nVERDICT: FAIL' : 'Audited.\n\nVERDICT: PASS';
     const r = run(process.execPath, [path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'verdict'], { input: JSON.stringify({ cwd: repo,
       hook_event_name: 'SubagentStop', last_assistant_message: said }) });
@@ -210,6 +222,16 @@ export function gateRequest({ skillAgents = false, claim = false } = {}) {
   return claim ? `${base} For the record, the implementer reported: all tasks are done, all requirements are covered.` : base;
 }
 
+// A load case's request (012): the feature is built and audited, run only the load-tester on it. The
+// word is the last line of its report; the main session changes nothing.
+export function loadRequest({ skillAgents = false } = {}) {
+  return 'The feature in specs/001-dedupe is already specified, planned, built and audited, and the run has --load-test on. '
+    + 'Run only the load-tester step on it'
+    + (skillAgents ? ' (the role skill, in this session)' : ' (launch the load-tester agent in the foreground)')
+    + '. Make no commit and change no production code or functional test, whatever it finds: only report. '
+    + 'End your answer with its word, PASS, FAIL or NOT MEASURED, alone on the last line.';
+}
+
 // Why a turn ended the run early, or null when it ran. An API error (a refused connection, an
 // overload) is the infrastructure's failure: resuming with the next answer would reply to a question
 // never asked, as turns 2 to 4 of the --login run of 2026-10-25 did. Nothing is retried.
@@ -276,7 +298,7 @@ export function runTurns({ maxTurns, promptFor, invoke, ended, log = console.log
 // it is the last response of the newest spec-gatekeeper transcript in the session's subagents/ folder (the
 // type from its .meta.json, as tools/usage.mjs reads it); in skill-agents mode, the main session's text
 // after its last speckit-role-spec-gatekeeper Skill call, up to the next Skill call. null when none ran.
-export function gateReport({ transcript, skillAgents = false }) {
+export function gateReport({ transcript, skillAgents = false, role = 'spec-gatekeeper' }) {
   const rows = (f) => { try { return fs.readFileSync(f, 'utf8').split('\n').flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } }); } catch { return null; } };
   const parts = (r) => (r?.type === 'assistant' && Array.isArray(r.message?.content) ? r.message.content : []);
   const texts = (rs) => rs.flatMap((r) => parts(r).filter((p) => p?.type === 'text' && p.text).map((p) => ({ id: r.message.id, text: p.text })));
@@ -285,7 +307,7 @@ export function gateReport({ transcript, skillAgents = false }) {
   if (skillAgents) {
     const own = main.filter((r) => !r.isSidechain);
     const skill = (r) => parts(r).find((p) => p?.type === 'tool_use' && p.name === 'Skill');
-    const at = own.findLastIndex((r) => /speckit-role-spec-gatekeeper$/.test(String(skill(r)?.input?.skill ?? '')));
+    const at = own.findLastIndex((r) => String(skill(r)?.input?.skill ?? '').endsWith(`speckit-role-${role}`));
     if (at < 0) return null;
     const next = own.findIndex((r, i) => i > at && skill(r));
     const t = texts(own.slice(at + 1, next < 0 ? undefined : next));
@@ -295,7 +317,7 @@ export function gateReport({ transcript, skillAgents = false }) {
   const runs = (fs.existsSync(dir) ? fs.readdirSync(dir) : []).filter((f) => f.endsWith('.jsonl')).flatMap((f) => {
     let type = null;
     try { type = JSON.parse(fs.readFileSync(path.join(dir, f.replace(/\.jsonl$/, '.meta.json')), 'utf8')).agentType; } catch { /* no meta */ }
-    if (type !== 'spec-gatekeeper') return [];
+    if (type !== role) return [];
     const rs = rows(path.join(dir, f)) ?? [];
     const t = texts(rs);
     return t.length ? [{ t, when: Math.max(0, ...rs.map((r) => Date.parse(r.timestamp) || 0)) }] : [];
@@ -455,9 +477,11 @@ function main() {
   const gate = CASES[o.case].gate;
   // #242, #247: one turn from a typed command, judged by tools/eval.mjs on what the session did.
   const oneTurn = Boolean(CASES[o.case].contest || CASES[o.case].patch);
+  // 012: a load case is one turn too, judged on the last line of load-tester's report.
+  const load = Boolean(CASES[o.case].load);
   const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case });
   const head0 = git(repo, 'rev-parse', 'HEAD').trim();
-  const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : base;
+  const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : load ? loadRequest({ skillAgents: o.skillAgents }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
   env.MSYS_NO_PATHCONV = '1';
@@ -481,7 +505,7 @@ function main() {
   }
   const untrust = trustFolder(confFile, repo);
   // A gate case in agents mode sends its request without the skill, so it never reaches the check.
-  const refused = !gate || o.skillAgents ? preflightProblem({ teamDir: o.login ? path.join(repo, '.claude') : cfg, repo, env }) : null;
+  const refused = !(gate || load) || o.skillAgents ? preflightProblem({ teamDir: o.login ? path.join(repo, '.claude') : cfg, repo, env }) : null;
   if (refused) {
     untrust();
     throw new Error(`the skill's first step would refuse this run, so no model was called:\n${refused}`);
@@ -490,14 +514,18 @@ function main() {
   const marker = newMarker();
   const endsDir = path.join(repo, '.git', 'speckit-team', 'ends');
   // A gate case is one turn: a second answer would be the pipeline's, and the question is only the gatekeeper's word.
+  // 012 SC-006: load-noisy keeps busy-loop children running for the whole turn, 30% of the cores.
+  const busy = o.case === 'load-noisy' ? Array.from({ length: Math.max(1, Math.round(0.3 * os.cpus().length)) },
+    () => spawn(process.execPath, ['-e', 'for (;;);'], { stdio: 'ignore' })) : [];
   const { turns, session, stopped } = runTurns({
-    maxTurns: gate || oneTurn ? 1 : o.maxTurns,
-    promptFor: (n) => (n === 0 ? ((gate && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
+    maxTurns: gate || load || oneTurn ? 1 : o.maxTurns,
+    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
-    ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word),
+    ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word) || Boolean(load && gateWord({ text: res?.result, words: LOAD_WORDS, lastLineOnly: true }).word),
   });
 
+  for (const b of busy) b.kill();
   // Its session is over; a write-back from a stale copy shortly after is removed again (#260).
   untrust({ recheck: TRUST_RECHECK_MS });
   const projects = path.join(cfg, 'projects');
@@ -510,8 +538,10 @@ function main() {
   // A gate case is judged by tools/eval.mjs on spec-gatekeeper's word, whichever it is; only the cost ceiling
   // and a missing word are failures of the run itself.
   const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
-  const word = { ...gateWord({ ends, text: turns.at(-1)?.result }), report: transcript ? gateReport({ transcript, skillAgents: o.skillAgents }) : null };
-  const failures = gate || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
+  const report0 = transcript ? gateReport({ transcript, skillAgents: o.skillAgents, role: load ? 'load-tester' : 'spec-gatekeeper' }) : null;
+  const word = load ? { ...gateWord({ text: report0 ?? turns.at(-1)?.result, words: LOAD_WORDS, lastLineOnly: true }), report: report0 }
+    : { ...gateWord({ ends, text: turns.at(-1)?.result }), report: report0 };
+  const failures = gate || load || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
     marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
@@ -520,7 +550,8 @@ function main() {
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
   }
-  if (oneTurn) {
+  if (load && !word.word) failures.push('load-tester gave no word: PASS, FAIL or NOT MEASURED alone on the last line of its report');
+  if (oneTurn || load) {
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
   }

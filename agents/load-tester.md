@@ -68,6 +68,18 @@ The hook denies a write outside it and checks the whole diff at your Stop.
      FAIL.
    - Host: run a do-nothing control (empty control) in the same harness and subtract the host's overhead
      from each measurement.
+7. Harness and record. Put load tests where lane load accepts them (`test/load/`, `*.load.test.*`). Each
+   runs a reduced version (a smaller workload) under the project's ordinary test command, and a breach of
+   a ceiling makes it fail the command (red). Behind an environment variable the record names, the full
+   sweep runs. Before you keep a load test, see it fail on an impossible ceiling.
+   - Compare versions in one sitting, in alternating order, several runs each. Call a difference real only
+     when the ranges do not overlap.
+   - A capped run lists the tiers the cap left out under Not measured, as skipped.
+   - A reading that moved with no code change: say the cause is unknown; do not guess one.
+   - A FAIL that does not reproduce on a rerun is unstable: report both readings.
+   - Rewrite the record on each run: `specs/<feature>/load-test.md` holds `## Procedure` (how to run it, the
+     environment variable), `## Environment` (date, OS, processor, the versions compared), `## Budgets`
+     (each ceiling and its failing first run) and `## Readings` (this run's numbers).
 
 ## Verdict
 `FAIL` when a gating measurement fails or an instrument check fails: an empty or short result set

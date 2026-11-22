@@ -164,7 +164,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   code change", "cannot be reproduced", contracts/load-tester.md section 5: load tests go in a path lane
   `load` accepts, run reduced by default with the full sweep behind an environment variable the
   procedure names, and are seen failing on a breach.
-- [ ] T021 [US5] Write `## Process` step "Harness and record" into agents/load-tester.md; the whole body
+- [X] T021 [US5] Write `## Process` step "Harness and record" into agents/load-tester.md; the whole body
   stays within 100 lines (`test/skills.test.mjs` holds the role skill under 150).
 
 ## Phase 8: Polish
@@ -179,7 +179,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   option still passes the existing cases at test/eval.test.mjs:120 to :124; `buildRepo`
   lays the `specs/001-dedupe` feature with its variant and an audit PASS; `loadRequest` in both modes;
   `gateReport` with `role: 'load-tester'` reads that role's report, as the existing gateReport tests do.
-- [ ] T023 [P] Build the cases. tools/eval.mjs: `CASES` (:20) entries with `load: '<variant>'`;
+- [X] T023 [P] Build the cases. tools/eval.mjs: `CASES` (:20) entries with `load: '<variant>'`;
   `export const LOAD_WORDS = ['PASS', 'FAIL', 'NOT MEASURED']`; reuse `gateWord` (:41), no second parser:
   its signature becomes `gateWord({ ends = [], text = '', words = ['APPROVED', 'REJECTED'], lastLineOnly
   = false }): { word: string | null, source: string }`, the hook record and the line test matched against
@@ -202,7 +202,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   (:1516) expects 8 roles; the README guardrail table has rows for `gate scope load`, `lane load`,
   `ends PASS FAIL "NOT MEASURED"` and `probe` (pattern: the 009 T022 test at :1960, helpers `repoText`
   :1505, `mdSection` :1506).
-- [ ] T025 Write the docs. README.md: intro, "What gets installed", the team table, "Choosing the team",
+- [X] T025 Write the docs. README.md: intro, "What gets installed", the team table, "Choosing the team",
   skill-agents, the guardrail table, "Scored cases and arms" (the six cases, not yet run: D5), "Live
   results" note and "Known limits" (what is verified by e2e, what only by pinned text, what not at all),
   and every count `test/install.test.mjs` holds. CLAUDE.md: agent and role-skill counts, `TEAM_ROLES`
