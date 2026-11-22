@@ -1116,6 +1116,22 @@ test("product-owner's and architect's Stop: the lane check catches a file writte
   assert.match(shown(r.requests['e2e product-owner'][2]), /Lane check: product-owner changed files outside its lane: owner\.js\./, story(r));
 });
 
+// #412: the read-only agents' Stop runs `lane none`: a write scope none cannot read (node -e) is caught after the fact.
+// spec-auditor is sent back; spec-gatekeeper, whose test runs may leave files (009 D7, revised), is only warned, and the
+// warning reaches the main session through the relay. With SPECKIT_E2E_NO_HOOK=1 neither message comes.
+test("#412: read-only agents' Stop: lane none sends spec-auditor back for a node -e write and warns about spec-gatekeeper's", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  const r = await session(s, {
+    [MAIN]: [agent('spec-auditor', 'e2e spec-auditor'), agent('spec-gatekeeper', 'e2e spec-gatekeeper'), say('done')],
+    'e2e spec-auditor': [unseenWrite('audit.js'), say('Audited.\nVERDICT: PASS')],
+    'e2e spec-gatekeeper': [unseenWrite('gate.js'), say('Checked.\nREJECTED')],
+  });
+  assert.ok(fs.existsSync(path.join(s.repo, 'audit.js')), `the Bash call never ran:\n${story(r)}`);
+  assert.match(shown(r.requests['e2e spec-auditor'][2]), /Lane check: spec-auditor changed files outside its lane: audit\.js\./, story(r));
+  assert.doesNotMatch(strings(r.requests['e2e spec-gatekeeper']).join('\n'), /Lane check: spec-gatekeeper/, story(r));
+  assert.match(shown(r.requests[MAIN].at(-1)), /spec-gatekeeper: WARNING: spec-gatekeeper left changes outside its lane: gate\.js/, story(r));
+});
+
 // #231: the WARNING at product-owner's second Stop went to its own transcript only. The settings.json
 // PostToolUse entry on Agent now hands it to the main session, whose next request carries it.
 test("#231: an out-of-lane file a subagent leaves behind is named in the main session's next request", { skip: noClaude, timeout: 180_000 }, async () => {

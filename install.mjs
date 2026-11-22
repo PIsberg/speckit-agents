@@ -69,8 +69,8 @@ const SETTINGS_GATES = [
   // The user typing /speckit-implement: fires neither UserPromptSubmit nor PreToolUse. The user typing
   // /speckit-team starts a request; typed with --team noagents, it records that no agent runs.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement|speckit-team' },
-  // product-owner and architect have no gate to record where they started, so this does it once, as
-  // each starts, for the lane check at their Stop (#88). For all eight roles it also injects the
+  // product-owner, architect and the read-only agents have no gate to record where they started, so this
+  // does it once, as each starts, for the lane check at their Stop (#88, #412). For all eight roles it also injects the
   // session's project block as the agent's starting context, when the launch named one (007).
   { event: 'SubagentStart', matcher: AGENTS.join('|'), mode: 'start' },
   // What a subagent's hooks said at its Stop reaches only its own transcript; this hands it to the main

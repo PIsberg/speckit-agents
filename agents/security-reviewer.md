@@ -21,6 +21,8 @@ hooks:
     - hooks:
         - type: command
           command: 'node "{{HOOK}}" ends "VERDICT: PASS" "VERDICT: FAIL"'
+        - type: command
+          command: 'node "{{HOOK}}" lane none'
 ---
 
 You review security. You find flaws before they ship, and you fix nothing.

@@ -20,9 +20,10 @@
 //   result                  SubagentHandback / Stop of implementer: count its RESULT line
 //   ends [--record] <word>... SubagentHandback / Stop: the report's last line must be one of the words;
 //                           --record keeps the accepted word for the feature (spec-gatekeeper's)
-//   start                   SubagentStart of product-owner and architect: record where the agent started, for
-//                           the lane check at its Stop; never a decision
-//   lane tests|no-tests|only <prefix>...  SubagentStop: check the agent's whole diff, including Bash writes
+//   start                   SubagentStart of product-owner, architect and the read-only agents: record where the
+//                           agent started, for the lane check at its Stop; never a decision
+//   lane tests|no-tests|none|only <prefix>...  SubagentStop: check the agent's whole diff, including Bash writes
+//                           (`none`: every changed file; spec-gatekeeper is only warned, #412)
 //   patch                   PreToolUse (any tool): deny once the fast track's change passes its line and file budget,
 //                           or it runs a history/remote command or a wholesale restore; run a Bash command it lets
 //                           through with git's network transports off (in bypassPermissions, or where the installed
@@ -694,6 +695,10 @@ const ROLE_LANES = {
   "security-reviewer": ['none'],
 };
 const ROLE_SKILL = /(^|:)speckit-role-([a-z-]+)$/;
+// #412, 009 D7 revised 2026-11-22: the read-only roles' lane check at close. spec-gatekeeper runs the repo's tests, whose
+// output must never block its close, so a change it leaves is only warned about, as agent and as role skill alike.
+const LANE_WARN_ONLY = new Set(['spec-gatekeeper']);
+const READ_ONLY_ROLES = ['spec-auditor', 'spec-gatekeeper', 'security-reviewer'];
 
 // The JSONL lines of a file from byte `offset`, or null when it cannot be read.
 function linesAfter(file, offset) {
@@ -748,7 +753,8 @@ function laneOutside(base, rule, prefixes, whoName) {
   if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) return no(`${testPaths.bad}.`);
   // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
   if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) return no(`its start commit ${base.sha.slice(0, 12)} is not in this repo.`);
-  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : inLane(rule, rel));
+  // `none`, a read-only role's (#412): every changed file is outside.
+  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : rule === 'none' ? false : inLane(rule, rel));
   return { outside: changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel)) };
 }
 
@@ -951,14 +957,16 @@ function closeRole(rec, at, gate = null) {
   recordReport(rec, at === 'skill' ? str(input.tool_input?.args)?.split('\n')[0] ?? null : str(input.last_assistant_message), at);
   if (gate) gate();
   const [rule, ...prefixes] = ROLE_LANES[rec.role];
-  if (rule !== 'none') {
+  {
     const r = laneOutside(rec, rule, prefixes, rec.role);
     if ('problem' in r) { addNote(`speckit-team: ${r.problem}`); return done(); }
     if (r.outside.length) {
       const text = `Lane check: ${rec.role} changed files outside its lane: ${r.outside.join(', ')}. `
         + `Restore them (git checkout ${rec.sha.slice(0, 12)} -- <file>, or delete new files), then go on.`;
-      if (at === 'skill') deny(text);
-      if (sendBackOnce(rec, 'lane')) block(text);
+      if (!LANE_WARN_ONLY.has(rec.role)) {
+        if (at === 'skill') deny(text);
+        if (sendBackOnce(rec, 'lane')) block(text);
+      }
       drop();
       emit({ systemMessage: `WARNING: ${rec.role} left changes outside its lane: ${r.outside.join(', ')}` });
     }
@@ -1848,8 +1856,8 @@ if (mode === 'ends') {
   process.exit(0);
 }
 
-// product-owner and architect have no gate to record their start on a first tool call, so the settings.json
-// entry records it here, at SubagentStart, for the lane check at their Stop (#88). Never a decision.
+// product-owner, architect and the read-only agents have no gate to record their start on a first tool call, so the
+// settings.json entry records it here, at SubagentStart, for the lane check at their Stop (#88, #412). Never a decision.
 // The same entry starts every team agent with its session's project, if the launch named one (feature
 // 007): the block goes to the agent as additionalContext. Never a decision.
 // #380: per-agent markers (agents/), per-session records (team/, project/, choice/) and the fast track's start records
@@ -1877,7 +1885,7 @@ function pruneState(now = Date.now()) {
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
-  if ((type === 'product-owner' || type === 'architect') && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
+  if ((type === 'product-owner' || type === 'architect' || READ_ONLY_ROLES.includes(type)) && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
     if (start) writeJson(baseFile(agentKey), start);
   }
@@ -1916,7 +1924,7 @@ if (mode === 'lane') {
   // for the rest of a turn another Stop hook (ends, result) continued, so lane would only warn about a file written
   // after that. A marker that cannot be written falls back to the flag.
   const asked = path.join(stateDir, 'agents', `${agentKey}.lane-asked`);
-  if (outside.length && !fs.existsSync(asked)) {
+  if (outside.length && !fs.existsSync(asked) && !(rule === 'none' && LANE_WARN_ONLY.has(input.agent_type))) {
     let first = !input.stop_hook_active;
     try { writeJson(asked, {}); first = true; } catch { /* the flag decides */ }
     if (first) {

@@ -23,6 +23,8 @@ hooks:
     - hooks:
         - type: command
           command: 'node "{{HOOK}}" verdict'
+        - type: command
+          command: 'node "{{HOOK}}" lane none'
 ---
 
 You did not write these artifacts. Treat them as wrong until you have checked them.
