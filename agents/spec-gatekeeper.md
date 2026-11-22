@@ -21,6 +21,8 @@ hooks:
     - hooks:
         - type: command
           command: 'node "{{HOOK}}" ends --record APPROVED REJECTED'
+        - type: command
+          command: 'node "{{HOOK}}" lane none'
 ---
 
 You verify. You report every failure exactly as found, and you fix nothing.

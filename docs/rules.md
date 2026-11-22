@@ -123,8 +123,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Draft from what the repo states, mark inferred rules, ask, then `speckit-constitution`. text.
 
 ### skills/speckit-team/SKILL.md: 1. Spec: product-owner
-<!-- fingerprint: 170c0dda -->
-- Relay the questions, recommended answer first; relaunch until `READY FOR PLAN`. text.
+<!-- fingerprint: 71925798 -->
+- Relay the questions with product-owner's options as listed, recommended first; relaunch until `READY FOR PLAN`. pinned (#216).
 - Work on a feature branch. text; visible in the PR.
 - security-reviewer on the spec, FAIL routing, two FAILs to the user. pinned.
 - Stop for the spec review; commit it with the architect's launch. pinned.
@@ -232,11 +232,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' specs are not inputs. text, unseen (cost).
 
 ### agents/product-owner.md: Process
-<!-- fingerprint: 713a3822 -->
+<!-- fingerprint: b1268795 -->
 - Stop without `.specify/` or the skill; a new feature reads speckit-specify, a revision leaves it unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - An answer goes under `## Clarifications`, `### Session`, as `- Q: ... → A: ...`, and into what it settles. pinned; spec-auditor reads the result.
 - A finding judged wrong is reported `contested` with its file:line; an upheld contest is recorded. pinned.
-- At most 5 open questions, highest impact first, each with options or at most 5 words. pinned, unseen.
+- At most 5 open questions, highest impact first, each with 2 to 4 options (AskUserQuestion's limit, #216) or at most 5 words. pinned, unseen.
 - Tick a checklist item only after checking it this run. text, unseen.
 
 ### agents/product-owner.md: Lane
@@ -246,7 +246,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - No technologies in the spec; every requirement testable. text; spec-auditor checks.
 
 ### agents/product-owner.md: Report
-<!-- fingerprint: 015322f2 -->
+<!-- fingerprint: 9afc558c -->
+- Each open question with its options, recommended first (#216). pinned.
 - At most 20 lines; `READY FOR PLAN` last, only with no open question. text; no `ends` hook.
 
 ## agents/architect.md
@@ -301,7 +302,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/spec-auditor.md: Process
 <!-- fingerprint: 287cccab -->
-- speckit-analyze, read-only. hook `scope none`.
+- speckit-analyze, read-only. hook `scope none`, `lane none` (#412).
 - Read each artifact once; grep the rest. text, unseen (cost).
 - A second implementation of existing behaviour is HIGH. pinned.
 
@@ -311,7 +312,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A finding the user ruled out is not raised again. pinned.
 
 ### agents/spec-auditor.md: Report
-<!-- fingerprint: 4345ec6a -->
+<!-- fingerprint: 40092ae6 -->
+- Leave out speckit-analyze's next steps, offers and `## Extension Hooks` block (#405). pinned.
 - `VERDICT: PASS` or `VERDICT: FAIL` last. hook `verdict` (asks once, records it against the files it read).
 
 ## agents/test-writer.md
@@ -413,7 +415,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/spec-gatekeeper.md: (opening)
 <!-- fingerprint: 2fa87321 -->
-- Verifies and fixes nothing. hook `scope none`.
+- Verifies and fixes nothing. hook `scope none`; `lane none` warns only (#412).
 
 ### agents/spec-gatekeeper.md: Inputs
 <!-- fingerprint: 6c1ebb55 -->
@@ -440,7 +442,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/security-reviewer.md: (opening)
 <!-- fingerprint: 890c59bc -->
-- Finds flaws, fixes nothing. hook `scope none`.
+- Finds flaws, fixes nothing. hook `scope none`, `lane none` (#412).
 
 ### agents/security-reviewer.md: Inputs
 <!-- fingerprint: ce64a755 -->

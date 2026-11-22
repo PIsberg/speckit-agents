@@ -364,6 +364,17 @@ test('installed architect and spec-auditor check the plan for code the repo alre
   assert.match(auditor, /read only the (matching|lines)/i, 'the check reads matching lines only');
 });
 
+// #405: speckit-analyze ends with a tail written for a person: "you can run /speckit-implement", an
+// offer to suggest edits (which the read-only auditor cannot make) and an `## Extension Hooks` block
+// naming /speckit-git-commit. In the full run of 2026-11-22 that tail was 13 of the report's 61 lines,
+// over the 60-line limit, and none of it was for the main session, which decides what runs next.
+test('#405: installed spec-auditor leaves speckit-analyze\'s next steps, offers and Extension Hooks out of its report', () => {
+  const auditor = installedAgent('spec-auditor');
+  const report = auditor.slice(auditor.indexOf('## Report'));
+  assert.match(report, /next steps?[^.]*offers?[^.]*Extension Hooks|Extension Hooks[^.]*next steps?/i, 'the Report section names the tail to leave out');
+  assert.match(report, /main session decides what runs next/i, 'and says why: the main session runs the pipeline');
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
@@ -1331,6 +1342,20 @@ function skillSection(skill, heading) {
 }
 // The first 400 characters after a section's heading line: where a role condition must stand.
 const sectionHead = (skill, heading) => flat(skillSection(skill, heading).split('\n').slice(1).join('\n')).slice(0, 400);
+
+// #216: product-owner's questions reach the user through AskUserQuestion, which takes 2 to 4 options a question. The agent
+// chose its options (Process 4) but its report carried only the recommended answer, so the main session made the other
+// options up, and a fifth option the agent was allowed did not fit the call. The report now lists them, recommended first,
+// and the skill relays them as listed. A role skill is generated from the same agent body, so --team skill-agents gets it too.
+test('#216: product-owner reports 2 to 4 options a question, recommended first; the skill relays them as listed', () => {
+  const po = installedAgent('product-owner');
+  assert.match(po, /2 to 4 exclusive options/, 'no more options than AskUserQuestion takes');
+  assert.doesNotMatch(po, /2 to 5 exclusive options/);
+  const report = po.slice(po.indexOf('## Report'));
+  assert.match(report, /each open question[^.]*options[^.]*recommended (one )?first/i, 'the report lists every option, recommended first');
+  const spec = flat(skillSection(teamSkill(), '## 1. Spec: product-owner'));
+  assert.match(spec, /AskUserQuestion[^.]*product-owner's options[^.]*as (it )?listed/i, 'the skill relays the options the agent listed');
+});
 
 test('006 T008 FR-001 FR-005 FR-006: skill takes --team, names the six roles as the hook does, refuses before any launch', () => {
   const skill = teamSkill();
