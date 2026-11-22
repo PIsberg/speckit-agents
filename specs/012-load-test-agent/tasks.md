@@ -116,7 +116,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U2** (FR-008, FR-009)
 
-- [ ] T012 [US2] Test the instrument rules in agents/load-tester.md through the installed file, in
+- [X] T012 [US2] Test the instrument rules in agents/load-tester.md through the installed file, in
   test/install.test.mjs. Covers FR-008, FR-009, US2-1 to US2-4, US1-3, edge case "no way to run a
   benchmark". The verdict rules are contracts/load-tester.md section 4's.
 - [ ] T013 [US2] Write `## Process` steps "Load surface" and "Instruments" and `## Verdict` into
@@ -126,7 +126,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U3a**: the probe (FR-013)
 
-- [ ] T014 [P] [US3] Test `probe` in test/hook.test.mjs through `spawnSync(process.execPath, [HOOK,
+- [X] T014 [P] [US3] Test `probe` in test/hook.test.mjs through `spawnSync(process.execPath, [HOOK,
   'probe', ...])` (test/hook-helpers.mjs `HOOK`). Covers FR-013, SC-006, contracts/load-tester.md
   section 6. Load cannot be set in a test, so drive the thresholds through `--since`: a start busy of 50
   gives the busy line; a start probe of 1 ms gives the slowdown line; a start probe of 10^9 ms gives no
@@ -140,7 +140,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U3b**: budgets and gating (FR-011, FR-012, FR-013)
 
-- [ ] T016 [US3] Test the budget rules in agents/load-tester.md through the installed file, in
+- [X] T016 [US3] Test the budget rules in agents/load-tester.md through the installed file, in
   test/install.test.mjs. Covers FR-011, FR-012, FR-013, US3-1 to US3-4, SC-005: the body runs
   `node "<hook>" probe` before and `probe --since` after its measurements (the installed path, as T003
   checks for `{{HOOK}}`), and a budget row is written to the record only after its failing first run.
@@ -151,7 +151,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U4** (FR-014)
 
-- [ ] T018 [US4] Test the workload rules in agents/load-tester.md through the installed file, in
+- [X] T018 [US4] Test the workload rules in agents/load-tester.md through the installed file, in
   test/install.test.mjs. Covers FR-014, US4-1 to US4-5.
 - [ ] T019 [US4] Write `## Process` step "Workloads" into agents/load-tester.md.
 

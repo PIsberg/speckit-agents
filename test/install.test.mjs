@@ -2402,3 +2402,66 @@ test('012 T008 FR-002 edge cases: an opt-in role not asked for gets no skipped r
   assert.match(sec, /no implementer|without (an )?implementer|as it stands/i);
   assert.match(sec, /NOT MEASURED[^.]*(listed|reported|report)|report[^.]*NOT MEASURED/i, 'NOT MEASURED goes on but is reported');
 });
+
+// ---- 012 load-tester: instrument, budget and workload rules in the installed body ----
+test('012 T012 FR-008 FR-009 US2-1 US2-2 US2-3 US2-4 US1-3: the body checks the artifact, the result count, the skips and the switch, and names the no-runner case', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /working tree/i, 'the artifact measured is the working tree\'s build');
+  assert.match(proc, /(pinned|older|published|other than)[^.]*(release|build|version|artifact)|resolved/i, 'which artifact the harness resolved');
+  assert.match(proc, /empty|non-empty/i, 'an empty result set');
+  assert.match(proc, /expected count|expected number|fewer than expected|short of/i, 'the expected count');
+  assert.match(proc, /exit status|exit code/i, 'whatever the harness exit status');
+  assert.match(proc, /skipp?ed[^.]*(not passed|never (a )?pass|listed|Not measured)/i, 'a skip is listed as skipped');
+  assert.match(proc, /(engag|took effect)[^.]*(assert|first|fail)|(assert|first)[^.]*(engag)/i, 'a feature switch is asserted engaged first');
+  assert.match(proc, /(cache|routing|early exit)/i, 'the switch examples');
+  assert.match(proc, /no (way|runner|benchmark)[^.]*NOT MEASURED|NOT MEASURED[^.]*no (way|runner)/i, 'no way to run a benchmark gives NOT MEASURED');
+  const verdict = body.slice(body.indexOf('## Verdict'), body.indexOf('## Report'));
+  assert.match(verdict, /instrument/i, 'an instrument check failing is FAIL');
+  assert.match(verdict, /empty|expected count|short/i, 'an empty or short result set is FAIL');
+  assert.match(verdict, /switch|engage/i, 'a switch that did not engage is FAIL');
+  assert.match(verdict, /skip/i, 'skips alone give NOT MEASURED');
+});
+
+test('012 T016 FR-011 FR-012 FR-013 US3-1 US3-2 US3-3 US3-4 SC-005: the body probes before and after, gates only on deterministic measures, and writes a budget only after its failing first run', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  const body = installedAgent('load-tester');
+  assert.ok(body.includes(`node "${hookPath}" probe`), 'runs the installed hook probe');
+  assert.match(body, /probe --since/, 'and probe --since after the measurements');
+  assert.ok(body.indexOf('" probe') < body.indexOf('probe --since'), 'probe before probe --since');
+  assert.match(body, /noisy/i, 'the noisy warning');
+  assert.match(body, /10%/);
+  assert.match(body, /20%/);
+  assert.match(body, /(allocat|work count|ratio|accuracy)/i, 'deterministic measures');
+  assert.match(body, /wall-clock[^.]*(trend|never gat|not gat)|(trend|never gat)[^.]*wall-clock/i, 'wall-clock is a trend');
+  assert.match(body, /processor time|cpu time/i);
+  assert.match(body, /2\.2x|2\.2 times/i, 'the 2.2x default margin');
+  assert.match(body, /(project|constitution)[^.]*tighten|tighten[^.]*(project|constitution)/i, 'a project may tighten it');
+  assert.match(body, /(no workload can meet|cannot meet|impossible)[^.]*ceiling|ceiling[^.]*(no workload can meet|cannot meet|impossible)/i, 'first a ceiling nothing can meet');
+  assert.match(body, /fail(ing|ed)? first run|first (run )?(is )?(seen )?fail/i, 'the failing first run');
+  assert.match(body, /re-?derive/i, 're-derive from a failing run');
+  assert.match(body, /never raise|do not raise|not raise the (number|ceiling)/i, 'never raise the number until green');
+  assert.match(body, /(highest|max)[^.]*reading/i, 'the margin is over the highest reading');
+  assert.match(body, /(row|budget)[^.]*only after[^.]*fail|only after[^.]*fail[^.]*(row|budget)/i, 'a budget row only after the failing first run');
+});
+
+test('012 T018 FR-014 US4-1 US4-2 US4-3 US4-4 US4-5: the body sweeps sizes, separates cold from warm, sweeps concurrency, reports error rates and subtracts a host control', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /(four|4) sizes|at least (four|4)/i, 'at least four sizes');
+  assert.match(proc, /doubl/i, 'each double the last');
+  assert.match(proc, /per doubling|each doubling/i, 'growth per doubling');
+  assert.match(proc, /cold[^.]*warm|warm[^.]*cold/i, 'cold and warm apart');
+  assert.match(proc, /vary|varied|distinct|different inputs/i, 'inputs varied so a cache cannot answer');
+  assert.match(proc, /concurren/i, 'a concurrency sweep');
+  assert.match(proc, /queue/i, 'flat throughput with rising latency is a queue, not a regression');
+  assert.match(proc, /false[- ]positive/i);
+  assert.match(proc, /false[- ]negative/i);
+  assert.match(proc, /(changes?|flips?) (a )?verdicts?[^.]*FAIL|FAIL[^.]*(changes?|flips?) (a )?verdicts?/i, 'a speed gain that changes verdicts is FAIL');
+  assert.match(proc, /(do-nothing|no-op|empty) control/i, 'a do-nothing control');
+  assert.match(proc, /host/i);
+  assert.match(proc, /subtract/i);
+  assert.match(proc, /where the feature has|each where|only where|when the feature/i, 'each dimension only where the feature has it');
+});

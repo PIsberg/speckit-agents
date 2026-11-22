@@ -4459,3 +4459,42 @@ test('012 T004 FR-001 contract 1: the skill-agents start message names load-test
   const out = typedWith(dir, skillHook(), '--team skill-agents add a flag');
   assert.match(msg(out), /audit gate on each tool call inside [^.]*load-tester/);
 });
+
+// ---- 012 probe (FR-013, SC-006, contract 6). Load cannot be set, so thresholds are driven through --since. ----
+const probe = (...args) => spawnSync(process.execPath, [HOOK, 'probe', ...args], { encoding: 'utf8', cwd: os.tmpdir() });
+
+test('012 T014 FR-013 SC-006 contract 6: probe prints one reading line and exits 0 in any directory', () => {
+  const r = probe();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout.trim(), /^probe: busy \d+% probe \d+(\.\d+)? ms$/);
+});
+
+test('012 T014 FR-013 contract 6: --since with a start busy of 50 gives the busy line and echoes the start', () => {
+  const r = probe('--since', '50,1000000000');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /\(start: busy 50%, probe 1000000000 ms\)/);
+  assert.match(r.stdout, /^noisy: other processes used (\d+)% of the machine \(10% or more\)$/m);
+  assert.doesNotMatch(r.stdout, /ran \d+% slower/, 'a huge start probe is no slowdown');
+});
+
+test('012 T014 FR-013 contract 6: a start probe of 1 ms gives the slowdown line', () => {
+  const r = probe('--since', '0,1');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^noisy: the fixed probe ran \d+% slower at the end than at the start \(20% or more\)$/m);
+});
+
+test('012 T014 FR-013 contract 6: a start probe of 10^9 ms and idle start gives no slowdown line', () => {
+  const r = probe('--since', '0,1000000000');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^probe: busy \d+% probe /m);
+  assert.doesNotMatch(r.stdout, /slower/);
+});
+
+test('012 T014 FR-013 contract 6: malformed --since values exit 1 with one refusal line and no stack', () => {
+  for (const v of ['abc', '5', '1,2,3', '-1,5', '5,0', '5,x', '']) {
+    const r = probe('--since', v);
+    assert.equal(r.status, 1, `--since ${JSON.stringify(v)}: ${r.stdout}${r.stderr}`);
+    assert.match(r.stdout.trim(), /^speckit-team: probe: [^\n]+$/, `one line for ${JSON.stringify(v)}`);
+    assert.doesNotMatch(r.stdout + r.stderr, /\bat .*\.mjs:\d+/, 'no stack trace');
+  }
+});
