@@ -971,6 +971,16 @@ const toolAs = (dir, args, agent_id, tool_name = 'Bash') => run(dir, args, {
 });
 const stopAs = (dir, args, agent_id, last_assistant_message) => run(dir, args, { hook_event_name: 'SubagentStop', agent_id, last_assistant_message });
 
+test('#371: spec-gatekeeper\'s APPROVED on a spec whose FR IDs the drift check cannot read is recorded with a message', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n| FR-001 | must work |\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 implement\n');
+  commitAll(r, 'feat');
+  const out = stopAs(r.dir, ['ends', '--record', 'APPROVED', 'REJECTED'], 'gk1', 'fine\nAPPROVED');
+  assert.equal(out?.decision, undefined);
+  assert.match(msg(out), /recorded without the spec-level drift check: specs\/001-demo\/spec\.md names FR-001 but defines none/);
+});
+
 test('#370: a resumed implementer\'s every RED counts, and the third closes the gate for it', () => {
   const { dir } = repo();
   pass(dir);
@@ -1212,7 +1222,9 @@ test('#228 FR-001: spec-gatekeeper\'s APPROVED is refused at hand-back while a c
   assert.equal(send('FR-001 has no test that would fail (owner: test-writer)\n\nREJECTED', 'gk1'), null);
   assert.equal(endsWord(dir).word, 'REJECTED');
   put('test/a.test.mjs', "test('FR-001 sum does not import capitalize', () => {});\n");
-  assert.equal(send('All covered.\n\nAPPROVED', 'gk2'), null, 'APPROVED goes through once the test holds the ID');
+  const approved = send('All covered.\n\nAPPROVED', 'gk2');
+  assert.equal(decided(approved), false, 'APPROVED goes through once the test holds the ID');
+  assert.match(msg(approved), /names FR-001 but defines none/, 'the helper spec names FR-001 in prose only (#371)');
   assert.equal(endsWord(dir).word, 'APPROVED');
 });
 
