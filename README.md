@@ -2444,7 +2444,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   rules deny the files a Bash command names
   ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)); a file
   written some other way through Bash is caught by the [lane check](#the-lane-check) at the Stop of
-  product-owner, architect, test-writer and implementer, which sends them back to restore it.
+  product-owner, architect, test-writer and implementer, which sends them back to restore it, and at
+  the Stop of the three read-only agents: spec-auditor and security-reviewer are sent back the same
+  way, spec-gatekeeper only warned ([#412](https://github.com/PIsberg/speckit-agents/issues/412)).
 - **Subagents can't ask you questions.** product-owner returns its questions, each with 2 to 4
   options, recommended first, and the main session asks them with those options
   ([#216](https://github.com/PIsberg/speckit-agents/issues/216)). Nothing checks that it keeps them.
