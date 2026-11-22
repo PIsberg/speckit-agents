@@ -1455,6 +1455,20 @@ test('ends (#395): a parse error after a task ID and file, or quoted after "fail
   for (const message of expected) assert.equal(denied(send(message)), false, message);
 });
 
+// #403: Claude Code 2.1.330 writes api-request-blob rows into transcripts, some with a message of role assistant that
+// repeats an earlier message. The transcript reader took any row with that role, so a blob after the report could be
+// read as the report. Only rows of type assistant are the agent's messages.
+test('#403: a transcript row that is not of type assistant is never read as the report', () => {
+  const { dir } = repo();
+  const transcript = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-403-')), 'agent.jsonl');
+  const row = (type, text) => JSON.stringify({ type, message: { role: 'assistant', content: [{ type: 'text', text }] } });
+  fs.writeFileSync(transcript, [row('assistant', 'T001 has no test\nVERDICT: FAIL'), row('assistant', 'fixed upstream\nVERDICT: PASS'),
+    row('api-request-blob', 'T001 has no test\nVERDICT: FAIL'), JSON.stringify({ type: 'api-request', id: 'r1' })].join('\n') + '\n');
+  run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'sa1', agent_transcript_path: transcript });
+  const recorded = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'verdicts', '001-demo.json'), 'utf8'));
+  assert.equal(recorded.verdict, 'PASS');
+});
+
 // #245: a missing module that is itself a test file (a helper, a fixture) means the test file did not run
 // either. Only the path the error names is judged, against the repo's test patterns: Node ESM's absolute
 // path, Node CJS's relative one from its Require stack, a relative path as a report gives it, or a Python
