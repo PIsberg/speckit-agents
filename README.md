@@ -344,7 +344,7 @@ ask them failed on an empty second question ("Invalid tool parameters"), and it 
 
 | Agent | Spec Kit phase | May write | Hands over | Model |
 |---|---|---|---|---|
-| [`product-owner`](agents/product-owner.md) | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions with recommended answers | sonnet |
+| [`product-owner`](agents/product-owner.md) | specify, clarify | `specs/`, `.specify/feature.json` | `spec.md` and up to 5 questions, each with 2 to 4 options, recommended first | sonnet |
 | [`architect`](agents/architect.md) | plan, tasks | `specs/`, `CLAUDE.md` | `plan.md` and `tasks.md`, plus `research.md`, `data-model.md`, `contracts/` or `quickstart.md` only when the feature has something for them: the minimal design that meets the spec, each fact said once | opus |
 | [`spec-auditor`](agents/spec-auditor.md) | analyze | nothing | `VERDICT: PASS` or `FAIL`; FAIL only on CRITICAL or HIGH findings, MEDIUM and LOW are listed and accepted | opus |
 | [`test-writer`](agents/test-writer.md) | TDD red | test files, `tasks.md` | committed tests, each shown failing on an assertion, never on a parse, import or compile error; the report ends `RED`, or `BLOCKED` with what stopped it, or `FIXED` when it only corrected an existing test, or added one for behaviour the code already has, and the suite is green | sonnet |
@@ -1716,13 +1716,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 673 tests:
+`npm test` runs 674 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 244 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 140 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 141 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -2445,8 +2445,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)); a file
   written some other way through Bash is caught by the [lane check](#the-lane-check) at the Stop of
   product-owner, architect, test-writer and implementer, which sends them back to restore it.
-- **Subagents can't ask you questions.** product-owner returns its questions, and the main
-  session asks them.
+- **Subagents can't ask you questions.** product-owner returns its questions, each with 2 to 4
+  options, recommended first, and the main session asks them with those options
+  ([#216](https://github.com/PIsberg/speckit-agents/issues/216)). Nothing checks that it keeps them.
 - **Skipping Spec Kit's skill on a revision is prompt text.** product-owner and architect read
   `speckit-specify`, `speckit-plan` and `speckit-tasks` themselves on a first run and are told to
   leave them unread on a revision. No hook checks either half, so an architect asked to do one small

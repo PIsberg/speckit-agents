@@ -39,7 +39,8 @@ You own what the feature must do. How it is built belongs to the architect.
    upheld a contest, your prompt says so: record it under `## Clarifications` as
    `- Q: <the finding> → A: not a defect, <why> (<date>)`.
 4. Select the questions still open: at most 5, highest impact first, leaving out what planning can
-   settle. Each takes 2 to 5 exclusive options or an answer of at most 5 words. The user is reachable
+   settle. Each takes 2 to 4 exclusive options, as many as AskUserQuestion takes, or an answer of at
+   most 5 words with 2 to 4 suggested answers as its options. The user is reachable
    only through your report, so return them there.
 5. Bring the feature's `checklists/requirements.md` up to date with the spec as it now stands.
    Tick an item only after checking the spec against it in this run, and untick one that no
@@ -55,7 +56,7 @@ You own what the feature must do. How it is built belongs to the architect.
 - Every requirement is testable: a Given/When/Then scenario, or a measurable criterion with a number.
 
 ## Report
-At most 20 lines, repo-relative paths: the spec path and branch, then each open question with your
-recommended answer and one line of reasoning. On a revision, one line per finding: its ID and
+At most 20 lines, repo-relative paths: the spec path and branch, then each open question with its
+options, your recommended one first, and one line of reasoning. On a revision, one line per finding: its ID and
 fixed, not fixed, or `contested` and its file:line. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no open question and
 no `[NEEDS CLARIFICATION]` marker remains.
