@@ -2427,7 +2427,7 @@ test('012 T016 FR-011 FR-012 FR-013 US3-1 US3-2 US3-3 US3-4 SC-005: the body pro
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
-  const body = installedAgent('load-tester');
+  const body = flat(fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8'));
   assert.ok(body.includes(`node "${hookPath}" probe`), 'runs the installed hook probe');
   assert.match(body, /probe --since/, 'and probe --since after the measurements');
   assert.ok(body.indexOf('" probe') < body.indexOf('probe --since'), 'probe before probe --since');
