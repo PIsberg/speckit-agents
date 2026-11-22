@@ -1084,6 +1084,8 @@ function assistantText(line, mainOnly) {
   try {
     const r = JSON.parse(line);
     if (mainOnly && r?.isSidechain) return '';
+    // #403: only an assistant row is a message of the agent's; api-request-blob rows (2.1.330) repeat earlier ones.
+    if (r?.type !== 'assistant') return '';
     const m = r.message;
     if (m?.role !== 'assistant') return '';
     return typeof m.content === 'string' ? m.content
