@@ -473,7 +473,15 @@ if (uninstall) {
   for (const { dst } of files()) {
     if (!fs.existsSync(dst)) continue;
     if (!ours(dst)) { log('keep', `${dst} (not installed by speckit-agents)`); continue; }
-    remove(dst.endsWith('SKILL.md') ? path.dirname(dst) : dst);
+    remove(dst);
+    // #379: a skill's folder goes only once nothing else is in it; a file somebody put beside SKILL.md stays.
+    if (!dst.endsWith('SKILL.md')) continue;
+    const folder = path.dirname(dst);
+    let rest;
+    try { rest = fs.readdirSync(folder).filter((n) => !(dryRun && n === 'SKILL.md')); } catch { continue; }
+    if (rest.length) { log('keep', `${folder} (not empty)`); continue; }
+    log('remove', folder);
+    if (!dryRun) { try { fs.rmdirSync(folder); } catch { /* gone, or filled meanwhile */ } }
   }
   // Put back what --force replaced.
   for (const { path: p, backup } of m.forceBackups ?? []) {

@@ -883,6 +883,23 @@ test('a settings.json that is JSON but not settings is left alone too', () => {
 
 // Uninstall leaves the config as it found it (SC-009 as the owner decided on 2026-10-06): the same
 // settings, in their own formatting, and no file or directory of the installer's left behind.
+// #379: uninstall removed each installed skill by removing its folder, recursively, so a file somebody put beside an
+// installed SKILL.md went with it. It removes SKILL.md, then the folder only once it is empty.
+test('#379: uninstall keeps a file somebody put in an installed skill folder, and the folder with it', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir, '--no-board').status, 0);
+  const notes = path.join(dir, 'skills', 'speckit-team', 'my-notes.md');
+  fs.writeFileSync(notes, 'mine\n');
+  const dry = install(dir, '--uninstall', '--dry-run');
+  assert.match(dry.stdout, /keep\s+.*speckit-team \(not empty\)/);
+  const r = install(dir, '--uninstall');
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(fs.readFileSync(notes, 'utf8'), 'mine\n', 'the file stays');
+  assert.equal(fs.existsSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md')), false, 'the installed SKILL.md goes');
+  assert.match(r.stdout, /keep\s+.*speckit-team \(not empty\)/);
+  assert.equal(fs.existsSync(path.join(dir, 'skills', 'speckit-triage')), false, 'an installed skill folder with nothing else in it goes');
+});
+
 test('install then uninstall into an empty config dir leaves it empty', () => {
   const dir = claudeDir();
   assert.deepEqual(roundTrip(dir), []);
