@@ -1165,7 +1165,15 @@ an option of its own, not as another option's value (`rsync --exclude -n`), and 
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
 count as their write flags. In a group of short options a letter after one that takes a value is that
 value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`) is a write only the run can tell
-too. A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
+too. Where an extract or a sync puts its files is read only where the line leaves no doubt (#396): `tar` with
+one `-C` or `--directory` word and no member names, `unzip` with one `-d` word and one archive, `rsync` with a
+local last operand, each with only options that cannot put a file elsewhere (`tar -xzvf`, `--strip-components`,
+`unzip -oq`, `rsync -av --delete --exclude`; not `tar -P`, `--to-command`, `-g`, `rsync --remove-source-files`,
+`--log-file`, nor an option the hook does not list, abbreviations included). That folder is then judged like any
+named target, so a read-only role may unpack outside the repo (`tar -xf a.tar -C /tmp/x`) and not into it; any
+other extract or sync stays a write only the run can tell. A `-C` inside a group or an old-style bundle (`tar xCf`)
+or attached to its option (`unzip -d/tmp/x`) is not read.
+A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
 command line is not seen.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
@@ -1677,11 +1685,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 659 tests:
+`npm test` runs 660 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 234 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 235 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

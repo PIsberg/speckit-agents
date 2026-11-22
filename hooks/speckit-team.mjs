@@ -2433,6 +2433,72 @@ const RSYNC_VALUED = ['-e', '-f', '-B', '-T', '-M', '--exclude', '--include', '-
 const PATCH_VALUED = ['-p', '-i', '-o', '-d', '-B', '-D', '-F', '-r', '-V', '-z', '-Y', '-g', '--strip', '--input', '--output',
   '--directory', '--prefix', '--ifdef', '--fuzz', '--reject-file', '--version-control', '--suffix', '--basename-prefix', '--get',
   '--quoting-style', '--reject-format', '--read-only'];
+// #396: the folder an extract or a sync writes into, read only where the line leaves no doubt: every option is one
+// these lists know (no abbreviations), the folder is named once by a word of its own, and no member list or option can
+// put a file elsewhere (a member named before -C, -P, --to-command, a snapshot or log file, --remove-source-files).
+// `null` for anything else, which stays a write only the run can tell.
+const TAR_SAFE_LETTERS = 'xzjJZvpokm';
+const TAR_SAFE_LONG = ['--extract', '--get', '--gzip', '--gunzip', '--ungzip', '--bzip2', '--xz', '--zstd', '--verbose',
+  '--keep-old-files', '--skip-old-files', '--overwrite', '--no-same-owner', '--no-same-permissions', '--touch'];
+function tarDest(a) {
+  let dest = null; let k = 0;
+  const take = (v) => { if (dest !== null || v === undefined || v.startsWith('-')) return false; dest = v; return true; };
+  // The old-style bundle (`xzf a.tgz`): its f takes the next word; a C there is read by position, so it fails closed.
+  if (a[0] && !a[0].startsWith('-')) {
+    k = 1;
+    for (const c of a[0]) {
+      if (c === 'f') { if (a[k++] === undefined) return null; } else if (!TAR_SAFE_LETTERS.includes(c)) return null;
+    }
+  }
+  for (; k < a.length; k++) {
+    const w = a[k];
+    if (w === '-C' || w === '--directory') { if (!take(a[++k])) return null; continue; }
+    if (w.startsWith('--directory=')) { if (!take(w.slice(12))) return null; continue; }
+    if (w === '--file' || w === '--strip-components') { k++; continue; }
+    if (w.startsWith('--file=') || w.startsWith('--strip-components=')) continue;
+    if (w.startsWith('--')) { if (TAR_SAFE_LONG.includes(w)) continue; return null; }
+    if (w.startsWith('-') && w.length > 1) {
+      // A group of safe letters; an f takes the rest of the word, or the next word when it is last.
+      const g = w.slice(1);
+      const f = g.indexOf('f');
+      if (![...(f < 0 ? g : g.slice(0, f))].every((c) => TAR_SAFE_LETTERS.includes(c))) return null;
+      if (f === g.length - 1) k++;
+      continue;
+    }
+    return null;
+  }
+  return dest;
+}
+function unzipDest(a) {
+  let dest = null; const operands = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '-d') { if (dest !== null || a[k + 1] === undefined || a[k + 1].startsWith('-')) return null; dest = a[++k]; continue; }
+    if (w.startsWith('-')) { if (/^-[oqnja]+$/.test(w)) continue; return null; }
+    operands.push(w);
+  }
+  return operands.length === 1 ? dest : null;
+}
+const RSYNC_SAFE_LETTERS = 'arvlptgoDzhcuHqi';
+const RSYNC_SAFE_LONG = ['--archive', '--recursive', '--verbose', '--quiet', '--links', '--perms', '--times', '--group', '--owner',
+  '--devices', '--specials', '--compress', '--human-readable', '--checksum', '--update', '--delete', '--delete-before',
+  '--delete-during', '--delete-after', '--progress', '--itemize-changes', '--stats', '--hard-links', '--existing',
+  '--ignore-existing', '--size-only'];
+function rsyncDest(a) {
+  const operands = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '--exclude' || w === '--include') { k++; continue; }
+    if (w.startsWith('--exclude=') || w.startsWith('--include=')) continue;
+    if (w.startsWith('--')) { if (RSYNC_SAFE_LONG.includes(w)) continue; return null; }
+    if (w.startsWith('-') && w.length > 1) { if ([...w.slice(1)].every((c) => RSYNC_SAFE_LETTERS.includes(c))) continue; return null; }
+    operands.push(w);
+  }
+  const dest = operands.at(-1);
+  // A remote destination (`host:path`, `host::module`) is not a file here; a Windows drive letter is.
+  if (operands.length < 2 || (/^[^/\\]*:/.test(dest) && !/^[A-Za-z]:[/\\]/.test(dest))) return null;
+  return dest;
+}
 // #378: what curl, wget, sort, awk -i inplace, patch, tar, unzip and rsync write: `targets` they name, and `unknown`
 // when only the run can tell (a file named by its URL, an archive's contents, a patch's files, a sync's destination).
 function toolWrites(prog, a) {
@@ -2465,14 +2531,21 @@ function toolWrites(prog, a) {
   } else if (prog === 'patch') {
     if (!optionWords(a, { valued: PATCH_VALUED }).some((w) => longIs(w, '--dry-run', 5))) out.unknown = 'the files patch changes';
   } else if (prog === 'tar') {
-    if (tarExtracts(a)) out.unknown = 'what tar extracts';
+    if (tarExtracts(a)) {
+      const dest = tarDest(a);
+      if (dest === null) out.unknown = 'what tar extracts'; else out.targets = [path.posix.join(dest, '*')];
+    }
   } else if (prog === 'unzip') {
     // unzip turns an option off with a - inside its group (`-l-`) or a doubled dash (`--l`): such a word fails closed.
     const opts = optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' });
-    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
+    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) {
+      const dest = unzipDest(a);
+      if (dest === null) out.unknown = 'what unzip extracts'; else out.targets = [path.posix.join(dest, '*')];
+    }
   } else if (prog === 'rsync') {
     if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
-      out.unknown = 'what rsync copies into its destination';
+      const dest = rsyncDest(a);
+      if (dest === null) out.unknown = 'what rsync copies into its destination'; else out.targets = [path.posix.join(dest, '*')];
     }
   } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
   return out.targets.length || out.unknown ? out : null;

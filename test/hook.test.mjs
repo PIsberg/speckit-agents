@@ -341,6 +341,44 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
   assert.equal(bash(dir, ['scope', 'no-tests'], 'prettier --write src', { agent_type: 'implementer' }), null);
 });
 
+// #396: #378 denied every extract and sync to the read-only roles, although scope none allows a write outside the
+// repo: the folder tar -C, unzip -d and rsync's last operand name was not read. It is read now where the line leaves
+// no doubt (options this hook knows, the folder named once, no member list), and judged like any other target.
+test('#396: scope none reads where tar -C, unzip -d and rsync put files, where the line leaves no doubt', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  const gk = { agent_type: 'spec-gatekeeper' };
+  const out = path.join(os.tmpdir(), 'speckit-396-out').replaceAll('\\', '/');
+  const outside = [
+    `tar -xf a.tar -C ${out}`, `tar xzf a.tgz -C ${out}`, `tar -x -z -f a.tgz --directory=${out}`, `tar --extract --file a.tar --directory ${out}`,
+    `tar -xzvf a.tgz -C ${out} --strip-components=1`, `tar -C ${out} -xf a.tar`, `mkdir -p ${out} && tar -xf a.tar -C ${out}`,
+    `unzip -o a.zip -d ${out}`, `unzip -qq a.zip -d ${out}`, `unzip -d ${out} a.zip`,
+    `rsync -a other/ ${out}/`, `rsync -av --delete --exclude .git other/ ${out}`, `rsync -a --exclude=node_modules src/ ${out}/copy`,
+  ];
+  for (const command of outside) assert.equal(bash(dir, ro, command, gk), null, command);
+  const still = [
+    // The folder is in the repo, or named twice.
+    'tar -xf a.tar -C src', 'tar -xf a.tar --directory=src/main', `tar -xf a.tar -C ${out} -C src`, 'unzip a.zip -d src/main',
+    `unzip a.zip -d ${out} -d src`, `rsync -a ${out}/ src/`, `rsync -a other/ ${out}/ src/`, 'tar -xf a.tar', 'unzip a.zip',
+    // Members named on the line, which tar extracts where -C stood when it read them, and unzip's member and -x lists.
+    `tar -xf a.tar src/a.js -C ${out}`, `tar -xf a.tar -C ${out} src/a.js`, `tar -xf a.tar -C ${out} -- x`, `unzip a.zip src/a.js -d ${out}`,
+    `unzip a.zip -x b -d ${out}`,
+    // Options that write a file of their own, run a command, or move where members land.
+    `tar -xPf a.tar -C ${out}`, `tar -xf a.tar -C ${out} --absolute-names`, `tar -xf a.tar -C ${out} --to-command=sh`,
+    `tar -xf a.tar -C ${out} --checkpoint-action=exec=sh`, `tar -xf a.tar -C ${out} -g src/snap`, `tar -xf a.tar --index-file=src/i -C ${out}`,
+    `tar -xf a.tar -C ${out} --transform=s,^,../,`, `tar -xf a.tar -C ${out} -I sh`, `tar -xf a.tar --dir=${out}`,
+    `rsync -a --remove-source-files src/ ${out}/`, `rsync -a --log-file=src/log other/ ${out}`, `rsync -a --backup-dir=src/b other/ ${out}`,
+    `rsync -a --write-batch=src/b other/ ${out}`, `rsync -a -e sh other/ ${out}`, 'rsync -a other/ host:/tmp/x',
+    // -C or -d where this reader does not take the folder from: in a group or an old-style bundle, attached, or from the shell.
+    `tar xCf ${out} a.tar`, `tar -xzC ${out} -f a.tgz`, `unzip a.zip -d${out}`, 'tar -xf a.tar -C "$D"', 'unzip a.zip -d $(mktemp -d)',
+  ];
+  for (const command of still) assert.ok(denied(bash(dir, ro, command, gk)), command);
+  // A writing role's lane judges the folder: implementer may not unpack into the tests.
+  assert.ok(denied(bash(dir, ['scope', 'no-tests'], 'tar -xf a.tar -C test', { agent_type: 'implementer' })));
+  // A remote destination is no file of the repo: left to the lane check, as every sync was before.
+  assert.equal(bash(dir, ['scope', 'tests'], 'rsync -a test/ host:/srv/app', { agent_type: 'test-writer' }), null);
+});
+
 test('scope none on Bash (#209): a read-only agent runs checks but writes nothing in the repo', () => {
   const { dir } = repo();
   const ro = ['scope', 'none'];
