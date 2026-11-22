@@ -1158,6 +1158,31 @@ test('ends: a RED that is a parse or name error is sent back once and then kept 
   assert.equal(send('test/d.test.mjs:9 Cannot find module ./src/sum.mjs\n\nRED', 'tw5'), null);
 });
 
+// #374: a test that expects a SyntaxError (a parser, a validator) fails on its expectation, and its output names the
+// error. Only the line a runtime prints when a file does not parse is a fault: `SyntaxError: <message>` opening a line,
+// after a file:line, `Uncaught` or pytest's `E`; not the word inside an assertion's text.
+test('ends (#374): a RED whose test expects a SyntaxError goes through; a file that does not parse is still sent back', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'RED', 'BLOCKED', 'FIXED'];
+  const send = (message, agent_id) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const expected = [
+    'T001 test/parse.test.js: "001 FR-001 rejects bad input"\n  AssertionError: Missing expected exception (SyntaxError).\n1 failing\n\nRED',
+    'test/parse.test.js:9 expected [Function parse] to throw SyntaxError\n\nRED',
+    'Expected constructor: SyntaxError\nReceived function did not throw\n\nRED',
+    'test/parse.test.js: FR-002 expects "SyntaxError: bad json" but parse returned {}\n\nRED',
+  ];
+  expected.forEach((m, i) => assert.equal(send(m, `ok${i}`), null, m));
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'ends', 'red-faults.json')), false, 'nothing kept as a fault');
+  const broken = ['test/a.test.mjs:1 SyntaxError: Unexpected token \')\'\n\nRED', 'file:///r/test/a.test.mjs:3\n  sum(,\n\nSyntaxError: Unexpected token \',\'\n\nRED',
+    'E     File "tests/test_sum.py", line 3\nE   SyntaxError: invalid syntax\n\nRED', 'Uncaught SyntaxError: Unexpected end of input\n\nRED',
+    '- `test/a.test.mjs`: SyntaxError: Unexpected identifier\n\nRED'];
+  broken.forEach((m, i) => {
+    const out = send(m, `bad${i}`);
+    assert.ok(denied(out), m);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, /^Your RED reports SyntaxError: the test file did not run/);
+  });
+});
+
 // #245: a missing module that is itself a test file (a helper, a fixture) means the test file did not run
 // either. Only the path the error names is judged, against the repo's test patterns: Node ESM's absolute
 // path, Node CJS's relative one from its Require stack, a relative path as a report gives it, or a Python
