@@ -54,5 +54,7 @@ At most 60 lines; the main session reads it in full. Each CRITICAL or HIGH findi
 location (file:line), the problem in one or two sentences, and its owner: product-owner (spec) or
 architect (plan, tasks). MEDIUM and LOW findings one line each, without an owner, since nobody is
 sent to fix them before the code is written. Cite lines rather than quoting artifact text.
+Leave out speckit-analyze's next steps, offers and `## Extension Hooks` block: the main session
+decides what runs next, and you edit nothing.
 The last line is exactly `VERDICT: PASS` or `VERDICT: FAIL`. A hook records it against the current
 contents of the four files, so any later edit to them voids a PASS; ticking task checkboxes does not.

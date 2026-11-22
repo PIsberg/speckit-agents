@@ -305,7 +305,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A finding the user ruled out is not raised again. pinned.
 
 ### agents/spec-auditor.md: Report
-<!-- fingerprint: 4345ec6a -->
+<!-- fingerprint: 40092ae6 -->
+- Leave out speckit-analyze's next steps, offers and `## Extension Hooks` block (#405). pinned.
 - `VERDICT: PASS` or `VERDICT: FAIL` last. hook `verdict` (asks once, records it against the files it read).
 
 ## agents/test-writer.md
