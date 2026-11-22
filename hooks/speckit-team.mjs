@@ -116,7 +116,7 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
 const [mode, ...args] = process.argv.slice(2);
 // `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
 // exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
-const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions';
+const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions' || mode === 'probe';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
 const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -194,6 +194,48 @@ const deny = (reason) => emit({ hookSpecificOutput: {
 const block = (reason) => emit({ decision: 'block', reason });
 
 const cwd = str(input.cwd) ?? process.cwd();
+// `probe` (012): how busy the machine is and how fast a fixed workload runs, so a load test can say when
+// other processes disturbed it. `node:os` and `node:crypto` only; synchronous.
+const cpuTimes = () => os.cpus().reduce((a, c) => {
+  const t = Object.values(c.times).reduce((x, y) => x + y, 0);
+  return { idle: a.idle + c.times.idle, total: a.total + t };
+}, { idle: 0, total: 0 });
+function probeReading() {
+  const a = cpuTimes();
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  const b = cpuTimes();
+  const total = b.total - a.total;
+  const busy = total > 0 ? Math.min(100, Math.max(0, Math.round((1 - (b.idle - a.idle) / total) * 100))) : 0;
+  const buf = Buffer.alloc(1024 * 1024, 7);
+  const runs = [];
+  for (let i = 0; i < 5; i++) {
+    const t0 = process.hrtime.bigint();
+    for (let j = 0; j < 64; j++) createHash('sha256').update(buf).digest();
+    runs.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  runs.sort((x, y) => x - y);
+  return { busy, ms: Math.round(runs[2] * 100) / 100 };
+}
+function noisyLines(start, end) {
+  const out = [];
+  const worst = Math.max(start.busy, end.busy);
+  if (worst >= 10) out.push(`noisy: other processes used ${worst}% of the machine (10% or more)`);
+  if (end.ms >= start.ms * 1.2) out.push(`noisy: the fixed probe ran ${Math.round((end.ms / start.ms - 1) * 100)}% slower at the end than at the start (20% or more)`);
+  return out;
+}
+if (mode === 'probe') {
+  let start = null;
+  if (args.length) {
+    const parts = args[0] === '--since' && args.length === 2 ? args[1].split(',') : null;
+    const nums = parts && parts.length === 2 && parts.every((x) => /^\d+(\.\d+)?$/.test(x.trim())) ? parts.map(Number) : null;
+    if (!nums || !(nums[1] > 0)) projectRefuse('--since takes two non-negative numbers, busy percent and probe ms, as --since <busy>,<ms>; the second above 0');
+    start = { busy: nums[0], ms: nums[1] };
+  }
+  const end = probeReading();
+  const lines = [`probe: busy ${end.busy}% probe ${end.ms} ms${start ? ` (start: busy ${start.busy}%, probe ${start.ms} ms)` : ''}`];
+  if (start) lines.push(...noisyLines(start, end));
+  projectSay(lines.join('\n'), 0);
+}
 // Most calls come from outside any Spec Kit repo: the settings.json gates run on every Skill and Agent
 // call in every repo. The repo's root is the working directory or an ancestor of it, so when none of them
 // holds .specify/ the answer needs no git process. A GIT_DIR or GIT_WORK_TREE can put the work tree

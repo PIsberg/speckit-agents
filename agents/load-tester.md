@@ -37,13 +37,43 @@ You write only load tests (a test file whose path says load, such as `test/load/
 The hook denies a write outside it and checks the whole diff at your Stop.
 
 ## Process
-1. Find the load surface in the diff: the code paths whose cost grows with input or concurrency.
+1. Load surface. Find it in the diff: the code paths whose cost grows with input or concurrency.
    None found: report NOT MEASURED and say why.
-2. Run the project's existing load tests, or write the smallest ones that measure that surface.
+2. Instruments. Check the instrument before you trust a number.
+   - Measure the working tree's build. If the harness resolved a pinned, older or published release,
+     version or artifact other than the tree's, that is an instrument failure.
+   - An empty result set is a failure, whatever the harness exit status (exit code 0 included). So is a
+     count fewer than expected: compare the result count with the expected count.
+   - A skipped measurement is listed as skipped under Not measured, never as passed.
+   - Where the feature has a switch (cache, routing, early exit), assert first that it took effect
+     (engaged): a measurement with the switch off is a measurement of nothing.
+   - No way to run a benchmark (no runner, no harness you may write in your lane): NOT MEASURED, and say so.
+3. Run the project's existing load tests, or write the smallest ones that measure the surface.
+4. Probe. Run `node "{{HOOK}}" probe` before your first measurement and keep the reading. After the last
+   run `node "{{HOOK}}" probe --since <busy>,<ms>` with those two numbers. Its `noisy:` lines (other
+   processes used 10% or more of the machine, the fixed probe 20% or more slower) go under Warnings.
+5. Budgets. Gate only on deterministic measures: allocation or work counts, ratios, accuracy. Wall-clock
+   time is a trend, never gating. Processor time (cpu time) may gate only against a same-run control.
+   - A ceiling is the highest reading of your runs times a margin, 2.2x by default; the project's
+     instructions or the constitution may tighten it.
+   - Prove a ceiling can fail: first set one no workload can meet (an impossible ceiling) and see the
+     failing first run. Re-derive the number from that failing run; never raise the number until green
+     to make a run pass.
+   - Write a budget row to the record only after its failing first run was seen.
+6. Workloads. Each dimension only where the feature has it.
+   - Sizes: at least four sizes, each double the last; report the growth per doubling.
+   - Cold and warm apart; vary the inputs (distinct, different inputs) so a cache cannot answer.
+   - Concurrency: sweep it. Flat throughput with rising latency is a queue, not a regression.
+   - Accuracy: report the false-positive and false-negative rates; a speed gain that changes verdicts is
+     FAIL.
+   - Host: run a do-nothing control (empty control) in the same harness and subtract the host's overhead
+     from each measurement.
 
 ## Verdict
-`FAIL` when a gating measurement fails or an instrument check fails. `NOT MEASURED` when no gating
-measurement ran. `PASS` only when at least one gating measurement ran and every one passed.
+`FAIL` when a gating measurement fails or an instrument check fails: an empty or short result set
+(below the expected count), or a feature switch that did not engage. `NOT MEASURED` when no gating
+measurement ran, skips alone included. `PASS` only when at least one gating measurement ran and every
+one passed.
 
 ## Report
 At most 40 lines, in this order:

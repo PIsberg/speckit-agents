@@ -119,7 +119,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 - [X] T012 [US2] Test the instrument rules in agents/load-tester.md through the installed file, in
   test/install.test.mjs. Covers FR-008, FR-009, US2-1 to US2-4, US1-3, edge case "no way to run a
   benchmark". The verdict rules are contracts/load-tester.md section 4's.
-- [ ] T013 [US2] Write `## Process` steps "Load surface" and "Instruments" and `## Verdict` into
+- [X] T013 [US2] Write `## Process` steps "Load surface" and "Instruments" and `## Verdict` into
   agents/load-tester.md.
 
 ## Phase 5: User Story 3: budgets from evidence (P2)
@@ -132,7 +132,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   gives the busy line; a start probe of 1 ms gives the slowdown line; a start probe of 10^9 ms gives no
   slowdown line. Malformed `--since` values exit 1 with the refusal line. Runs on all three CI platforms
   (constitution VII).
-- [ ] T015 [P] [US3] Implement `probe` in hooks/speckit-team.mjs: add it to `CLI` (:116) and answer with
+- [X] T015 [P] [US3] Implement `probe` in hooks/speckit-team.mjs: add it to `CLI` (:116) and answer with
   `projectSay` (:117). New: `probeReading(): { busy: number, ms: number }` (synchronous: a 1,000 ms
   `os.cpus()` sample, then the median of 5 timed workloads) and `noisyLines(start: { busy: number, ms:
   number }, end: { busy: number, ms: number }): string[]`. (No test: constitution IV, `node:os` and
@@ -144,7 +144,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   test/install.test.mjs. Covers FR-011, FR-012, FR-013, US3-1 to US3-4, SC-005: the body runs
   `node "<hook>" probe` before and `probe --since` after its measurements (the installed path, as T003
   checks for `{{HOOK}}`), and a budget row is written to the record only after its failing first run.
-- [ ] T017 [US3] Write `## Process` step "Budgets" into agents/load-tester.md, with the 2.2x default
+- [X] T017 [US3] Write `## Process` step "Budgets" into agents/load-tester.md, with the 2.2x default
   margin a project's instructions or constitution may tighten (spec Assumptions).
 
 ## Phase 6: User Story 4: realistic and hostile workloads (P2)
@@ -153,7 +153,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 - [X] T018 [US4] Test the workload rules in agents/load-tester.md through the installed file, in
   test/install.test.mjs. Covers FR-014, US4-1 to US4-5.
-- [ ] T019 [US4] Write `## Process` step "Workloads" into agents/load-tester.md.
+- [X] T019 [US4] Write `## Process` step "Workloads" into agents/load-tester.md.
 
 ## Phase 7: User Story 5: the harness stays alive (P3)
 
