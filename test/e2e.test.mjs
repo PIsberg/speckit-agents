@@ -1431,9 +1431,38 @@ test("#184: a message sent while a role's turn runs leaves the role live", { ski
   laneHeld(s, r, 3);
 });
 
+// 012 T006 FR-004 FR-006 (constitution II): load-tester's hooks run in a real session. With
+// SPECKIT_E2E_NO_HOOK=1 neither test can pass.
+test("012 T006 FR-004: load-tester may write a load test but not production code", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [agent('load-tester', 'e2e load lane')],
+    'e2e load lane': [
+      wfile(s, 'src/x.js', 'export const x = 1;\n'),
+      wfile(s, 'test/load/x.test.mjs', 'import test from "node:test";\ntest("load", () => {});\n'),
+      say('Nothing ran.\nNOT MEASURED'),
+    ],
+  }, { permissionMode: 'auto' });
+  assert.ok(lastResultIsError(r.requests['e2e load lane'][1]), story(r));
+  assert.match(lastResult(r.requests['e2e load lane'][1]), /load-tester[^]*src\/x\.js/, story(r));
+  assert.equal(fs.existsSync(path.join(s.repo, 'src')), false, 'the production Write went through');
+  assert.ok(!lastResultIsError(r.requests['e2e load lane'][2]), `the load test Write was denied:\n${story(r)}`);
+  assert.ok(fs.existsSync(path.join(s.repo, 'test', 'load', 'x.test.mjs')), 'the load test was not written');
+});
+
+test("012 T006 FR-006: load-tester's report without a verdict line is sent back once, naming the three lines, and NOT MEASURED goes through", { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [agent('load-tester', 'e2e load ends')],
+    'e2e load ends': [say('Measured something.\nlooks fine'), say('No load surface.\nNOT MEASURED')],
+  }, { permissionMode: 'auto' });
+  assert.match(shown(r.requests['e2e load ends'][1]), /Your report must end with a final line that is exactly one of: PASS, FAIL, NOT MEASURED/, story(r));
+  assert.match(lastResult(r.requests[MAIN][1]), /^\s*NOT MEASURED$/m, story(r));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => {
   for (const [name, opts, fn] of queued) nodeTest(name, { ...opts, ...(opts.timeout && { timeout: scaled(opts.timeout) }) }, fn);
 });
-
-

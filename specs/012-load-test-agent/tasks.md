@@ -26,7 +26,7 @@ None: the repository, its suite and the fixture tree layout exist.
 
 **Slice F1** (FR-004)
 
-- [ ] T001 Test lane `load` in test/hook.test.mjs. Covers FR-004 and contracts/load-tester.md section 3
+- [X] T001 Test lane `load` in test/hook.test.mjs. Covers FR-004 and contracts/load-tester.md section 3
   (D1 A: the two path patterns and the record path are the cases to pick from; include
   `test/loader.test.js` as outside, and a load path taken out by a `!` line of `.specify/test-paths`).
   Write tools through `write(dir, ['scope', 'load'], file)`, Bash through `run(dir, ['scope', 'load'], ...)`
@@ -50,7 +50,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U1a**: the role exists in both modes (FR-001, FR-003, FR-006, FR-007, FR-017)
 
-- [ ] T003 [US1] Test the installed role in test/install.test.mjs. Covers FR-001, FR-003, FR-006,
+- [X] T003 [US1] Test the installed role in test/install.test.mjs. Covers FR-001, FR-003, FR-006,
   FR-007, FR-017, contracts/load-tester.md section 2 and section 4's report order. Update `AGENTS` (:12,
   `load-tester` between `implementer` and `spec-gatekeeper`), `START_MATCHER` (:39), and the #209/#210
   test's `expected` and `gated` maps (:527: `'load-tester': 'load'`, gated `'gate scope'`). Assert the
@@ -58,7 +58,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   `skills/speckit-role-load-tester/SKILL.md`, and that `node install.mjs --help` names `--load-test`
   and `load-tester`. The Report section names value, unit and ceiling or control per measurement and
   the three last lines. Helpers: `claudeDir`, `install`, `flat` (test/install.test.mjs:15, :23, :43).
-- [ ] T004 [US1] Test team membership in test/hook.test.mjs. Covers FR-001, FR-002, FR-003, FR-017,
+- [X] T004 [US1] Test team membership in test/hook.test.mjs. Covers FR-001, FR-002, FR-003, FR-017,
   SC-003, contracts/load-tester.md section 1. A `Team:` line naming `load-tester` records it in pipeline
   order; a launch with no `Team:` line does not (`agentLaunch` :1786, `teamRecord` :1791); a typed
   `/speckit-team --load-test --team test-writer,load-tester x`, with `--load-test` before or after
@@ -67,9 +67,9 @@ held to its lane in a real session, and the skill stops on its FAIL.
   `Implementation gate:`, and after one `scope role` holds it to lane `load` (`roleWrite`, `roleFile`
   helpers near :2940); the skill-agents start message names it among the audit-gated roles. A
   load-tester subagent's tool call through `gate scope load` before a PASS is denied.
-- [ ] T005 [US1] Test the colour twin in test/board-mod.test.mjs: the count at :52 becomes 9. Covers
+- [X] T005 [US1] Test the colour twin in test/board-mod.test.mjs: the count at :52 becomes 9. Covers
   FR-003 (CLAUDE.md twin rule: `ROLE_COLOR` against each `agents/*.md` `color:` line).
-- [ ] T006 [US1] Test the role's hooks in a real session in test/e2e.test.mjs. Covers FR-004, FR-006
+- [X] T006 [US1] Test the role's hooks in a real session in test/e2e.test.mjs. Covers FR-004, FR-006
   (constitution II wiring). After an `e2e auditor` PASS (as at test/e2e.test.mjs:329), a load-tester
   agent's Write of `src/x.js` is denied and of `test/load/x.test.mjs` is not; its report without a
   verdict line is sent back once, naming the three lines, and `NOT MEASURED` then goes through (pattern:
@@ -88,7 +88,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U1b**: the pipeline step (FR-001, FR-002, FR-005, FR-006, FR-010, FR-016)
 
-- [ ] T008 [US1] Test the skill text in test/install.test.mjs. Covers FR-001, FR-002, FR-005, FR-006,
+- [X] T008 [US1] Test the skill text in test/install.test.mjs. Covers FR-001, FR-002, FR-005, FR-006,
   FR-010, FR-016, US1-1, US1-2, US5-1, edge cases "team that has no implementer" and "NOT MEASURED is
   fine". The step is `## 5b. Load test: load-tester`, between `## 4-5.` and `## 6.`; FAIL or any other
   last line is a **Stop:** with the three options of plan.md "Pipeline step"; load-tester's files are
@@ -105,7 +105,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U1c**: a run without the role launches none (FR-002, SC-003)
 
-- [ ] T010 [P] [US1] Test in test/full-run.test.mjs that `checkRun` fails a run that launched load-tester
+- [X] T010 [P] [US1] Test in test/full-run.test.mjs that `checkRun` fails a run that launched load-tester
   (agents mode, `usage.main.launches`) or called `speckit-role-load-tester` (skill-agents mode), since a
   full run never passes `--load-test`. Covers FR-002, SC-003. Pattern: the #176 security case in the test
   at :440; helpers `state` :39, `failures` :55, `roleSkills` :426, `MARKER` :54.

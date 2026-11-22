@@ -766,7 +766,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['scope', 'load'], ['lane', 'load'], ['start'], ['patch'], ['relay']];
 
 // #215: in a sandbox that denies reading ~/.gitconfig, git for Windows 2.56 fails every command ("fatal:
 // unknown error occurred while reading the configuration files"), not only warns. On the Linux and macOS
@@ -2676,7 +2676,7 @@ test('an agent_id that is not an id never puts state outside .git/speckit-team/a
 // 009 T003 (FR-002, FR-006, FR-008, FR-011, US3-1..3, contract sections 3 and 7): the typed
 // /speckit-team --team skill-agents. The hook finds the role skills from its own folder (TEAM_DIR), so a
 // copy of it sits beside a skills/ folder in a temp dir.
-const SKILL_ROLES = [...ALL_ROLES, 'security-reviewer'];
+const SKILL_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer'];
 function skillHook(missing = []) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skhook-'));
   fs.mkdirSync(path.join(root, 'hooks'));
@@ -4326,4 +4326,136 @@ test('#351: a role report with no end word is sent back once at Stop and denied 
   assert.ok(!decided(skillCall(dir, 'speckit-role-test-writer', { transcript_path: t })));
   say(t, 'The spec contradicts itself.\n\nBLOCKED');
   assert.ok(!decided(callWithArgs(dir, 'speckit-role-implementer', t, 'BLOCKED')));
+});
+
+// ---- 012 load-tester: the `load` lane and the team ----
+const LOAD_IN = ['test/load/orders.test.mjs', 'perf/load.test.js', 'tests/test_load.py', 'src/test/java/OrderLoadTest.java',
+  'src/test/java/CheckoutLoadIT.java', `${FEAT}/load-test.md`];
+const LOAD_OUT = ['src/main/App.java', 'src/main/load/Runner.java', 'test/loader.test.js', 'test/app.test.js', `${FEAT}/tasks.md`,
+  `${FEAT}/spec.md`, `${FEAT}/plan.md`, 'specs/other-notes.md', `${FEAT}/sub/load-test.md`, '.specify/feature.json', '.specify/test-paths'];
+
+test('012 T001 FR-004 contract 3: scope load lets load tests and load-test.md through and denies everything else', () => {
+  const { dir } = repo();
+  for (const f of LOAD_IN) assert.equal(write(dir, ['scope', 'load'], f), null, `in the lane: ${f}`);
+  for (const f of LOAD_OUT) {
+    const out = write(dir, ['scope', 'load'], f);
+    assert.ok(denied(out), `outside the lane: ${f}`);
+    assert.ok(whyDenied(out).includes(f), `the denial names ${f}: ${whyDenied(out)}`);
+  }
+});
+
+test('012 T001 FR-004 contract 3: scope load judges a Bash write target as it judges a Write', () => {
+  const { dir } = repo();
+  assert.equal(bash(dir, ['scope', 'load'], 'echo x > test/load/a.test.mjs'), null);
+  assert.equal(bash(dir, ['scope', 'load'], `echo x > ${FEAT}/load-test.md`), null);
+  assert.ok(denied(bash(dir, ['scope', 'load'], 'echo x > src/main/App.java')));
+  assert.ok(denied(bash(dir, ['scope', 'load'], 'echo x > test/loader.test.js')));
+  assert.ok(denied(bash(dir, ['scope', 'load'], `echo x > ${FEAT}/tasks.md`)));
+});
+
+test('012 T001 FR-004 contract 3, D1 A: a ! line of .specify/test-paths takes a load path out of the lane; a pattern adds one', () => {
+  const { dir, write: w } = repo();
+  assert.equal(write(dir, ['scope', 'load'], 'test/load/a.test.mjs'), null, 'control');
+  w('.specify/test-paths', '!^test/load/\n');
+  assert.ok(denied(write(dir, ['scope', 'load'], 'test/load/a.test.mjs')), 'no longer a test');
+  w('.specify/test-paths', '^bench/\n');
+  assert.equal(write(dir, ['scope', 'load'], 'bench/load/a.js'), null, 'a test by test-paths and a load path');
+  assert.ok(denied(write(dir, ['scope', 'load'], 'bench/other/a.js')), 'a test but not a load path');
+});
+
+test('012 T001 FR-004 contract 3: a bad .specify/test-paths line gives scope load the refusal scope tests gives', () => {
+  const { dir, write: w } = repo();
+  w('.specify/test-paths', '^checks/\n\n(unclosed\n');
+  for (const f of ['test/load/a.test.mjs', 'src/main/App.java']) {
+    const out = write(dir, ['scope', 'load'], f);
+    assert.ok(denied(out), f);
+    assert.match(whyDenied(out), /test-paths line 3 .*\(unclosed/, f);
+  }
+});
+
+test('012 T001 FR-004 contract 3: lane load sends a write outside the lane back once, then warns; a write inside passes', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  const start = (id) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: id });
+  const stop = (id, extra = {}) => run(dir, ['lane', 'load'], { hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'load-tester', ...extra });
+  start('l1');
+  w('test/load/a.test.mjs', 'x\n');
+  w(`${FEAT}/load-test.md`, '# Load\n');
+  assert.equal(stop('l1'), null, 'inside the lane');
+  start('l2');
+  w('src/main/Sneaky.java', 'class Sneaky {}\n');
+  w('test/load/b.test.mjs', 'x\n');
+  const out = stop('l2');
+  assert.equal(out?.decision, 'block');
+  assert.match(out.reason, /Sneaky\.java/);
+  assert.doesNotMatch(out.reason, /b\.test\.mjs/);
+  assert.match(stop('l2', { stop_hook_active: true }).systemMessage, /WARNING/);
+  start('l3');
+  w('test/loader.test.js', 'x\n');
+  assert.equal(stop('l3')?.decision, 'block', 'a functional test is outside the lane');
+});
+
+// 012 T004 (FR-001, FR-002, FR-003, FR-017, SC-003, contract 1): the team.
+test('012 T004 FR-001 FR-003 contract 1: a Team line naming load-tester records it in pipeline order', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'Team: spec-gatekeeper, load-tester, implementer, test-writer, security-reviewer');
+  assert.deepEqual(teamRecord(dir).roles, ['test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer']);
+});
+
+test('012 T004 FR-002 SC-003 contract 1: a launch with no Team line does not record load-tester', () => {
+  const { dir } = repo();
+  agentLaunch(dir, 'go');
+  if (!noTeamFiles(dir)) assert.ok(!teamRecord(dir).roles.includes('load-tester'));
+  const b = repo();
+  agentLaunch(b.dir, `Team: ${ALL_ROLES.join(', ')}`);
+  assert.ok(!teamRecord(b.dir).roles.includes('load-tester'), 'the six core roles stay six');
+  assert.equal(teamRecord(b.dir).roles.length, 6);
+});
+
+test('012 T004 FR-001 contract 1: a typed --load-test with --team records the typed roles, in any flag order', () => {
+  for (const args of ['--load-test --team test-writer,load-tester add sum()',
+    '--load-test --project demo --security --team test-writer,load-tester add sum()',
+    '--project demo --load-test --team test-writer,load-tester add sum()',
+    '--security --team test-writer,load-tester --load-test add sum()']) {
+    const a = choiceRepo();
+    typedTeam(a.dir, args, { transcript_path: a.t });
+    a.add(...NOT_ANSWERS);
+    assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: test-writer', { transcript_path: a.t })), `load-tester dropped: ${args}`);
+    assert.ok(!denied(agentLaunch(a.dir, 'go\nTeam: test-writer, load-tester', { transcript_path: a.t })), args);
+    assert.deepEqual(teamRecord(a.dir).roles, ['test-writer', 'load-tester'], args);
+  }
+});
+
+test('012 T004 FR-017 contract 3: a load-tester subagent is held by the audit gate before a PASS, and by lane load after', () => {
+  const { dir } = repo();
+  const agent = { agent_id: 'lt1', session_id: 's1', agent_type: 'load-tester' };
+  const gs = ['gate', 'scope', 'load'];
+  assert.match(whyDenied(write(dir, gs, 'test/load/a.test.mjs', agent)), /Implementation gate/);
+  pass(dir);
+  assert.equal(write(dir, gs, 'test/load/a.test.mjs', agent), null);
+  assert.ok(denied(write(dir, gs, 'src/main/App.java', agent)));
+});
+
+test('012 T004 FR-001 FR-017 contract 3: the role skill speckit-role-load-tester waits for a PASS and then holds its lane', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  const before = skillCall(dir, 'speckit-role-load-tester');
+  assert.ok(denied(before), 'before a PASS');
+  assert.match(reasonOf(before), /^Implementation gate: /);
+  pass(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-load-tester')), 'after a PASS');
+  assert.equal(roleRec(dir).role, 'load-tester');
+  assert.equal(roleWrite(dir, 'test/load/a.test.mjs'), null);
+  assert.equal(roleWrite(dir, `${FEAT}/load-test.md`), null);
+  for (const f of ['src/main/App.java', `${FEAT}/tasks.md`, 'test/loader.test.js']) {
+    const out = roleWrite(dir, f);
+    assert.ok(denied(out), f);
+    assert.match(reasonOf(out), /load-tester/, f);
+  }
+});
+
+test('012 T004 FR-001 contract 1: the skill-agents start message names load-tester among the audit-gated roles', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team skill-agents add a flag');
+  assert.match(msg(out), /audit gate on each tool call inside [^.]*load-tester/);
 });

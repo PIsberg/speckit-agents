@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 const UNRELATED = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] };
 
 function claudeDir(settings) {
@@ -36,7 +36,7 @@ const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => 
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
 // SubagentStart matches the eight roles, so every team agent can start with its session's project.
-const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|security-reviewer|patcher';
+const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|load-tester|spec-gatekeeper|security-reviewer|patcher';
 // #231: PostToolUse on Agent relays what a subagent's hooks said at its Stop to the main session.
 const GATES = ['PostToolUse:Agent', 'PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
@@ -524,9 +524,9 @@ test('#209 #210: every team agent with Bash runs its scope hook on Bash, and the
   assert.equal(install(dir).status, 0);
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
   const expected = { 'product-owner': 'only specs/ .specify/feature.json', architect: 'only specs/ CLAUDE.md', 'test-writer': 'tests',
-    implementer: 'no-tests', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
+    implementer: 'no-tests', 'load-tester': 'load', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
   // #337: test-writer and implementer run their scope rule in the gate's process, one node per tool call.
-  const gated = { 'test-writer': 'gate scope', implementer: 'gate retries scope' };
+  const gated = { 'test-writer': 'gate scope', implementer: 'gate retries scope', 'load-tester': 'gate scope' };
   for (const [a, rule] of Object.entries(expected)) {
     const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n');
     const fm = text.slice(0, text.indexOf('\n---', 4));
@@ -1318,6 +1318,7 @@ const teamSkill = () => {
 const installedAgent = (a) => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
+  assert.ok(fs.existsSync(path.join(dir, 'agents', `${a}.md`)), `agents/${a}.md installed`);
   return flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
 };
 // The text of one `## ` section, heading line included, up to the next `## ` heading.
@@ -2300,4 +2301,104 @@ test('#230: both pipeline skills run the check first and stop on its exit 1', ()
     assert.ok(first?.includes(`node "${hookPath}" check`), `${skill}: first precondition runs the check: ${first}`);
     assert.match(flat(section.slice(0, 900)), /exit 1.{0,80}stop|stop.{0,80}exit 1/i, skill);
   }
+});
+
+// ---- 012 load-tester: the installed role and the skill text ----
+// 012 T003 also updates AGENTS, START_MATCHER and the #209/#210 test's maps above (FR-003, FR-017).
+test('012 T003 FR-001 FR-003 FR-017 contract 2: the installed load-tester has its tools, colour, hooks and body sections', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'load-tester.md')), 'agents/load-tester.md installed');
+  const text = fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8').replace(/\r\n/g, '\n');
+  const fm = text.slice(0, text.indexOf('\n---', 4));
+  assert.match(fm, /speckit-agents: managed by install\.mjs/);
+  assert.match(fm, /^name:\s*load-tester$/m);
+  assert.match(fm, /^model:\s*sonnet$/m);
+  assert.match(fm, /^color:\s*pink$/m);
+  assert.match(fm, /^tools:\s*Bash, Edit, Read, Write$/m);
+  assert.doesNotMatch(fm, /^disallowedTools:/m);
+  assert.doesNotMatch(fm, /omitClaudeMd/);
+  assert.ok(fm.includes(`node "${hookPath}" gate scope load`), 'the gate and the load lane in one process');
+  assert.ok(fm.includes(`node "${hookPath}" lane load`), 'the Stop lane check');
+  assert.ok(fm.includes('ends PASS FAIL "NOT MEASURED"'), 'the verdict words');
+  assert.match(fm, /matcher: "SubagentHandback"/);
+  assert.match(fm, /^\s*Stop:/m);
+  assert.ok(fm.indexOf('lane load') < fm.lastIndexOf('ends PASS FAIL'), 'lane before ends at Stop');
+  const body = text.slice(text.indexOf('\n---', 4) + 4);
+  assert.ok(body.split('\n').length <= 101, 'the body is at most 100 lines');
+  for (const h of ['Inputs', 'Lane', 'Process', 'Verdict', 'Report']) assert.match(body, new RegExp(`^## ${h}\\b`, 'm'), `section ${h}`);
+});
+
+test('012 T003 FR-006 FR-007 contract 4: the Report section names value, unit, ceiling or control, and the three last lines', () => {
+  const body = flat(installedAgent('load-tester'));
+  const report = body.slice(body.indexOf('## Report'));
+  assert.match(report, /value/i);
+  assert.match(report, /unit/i);
+  assert.match(report, /ceiling/i);
+  assert.match(report, /control/i);
+  for (const w of ['PASS', 'FAIL', 'NOT MEASURED']) assert.ok(report.includes(w), w);
+  assert.match(report, /Measurements[^]*Not measured[^]*Warnings/, 'the report order');
+  assert.match(report, /40 lines/);
+});
+
+test('012 T003 FR-001 contract 2: the role skill speckit-role-load-tester is generated, and --help names --load-test and load-tester', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const file = roleSkillPath(dir, 'load-tester');
+  assert.ok(fs.existsSync(file), 'skills/speckit-role-load-tester/SKILL.md installed');
+  const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  assert.match(text, /^name: speckit-role-load-tester$/m);
+  assert.match(text, /scope role/);
+  assert.match(text, /lane role/);
+  const help = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(help.stdout + help.stderr, /--load-test/);
+  assert.match(help.stdout + help.stderr, /load-tester/);
+});
+
+test('012 T008 FR-001 FR-002 contract 1: the skill takes --load-test as a leading flag and names load-tester in the Team, Handoffs and Skill agents sections', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /--load-test/);
+  const team = flat(skillSection(skill, '## Team'));
+  assert.match(team, /`--team`, `--security`(,| and) `--load-test`|`--load-test`/);
+  assert.match(team, /load-tester/);
+  assert.match(team, /opt-in|--load-test/i);
+  assert.match(team, /(not|never) in the (default|full) team|only when (asked|requested|named)|opt-in/i, 'never in the default team');
+  const handoffs = flat(skillSection(skill, '## Handoffs'));
+  assert.match(handoffs, /- load-tester:/, 'a Handoffs bullet for its Inputs');
+  assert.match(handoffs, /load-tester:[^-]*feature directory/i);
+  const sa = flat(skillSection(skill, '## Skill agents'));
+  assert.match(sa, /load-tester/);
+  assert.match(sa, /--load-test/);
+});
+
+test('012 T008 FR-005 FR-006 FR-010 FR-016 US1-1 US1-2 US5-1: step 5b runs after green and before spec-gatekeeper, stops on any verdict but PASS, and commits and stashes as D6 A says', () => {
+  const skill = teamSkill();
+  const a = skill.indexOf('\n## 4-5.'), b = skill.indexOf('\n## 5b. Load test: load-tester'), c = skill.indexOf('\n## 6.');
+  assert.ok(a >= 0 && b > a && c > b, '## 5b. Load test: load-tester sits between ## 4-5. and ## 6.');
+  const sec = flat(skillSection(skill, '## 5b. Load test: load-tester'));
+  assert.match(sectionHead(skill, '## 5b. Load test: load-tester'), /\b(only|skip|unless|without|when|if)\b[^]*?load-tester/i, 'opens with the condition on load-tester');
+  assert.match(sec, /foreground/);
+  assert.match(sec, /\*\*Stop:\*\*/, 'a Stop');
+  assert.match(sec, /FAIL/);
+  assert.match(sec, /NOT MEASURED/);
+  assert.match(sec, /last line/i);
+  assert.match(sec, /(absent|different|any other)[^.]*last line|last line[^.]*(absent|different|any other)/i, 'an absent or other last line is refused');
+  assert.match(sec, /committed? in the message that launches spec-gatekeeper|commit[^.]*launch(es)? spec-gatekeeper/i, 'its files are committed with the next launch');
+  assert.match(sec, /accept/i);
+  assert.match(sec, /only `?load-test\.md`?|`?load-test\.md`? only/i, 'on accept only the record is committed');
+  assert.ok(sec.includes('git stash push --include-untracked'), 'the load tests are stashed');
+  assert.match(sec, /specs\/<[^>]*>\/load-test\.md|load-test\.md/);
+  const seven = flat(skillSection(skill, '## 7. Hand over'));
+  assert.match(seven, /stash/i, 'step 7 names the stash');
+  assert.match(seven, /load tests?|files/i);
+});
+
+test('012 T008 FR-002 edge cases: an opt-in role not asked for gets no skipped row, and a team with no implementer is still measured', () => {
+  const skill = teamSkill();
+  const seven = flat(skillSection(skill, '## 7. Hand over'));
+  assert.match(seven, /load-tester[^.]*(not asked|opt-in|--load-test)[^.]*(no|not)[^.]*skipped|(no|not)[^.]*skipped[^.]*load-tester/i, 'step 7: no skipped row for load-tester when not asked');
+  const sec = flat(skillSection(skill, '## 5b. Load test: load-tester'));
+  assert.match(sec, /no implementer|without (an )?implementer|as it stands/i);
+  assert.match(sec, /NOT MEASURED[^.]*(listed|reported|report)|report[^.]*NOT MEASURED/i, 'NOT MEASURED goes on but is reported');
 });
