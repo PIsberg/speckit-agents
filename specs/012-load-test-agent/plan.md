@@ -64,12 +64,17 @@ body is at most 100 lines; `skills/speckit-team/SKILL.md` stays under 500 (396 n
   the hook's audit gate on a role skill call (`gate`, the list `['test-writer', 'implementer',
   'spec-gatekeeper']`) gains `load-tester`, matching the agent's `gate`. The report's last line is not
   hook-checked in that mode, as for every role there.
-- **Pipeline step** (FR-005, FR-010): a new `## 5b. Load test: load-tester` in the skill, between
-  `## 4-5.` and `## 6.`. FAIL, or any other last line, is a **Stop:** with three options: fix
-  (implementer with `last round`, then load-tester again), accept (listed at hand-over), or stop.
-  NOT MEASURED goes on and is listed at hand-over with its reason. load-tester's files are committed in
-  the message that launches spec-gatekeeper. An opt-in role not asked for gets no skipped row, so a run
-  without it hands over as before (FR-002).
+- **Pipeline step** (FR-005, FR-010, FR-016, D6): a new `## 5b. Load test: load-tester` in the skill,
+  between `## 4-5.` and `## 6.`. FAIL, or any other last line, is a **Stop:** with three options: fix
+  (implementer with `last round`, then load-tester again), accept, or stop. NOT MEASURED goes on and is
+  listed at hand-over with its reason. load-tester's files are committed in the message that launches
+  spec-gatekeeper (at hand-over when it is not in the team); the last round was committed with
+  load-tester's launch, so every uncommitted change then is load-tester's. On accept, that Bash call
+  commits only the record `specs/<feature>/load-test.md` and stashes the rest with `git stash push
+  --include-untracked -m "load-tester: accepted FAIL"`, so no breaching load test reaches
+  spec-gatekeeper's gate 3 (`agents/spec-gatekeeper.md`, Process 3) or CI; hand-over lists the FAIL and
+  the stash with its files. An opt-in role not asked for gets no skipped row, so a run without it hands
+  over as before (FR-002).
 - **Noisy-run probe** (FR-013, D2): `node "<hook>" probe` prints the machine's busy share over a
   1,000 ms sample and the time of a fixed workload; `probe --since <busy>,<ms>` adds a `noisy:` line per
   threshold crossed. The agent runs it before and after its measurements and copies the `noisy:` lines
@@ -82,7 +87,8 @@ body is at most 100 lines; `skills/speckit-team/SKILL.md` stays under 500 (396 n
   (PASS), `load-pinned`, `load-empty`, `load-skipped` (right: not PASS), `load-noisy` (the linear
   fixture with 30% of the cores busy; right: PASS and a noisy warning). One turn each on a finished,
   audited feature, like the gate cases; `--skill-agents` gives SC-004's second arm. Running them is
-  D5.
+  D5. load-tester's word is read by the existing `tools/eval.mjs: gateWord`, which gains a `words`
+  option and a `lastLineOnly` mode (FR-006: the report's last line is the verdict); no second parser.
 
 ## Constitution Check
 
@@ -226,3 +232,29 @@ Answer (2026-11-22): A, as recommended
 - **B: a last-round task runs them** with `tools/eval.mjs --login`, records the counts in
   `docs/live-results.md` and `docs/measurements.md`, and the PR waits for it. One more task after T025,
   the same 35 runs and their cost on the implementer's login.
+
+### D6: What happens to a breaching load test when the user accepts a FAIL (FR-010, FR-016, US5-1)?
+
+Answer (2026-11-22): A, as recommended
+
+Committed as written, a breaching load test fails the project's test command, so spec-gatekeeper's gate
+3 ends REJECTED and CI is red after merge.
+
+- **A (recommended): commit the record, stash the load tests.** As in "Pipeline step": the accept
+  path's Bash call commits `specs/<feature>/load-test.md` and stashes every other change of
+  load-tester's; hand-over names the stash and its files (`git stash pop` restores them after a fix).
+  Gate 3 and CI run without the breach. The record keeps the failing readings, so the acceptance is
+  not silent (FR-010). The main session cannot tell from the report which file holds which measurement,
+  so the passing load tests of that run are stashed too. An accepted instrument FAIL (empty result set,
+  stale build) and an accepted refused report take the same path. With no spec-gatekeeper in the team
+  (D4), the stash comes before the hand-over commit. No new code: two git commands in skill text. As
+  written: T008, T009, contracts/load-tester.md section 5.
+  Spec: FR-016: "command and a written procedure for the full sweep (US5)." becomes "command and a written procedure for the full sweep (US5); after a FAIL the user accepts, the run commits only the record and stashes the load tests, naming the stash at hand-over."
+- **B: re-baseline on accept.** load-tester is launched again with `accepted`: it sets each failing
+  gating ceiling to the new reading times its margin, adds a `## Budgets` row with the failing readings,
+  the date and "accepted by the user", reruns the reduced tests green and ends PASS; its files are
+  committed as after any PASS, so every load test stays in the test command. One more load-tester
+  launch per accepted FAIL (cost not measured). An instrument FAIL has no ceiling to move, so it still
+  takes A's stash. The agent body gains about 4 lines toward its 100-line cap; T016 and T017 add the
+  `accepted` rule, T008 and T009 the relaunch beside A's stash.
+  Spec: FR-012: "- **FR-012**: Every new ceiling MUST come from a recorded failing first run and a stated margin (US3)." becomes "- **FR-012**: Every new ceiling MUST come from a recorded failing first run and a stated margin, or from a breach the user accepted, recorded with its readings and date (US3)."

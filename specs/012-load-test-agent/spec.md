@@ -191,7 +191,7 @@ fails when it is made to fail.
 - **FR-015**: A version comparison MUST run in one sitting, alternating order, and call a difference real
   only when the ranges do not overlap (US5).
 - **FR-016**: The role MUST leave a small version of each load test in the project's ordinary test
-  command and a written procedure for the full sweep (US5).
+  command and a written procedure for the full sweep (US5); after a FAIL the user accepts, the run commits only the record and stashes the load tests, naming the stash at hand-over.
 - **FR-017**: The role MUST follow the same project-knowledge, team-line and audit rules the other roles
   follow, and the README's guardrail table and rules list MUST describe it.
 

@@ -69,7 +69,8 @@ instrument check held. A noisy run changes no verdict.
 
 ## 5. Record file `specs/<feature>/load-test.md`
 
-One file per feature, rewritten on each run, with these sections:
+One file per feature, rewritten on each run, with these sections. After a FAIL the user accepts, it is
+the only file of the role's that the run commits (plan.md "Pipeline step", D6).
 
 - `## Procedure`: the commands for the reduced run (the project's ordinary test command) and for the
   full sweep (the environment variable that selects it), and what each load test measures.

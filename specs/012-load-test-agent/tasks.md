@@ -8,7 +8,7 @@ description: "Tasks for 012: opt-in load-test role"
 
 **Tests**: required (constitution I). Each slice's test tasks come first and are seen failing.
 
-Written as plan.md's recommended options make them (D1 A, D2 A, D3 A, D4 A, D5 A).
+Written as plan.md's recommended options make them (D1 A, D2 A, D3 A, D4 A, D5 A, D6 A).
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -86,19 +86,22 @@ held to its lane in a real session, and the skill stops on its FAIL.
   load-tester. mods/speckit-board/hooks/model.ts: `ROLE_COLOR` (:17) `'load-tester': 'pink'`. Reuse
   `install.mjs: roleSkill` and the hook's `ends` as they are.
 
-**Slice U1b**: the pipeline step (FR-001, FR-002, FR-005, FR-006, FR-010)
+**Slice U1b**: the pipeline step (FR-001, FR-002, FR-005, FR-006, FR-010, FR-016)
 
 - [ ] T008 [US1] Test the skill text in test/install.test.mjs. Covers FR-001, FR-002, FR-005, FR-006,
-  FR-010, US1-1, US1-2, edge cases "team that has no implementer" and "NOT MEASURED is fine". The step is
-  `## 5b. Load test: load-tester`, between `## 4-5.` and `## 6.`; FAIL or any other last line is a
-  **Stop:** with the three options of plan.md "Pipeline step"; load-tester's files are committed in the
-  message that launches spec-gatekeeper; an opt-in role not asked for gets no skipped row. Also
+  FR-010, FR-016, US1-1, US1-2, US5-1, edge cases "team that has no implementer" and "NOT MEASURED is
+  fine". The step is `## 5b. Load test: load-tester`, between `## 4-5.` and `## 6.`; FAIL or any other
+  last line is a **Stop:** with the three options of plan.md "Pipeline step"; load-tester's files are
+  committed in the message that launches spec-gatekeeper; on accept (D6 A) that call commits only
+  `load-test.md` and runs `git stash push --include-untracked`, and step 7 names the stash and its
+  files; an opt-in role not asked for gets no skipped row. Also
   `argument-hint`, `## Team` (`--load-test` among the leading flags; the existing 006 T008 test at :1334
   then checks the pipeline order), `## Handoffs` and `## Skill agents` lines, and step 7. Helpers:
   `teamSkill` :1313, `skillSection` :1324, `sectionHead` :1332, `flat` :43.
 - [ ] T009 [US1] Write the step into skills/speckit-team/SKILL.md: argument-hint, `## Handoffs`
   (load-tester: the feature directory), `## Team`, `## Skill agents`, new `## 5b. Load test:
-  load-tester`, `## 7. Hand over`. Stays under 500 lines (`test/skills.test.mjs`).
+  load-tester` (its accept path per plan.md "Pipeline step"), `## 7. Hand over` (the accepted FAIL and
+  its stash). Stays under 500 lines (`test/skills.test.mjs`).
 
 **Slice U1c**: a run without the role launches none (FR-002, SC-003)
 
@@ -171,15 +174,22 @@ held to its lane in a real session, and the skill stops on its FAIL.
 - [ ] T022 [P] Test the load cases in test/eval.test.mjs. Covers SC-001, SC-002, SC-004, SC-006: the six
   `CASES` of plan.md "Scored cases" and their right answers; `scoreRun` on each (for the three broken
   instruments FAIL and NOT MEASURED both count as right; for `load-noisy`, PASS without a `noisy` line in
-  the report is wrong); `loadWord` reads only a last line that is exactly one of the three; `buildRepo`
+  the report is wrong); `gateWord` with `words: LOAD_WORDS, lastLineOnly: true` returns a word only
+  when the last non-empty line is exactly one of the three (`NOT MEASURED` included), and with neither
+  option still passes the existing cases at test/eval.test.mjs:120 to :124; `buildRepo`
   lays the `specs/001-dedupe` feature with its variant and an audit PASS; `loadRequest` in both modes;
   `gateReport` with `role: 'load-tester'` reads that role's report, as the existing gateReport tests do.
-- [ ] T023 [P] Build the cases. tools/eval.mjs: `CASES` (:20) entries with `load: '<variant>'`,
-  `loadWord(text: string): { word: 'PASS' | 'FAIL' | 'NOT MEASURED' | null }`, `scoreRun` (:105) for them.
+- [ ] T023 [P] Build the cases. tools/eval.mjs: `CASES` (:20) entries with `load: '<variant>'`;
+  `export const LOAD_WORDS = ['PASS', 'FAIL', 'NOT MEASURED']`; reuse `gateWord` (:41), no second parser:
+  its signature becomes `gateWord({ ends = [], text = '', words = ['APPROVED', 'REJECTED'], lastLineOnly
+  = false }): { word: string | null, source: string }`, the hook record and the line test matched against
+  `words` as whole strings (not a regex), and `lastLineOnly` judging only the last non-empty line;
+  `scoreRun` (:105) for the load cases.
   tools/full-run.mjs: `buildRepo` (:67) lays test/fixtures/full-run/load/ like the gate block (:83, audit
   seeding :116); `loadRequest({ skillAgents = false } = {}): string` beside `gateRequest` (:203), sent
   with `--load-test`; `gateReport({ transcript, skillAgents = false, role = 'spec-gatekeeper' })` (:276);
-  in `main`, load cases are one turn, judged on load-tester's word, and `load-noisy` keeps
+  in `main` (:510), load cases are one turn, judged on `gateWord({ text: <load-tester's report from
+  gateReport>, words: LOAD_WORDS, lastLineOnly: true })` with no `ends`, and `load-noisy` keeps
   `Math.max(1, Math.round(0.3 * os.cpus().length))` busy-loop children running until the turn ends.
   New fixtures under test/fixtures/full-run/load/: `specs/001-dedupe/` (spec, plan, tasks ticked),
   `src/dedupe.js` (passes its tests, quadratic), `test/dedupe.test.js`, and `linear/`, `pinned/` (a load
@@ -212,7 +222,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 |---|---|---|---|---|
 | 1 | F1, U1a, U1b, U1c | T007 (agents/load-tester.md with its marker and `name:` line only) | T001, T003, T004, T005, T006, T008, T010 | T002, T007, T009, T011 |
 | 2 | U2, U3a, U3b, U4 | none | T012, T014, T016, T018 | T013, T015, T017, T019 |
-| 3 | U5, P1, P2 | T023 (`loadWord`, `loadRequest`, the `role` option) | T020, T022, T024 | T021, T023, T025 |
+| 3 | U5, P1, P2 | T023 (`LOAD_WORDS`, `gateWord`'s `words` and `lastLineOnly` options, `loadRequest`, the `role` option) | T020, T022, T024 | T021, T023, T025 |
 
 `[P]` slices (U1c, U3a, P1) touch files no other slice of their round touches; the rest of each round
 shares `agents/load-tester.md`, `test/install.test.mjs` or `hooks/speckit-team.mjs` and runs in task
