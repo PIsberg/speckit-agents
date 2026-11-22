@@ -963,6 +963,68 @@ test('handback and stop from the same implementer count once', () => {
   assert.ok(denied(implementerTool(dir)), 'the third one closes it');
 });
 
+// #370: an accepted report leaves a marker per agent, so the Stop after its hand-back is not judged twice. An agent
+// resumed with SendMessage works again under the same agent_id: its next tool call ends the old report, so every
+// later report is checked and counted. Before the fix four REDs from one agent counted as one.
+const toolAs = (dir, args, agent_id, tool_name = 'Bash') => run(dir, args, {
+  hook_event_name: 'PreToolUse', tool_name, tool_input: { command: 'npm test', file_path: 'README.md' }, agent_id,
+});
+const stopAs = (dir, args, agent_id, last_assistant_message) => run(dir, args, { hook_event_name: 'SubagentStop', agent_id, last_assistant_message });
+
+test('#370: a resumed implementer\'s every RED counts, and the third closes the gate for it', () => {
+  const { dir } = repo();
+  pass(dir);
+  for (let i = 1; i <= 3; i++) {
+    if (i > 1) assert.equal(toolAs(dir, ['gate', 'retries', 'scope', 'no-tests'], 'i1'), null, 'two REDs leave its gate open');
+    assert.match(report(dir, 'still failing\n\nRESULT: RED', 'i1').systemMessage, new RegExp(`${i} of 3`));
+    assert.equal(stopAs(dir, ['result'], 'i1', 'RESULT: RED'), null, 'the Stop after the hand-back is the same report');
+  }
+  assert.ok(denied(toolAs(dir, ['gate', 'retries', 'scope', 'no-tests'], 'i1')), 'the same agent is held at the limit');
+});
+
+test('#370: a resumed implementer\'s GREEN resets the count', () => {
+  const { dir } = repo();
+  pass(dir);
+  report(dir, 'RESULT: RED', 'i1');
+  toolAs(dir, ['gate', 'retries'], 'i1');
+  report(dir, 'RESULT: RED', 'i1');
+  toolAs(dir, ['gate', 'retries'], 'i1');
+  assert.match(report(dir, 'fixed\n\nRESULT: GREEN', 'i1').systemMessage, /retry count is reset/);
+  assert.equal(fs.existsSync(path.join(stateDir(dir), 'retries', '001-demo.json')), false);
+});
+
+test('#370: a resumed spec-gatekeeper\'s APPROVED is drift-checked and replaces its REJECTED', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 Tests in test/a.test.js for FR-001\n');
+  r.write('test/a.test.js', '// names no requirement\n');
+  commitAll(r, 'feat');
+  const ends = ['ends', '--record', 'APPROVED', 'REJECTED'];
+  const recorded = () => JSON.parse(fs.readFileSync(path.join(stateDir(r.dir), 'ends', '001-demo.json'), 'utf8'));
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'FR-001 has no test\nREJECTED'), null);
+  assert.equal(recorded().word, 'REJECTED');
+  toolAs(r.dir, ['scope', 'none'], 'gk1');
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED')?.decision, 'block', 'the drift check runs on the resumed report');
+  r.write('test/a.test.js', '// 001 FR-001\n');
+  commitAll(r, 'test names FR-001');
+  toolAs(r.dir, ['scope', 'none'], 'gk1');
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED'), null);
+  assert.equal(recorded().word, 'APPROVED', 'the later word is recorded');
+});
+
+test('#370: a resumed test-writer\'s RED on a parse error is sent back again; a refusal is still never repeated', () => {
+  const { dir } = repo();
+  pass(dir);
+  const ends = ['ends', 'RED', 'BLOCKED', 'FIXED'];
+  const send = (message, agent_id) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id });
+  const broken = 'test/a.test.mjs:1 SyntaxError: Unexpected token \')\'\n\nRED';
+  assert.ok(denied(send(broken, 'tw1')));
+  toolAs(dir, ['gate', 'scope', 'tests'], 'tw1', 'Read');
+  assert.equal(denied(send(broken, 'tw1')), false, 'the same report sent again goes through: never gagged');
+  toolAs(dir, ['gate', 'scope', 'tests'], 'tw1', 'Read');
+  assert.ok(denied(send(broken, 'tw1')), 'after a resume, a new report is checked again');
+});
+
 test('a report without a RESULT line is sent back once, then counts as RED', () => {
   const { dir } = repo();
   pass(dir);

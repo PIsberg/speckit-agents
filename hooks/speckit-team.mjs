@@ -366,6 +366,21 @@ if (WIRED[mode] && !WIRED[mode].includes(event)) {
   noDecision(`${event ? `event ${event}` : 'no hook_event_name'} is not one ${mode} is wired for`);
 }
 const stateDir = path.join(commonDir, 'speckit-team');
+// #370: an accepted report leaves a marker per agent (result, ends-ok), so the Stop that follows its hand-back is not
+// judged a second time. An agent that works again after one (resumed with SendMessage) makes a tool call first, which
+// ends the old report: every marker goes, so its next report is checked and counted afresh. A refusal's own marker
+// stays while no report was accepted, so a report is still sent back once, never twice. spec-auditor's verdict mode
+// keeps its own reset.
+if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
+  const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
+    try {
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+    } catch (e) {
+      addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
+    }
+  }
+}
 
 // Compare paths the way the file system will resolve them: through symlinks of the part that exists,
 // and on Windows ignoring case and trailing dots and spaces in names (".GIT", ".git." are ".git").
