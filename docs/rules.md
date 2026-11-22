@@ -123,8 +123,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Draft from what the repo states, mark inferred rules, ask, then `speckit-constitution`. text.
 
 ### skills/speckit-team/SKILL.md: 1. Spec: product-owner
-<!-- fingerprint: 170c0dda -->
-- Relay the questions, recommended answer first; relaunch until `READY FOR PLAN`. text.
+<!-- fingerprint: 71925798 -->
+- Relay the questions with product-owner's options as listed, recommended first; relaunch until `READY FOR PLAN`. pinned (#216).
 - Work on a feature branch. text; visible in the PR.
 - security-reviewer on the spec, FAIL routing, two FAILs to the user. pinned.
 - Stop for the spec review; commit it with the architect's launch. pinned.
@@ -226,11 +226,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' specs are not inputs. text, unseen (cost).
 
 ### agents/product-owner.md: Process
-<!-- fingerprint: 713a3822 -->
+<!-- fingerprint: b1268795 -->
 - Stop without `.specify/` or the skill; a new feature reads speckit-specify, a revision leaves it unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - An answer goes under `## Clarifications`, `### Session`, as `- Q: ... → A: ...`, and into what it settles. pinned; spec-auditor reads the result.
 - A finding judged wrong is reported `contested` with its file:line; an upheld contest is recorded. pinned.
-- At most 5 open questions, highest impact first, each with options or at most 5 words. pinned, unseen.
+- At most 5 open questions, highest impact first, each with 2 to 4 options (AskUserQuestion's limit, #216) or at most 5 words. pinned, unseen.
 - Tick a checklist item only after checking it this run. text, unseen.
 
 ### agents/product-owner.md: Lane
@@ -240,7 +240,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - No technologies in the spec; every requirement testable. text; spec-auditor checks.
 
 ### agents/product-owner.md: Report
-<!-- fingerprint: 015322f2 -->
+<!-- fingerprint: 9afc558c -->
+- Each open question with its options, recommended first (#216). pinned.
 - At most 20 lines; `READY FOR PLAN` last, only with no open question. text; no `ends` hook.
 
 ## agents/architect.md

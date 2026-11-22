@@ -228,8 +228,8 @@ The constitution is the user's rules: draft them, never decide them.
 
 ## 1. Spec: product-owner
 Only when product-owner is in the team; without it, skip this step.
-Launch with the idea. Relay its questions with AskUserQuestion, recommended answer first, then
-relaunch it with the answers. Repeat until `READY FOR PLAN`.
+Launch with the idea. Relay its questions with AskUserQuestion, product-owner's options as it listed
+them, recommended first, then relaunch it with the answers. Repeat until `READY FOR PLAN`.
 Then make sure the work is on a feature branch. Spec Kit's git extension creates one during
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory

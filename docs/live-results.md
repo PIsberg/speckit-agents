@@ -95,6 +95,21 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-22</b>, third run: Claude Code 2.1.330, Windows 11, one <code>--skill-agents</code> run on the owner's subscription with the read-only roles' lane check, passed (#412)</summary>
+
+Setup: `node tools/full-run.mjs --login --skill-agents`, the clean case, from `fix/216-question-options` at `295050c` (the chain #411, #413, #414 and #216's change), the personal team reinstalled from it first (#175). Main session on Sonnet. $0.72, 3 turns (the spec stop, the plan stop, the build), 180 s from the first to the last row of the transcript.
+
+| Check | Result |
+|---|---|
+| The run | Passed every check (`failures: []`): `APPROVED` from the hook record. 7 role skill calls and no agent launch: product-owner, architect, spec-auditor, a stub implementer, test-writer, implementer, spec-gatekeeper. |
+| The read-only roles' lane check (#412) | spec-auditor's and spec-gatekeeper's roles closed with no lane message and no "could not run" note: nothing changed, and spec-gatekeeper's `npm test` left no file git does not ignore. So no false positive in one run; the check catching a write is held by the unit and e2e cases, not by this run. |
+| Hand-ons | Sent back once at spec-auditor's `VERDICT: PASS`, the implementer's `RESULT: STUB` and `RESULT: GREEN`, and test-writer's `RED`; the run went on each time. |
+| product-owner's options (#216) | Not exercised: product-owner reported no open question. |
+| Tool errors | None. |
+
+</details>
+
+<details>
 <summary><b>2026-11-22</b>, second run: Claude Code 2.1.330, Windows 11, one full run on the owner's subscription from the #405 branch, passed (#405)</summary>
 
 Setup: `node tools/full-run.mjs --login`, the clean case in agents mode, from a worktree of
