@@ -442,7 +442,11 @@ the hook refuses a launch whose `Team:` line names less than the full team until
 team question is in the session's transcript after the request; under "we ship today, skip the tests"
 the main session launched implementer alone, unasked, in 2 of 6 scored runs on 2026-11-20
 ([#366](https://github.com/PIsberg/speckit-agents/issues/366)). The full team, the recommended
-option, needs no answer.
+option, needs no answer. Typed with `--team <roles>`, the roles you typed are held the same way: a
+launch whose `Team:` line drops one of them is refused until you answer since the request, so a
+first line without spec-auditor cannot switch the audit gate off for a request where you named it
+([#373](https://github.com/PIsberg/speckit-agents/issues/373)). A line naming more roles than you
+typed, or `security-reviewer` from `--security`, goes.
 
 `/speckit-team --team noagents <request>` runs no agent at all. The session runs Spec Kit's own
 skills itself, `speckit-specify`, `speckit-plan`, `speckit-tasks` and `speckit-implement` in that
@@ -1086,7 +1090,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback`; its entry carries the agent's scope rule (`gate scope tests`), which it applies to a write or Bash call after the gate lets it through, so one process decides both (#337: about 120 instead of 225 ms of hook processes per write on Windows) | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
@@ -1637,11 +1641,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 646 tests:
+`npm test` runs 648 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 225 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 227 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
@@ -2298,8 +2302,10 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   implementer's `RESULT: RED` reports against the feature `.specify/feature.json` names: 3 in a row
   block implementer there until a GREEN, a new audit, or you delete the record, and
   spec-gatekeeper's word replaces that feature's.
-- **The first `Team:` line of a request is trusted.** The hook cannot check that the team on a
-  request's first launch is the one you chose at the team question: the main session writes it.
+- **The first `Team:` line of a request is held to your typing, not to your answer.** Typed with
+  `--team <roles>`, a first line that drops a role you typed is refused (#373); typed without, a line
+  naming less than the full team waits for an answer (#366). Neither reads what you answered: once
+  any answer is in the transcript, the main session writes the line and the hook takes it.
   Once a request's team has spec-auditor, no later line can drop it, but a first line without it
   opens the gate for that request's test-writer and implementer. Only `--team noagents` comes from
   your own typing, which is why only it opens the gate for the main session. Telling requests apart

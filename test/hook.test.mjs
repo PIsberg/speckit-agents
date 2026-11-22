@@ -1599,6 +1599,43 @@ test('team choice: once a launch went, later ones are not held; a new typed requ
   assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'the answer to the last request does not carry over');
 });
 
+// #373: typed with --team <roles>, the first Team line was taken as the main session wrote it, so a line dropping
+// spec-auditor switched the audit gate off for a request whose user had typed it. The typed roles are held: a launch
+// whose Team line drops one of them waits for the user's answer, as #366 holds a team nobody chose.
+test('#373: a Team line that drops a role the user typed after --team is denied, and no team is recorded', () => {
+  const { dir, t, add } = choiceRepo();
+  typedTeam(dir, `--team ${ALL_ROLES.join(',')} add a sum function`, { transcript_path: t });
+  add(...NOT_ANSWERS);
+  const out = agentLaunch(dir, 'Team: implementer\nBuild it.', { transcript_path: t });
+  assert.ok(denied(out), 'held: the user typed six roles');
+  assert.match(reasonOf(out), /typed --team .*drops product-owner, architect, spec-auditor, test-writer, spec-gatekeeper/s);
+  assert.ok(!fs.existsSync(teamFile(dir)), 'no team is recorded, so the full gates still apply');
+  assert.match(subTool(dir).hookSpecificOutput.permissionDecisionReason, /has not passed/);
+  assert.ok(!denied(agentLaunch(dir, 'Build it.', { transcript_path: t })), 'no Team line, the full team, goes');
+});
+
+test('#373: the typed roles, or more, go; --security and a user\'s answer since let a line through too', () => {
+  const a = choiceRepo();
+  typedTeam(a.dir, '--team implementer,test-writer add sum()', { transcript_path: a.t });
+  a.add(...NOT_ANSWERS);
+  assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })), 'test-writer dropped');
+  assert.ok(!denied(agentLaunch(a.dir, 'go\nTeam: test-writer, implementer', { transcript_path: a.t })));
+  assert.deepEqual(teamRecord(a.dir).roles, ['test-writer', 'implementer']);
+  const b = choiceRepo();
+  typedTeam(b.dir, '--security --team test-writer,implementer add sum()', { transcript_path: b.t });
+  b.add(...NOT_ANSWERS);
+  assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: b.t })));
+  const c = choiceRepo();
+  typedTeam(c.dir, '--team spec-auditor,test-writer,implementer add sum()', { transcript_path: c.t });
+  c.add(...NOT_ANSWERS);
+  assert.ok(denied(agentLaunch(c.dir, 'go\nTeam: test-writer, implementer', { transcript_path: c.t })));
+  c.add(userLine('Drop the audit, just build it.'));
+  assert.ok(!denied(agentLaunch(c.dir, 'go\nTeam: test-writer, implementer', { transcript_path: c.t })), 'the user answered since');
+  const d = choiceRepo();
+  typedTeam(d.dir, '--team implementer,nobody add sum()', { transcript_path: d.t });
+  assert.ok(!denied(agentLaunch(d.dir, 'go\nTeam: implementer', { transcript_path: d.t })), 'a list the skill refuses records nothing');
+});
+
 test('team: a team-role launch with no Team line records the full team, silently (FR-002, FR-009, #101)', () => {
   const { dir } = repo();
   agentLaunch(dir, 'Team: implementer');

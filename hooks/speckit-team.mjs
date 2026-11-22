@@ -1294,13 +1294,16 @@ if (mode === 'gate') {
     dropRoleFiles(id);
     const roles = typedRoles(str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, ''));
     // #366: without --team the skill asks which team runs; record where the transcript stood, so a launch of a
-    // smaller team can be held until the user's answer is in it.
-    if (roles === null) {
+    // smaller team can be held until the user's answer is in it. #373: with --team and a list of team roles, the
+    // same record keeps them, so a launch whose Team line drops one is held the same way. A list the skill refuses
+    // (a word that is no team role) records nothing: no launch follows it.
+    const typedTeam = roles?.length && roles.every((r) => TEAM_ROLES.includes(r)) ? TEAM_ROLES.filter((r) => roles.includes(r)) : null;
+    if (roles === null || typedTeam) {
       const t = str(input.transcript_path);
       let offset = null;
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
-      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, at: new Date().toISOString() });
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), at: new Date().toISOString() });
     }
     // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
@@ -1340,7 +1343,16 @@ if (mode === 'gate') {
     const team = parseTeam(input.tool_input.prompt);
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
-    if (choice !== undefined) {
+    if (choice !== undefined && Array.isArray(choice?.typed)) {
+      // #373: the roles the user typed after --team, held until the user says otherwise.
+      const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
+      const dropped = choice.typed.filter((r) => CORE_ROLES.includes(r) && !launched.includes(r));
+      if (dropped.length && !answeredSince(choice)) {
+        deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
+          + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
+      }
+      fs.rmSync(choiceFile(id), { force: true });
+    } else if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
       if (smaller && !answeredSince(choice)) {
         deny('speckit-team: nobody chose this team. The request was typed without --team and no answer has come since, '
