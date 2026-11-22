@@ -1225,7 +1225,11 @@ needs a new audit and starts the count from zero. Or the user decides, and to re
 deletes `.git/speckit-team/retries/<feature>.json`. In a run whose team has no architect, the
 denial says the user decides, since nobody is there to rethink the plan
 ([#106](https://github.com/PIsberg/speckit-agents/issues/106)). A retry record that cannot be read keeps the
-gate shut, like an unreadable verdict. The limit is `MAX_RED` in `hooks/speckit-team.mjs`
+gate shut, like an unreadable verdict. Two implementers that report at once, as side-by-side slices do,
+both count: the record is changed under a lock file (`retries/<feature>.json.lock`, taken over after 10 s
+if a process died holding it) and written whole through a rename, so a gate reading it never meets half
+a file ([#376](https://github.com/PIsberg/speckit-agents/issues/376); before, 4 and 5 of 12 trials lost a
+RED). The limit is `MAX_RED` in `hooks/speckit-team.mjs`
 ([Customising](#customising)).
 
 ### The lane check
@@ -1645,11 +1649,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 650 tests:
+`npm test` runs 651 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 229 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 230 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 137 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

@@ -1085,6 +1085,25 @@ test('#370: a resumed test-writer\'s RED on a parse error is sent back again; a 
   assert.ok(denied(send(broken, 'tw1')), 'after a resume, a new report is checked again');
 });
 
+// #376: result read the retry record, appended a RED and wrote it back in place, with no lock: two implementers ending
+// together (slices built side by side) both read the old list and one RED was lost, 4 and 5 times in 12 trials.
+test('#376: two implementers reporting RED at once both count, 12 times in 12', async () => {
+  const red = (dir, id) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [HOOK, 'result'], { stdio: ['pipe', 'ignore', 'ignore'] });
+    p.stdin.end(JSON.stringify({ cwd: dir, hook_event_name: 'SubagentStop', agent_type: 'implementer', agent_id: id, last_assistant_message: 'x\nRESULT: RED' }));
+    p.on('close', resolve);
+  });
+  const counts = [];
+  for (let i = 0; i < 12; i++) {
+    const { dir } = repo();
+    pass(dir);
+    await Promise.all([red(dir, 'a'), red(dir, 'b')]);
+    counts.push(JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'retries', '001-demo.json'), 'utf8')).red.length);
+    assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'retries')), ['001-demo.json'], 'no lock or temporary file left behind');
+  }
+  assert.deepEqual(counts, Array(12).fill(2));
+});
+
 test('a report without a RESULT line is sent back once, then counts as RED', () => {
   const { dir } = repo();
   pass(dir);
