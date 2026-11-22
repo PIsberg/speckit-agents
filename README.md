@@ -1171,7 +1171,11 @@ local last operand, each with only options that cannot put a file elsewhere (`ta
 `unzip -oq`, `rsync -av --delete --exclude`; not `tar -P`, `--to-command`, `-g`, `rsync --remove-source-files`,
 `--log-file`, nor an option the hook does not list, abbreviations included). That folder is then judged like any
 named target, so a read-only role may unpack outside the repo (`tar -xf a.tar -C /tmp/x`) and not into it; any
-other extract or sync stays a write only the run can tell. A `-C` inside a group or an old-style bundle (`tar xCf`)
+other extract or sync stays a write only the run can tell. So does one the folder cannot be trusted for: a variable
+that adds options (`TAR_OPTIONS`, `UNZIP`, `UNZIPOPT`, on the line or in the hook's environment; rsync's popt
+aliases, when `~/.popt` or `/etc/popt` exists), a symlink or junction already under the folder (up to 5,000
+entries are walked; more counts as a link), or another command on the line that could make one (only `mkdir`, `cd`,
+`ls`, `echo`, `rm` and a few other plain commands may share it: `mkdir -p /tmp/x && tar -xf a.tar -C /tmp/x`). A `-C` inside a group or an old-style bundle (`tar xCf`)
 or attached to its option (`unzip -d/tmp/x`) is not read.
 A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
 command line is not seen.

@@ -373,6 +373,31 @@ test('#396: scope none reads where tar -C, unzip -d and rsync put files, where t
     `tar xCf ${out} a.tar`, `tar -xzC ${out} -f a.tgz`, `unzip a.zip -d${out}`, 'tar -xf a.tar -C "$D"', 'unzip a.zip -d $(mktemp -d)',
   ];
   for (const command of still) assert.ok(denied(bash(dir, ro, command, gk)), command);
+  // The security review of #402: options a variable adds (TAR_OPTIONS, UNZIP, UNZIPOPT) are not on the line, and
+  // --overwrite writes through a link it finds.
+  const optionVars = [`TAR_OPTIONS=--to-command=sh tar -xf a.tar -C ${out}`, `export TAR_OPTIONS=-P; tar -xf a.tar -C ${out}`,
+    `env TAR_OPTIONS=-P tar -xf a.tar -C ${out}`, `UNZIP="-d src" unzip a.zip -d ${out}`, `UNZIPOPT=-d unzip a.zip -d ${out}`,
+    `tar -xf a.tar -C ${out} --overwrite`];
+  for (const command of optionVars) assert.ok(denied(bash(dir, ro, command, gk)), command);
+  // A link into the repo under the folder, already there or made on the same line, takes the files back into the repo.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-396-')).replaceAll('\\', '/');
+  try {
+    const plain = path.join(tmp, 'plain').replaceAll('\\', '/');
+    fs.mkdirSync(path.join(plain, 'deep'), { recursive: true });
+    fs.writeFileSync(path.join(plain, 'deep', 'f.txt'), 'x');
+    assert.equal(bash(dir, ro, `tar -xf a.tar -C ${plain}`, gk), null, 'a folder of plain files');
+    const linked = path.join(tmp, 'linked').replaceAll('\\', '/');
+    fs.mkdirSync(path.join(linked, 'deep'), { recursive: true });
+    fs.symlinkSync(path.join(dir, 'src'), path.join(linked, 'deep', 'sub'), 'junction');
+    const whole = path.join(tmp, 'whole').replaceAll('\\', '/');
+    fs.symlinkSync(dir, whole, 'junction');
+    for (const command of [`tar -xf a.tar -C ${linked}`, `unzip a.zip -d ${linked}`, `rsync -a other/ ${linked}/`, `tar -xf a.tar -C ${whole}`,
+      `rsync -a other/ ${whole}/x`, `mkdir -p ${tmp}/new && ln -s ${dir.replaceAll('\\', '/')}/src ${tmp}/new/sub && tar -xf a.tar -C ${tmp}/new`,
+      `cp -a other ${tmp}/new2 && rsync -a other/ ${tmp}/new2`, `tar -xf b.tar -C ${tmp}/new3 && tar -xf a.tar -C ${tmp}/new3`]) {
+      assert.ok(denied(bash(dir, ro, command, gk)), command);
+    }
+    assert.equal(bash(dir, ro, `mkdir -p ${tmp}/new4 && tar -xf a.tar -C ${tmp}/new4`, gk), null, 'a folder made on the line');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   // A writing role's lane judges the folder: implementer may not unpack into the tests.
   assert.ok(denied(bash(dir, ['scope', 'no-tests'], 'tar -xf a.tar -C test', { agent_type: 'implementer' })));
   // A remote destination is no file of the repo: left to the lane check, as every sync was before.
