@@ -341,6 +341,23 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
   assert.equal(bash(dir, ['scope', 'no-tests'], 'prettier --write src', { agent_type: 'implementer' }), null);
 });
 
+// #412: #378 denied `eslint --fix` and `prettier --write`, but the same flag handed to a package script through its runner
+// (`npm run lint -- --fix`) passed: the script's tool is not on the line. A flag that asks a script to rewrite files is
+// a write only the run can tell. A script run without one is still let through, which #412 leaves to the owner's call.
+test('#412: scope none denies a package script run with --fix or --write; the same script without one passes', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  const writes = [
+    'npm run lint -- --fix', 'npm run format -- --write', 'npm run-script lint -- --fix', 'npm run lint -- --fix-only src',
+    'pnpm run lint --fix', 'pnpm lint --fix', 'yarn run lint --fix', 'yarn lint --fix', 'bun run lint --fix', 'npm run check -- --write=true',
+    'npm run lint -- --apply',
+  ];
+  for (const command of writes) assert.ok(denied(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' })), command);
+  const reads = ['npm run lint', 'npm test', 'npm run test -- --reporter spec', 'pnpm run lint', 'yarn lint', 'npm run lint -- --fix-dry-run', 'npm run build -- --watch=false'];
+  for (const command of reads) assert.equal(bash(dir, ro, command, { agent_type: 'spec-gatekeeper' }), null, command);
+  assert.equal(bash(dir, ['scope', 'no-tests'], 'npm run lint -- --fix', { agent_type: 'implementer' }), null, 'a writer is left to its lane check');
+});
+
 // #396: #378 denied every extract and sync to the read-only roles, although scope none allows a write outside the
 // repo: the folder tar -C, unzip -d and rsync's last operand name was not read. It is read now where the line leaves
 // no doubt (options this hook knows, the folder named once, no member list), and judged like any other target.

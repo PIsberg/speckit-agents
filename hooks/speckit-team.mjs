@@ -2447,6 +2447,11 @@ const FORMATTERS = {
   ruff: { sub: 'format', check: /^--(check|diff)$/, fix: /^--(fix|fix-only)$/ }, cargo: { sub: 'fmt', check: /^--check$/ },
   terraform: { sub: 'fmt', check: /^-(check|diff)$/ }, biome: { write: /^--(write|apply|apply-unsafe|fix)$/ },
 };
+// #412: a package script handed a flag that makes the formatter or linter it runs rewrite files (`npm run lint -- --fix`,
+// `pnpm lint --fix`). The script's tool is not on the line, so this is a write only the run can tell. `=false` turns it off.
+const SCRIPT_RUNNERS = ['npm', 'pnpm', 'yarn', 'bun'];
+const SCRIPT_WRITE = /^--(fix|fix-only|write|apply|apply-unsafe)(=(?!(0|f|false)$).*)?$/i;
+const scriptWriteFlag = (prog, a) => (SCRIPT_RUNNERS.includes(prog) ? a.find((w) => SCRIPT_WRITE.test(w)) ?? null : null);
 function formatterWrites(prog, a) {
   const f = FORMATTERS[prog];
   if (!f || a.some((w) => /^(--version|--help|-h|-V)$/.test(w))) return false;
@@ -2633,6 +2638,7 @@ function toolWrites(prog, a) {
       if (dest === null) out.unknown = 'what rsync copies into its destination'; else { out.targets = [path.posix.join(dest, '*')]; out.folder = dest; }
     }
   } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
+  else if (scriptWriteFlag(prog, a)) out.unknown = `the files the package script run with ${scriptWriteFlag(prog, a)} rewrites`;
   return out.targets.length || out.unknown ? out : null;
 }
 function bashWrites(command) {

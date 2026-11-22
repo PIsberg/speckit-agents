@@ -1162,7 +1162,11 @@ role downloads nothing), `awk -i inplace`, `patch` (not `--dry-run`), `tar` extr
 `rustfmt`, `ruff format`, `cargo fmt`, `terraform fmt` and `dprint fmt` unless given their check flag. They
 are read through `npx`, `pnpx`, `bunx` and the `exec` or `dlx` of `npm`, `pnpm` and `yarn` as well; a script
 such a runner is handed (`npx -c '...'`, `pnpm exec --shell-mode`), and any runner option not known to
-leave the tool alone, counts the same way. A check flag counts only as
+leave the tool alone, counts the same way. A package script run through `npm`, `pnpm`, `yarn` or `bun` with
+`--fix`, `--fix-only`, `--write`, `--apply` or `--apply-unsafe` among its words (`npm run lint -- --fix`,
+`pnpm lint --fix`) counts too, since the tool it runs is not on the line
+([#412](https://github.com/PIsberg/speckit-agents/issues/412)); the same script without one of those flags,
+or with `=false`, passes, so `npm run format` is not seen. A check flag counts only as
 an option of its own, not as another option's value (`rsync --exclude -n`), and long options are read by
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
 count as their write flags. In a group of short options a letter after one that takes a value is that
@@ -1189,8 +1193,9 @@ git command that rewrites the tree (`git checkout main`, `git stash`) pass, beca
 still diffs what the command did. The read-only agents have no lane check, so `scope none` denies
 both, and allows every write outside the repo, such as a test log in a temp folder. A command it
 cannot finish reading (nested more than 8 levels) is denied. It is still not a shell: what an
-interpreter writes (`node -e`, `python -c`, a package script) is not seen, which is why the lane
-check stays. Each Bash call of a team agent starts one more hook process: 64 ms in a Spec Kit repo
+interpreter writes (`node -e`, `python -c`, a package script) is not seen, which is why the writers'
+lane check stays. A read-only agent has none, so such a write by it is seen by nothing
+([#412](https://github.com/PIsberg/speckit-agents/issues/412)). Each Bash call of a team agent starts one more hook process: 64 ms in a Spec Kit repo
 for a command with a `cd`, a pipe, a `tee` and a `sed -i`, and 45 ms outside one (mean of 20 runs
 each, p90 68 ms and 49 ms, Windows, 2026-10-31).
 
@@ -1696,11 +1701,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 669 tests:
+`npm test` runs 670 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 241 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 242 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 140 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
