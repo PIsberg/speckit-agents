@@ -95,6 +95,23 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-22</b>, second run: Claude Code 2.1.330, Windows 11, one full run on the owner's subscription from the #405 branch, passed (#405)</summary>
+
+Setup: `node tools/full-run.mjs --login`, the clean case in agents mode, from a worktree of
+`fix/405-auditor-report-tail` at `32552d7` (main at `e4a80d2` plus #405's sentence), the personal team
+reinstalled from it first (#175). Main session on Sonnet, each agent on its own `model:` line.
+`~/.claude/CLAUDE.md` loaded. $1.27, 2 turns, 311 s from the first to the last row of the main transcript.
+
+| Check | Result |
+|---|---|
+| The run | Passed every check (`failures: []`): audit PASS, `APPROVED` from the hook record, every task ticked, the repo's tests green (9 of 9). 7 foreground launches, one at a time, in the same order as the run before. |
+| spec-auditor's report | 40 lines and 3,302 characters, against 61 lines in the run before: findings table, coverage table, metrics, `VERDICT: PASS`. No next steps, no offer to edit, no Extension Hooks block (#405). One run. |
+| The hooks | No denial in any transcript; the relay carried the auditor's PASS and the implementer's STUB and GREEN. One tool error: test-writer edited its test file through a `python3` heredoc, which this machine does not have, then made the edit another way. |
+| test-writer and FR-006 | test-writer dropped its own test for "`sum` exported by name" because the stub already met it, and put FR-006's ID in the comment over FR-001's test. spec-gatekeeper approved it: the named import fails the whole file if the export is missing. The same shape as the `other-fr` scored case (#253), where the comment's FR has no such cover and the right answer is `REJECTED`. |
+
+</details>
+
+<details>
 <summary><b>2026-11-22</b>: Claude Code 2.1.330, Windows 11, one full run on the owner's subscription from main, passed (#322)</summary>
 
 Setup: `node tools/full-run.mjs --login --max-cost 6`, the clean case in agents mode, from a worktree of
