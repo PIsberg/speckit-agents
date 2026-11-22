@@ -1253,8 +1253,11 @@ rule of a fresh agent per round, keeps its `agent_id`; its next tool call closes
 each later report is counted too, and a GREEN from it resets the count
 ([#370](https://github.com/PIsberg/speckit-agents/issues/370)). The same reset keeps the `ends`
 checks (the drift check on spec-gatekeeper's `APPROVED`, test-writer's RED-fault and cited-ID checks)
-running on a resumed agent's later reports; spec-gatekeeper and security-reviewer run a hook only on
-Bash and on the hand-back, so one resumed that runs no Bash before reporting is not reset. A report made while the audit gate is closed is not counted: that implementer
+running on a resumed agent's later reports. A report that comes with no tool call before it is a new one too
+([#394](https://github.com/PIsberg/speckit-agents/issues/394)): every hand-back is a new report, and a Stop repeats
+one only right after a hand-back or when the agent's transcript and last message are those of the Stop that was
+counted, so spec-gatekeeper and security-reviewer, which hook only Bash, are checked again when resumed, and so is
+an agent under `claude -p`, where reports come at Stop. A report made while the audit gate is closed is not counted: that implementer
 never got to work.
 
 After 3 REDs in a row, `gate retries` denies the implementer every tool except reporting back,
@@ -1693,11 +1696,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 660 tests:
+`npm test` runs 664 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 235 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 239 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

@@ -372,7 +372,7 @@ const stateDir = path.join(commonDir, 'speckit-team');
 // judged a second time. An agent that works again after one (resumed with SendMessage) makes a tool call first, which
 // ends the old report: every marker goes, so its next report is checked and counted afresh. A refusal's own marker
 // stays while no report was accepted, so a report is still sent back once, never twice. spec-auditor's verdict mode
-// keeps its own reset.
+// keeps its own reset. A report with no tool call before it is told apart by markedReport() (#394).
 if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
   const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
   if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
@@ -1651,7 +1651,7 @@ if (mode === 'verdict') {
   const feat = feature();
   const ask = 'End your report with a final line that is exactly `VERDICT: PASS` or `VERDICT: FAIL`.';
   // The Stop after a handback is the same report: neither recorded twice nor asked for again.
-  if (doneFile && fs.existsSync(doneFile)) process.exit(0);
+  if (markedReport(doneFile, viaHandback, [path.join(stateDir, 'agents', `${agentKey}.verdict-asked`)])) process.exit(0);
   if (!found) {
     if (viaHandback) {
       // Refuse once, so the report gets its verdict; never twice, so the agent is never gagged.
@@ -1666,7 +1666,7 @@ if (mode === 'verdict') {
   }
   if (!feat) process.exit(0);
   const verdict = found;
-  if (doneFile) writeJson(doneFile, { verdict });
+  markReport(doneFile, viaHandback, { verdict });
   // No start record (an auditor that made no tool call, or a main-thread Stop) keeps the old rule:
   // the verdict is on the files as they are now. An unreadable one proves nothing, so it is stale.
   const start = startFile ? readState(startFile) : undefined;
@@ -1693,7 +1693,7 @@ if (mode === 'result') {
   if (!feat) process.exit(0);
   // The Stop that follows a counted handback is the same attempt, not a second one.
   const done = agentKey && path.join(stateDir, 'agents', `${agentKey}.result`);
-  if (done && fs.existsSync(done)) process.exit(0);
+  if (markedReport(done, viaHandback, [path.join(stateDir, 'agents', `${agentKey}.result-asked`)])) process.exit(0);
   const found = [...reportText(viaHandback).matchAll(/^[\s*>#]*RESULT:?[\s*]*(GREEN|RED|STUB)\b/gim)].pop();
   if (!found) {
     const ask = 'End your report with a final line that is exactly `RESULT: GREEN`, `RESULT: RED` or `RESULT: STUB`.';
@@ -1703,7 +1703,7 @@ if (mode === 'result') {
     if (!viaHandback && !input.stop_hook_active) block(ask);
   }
   const result = found ? found[1].toUpperCase() : 'RED';
-  if (done) writeJson(done, { result });
+  markReport(done, viaHandback, { result });
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
   const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
@@ -1729,6 +1729,44 @@ if (mode === 'result') {
     : `implementer reported RED for ${feat} (${red.length} of ${MAX_RED} before the retry limit).` });
 }
 
+// #394: the key of a Stop's report: the agent's transcript size (the main session's when there is none) and its last
+// message. The agent's transcript grows between two reports, so a resumed agent's next Stop has another key; every
+// hook process of one Stop has the same. null when either is missing.
+function reportKey() {
+  const last = str(input.last_assistant_message);
+  const t = str(input.agent_transcript_path) ?? str(input.transcript_path);
+  if (last === null || t === null) return null;
+  let size;
+  try { size = fs.statSync(t).size; } catch { return null; }
+  return createHash('sha256').update(`${size}\0${last}`).digest('hex').slice(0, 16);
+}
+// #394: whether the report this hook is judging is the one a marker (`file`) closed. A hand-back is always a new
+// report. A Stop repeats a hand-back's report once, right after it (the marker becomes the Stop's), and a Stop's
+// when its key is the same or cannot be told. A new report removes the marker and the mode's ask-once markers
+// (`asked`), so it is checked, sent back once and counted afresh, as #370 does at the agent's next tool call.
+function markedReport(file, viaHandback, asked = []) {
+  if (!file || !fs.existsSync(file)) return false;
+  if (!viaHandback) {
+    const m = readState(file);
+    const key = reportKey();
+    if (m?.via !== 'stop') {
+      try { writeJson(file, { ...(m && typeof m === 'object' ? m : {}), via: 'stop', key }); } catch { /* spared again, as before #394 */ }
+      return true;
+    }
+    if (key === null || m.key === null || m.key === key) return true;
+  }
+  try {
+    for (const f of [file, ...asked]) fs.rmSync(f, { force: true });
+  } catch (e) {
+    addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
+    return true;
+  }
+  return false;
+}
+function markReport(file, viaHandback, data = {}) {
+  if (file) writeJson(file, { ...data, via: viaHandback ? 'handback' : 'stop', key: viaHandback ? null : reportKey() });
+}
+
 // A report that does not end in its verdict word is unfinished, however it got sent: refuse it once,
 // so the agent finishes and resends; never twice, so it is never gagged.
 if (mode === 'ends') {
@@ -1737,7 +1775,7 @@ if (mode === 'ends') {
   const words = record ? args.slice(1) : args;
   if (!words.length || (viaHandback && input.tool_name !== 'SubagentHandback')) process.exit(0);
   const ok = agentKey && path.join(stateDir, 'agents', `${agentKey}.ends-ok`);
-  if (ok && fs.existsSync(ok)) process.exit(0);
+  if (markedReport(ok, viaHandback, ['ends-asked', 'red-asked', 'cited-asked'].map((m) => path.join(stateDir, 'agents', `${agentKey}.${m}`)))) process.exit(0);
   const word = lastWord(reportText(viaHandback));
   // #240: a RED whose output is a parse or name error ran no expectation. Sent back once, as a missing word is;
   // a second report still on the error goes through and is kept in red-faults.json, never gagged.
@@ -1786,11 +1824,11 @@ if (mode === 'ends') {
       const why = driftRefusal(gk, drifted.problems);
       if (viaHandback) deny(why);
       if (!input.stop_hook_active) block(why);
-      if (ok) writeJson(ok, {});
+      markReport(ok, viaHandback);
       writeJson(endsFile(feat), { word: 'REJECTED', claimed: 'APPROVED', drift: drifted.problems, feature: feat, at, agent_id: agentId });
       emit({ systemMessage: `speckit-team: ${gk}'s APPROVED was recorded as REJECTED: ${drifted.problems.join('; ')}` });
     }
-    if (ok) writeJson(ok, {});
+    markReport(ok, viaHandback);
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
     const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
       drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
