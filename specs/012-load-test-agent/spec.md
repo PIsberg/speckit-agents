@@ -43,7 +43,7 @@ test but scans its input quadratically; the verdict is FAIL and names the measur
 3. **Given** a feature with no load surface (a text change, a doc), **When** the role runs, **Then** it
    reports NOT MEASURED with the reason, never PASS.
 4. **Given** the role in either mode (agents, or `--team skill-agents`), **When** the same fixture
-   runs, **Then** the verdict is the same and the same guardrails hold.
+   runs, **Then** the verdict is the same and each mode's guardrails hold for the role as for every other role.
 
 ---
 
@@ -167,7 +167,7 @@ fails when it is made to fail.
 - **FR-002**: A run without the role MUST be unchanged: no launch, no added prompt text, no added hook
   process beyond what the run already starts.
 - **FR-003**: The role MUST be available in both modes, as an agent and as a skill under
-  `--team skill-agents`, with the same lane, the same verdict lines and the same guardrails.
+  `--team skill-agents`, with the same lane and the same verdict lines; the guardrails are those each mode gives every role (in skill-agents mode the hook does not check a report's last line).
 - **FR-004**: The role MUST write load-test files and its records, and run them, in the project's load-test location and
   the feature's folder, and MUST NOT change production code or functional tests.
 - **FR-005**: The role MUST run after the implementation is green and before the final approval check.
