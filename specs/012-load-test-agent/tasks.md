@@ -35,7 +35,7 @@ None: the repository, its suite and the fixture tree layout exist.
   `run`, `write`, `denied`, `pass`, `FEAT`; test/hook.test.mjs `stopAs`). A bad `.specify/test-paths`
   line gives the same refusal as `scope tests`. Add `['scope', 'load']` and `['lane', 'load']` to
   `MODES` (test/hook.test.mjs:769).
-- [ ] T002 Implement lane `load` in hooks/speckit-team.mjs. New beside `TASKS_FILE` (:61):
+- [X] T002 Implement lane `load` in hooks/speckit-team.mjs. New beside `TASKS_FILE` (:61):
   `const LOAD_PATTERNS: RegExp[]`, `const LOAD_RECORD: RegExp`; beside `inLane` (:465):
   `isLoadTest(rel: string): boolean` (`isTest(rel)` and a `LOAD_PATTERNS` match). Rule `'load'` in
   `inLane`, in `laneProblem` (:1125, its own denial text and the `testPaths.bad` check at :1149) and in
@@ -76,7 +76,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   the security-reviewer case at :1278). Helpers: `setup` :49, `session` :242, `agent` :189, `say` :181,
   `wfile` :864, `shown` :194, `lastResult` :198, `story` :307, `MAIN` :180. Both fail with
   `SPECKIT_E2E_NO_HOOK=1`.
-- [ ] T007 [US1] Add the role. New agents/load-tester.md: frontmatter per contracts/load-tester.md
+- [X] T007 [US1] Add the role. New agents/load-tester.md: frontmatter per contracts/load-tester.md
   section 2 (marker line first, as agents/security-reviewer.md), body sections `## Inputs`, `## Lane`,
   `## Report` (contract section 4; at most 100 lines overall, T013 to T021 add the rest). install.mjs:
   `AGENTS` (:63) in pipeline order; the help comment (:17 to :31: nine subagents, eight role skills, a
@@ -98,7 +98,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   `argument-hint`, `## Team` (`--load-test` among the leading flags; the existing 006 T008 test at :1334
   then checks the pipeline order), `## Handoffs` and `## Skill agents` lines, and step 7. Helpers:
   `teamSkill` :1313, `skillSection` :1324, `sectionHead` :1332, `flat` :43.
-- [ ] T009 [US1] Write the step into skills/speckit-team/SKILL.md: argument-hint, `## Handoffs`
+- [X] T009 [US1] Write the step into skills/speckit-team/SKILL.md: argument-hint, `## Handoffs`
   (load-tester: the feature directory), `## Team`, `## Skill agents`, new `## 5b. Load test:
   load-tester` (its accept path per plan.md "Pipeline step"), `## 7. Hand over` (the accepted FAIL and
   its stash). Stays under 500 lines (`test/skills.test.mjs`).
@@ -109,7 +109,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
   (agents mode, `usage.main.launches`) or called `speckit-role-load-tester` (skill-agents mode), since a
   full run never passes `--load-test`. Covers FR-002, SC-003. Pattern: the #176 security case in the test
   at :440; helpers `state` :39, `failures` :55, `roleSkills` :426, `MARKER` :54.
-- [ ] T011 [P] [US1] Implement the check in tools/full-run.mjs `checkRun` (:132), beside the
+- [X] T011 [P] [US1] Implement the check in tools/full-run.mjs `checkRun` (:132), beside the
   security-reviewer line (:161), in both modes.
 
 ## Phase 4: User Story 2: a dead benchmark cannot pass (P1)

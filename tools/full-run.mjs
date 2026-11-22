@@ -158,8 +158,11 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
       if (!called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was never called`);
     }
     // security-reviewer is opt-in (--security), and a full run never asks for it (#176).
+    if (called.includes('speckit-role-load-tester')) out.push('the Skill speckit-role-load-tester was called, but the run did not pass --load-test');
     if (called.includes('speckit-role-security-reviewer')) out.push('the Skill speckit-role-security-reviewer was called, but the run did not pass --security');
   } else if (!launches.length) out.push('no agent was launched');
+  // load-tester is opt-in (--load-test), and a full run never passes it (012).
+  if (launches.some((l) => l.type === 'load-tester')) out.push('load-tester was launched, but the run did not pass --load-test');
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
   if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {

@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...|noagents|skill-agents] [--security] [--project <name>] <feature idea>"
+argument-hint: "[--team <role>,<role>...|noagents|skill-agents] [--security] [--load-test] [--project <name>] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -53,6 +53,7 @@ and answers, or another agent's full report.
   them, and cost one more architect.
 - spec-auditor: the feature directory.
 - security-reviewer: when in spec state, the feature directory and `spec.md`; when reviewing the result, the feature directory and the command to inspect the diff (`git diff main...HEAD` or `master...HEAD`).
+- load-tester: the feature directory (`.specify/feature.json` names it) and the command to inspect the diff (`git diff main...HEAD` or `master...HEAD`).
 - test-writer: the round's test task IDs. It ticks them in `tasks.md` itself once they are red:
   do not tell it otherwise. Left unticked, they hold up the gatekeeper and cost an extra
   implementer launch only to tick them. In a one-round run (step 4-5) the brief instead.
@@ -110,16 +111,16 @@ in as many calls as it takes, all before the next launch.
   Then go on.
 
 ## Team
-`--team`, `--security` and `--project` lead the arguments before the request text, in any order (`--team <roles> --project <name>`, `--security <request>`, etc.), each at most once. A `--team`, `--security` or `--project` after the request text has started is request text.
+`--team`, `--security`, `--load-test` and `--project` lead the arguments before the request text, in any order (`--team <roles> --project <name>`, `--security <request>`, etc.), each at most once. A `--team`, `--security`, `--load-test` or `--project` after the request text has started is request text.
 
 `--team` counts only as the first word of the arguments (or the first word after a leading `--project <name>` or `--security`): `--team <role>[,<role>...] <request>`. The
 role list is the words after it up to and including the first word that does not end in a comma
 (`test-writer, implementer` and `test-writer,implementer` both name two roles). Names are
 case-insensitive, a name given twice counts once, and order does not matter. The team roles, in
 pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`, `implementer`,
-`spec-gatekeeper` and `security-reviewer`; `patcher` is not a team role (it is the fast track's).
+`load-tester`, `spec-gatekeeper` and `security-reviewer`; `patcher` is not a team role (it is the fast track's).
 The `security-reviewer` is opt-in: it is included when requested via `--security` or named in `--team`
-(`--team ...,security-reviewer` or alias `security`). All six core roles named is the full
+(`--team ...,security-reviewer` or alias `security`). The `load-tester` is opt-in too, never in the default team: it is included only when requested via `--load-test` or named in `--team` (no alias). All six core roles named is the full
 team, the same run as without `--team`.
 
 `--team noagents` (the list is the one word `noagents`, in any case) runs no agent at all: you run
@@ -190,7 +191,7 @@ Agent tool check. Wait only at the two stops below.
    instead of roles.
 
 ## Skill agents
-Only after `--team skill-agents` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. Steps 0 to 7 run as written, with no Agent call: each step's launch of a role is one Skill call to `speckit-role-<role>`, with `args` the role's Inputs from `## Handoffs`. Say in one line naming the role what you call, then call it. Run one role at a time, one role per response, never two in one message: the side by side launches of step 4-5 run one after the other, each after the previous role's report, and the side-by-side question is not asked. The architect revision after product-owner's `Spec:` lines is the same Skill call. A role the user answered a question for, or that goes on in a later turn, is called again: its lane runs from that call. Read the report as the agent's report, the message before your next call; after spec-auditor's or spec-gatekeeper's report, the Skill call starts its `args` with the report's last line (`VERDICT: PASS`, `APPROVED`); steps 1 to 6 stop where they stop and hold for the user as written. `--project <name>`: the block is already in this session from `## Project` step 2; every role follows it as `## No agents` step 1 does, so never paste it into a Skill call's `args`. With `--security`, security-reviewer runs at both points, the spec and the result. Count RED yourself: 3 rounds ending `RESULT: RED` in a row go to the user. Run the audit and its verdict before test-writer, implementer and spec-gatekeeper; the hook denies a call until VERDICT: PASS. The hook stops writes outside each role's lane and records spec-auditor's verdict and spec-gatekeeper's word. Nothing runs before it writes: a role calls the Skill before it writes.
+Only after `--team skill-agents` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. Steps 0 to 7 run as written, with no Agent call: each step's launch of a role is one Skill call to `speckit-role-<role>`, with `args` the role's Inputs from `## Handoffs`. Say in one line naming the role what you call, then call it. Run one role at a time, one role per response, never two in one message: the side by side launches of step 4-5 run one after the other, each after the previous role's report, and the side-by-side question is not asked. The architect revision after product-owner's `Spec:` lines is the same Skill call. A role the user answered a question for, or that goes on in a later turn, is called again: its lane runs from that call. Read the report as the agent's report, the message before your next call; after spec-auditor's or spec-gatekeeper's report, the Skill call starts its `args` with the report's last line (`VERDICT: PASS`, `APPROVED`); steps 1 to 6 stop where they stop and hold for the user as written. `--project <name>`: the block is already in this session from `## Project` step 2; every role follows it as `## No agents` step 1 does, so never paste it into a Skill call's `args`. With `--security`, security-reviewer runs at both points, the spec and the result. With `--load-test`, load-tester runs as `speckit-role-load-tester` at step 5b. Count RED yourself: 3 rounds ending `RESULT: RED` in a row go to the user. Run the audit and its verdict before test-writer, implementer and spec-gatekeeper; the hook denies a call until VERDICT: PASS. The hook stops writes outside each role's lane and records spec-auditor's verdict and spec-gatekeeper's word. Nothing runs before it writes: a role calls the Skill before it writes.
 
 ## Project
 `--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before any launch: say why and list available projects by running `node "{{HOOK}}" project`.
@@ -365,6 +366,17 @@ worktree, with the output and `last round`. The worktrees sit inside the reposit
 (`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
 the 2026-10-25 run committed both and spent a commit taking them out.
 
+## 5b. Load test: load-tester
+Only when load-tester is in the team (`--load-test` or named in `--team`); otherwise skip this step. Start it once the last
+round reports `RESULT: GREEN` and before spec-gatekeeper, in the foreground (`run_in_background: false`). With no implementer
+in the team it measures the build as it stands. Read its report: the last line must be exactly `PASS`, `FAIL` or `NOT MEASURED`;
+an absent or any other last line is refused, so relaunch it once and then hand it to the user. Its files (load tests and
+`specs/<feature>/load-test.md`) are committed together with the message that launches spec-gatekeeper.
+- `PASS`: go on to step 6.
+- `NOT MEASURED`: go on, and list it as reported in step 7.
+- `FAIL`: **Stop:** show the report and ask the user to fix or accept. On accept, commit only `load-test.md` and stash the load tests with
+  `git stash push --include-untracked -- <the load test files>`, then go on to step 6.
+
 ## 6. Verify: spec-gatekeeper
 Only when spec-gatekeeper is in the team; without it, skip this step. Start it as soon as the last
 round reports `RESULT: GREEN` and every task in `tasks.md` is ticked; when implementer is absent,
@@ -391,6 +403,6 @@ If security-reviewer is in the team: after spec-gatekeeper verification (or afte
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
-Report the active project (when one was active), the roles that ran with each one's verdict (including security-reviewer when opted in), a row for each absent role as skipped, the
+Report the active project (when one was active), the roles that ran with each one's verdict (including security-reviewer and load-tester when opted in; load-tester not asked for gets no skipped row), a row for each other absent role as skipped, the stash of an accepted load-test FAIL (the load tests it holds and how to restore them), the
 unticked tasks and anything still open. In a run with implementer and no active feature, say the
 retry limit was the skill's count, not the hook's.
