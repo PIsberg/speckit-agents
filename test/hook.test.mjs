@@ -1734,6 +1734,27 @@ test('team choice: a typed --team is the user\'s choice, a first prompt is held 
   assert.ok(!denied(agentLaunch(c.dir, 'go\nTeam: implementer')), 'no transcript_path at all: as before');
 });
 
+// #397: Claude Code writes the session transcript some time after the request; in CI on macOS the first team launch
+// came before it, so the transcript did not exist, answeredSince read it as answered, and the hold failed open (traced
+// on the runner: 20 of 20 in one run, 0 of 20 in another). A transcript that is not written yet holds no answer.
+test('#397: a transcript not written yet at the first launch holds no answer; once it holds one, the launch goes', () => {
+  const { dir } = choiceRepo();
+  const later = path.join(dir, '..', `later-${path.basename(dir)}.jsonl`);
+  typedTeam(dir, 'add sum()', { transcript_path: later });
+  const out = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: later });
+  assert.ok(denied(out), 'held while nothing is written');
+  assert.match(reasonOf(out), /nobody chose this team/);
+  fs.writeFileSync(later, `${NOT_ANSWERS.join('\n')}\n`);
+  assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: later })), 'and while it holds no answer');
+  fs.appendFileSync(later, `${userLine('Implement only.')}\n`);
+  assert.ok(!denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: later })), 'the answer lets it go');
+  // The typed --team hold of #373 reads the same way.
+  const b = choiceRepo();
+  const later2 = path.join(b.dir, '..', `later2-${path.basename(b.dir)}.jsonl`);
+  typedTeam(b.dir, '--team spec-auditor,test-writer,implementer add sum()', { transcript_path: later2 });
+  assert.ok(denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: later2 })));
+});
+
 test('team choice: once a launch went, later ones are not held; a new typed request asks again (#366)', () => {
   const { dir, t, add } = choiceRepo();
   typedTeam(dir, 'add sum()', { transcript_path: t });

@@ -708,7 +708,10 @@ function linesAfter(file, offset) {
 // A transcript that cannot be read proves nothing either way, so it holds nothing (hooks fail open).
 const NOT_AN_ANSWER = /^(<|Base directory for this skill|Stop hook feedback|\[Request interrupted)/;
 function answeredSince(rec) {
-  const entries = Number.isInteger(rec?.offset) ? linesAfter(rec.transcript, rec.offset) : null;
+  // #397: a transcript that does not exist yet holds no answer. Claude Code writes it some time after the request, and a
+  // first launch can come before that; read as unreadable, it counted as answered and the hold failed open.
+  const unwritten = typeof rec?.transcript === 'string' && rec.transcript && !fs.existsSync(rec.transcript);
+  const entries = Number.isInteger(rec?.offset) ? (unwritten ? [] : linesAfter(rec.transcript, rec.offset)) : null;
   if (!entries) return true;
   const asks = new Set();
   for (const l of entries) {
