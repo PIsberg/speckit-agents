@@ -2322,9 +2322,135 @@ const writesUnseen = (words) => {
     return a.some((x) => /^-(delete|fprint0?|fprintf|fls)$/.test(x)) || a.some((x, k) => /^-(exec|execdir|ok|okdir)$/.test(x) && writesUnseen(a.slice(k + 1)));
   }
   if (SHELLS.has(p)) return true;
+  const { words: run, script } = unrunner(w);
+  if (script || (run.length && toolWrites(program(run[0]), run.slice(1)))) return true;
   return EVERY_ARG.has(p) || TO_DEST.has(p) || p === 'git' || (p === 'dd' && w.some((x) => x.startsWith('of=')))
     || ((p === 'sed' || p === 'perl') && w.some((x) => /^-[a-zA-Z]*i|^--in-place/.test(x)));
 };
+// #378: the package runners that only run a tool's binary: npx, pnpx and bunx, and the exec and dlx of npm, pnpm and
+// yarn. The words of the tool they run, after their own options (-p and --package take a value). A script they run
+// (`npx -c '...'`, `--call`) is not read, so it comes back as `script`: a write only the run can tell.
+function unrunner(words) {
+  let w = words; const p = program(w[0] ?? '');
+  if (['npm', 'pnpm', 'yarn'].includes(p) && ['exec', 'dlx', 'x'].includes(w[1])) w = w.slice(2);
+  else if (['npx', 'pnpx', 'bunx'].includes(p)) w = w.slice(1);
+  else return { words };
+  // Only options known to change nothing about what runs are skipped; any other (`--call` by any prefix, pnpm's
+  // `--shell-mode`, one not known here) may hand the runner a script, so it fails closed.
+  let k = 0;
+  while (k < w.length && w[k].startsWith('-')) {
+    if (w[k] === '--') { k++; break; }
+    if (/^(-p|--package)$/.test(w[k])) { k += 2; continue; }
+    if (/^(-y|--yes|--no|--no-install|-q|--quiet|-s|--silent|--ignore-existing|--bun|--package=.*)$/.test(w[k])) { k++; continue; }
+    return { words: [], script: true };
+  }
+  return { words: w.slice(k) };
+}
+// A long option as getopt_long takes it: the whole name or any prefix of it of at least `min` characters, with its
+// value attached or as the next word. An ambiguous prefix fails in the tool and writes nothing, so reading it as
+// every option it could be only errs toward a deny.
+const longIs = (w, name, min = 4) => { const m = /^(--[A-Za-z][\w-]*)(=|$)/.exec(w); return Boolean(m) && m[1].length >= min && name.startsWith(m[1]); };
+// The words before `--` that are options, without the values of the options in `valued` (short ones as written,
+// long ones by name, abbreviations included): a check flag that is another option's value (`--exclude -n`) is not
+// one. `stop` is an option after which every word is an operand (unzip's -x).
+function optionWords(a, { valued = [], stop = null } = {}) {
+  const out = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '--' || (stop && w === stop)) break;
+    if (!w.startsWith('-') || w === '-') continue;
+    out.push(w);
+    if (w.includes('=')) continue;
+    if (valued.some((v) => (v.startsWith('--') ? longIs(w, v) : w === v || new RegExp(`^-[A-Za-z]*${v.slice(1)}$`).test(w)))) k++;
+  }
+  return out;
+}
+// #378: formatters and linters that write the files they are given when a flag says so (`write`), or unless a
+// flag says they only check (`check`). What they write depends on their config and the files they find, so it is
+// a write only the run can tell. Go and LLVM take a boolean flag with one dash or two, and `=true`.
+const BOOL_ON = '(=(1|t|true))?$';
+const FORMATTERS = {
+  prettier: { write: /^(--write|-w)$/ }, eslint: { write: /^--fix$/ }, stylelint: { write: /^--fix(=|$)/ }, standard: { write: /^--fix$/ },
+  xo: { write: /^--fix$/ }, tslint: { write: /^--fix$/ }, gofmt: { write: new RegExp(`^--?w${BOOL_ON}`, 'i') },
+  goimports: { write: new RegExp(`^--?w${BOOL_ON}`, 'i') }, 'clang-format': { write: new RegExp(`^--?i${BOOL_ON}`, 'i') },
+  autopep8: { write: /^(-i|--in-place)$/ }, black: { check: /^--(check|diff)$/ }, isort: { check: /^(--check-only|--check|-c|--diff)$/ },
+  rustfmt: { check: /^--check$/ }, dprint: { sub: 'fmt', check: /^--(check|diff)$/ },
+  ruff: { sub: 'format', check: /^--(check|diff)$/, fix: /^--(fix|fix-only)$/ }, cargo: { sub: 'fmt', check: /^--check$/ },
+  terraform: { sub: 'fmt', check: /^-(check|diff)$/ }, biome: { write: /^--(write|apply|apply-unsafe|fix)$/ },
+};
+function formatterWrites(prog, a) {
+  const f = FORMATTERS[prog];
+  if (!f || a.some((w) => /^(--version|--help|-h|-V)$/.test(w))) return false;
+  if (f.fix && a.some((w) => f.fix.test(w))) return true;
+  if (f.sub) return a[0] === f.sub && !a.some((w) => f.check.test(w));
+  if (f.write) return a.some((w) => f.write.test(w));
+  return !a.some((w) => f.check.test(w));
+}
+// Whether a short-option group (`-avn`) holds one of `letters` before a letter of `valued`, whose value is the rest
+// of the word (`-aen` is -a and -e with the value n).
+function groupHas(w, letters, valued) {
+  if (!/^-[^-]/.test(w)) return false;
+  for (const c of w.slice(1)) { if (valued.includes(c)) return false; if (letters.includes(c)) return true; }
+  return false;
+}
+// #378: whether tar extracts: its mode letters old style (`xzf`) or as options (`-x`, `--extract`, `--get`, by any
+// prefix getopt_long takes). A word that only looks like one errs toward a deny.
+const tarExtracts = (a) => (a[0] && !a[0].startsWith('-') ? /x/.test(a[0]) : false)
+  || a.some((w) => /^-[A-Za-z]*x/.test(w) || longIs(w, '--extract', 5) || longIs(w, '--get', 4));
+const RSYNC_VALUED = ['-e', '-f', '-B', '-T', '-M', '--exclude', '--include', '--filter', '--rsh', '--exclude-from', '--include-from',
+  '--files-from', '--log-file', '--log-file-format', '--temp-dir', '--partial-dir', '--backup-dir', '--compare-dest', '--copy-dest',
+  '--link-dest', '--suffix', '--chmod', '--chown', '--usermap', '--groupmap', '--password-file', '--out-format', '--max-size',
+  '--min-size', '--timeout', '--contimeout', '--port', '--sockopts', '--bwlimit', '--modify-window', '--iconv', '--rsync-path',
+  '--info', '--debug', '--skip-compress', '--block-size', '--max-delete', '--checksum-choice', '--compress-choice',
+  '--compress-level', '--outbuf', '--stop-after', '--stop-at', '--write-batch', '--only-write-batch', '--read-batch', '--protocol',
+  '--remote-option'];
+const PATCH_VALUED = ['-p', '-i', '-o', '-d', '-B', '-D', '-F', '-r', '-V', '-z', '-Y', '-g', '--strip', '--input', '--output',
+  '--directory', '--prefix', '--ifdef', '--fuzz', '--reject-file', '--version-control', '--suffix', '--basename-prefix', '--get',
+  '--quoting-style', '--reject-format', '--read-only'];
+// #378: what curl, wget, sort, awk -i inplace, patch, tar, unzip and rsync write: `targets` they name, and `unknown`
+// when only the run can tell (a file named by its URL, an archive's contents, a patch's files, a sync's destination).
+function toolWrites(prog, a) {
+  const out = { targets: [], unknown: null };
+  // The value of an option, attached (`-ofile`, `--output=file`) or as the next word, with short options grouped
+  // and the valued one last (`-sSLo file`); a long one by any prefix when the tool takes prefixes.
+  const valuesOf = (short, long, prefixes = false) => a.flatMap((w, k) => {
+    const isLong = long && (prefixes ? longIs(w, long) : w === long || w.startsWith(`${long}=`));
+    if (isLong) return w.includes('=') ? [w.slice(w.indexOf('=') + 1)] : a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && new RegExp(`^-[A-Za-z]*${short}$`).test(w)) return a[k + 1] === undefined ? [] : [a[k + 1]];
+    if (short && w.startsWith(`-${short}`) && w.length > 2 && !w.startsWith('--')) return [w.slice(2)];
+    return [];
+  });
+  if (prog === 'curl') {
+    // Like wget, curl writes through many options (-O, -D, -c, --trace, --stderr, --output-dir, ...), -K files and
+    // ~/.curlrc, so every curl is a write only the run can tell; the file -o names is judged as well.
+    out.targets = valuesOf('o', '--output').filter((v) => v !== '-');
+    out.unknown = 'what curl writes';
+  } else if (prog === 'wget') {
+    // Where wget writes is set by its options (-O, the logs, --save-cookies, --warc-file and more), by -e commands, by
+    // --config, and by WGETRC or ~/.wgetrc, which a command line does not show. So every wget is a write only the run
+    // can tell; the files its options name are judged as well. A read-only role fetches with curl instead.
+    out.targets = [...valuesOf('O', '--output-document', true).filter((v) => v !== '-'), ...valuesOf('o', '--output-file', true),
+      ...valuesOf('a', '--append-output', true)];
+    out.unknown = 'what wget writes';
+  } else if (prog === 'sort') out.targets = valuesOf('o', '--output', true);
+  else if (prog === 'awk' || prog === 'gawk') {
+    // Which operands are files depends on gawk's options; telling them apart is not worth a reader that can be wrong.
+    if (a.some((w) => /inplace/.test(w))) out.unknown = 'the files awk -i inplace rewrites';
+  } else if (prog === 'patch') {
+    if (!optionWords(a, { valued: PATCH_VALUED }).some((w) => longIs(w, '--dry-run', 5))) out.unknown = 'the files patch changes';
+  } else if (prog === 'tar') {
+    if (tarExtracts(a)) out.unknown = 'what tar extracts';
+  } else if (prog === 'unzip') {
+    // unzip turns an option off with a - inside its group (`-l-`) or a doubled dash (`--l`): such a word fails closed.
+    const opts = optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' });
+    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
+  } else if (prog === 'rsync') {
+    if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
+      out.unknown = 'what rsync copies into its destination';
+    }
+  } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
+  return out.targets.length || out.unknown ? out : null;
+}
 function bashWrites(command) {
   const found = { targets: [], unknown: [], tree: [] };
   let dir = cwd;
@@ -2342,6 +2468,14 @@ function bashWrites(command) {
     const words = unprefixed(cmd);
     if (!words.length) continue;
     const prog = program(words[0]); const a = words.slice(1);
+    const { words: run, script } = unrunner(words);
+    if (script) { found.unknown.push(`the script ${prog} runs`); continue; }
+    const tool = run.length ? toolWrites(program(run[0]), run.slice(1)) : null;
+    if (tool) {
+      tool.targets.forEach((w) => at(w));
+      if (tool.unknown) found.unknown.push(tool.unknown);
+      continue;
+    }
     if (prog === 'cd' || prog === 'pushd') {
       const d = positionals(a)[0];
       if (d === undefined) dir = os.homedir();
