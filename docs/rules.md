@@ -295,7 +295,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/spec-auditor.md: Process
 <!-- fingerprint: 287cccab -->
-- speckit-analyze, read-only. hook `scope none`.
+- speckit-analyze, read-only. hook `scope none`, `lane none` (#412).
 - Read each artifact once; grep the rest. text, unseen (cost).
 - A second implementation of existing behaviour is HIGH. pinned.
 
@@ -377,7 +377,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/spec-gatekeeper.md: (opening)
 <!-- fingerprint: 2fa87321 -->
-- Verifies and fixes nothing. hook `scope none`.
+- Verifies and fixes nothing. hook `scope none`; `lane none` warns only (#412).
 
 ### agents/spec-gatekeeper.md: Inputs
 <!-- fingerprint: 6c1ebb55 -->
@@ -404,7 +404,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/security-reviewer.md: (opening)
 <!-- fingerprint: 890c59bc -->
-- Finds flaws, fixes nothing. hook `scope none`.
+- Finds flaws, fixes nothing. hook `scope none`, `lane none` (#412).
 
 ### agents/security-reviewer.md: Inputs
 <!-- fingerprint: ce64a755 -->

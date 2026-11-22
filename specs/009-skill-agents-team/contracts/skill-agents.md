@@ -111,9 +111,10 @@ applies. No role record, or a subagent: no decision. An ended record (section 8)
 `lane role` from a subagent (`agent_id` set, the hook firing as its `SubagentStop`): no decision, and
 the main session's role stays acting; its own Stop closes it (#177).
 
-1. Lane, for a role whose rule is not `none`: `changedSince(sha)` minus `dirty`, outside the role's
-   rule. A read-only role gets no lane check at close, as its agent has no `lane` hook in a default run
-   (SC-006, plan D7); section 5 denies its Write and Edit calls as the agent's `disallowedTools` do. At a Skill
+1. Lane: `changedSince(sha)` minus `dirty`, outside the role's rule; for a read-only role (`none`) every
+   such file is outside, as its agent's `lane none` has it (plan D7, revised 2026-11-22, #412). spec-gatekeeper's
+   is only a WARNING, never a deny or a block; section 5 denies a read-only role's Write and Edit calls as the
+   agent's `disallowedTools` do. At a Skill
    call: deny, `Lane check: <role> changed files outside its lane: <files>. Restore them (git checkout
    <sha 12> -- <file>, or delete new files), then go on.` At Stop: `block` with the same text, once per
    role record (step 5), then a `WARNING` system message as the agents' lane check gives.

@@ -230,6 +230,13 @@ default run blocks" (audit finding M2).
   every file a read-only role changes, through any tool, blocks its close; 0 guardrails are dropped
   without being named at run start.
 
+Revised (2026-11-22, #412, the owner's go-ahead to follow the recommendation on #404): a C, between A and B. Every
+read-only role gets a lane check at close, in both modes, since `scope none` cannot read an interpreter's or a package
+script's writes and a read-only role's such write was seen by nothing. spec-auditor and security-reviewer, which run no
+tests, are blocked as B says; spec-gatekeeper, whose `npm test` may leave files, only gets a WARNING, so A's reason
+holds: its test run never blocks its own close. Agents: `lane none` at Stop, started by the `start` entry. Role skills:
+`closeRole` judges a `none` role, with `LANE_WARN_ONLY` in the hook naming spec-gatekeeper for both.
+
 ### D8. When does a role's lane end if its turn ends with no Stop?
 
 Answer (2026-10-25): A, as recommended. How the end is read: D11 (open), which keeps A's behaviour.

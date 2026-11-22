@@ -783,7 +783,7 @@ function runRaw(dir, args, text) {
   const r = spawnSync('node', [HOOK, ...args], { input: text, encoding: 'utf8', cwd: dir });
   return { status: r.status, out: r.stdout ? JSON.parse(r.stdout) : null, stderr: r.stderr };
 }
-const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']];
+const MODES = [['scope', 'no-tests'], ['scope', 'tests'], ['scope', 'protected'], ['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['lane', 'none'], ['start'], ['patch'], ['relay']];
 
 // #215: in a sandbox that denies reading ~/.gitconfig, git for Windows 2.56 fails every command ("fatal:
 // unknown error occurred while reading the configuration files"), not only warns. On the Linux and macOS
@@ -856,7 +856,7 @@ test('malformed input outside a Spec Kit repo stays silent', () => {
 test('an event a mode is not wired for makes no decision', () => {
   const { dir } = repo();
   for (const payload of [{}, { hook_event_name: 'NoSuchEvent' }, { hook_event_name: 'PostToolUse', tool_name: 'Bash' }]) {
-    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['start'], ['patch'], ['relay']]) {
+    for (const args of [['gate'], ['gate', 'retries'], ['verdict'], ['result'], ['ends', '--record', 'APPROVED', 'REJECTED'], ['ends', 'RED', 'BLOCKED'], ['lane', 'no-tests'], ['lane', 'only', 'specs/'], ['lane', 'none'], ['start'], ['patch'], ['relay']]) {
       const out = run(dir, args, payload);
       assert.ok(!decided(out), `${args.join(' ')} on ${JSON.stringify(payload)}: ${JSON.stringify(out)}`);
     }
@@ -1076,6 +1076,47 @@ test('lane only (#88): a Bash write outside the prefixes blocks the stop; the la
   subagentStart(dir, 'a3');
   w('.specify/test-paths', '[unclosed\n');
   assert.equal(laneOnly(dir, 'a3', ['specs/', 'CLAUDE.md', '.specify/']), null);
+});
+
+// #412, #404: scope none reads a read-only agent's Bash before it runs, so a write through an interpreter or a package script
+// (`node -e`, `npm run format`) or through a link made after the check went unseen. The `start` entry now records where
+// spec-auditor, spec-gatekeeper and security-reviewer start, and `lane none` at their Stop counts every changed file.
+// 009 D7, revised 2026-11-22: spec-gatekeeper runs the repo's tests, whose output must never block its close, so it is
+// only warned; spec-auditor and security-reviewer run none and are sent back once, as the writers are.
+const laneNone = (dir, agent_id, agent_type, extra = {}) => run(dir, ['lane', 'none'], { hook_event_name: 'SubagentStop', agent_id, agent_type, ...extra });
+test('#412: lane none sends spec-auditor and security-reviewer back once for any changed file; dirty and ignored files pass', () => {
+  const { dir, write: w } = repo();
+  fs.writeFileSync(path.join(dir, '.gitignore'), '*.log\n');
+  w('README.md', 'wip\n');
+  for (const role of ['spec-auditor', 'security-reviewer']) {
+    const id = `ro-${role}`;
+    assert.equal(subagentStart(dir, id, role), null, 'the start entry decides nothing');
+    assert.match(startRecord(dir, id).sha, /^[0-9a-f]{40}$/, `${role}: a start record`);
+    w('README.md', `wip, changed by ${role}\n`);
+    w('audit.log', 'ignored\n');
+    assert.equal(laneNone(dir, id, role), null, `${role}: a file dirty at its start and an ignored one are no change`);
+    subagentStart(dir, `${id}-2`, role);
+    w(`src/${role}.js`, 'written through node -e\n');
+    const out = laneNone(dir, `${id}-2`, role);
+    assert.equal(out?.decision, 'block', JSON.stringify(out));
+    assert.match(out.reason, new RegExp(`^Lane check: ${role} changed files outside its lane: src/${role}\\.js\\. Restore them`));
+    const again = laneNone(dir, `${id}-2`, role);
+    assert.notEqual(again?.decision, 'block', 'sent back once, never twice');
+    assert.match(again?.systemMessage ?? '', new RegExp(`WARNING: ${role} left changes outside its lane: src/${role}\\.js`));
+    fs.rmSync(path.join(dir, 'src', `${role}.js`));
+  }
+});
+
+test('#412 (009 D7 revised): lane none only warns spec-gatekeeper, so its own test output never blocks its close', () => {
+  const { dir, write: w } = repo();
+  subagentStart(dir, 'gk1', 'spec-gatekeeper');
+  w('coverage-summary.txt', 'x\n');
+  const out = laneNone(dir, 'gk1', 'spec-gatekeeper');
+  assert.notEqual(out?.decision, 'block', JSON.stringify(out));
+  assert.match(out?.systemMessage ?? '', /WARNING: spec-gatekeeper left changes outside its lane: coverage-summary\.txt/);
+  assert.ok(!fs.existsSync(path.join(stateDir(dir), 'agents', 'gk1.json')), 'the start record is used up');
+  subagentStart(dir, 'gk2', 'spec-gatekeeper');
+  assert.equal(laneNone(dir, 'gk2', 'spec-gatekeeper'), null, 'nothing changed: nothing said');
 });
 
 // Retry limit: an implementer that keeps failing would otherwise loop on minor tweaks, burning
@@ -2483,7 +2524,7 @@ test('project start: with a record, SubagentStart gives the block as additionalC
     const out = startAs(dir, role, { agent_id: `a-${role}` });
     assert.deepEqual(out, { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: blockOf(dir, 'billing') } }, role);
   }
-  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-product-owner.json'], 'lane start records for the two planning roles only');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-product-owner.json', 'a-spec-auditor.json', 'a-spec-gatekeeper.json'], 'lane start records for the roles no gate starts: the two planning roles and the read-only ones (#412)');
   assert.equal(startAs(dir, 'implementer', { session_id: 's2' }), null, "another session's record is not used");
 });
 
@@ -2872,7 +2913,8 @@ test('009 T007 FR-008 contract 4 step 5 and data-model: product-owner is let thr
   assert.equal(typeof r2.fingerprint, 'string');
   assert.equal(r2.offset, null);
   assert.equal(r2.transcript ?? null, null);
-  // A file dirty when the role starts is recorded.
+  // A file dirty when the role starts is recorded. spec-auditor closes first: since #412 a file written while it acts is its change.
+  assert.ok(!decided(stopRole(dir)));
   fs.writeFileSync(path.join(dir, 'src', 'main', 'Dirty.java'), 'x');
   skillCall(dir, 'speckit-role-architect');
   assert.deepEqual(roleRec(dir).dirty, ['src/main/Dirty.java']);
@@ -3243,17 +3285,31 @@ test('009 T013 FR-008 contract 6: a committed file outside the lane counts; one 
   assert.match(stop.reason, /Lane check: test-writer changed files outside its lane: .*src\/main\/Impl\.java/);
 });
 
-test('009 T013 plan D7 contract 6: a read-only role gets no lane check at close', () => {
+// 009 D7, revised 2026-11-22 (#412): a read-only role's changes are checked at close as its agent's are: spec-auditor and
+// security-reviewer are held to no change at all, spec-gatekeeper, whose test runs may leave files, is only warned.
+test('009 T013 plan D7 (revised, #412) contract 6: a read-only role is held to no change at close; spec-gatekeeper only warned', () => {
   const { dir } = repo();
   skillAgentsTeam(dir);
   assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor')));
   putFile(dir, 'src/written-through-bash.js');
+  const next = skillCall(dir, 'speckit-role-architect');
+  assert.ok(denied(next), JSON.stringify(next));
+  assert.match(reasonOf(next), /^Lane check: spec-auditor changed files outside its lane: src\/written-through-bash\.js\./);
   const stop = stopRole(dir);
-  assert.ok(!decided(stop), JSON.stringify(stop));
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  fs.rmSync(path.join(dir, 'src', 'written-through-bash.js'));
+  assert.ok(!decided(stopRole(dir)), 'restored: the close goes through');
   assert.ok(!hasRole(dir), 'removed at Stop');
-  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-auditor')));
+  pass(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper')));
   putFile(dir, 'src/again.js');
-  assert.ok(!decided(skillCall(dir, 'speckit-role-architect')), 'the next role is let through');
+  const gk = stopRole(dir);
+  assert.notEqual(gk?.decision, 'block', JSON.stringify(gk));
+  assert.match(msg(gk) ?? '', /WARNING: spec-gatekeeper left changes outside its lane: src\/again\.js/);
+  assert.ok(!hasRole(dir), 'removed at Stop');
+  assert.ok(!decided(skillCall(dir, 'speckit-role-spec-gatekeeper')));
+  const gkNext = skillCall(dir, 'speckit-role-architect');
+  assert.ok(!decided(gkNext), `the next role is let through after spec-gatekeeper: ${JSON.stringify(gkNext)}`);
   assert.equal(roleRec(dir).role, 'architect');
 });
 
