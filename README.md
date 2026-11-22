@@ -1696,7 +1696,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 666 tests:
+`npm test` runs 668 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1711,7 +1711,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 20 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 9 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
-| [`test/live-board.test.mjs`](test/live-board.test.mjs) | 3 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs) |
+| [`test/live-board.test.mjs`](test/live-board.test.mjs) | 5 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs), and how its width probe treats a probe that shows nothing typed, with a fake vhs (#408) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 23 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 35 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |

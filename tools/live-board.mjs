@@ -40,6 +40,12 @@ const STATUS = /^\s*(⚠ speckit-board: .*?)\s*$/m;
 export const screens = (text) => text.split(/^─{80}$/m);
 // The terminal's width: Claude Code's rules span it, as does a wrapped line.
 export const widest = (text) => Math.max(0, ...text.split(/\r?\n/).map((l) => [...l].length));
+// A width probe's columns: its widest line that holds the typed x's, or null when no screen shows them. vhs's own
+// 80-character screen rules are no reading (#408: on Windows a first probe typed before pwsh was ready showed only them).
+export const probeColumns = (text) => {
+  const typed = text.split(/\r?\n/).filter((l) => l.includes('xxxx'));
+  return typed.length ? widest(typed.join('\n')) : null;
+};
 
 // The checks, read off the screens and the two hash files L6 writes from Claude Code's own shell.
 export function verdicts(text, { before, after, variant = 'band' }) {
@@ -176,21 +182,25 @@ function vhs(tapeFile, work, env) {
 
 // The font vhs finds differs by OS, and with it the pixels a column takes. A probe types a line longer
 // than the terminal, so its first row is as wide as the terminal; a few probes find the width in
-// pixels that gives COLUMNS columns. 1692 pixels gave 140 on Windows 11.
-export async function widthFor(work, env, start = 1692) {
+// pixels that gives COLUMNS columns. 1692 pixels gave 140 on Windows 11. A probe that shows no typed line is
+// run again; when none gives COLUMNS the run fails with the readings, never with a width it did not probe (#408).
+export async function widthFor(work, env, start = 1692, run = vhs) {
   let width = start;
-  for (let probe = 1; probe <= 4; probe++) {
+  const seen = [];
+  for (let probe = 1; probe <= 6; probe++) {
     const out = path.join(work, `probe-${probe}.txt`);
     const file = path.join(work, `probe-${probe}.tape`);
     fs.writeFileSync(file, [`Output "${out}"`, `Set Shell ${SHELL}`, 'Set FontSize 16', `Set Width ${width}`, 'Set Height 300',
       'Set TypingSpeed 1ms', `Type "${'x'.repeat(COLUMNS * 2)}"`, 'Sleep 1s'].join('\n'));
-    const { code, err } = await vhs(file, work, env);
+    const { code, err } = await run(file, work, env);
     if (code !== 0) throw new Error(`the width probe failed: vhs exited ${code}\n${err.slice(-1500)}`);
-    const columns = widest(fs.readFileSync(out, 'utf8'));
+    const columns = probeColumns(fs.readFileSync(out, 'utf8'));
+    seen.push(`${width} px: ${columns ?? 'nothing typed'}`);
     if (columns === COLUMNS) return width;
-    width = Math.round(width * (COLUMNS + 0.5) / columns);
+    // Nothing typed on screen: the same width again.
+    if (columns !== null) width = Math.round(width * (COLUMNS + 0.5) / columns);
   }
-  return width;
+  throw new Error(`no width gave ${COLUMNS} columns in ${seen.length} probes (${seen.join('; ')}); the probes' screens are in ${work}`);
 }
 
 // The keys. L6 hashes the same files before and after the clear from Claude Code's own `!` shell.

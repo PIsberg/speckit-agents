@@ -95,6 +95,25 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-22</b>: Claude Code 2.1.330, Windows 11, one full run on the owner's subscription from main, passed (#322)</summary>
+
+Setup: `node tools/full-run.mjs --login --max-cost 6`, the clean case in agents mode, from a worktree of
+main at `8d1955a` (the personal team reinstalled from it first, since `--login` refuses a personal skill
+whose build differs, #175). The main session on Sonnet, each agent on its own `model:` line (architect and
+spec-auditor on Opus). `~/.claude/CLAUDE.md` loaded. $1.25, 389 s, 2 turns.
+
+| Check | Result |
+|---|---|
+| The run | Passed every check (`failures: []`): audit PASS, `APPROVED` from the hook record, every task ticked, the repo's tests green (7 of 7). 7 foreground launches, one at a time: product-owner, architect, spec-auditor, a stub implementer, test-writer, implementer, spec-gatekeeper; no wait. |
+| The hooks | No denial and no tool error in any transcript. Every report ended on its word at the first try; the relay carried the auditor's PASS and the implementer's STUB and GREEN to the main session. Under `claude -p` no agent called `SubagentHandback`: every report came at its Stop, which is what #394's Stop half (PR #406) covers. |
+| test-writer's wording | Each test a bullet ending "It fails with `Error: not implemented`." or "with the same error"; the wording #395's fault pattern (PR #407) now fits for a SyntaxError. |
+| New transcript rows | Claude Code 2.1.330 writes `api-request-blob`, `api-request-shape`, `api-request` and `data-flow-records` rows; 3 blob rows of role `assistant` among 195 in the main transcript. Nothing was misread; the reader no longer takes them (#403, PR #409). |
+| spec-auditor's report | 61 lines, over its 60-line limit: 13 were speckit-analyze's next steps, an offer to edit, and its Extension Hooks block (#405). |
+| The board, `tools/live-board.mjs band` | L3 failed twice in three runs at 141 columns: the first width probe saw no typed line and read vhs's 80-character screen rule (#408). With #408's fix it ran at 1692 px and 140 columns, L3 to L6 passed. |
+
+</details>
+
+<details>
 <summary><b>2026-11-15</b>: Claude Code 2.1.325, Windows 11, two <code>--skill-agents</code> runs on the owner's subscription after #331 to #337, both passed (#332)</summary>
 
 Setup: `node tools/full-run.mjs --login --skill-agents`, first with `--case defect`, then the clean

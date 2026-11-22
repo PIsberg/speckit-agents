@@ -4,7 +4,10 @@
 // screen after each command of the tape, between lines of 80 box rules.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { verdicts } from '../tools/live-board.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { verdicts, widthFor } from '../tools/live-board.mjs';
 
 const BAND = '◆ 001-greet ✓ ✓ ✓ ✓ ◐ build ○ │ 1/3 [ board ] [ clear ] [ hide ]';
 const STATUS = '  ⚠ speckit-board: 001-greet · ◐ build (1/3)';
@@ -53,4 +56,37 @@ test('the pane variant leaves L5 unchecked, reported as such', () => {
   const l5 = verdicts(join(SCREENS), { before: HASHES, after: HASHES, variant: 'pane' }).find((r) => r.id === 'L5');
   assert.equal(l5.skipped, true);
   assert.match(l5.name, /not checked/);
+});
+
+// #408: on Windows the first probe showed no typed line, only vhs's 80-character screen rules, and the search read
+// that as 80 columns: it went to 2972 px, never came back to 1692 within four probes, and returned an unprobed width,
+// so L3 failed at 141 columns. A fake vhs gives widthFor the readings: a probe that shows nothing typed is no reading.
+const RULE = '─'.repeat(80);
+const fakeVhs = (columnsAt) => {
+  const calls = [];
+  const run = async (tapeFile) => {
+    const tape = fs.readFileSync(tapeFile, 'utf8');
+    const width = Number(/Set Width (\d+)/.exec(tape)[1]);
+    const out = /Output "([^"]+)"/.exec(tape)[1];
+    calls.push(width);
+    const cols = columnsAt(width, calls.length);
+    const typed = cols === null ? [] : [`PS C:\\r> ${'x'.repeat(cols - 10)}`, 'x'.repeat(cols), 'x'.repeat(20)];
+    fs.writeFileSync(out, ['', RULE, ...typed, '', RULE, ''].join('\n'));
+    return { code: 0, err: '' };
+  };
+  return { run, calls };
+};
+const at = (width) => Math.floor(width / 12.08);
+
+test('widthFor (#408): a probe that shows nothing typed is probed again, not read as 80 columns', async () => {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-408-'));
+  const { run, calls } = fakeVhs((width, n) => (n === 1 ? null : at(width)));
+  assert.equal(await widthFor(work, {}, 1692, run), 1692);
+  assert.deepEqual(calls, [1692, 1692]);
+});
+
+test('widthFor (#408): probes that never give 140 columns fail with what they read, not with a width nobody probed', async () => {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-408-'));
+  const { run } = fakeVhs(() => null);
+  await assert.rejects(widthFor(work, {}, 1692, run), /no width gave 140 columns.*1692 px: nothing typed/s);
 });
