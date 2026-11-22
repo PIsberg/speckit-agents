@@ -364,6 +364,17 @@ test('installed architect and spec-auditor check the plan for code the repo alre
   assert.match(auditor, /read only the (matching|lines)/i, 'the check reads matching lines only');
 });
 
+// #405: speckit-analyze ends with a tail written for a person: "you can run /speckit-implement", an
+// offer to suggest edits (which the read-only auditor cannot make) and an `## Extension Hooks` block
+// naming /speckit-git-commit. In the full run of 2026-11-22 that tail was 13 of the report's 61 lines,
+// over the 60-line limit, and none of it was for the main session, which decides what runs next.
+test('#405: installed spec-auditor leaves speckit-analyze\'s next steps, offers and Extension Hooks out of its report', () => {
+  const auditor = installedAgent('spec-auditor');
+  const report = auditor.slice(auditor.indexOf('## Report'));
+  assert.match(report, /next steps?[^.]*offers?[^.]*Extension Hooks|Extension Hooks[^.]*next steps?/i, 'the Report section names the tail to leave out');
+  assert.match(report, /main session decides what runs next/i, 'and says why: the main session runs the pipeline');
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
