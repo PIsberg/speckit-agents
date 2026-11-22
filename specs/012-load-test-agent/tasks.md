@@ -159,7 +159,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice U5** (FR-015, FR-016)
 
-- [ ] T020 [US5] Test the harness and record rules in agents/load-tester.md through the installed file,
+- [X] T020 [US5] Test the harness and record rules in agents/load-tester.md through the installed file,
   in test/install.test.mjs. Covers FR-015, FR-016, US5-1 to US5-3, edge cases "capped", "moves with no
   code change", "cannot be reproduced", contracts/load-tester.md section 5: load tests go in a path lane
   `load` accepts, run reduced by default with the full sweep behind an environment variable the
@@ -171,7 +171,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice P1**: scored load cases (SC-001, SC-002, SC-004, SC-006)
 
-- [ ] T022 [P] Test the load cases in test/eval.test.mjs. Covers SC-001, SC-002, SC-004, SC-006: the six
+- [X] T022 [P] Test the load cases in test/eval.test.mjs. Covers SC-001, SC-002, SC-004, SC-006: the six
   `CASES` of plan.md "Scored cases" and their right answers; `scoreRun` on each (for the three broken
   instruments FAIL and NOT MEASURED both count as right; for `load-noisy`, PASS without a `noisy` line in
   the report is wrong); `gateWord` with `words: LOAD_WORDS, lastLineOnly: true` returns a word only
@@ -198,7 +198,7 @@ held to its lane in a real session, and the skill stops on its FAIL.
 
 **Slice P2**: docs (FR-017, constitution VIII)
 
-- [ ] T024 Test the docs in test/install.test.mjs. Covers FR-017: the README "Choosing the team" test
+- [X] T024 Test the docs in test/install.test.mjs. Covers FR-017: the README "Choosing the team" test
   (:1516) expects 8 roles; the README guardrail table has rows for `gate scope load`, `lane load`,
   `ends PASS FAIL "NOT MEASURED"` and `probe` (pattern: the 009 T022 test at :1960, helpers `repoText`
   :1505, `mdSection` :1506).

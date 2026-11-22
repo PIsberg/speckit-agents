@@ -1519,7 +1519,7 @@ test('006 T016 FR-011: README has a "Choosing the team" section whose table name
   assert.ok(sec, 'README.md has a "#### Choosing the team" subsection');
   const hookSrc = repoText('hooks', 'speckit-team.mjs');
   const roles = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
-  assert.equal(roles.length, 7);
+  assert.equal(roles.length, 8); // 012 T024 FR-017: load-tester joins the seven
   const rows = sec.split('\n').filter((l) => l.trim().startsWith('|'));
   for (const r of roles) {
     const row = rows.find((l) => l.includes(r));
@@ -2464,4 +2464,62 @@ test('012 T018 FR-014 US4-1 US4-2 US4-3 US4-4 US4-5: the body sweeps sizes, sepa
   assert.match(proc, /host/i);
   assert.match(proc, /subtract/i);
   assert.match(proc, /where the feature has|each where|only where|when the feature/i, 'each dimension only where the feature has it');
+});
+
+// ---- 012 load-tester: harness, record and comparison rules in the installed body ----
+test('012 T020 FR-016 US5-1 contract 5: the body puts load tests in a path lane `load` accepts, reduced by default, the full sweep behind a named environment variable', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /(ordinary|normal|existing) test command/i, 'the reduced version runs under the ordinary test command');
+  assert.match(proc, /reduced|small version|smaller/i, 'a reduced version by default');
+  assert.match(proc, /full sweep/i, 'the full sweep');
+  assert.match(proc, /environment variable|env var/i, 'selected by an environment variable');
+  assert.match(proc, /(name|names|document|write)[^.]*(environment variable|env var)|(environment variable|env var)[^.]*(procedure|record|load-test\.md)/i, 'the procedure names the variable');
+  assert.match(proc, /(test\/load\/|\.load\.test\.|LoadTest)[^.]*(lane|path|accept)|(lane|path)[^.]*accept/i, 'load tests go where lane load accepts them');
+  assert.match(proc, /(fail|red)[^.]*(breach|ceiling)|(breach|ceiling)[^.]*(fail|red)/i, 'the reduced test fails the command on a breach');
+  assert.match(proc, /(seen|see|watch|confirm)[^.]*fail(ing)?[^.]*(breach|ceiling|impossible)|(impossible|breach)[^.]*(seen|see)[^.]*fail/i, 'seen failing on a breach before it is kept');
+});
+
+test('012 T020 FR-016 US5-2 contract 5: the body leaves specs/<feature>/load-test.md with Procedure, Environment, Budgets and Readings', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /load-test\.md/);
+  for (const sec of ['## Procedure', '## Environment', '## Budgets', '## Readings']) assert.ok(body.includes(sec), `the record has ${sec}`);
+  assert.match(body, /date[^.]*(OS|processor)|(OS|processor)[^.]*date/i, 'the environment: date, OS, processor');
+  assert.match(body, /versions? compared|compared versions?/i, 'the versions compared');
+  assert.match(body, /(rewrite|rewritten|overwrit)[^.]*(each|every) run|(each|every) run[^.]*(rewrite|overwrit)/i, 'rewritten on each run');
+});
+
+test('012 T020 FR-015 US5-3: the body compares versions in one sitting, alternating order, and calls a difference real only when the ranges do not overlap', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /one sitting/i);
+  assert.match(body, /alternat/i, 'alternating order');
+  assert.match(body, /ranges? (do(es)? not|don't|never) overlap|non-?overlapping ranges?|only when the ranges/i, 'real only when the ranges do not overlap');
+});
+
+test('012 T020 edge cases: capped load lists the tiers left out as skipped, an unexplained move says the cause is unknown, an unreproducible FAIL is unstable with both readings', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /cap(ped)?[^.]*tiers?|tiers?[^.]*cap(ped)?/i, 'a capped run names the tiers the cap left out');
+  assert.match(body, /(cause|reason)[^.]*unknown|unknown[^.]*(cause|reason)/i, 'a move with no code change: the cause is unknown');
+  assert.match(body, /(do not|never|not) guess/i, 'and it is not guessed');
+  assert.match(body, /unstable/i, 'a FAIL that does not reproduce is unstable');
+  assert.match(body, /both readings/i, 'with both readings');
+});
+
+test('012 T020 FR-016 contract 2: the load-tester body stays within 100 lines and its Process has a harness and record step', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const raw = fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(raw.split(/^---$/m)[2].trim().split('\n').length <= 100, 'the body (frontmatter excluded) is at most 100 lines');
+  const proc = raw.slice(raw.indexOf('## Process'), raw.indexOf('## Verdict'));
+  assert.match(proc, /^\d+\. (Harness|Record)/mi, 'a numbered Process step for the harness and record');
+});
+
+// 012 T024 FR-017: the README guardrail table describes the load-tester's hook entries (red until T025).
+test('012 T024 FR-017: README guardrail table has rows for `gate scope load`, `lane load`, `ends PASS FAIL "NOT MEASURED"` and `probe`', () => {
+  const lines = repoText('README.md').split('\n');
+  for (const mode of ['gate scope load', 'lane load', 'ends PASS FAIL "NOT MEASURED"', 'probe']) {
+    const row = lines.find((l) => l.startsWith('| `' + mode));
+    assert.ok(row, `the guardrail table has a row for ${mode}`);
+    assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${mode} row names where it runs and what it stops`);
+  }
 });
