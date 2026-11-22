@@ -2524,9 +2524,14 @@ function linkUnder(root) {
   }
   return false;
 }
-function folderDoubt(prog, folder, abs, command, others) {
-  const vars = /\b(TAR_\w+|UNZIP|UNZIPOPT)\b/;
-  if ((prog === 'tar' || prog === 'unzip') && (vars.test(command) || Object.keys(process.env).some((k) => /^(TAR_\w+|UNZIP|UNZIPOPT)$/i.test(k)))) {
+function folderDoubt(prog, folder, abs, { command, others, assigned, wrapped }) {
+  // A wrapper (env, sudo, nice, timeout, a runner) may bring variables or options of its own. The names are the ones
+  // the shell assigns once it has removed quotes (`env TAR_"OPTIONS=-P"`, `export UNZ"IP"=...`); the raw line is
+  // matched as well, which only errs toward a deny.
+  if (wrapped) return `what ${prog} writes when another program runs it`;
+  const optionVar = /^(TAR_\w+|UNZIP|UNZIPOPT)$/i;
+  if ((prog === 'tar' || prog === 'unzip') && (/\b(TAR_\w+|UNZIP|UNZIPOPT)\b/.test(command) || assigned.some((k) => optionVar.test(k))
+    || Object.keys(process.env).some((k) => optionVar.test(k)))) {
     return `what ${prog} writes with the options a variable adds`;
   }
   if (prog === 'rsync' && [path.join(os.homedir(), '.popt'), '/etc/popt', '/etc/popt.d'].some((f) => fs.existsSync(f))) {
@@ -2599,7 +2604,8 @@ function bashWrites(command) {
   };
   const isDir = (w) => dir !== null && !w.includes(DYN) && (() => { try { return fs.statSync(path.resolve(dir, w)).isDirectory(); } catch { return false; } })();
   const exists = (w, base) => base !== null && !w.includes(DYN) && fs.existsSync(path.resolve(base, w));
-  const cmds = [...shellCommands(command, null, null, 0, {}, true)];
+  const assigned = {};
+  const cmds = [...shellCommands(command, null, assigned, 0, {}, true)];
   for (const cmd of cmds) {
     for (const t of cmd.writes ?? []) at(t);
     const words = unprefixed(cmd);
@@ -2614,7 +2620,8 @@ function bashWrites(command) {
       if (tool.folder !== undefined) {
         const others = cmds.filter((c) => c !== cmd).map((c) => unprefixed(c)).filter((w) => w.length).map((w) => program(w[0]));
         const abs = tool.folder.includes(DYN) || (dir === null && !path.isAbsolute(tool.folder)) ? null : path.resolve(dir, tool.folder);
-        const doubt = folderDoubt(program(run[0]), tool.folder, abs, command, others);
+        const doubt = folderDoubt(program(run[0]), tool.folder, abs,
+          { command, others, assigned: Object.keys(assigned), wrapped: cmd.length !== words.length || run !== words });
         if (doubt) found.unknown.push(doubt);
       }
       continue;

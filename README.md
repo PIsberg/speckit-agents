@@ -1119,7 +1119,9 @@ API: the frontmatter entry never ran, the settings entry did, with the agent's i
 
 A `scope` rule judges a path by where it really is: the repo and the file are both resolved through
 symlinks, Windows junctions and 8.3 short names before they are compared. Paths outside the repo
-are not the rule's business. Until 2026-10-08 the comparison used the path as given, so a repo
+are not the rule's business. The resolution happens when the hook runs, before the command does: a link that
+appears in between (made by a background job the session started earlier) is not seen, for any target. Until
+2026-10-08 the comparison used the path as given, so a repo
 reached by another name (macOS's `/var` is `/private/var`, a short-named Windows profile such as
 `C:\Users\RUNNER~1`) made every file look outside it, and every lane let the write through.
 
@@ -1175,7 +1177,9 @@ other extract or sync stays a write only the run can tell. So does one the folde
 that adds options (`TAR_OPTIONS`, `UNZIP`, `UNZIPOPT`, on the line or in the hook's environment; rsync's popt
 aliases, when `~/.popt` or `/etc/popt` exists), a symlink or junction already under the folder (up to 5,000
 entries are walked; more counts as a link), or another command on the line that could make one (only `mkdir`, `cd`,
-`ls`, `echo`, `rm` and a few other plain commands may share it: `mkdir -p /tmp/x && tar -xf a.tar -C /tmp/x`). A `-C` inside a group or an old-style bundle (`tar xCf`)
+`ls`, `echo`, `rm` and a few other plain commands may share it: `mkdir -p /tmp/x && tar -xf a.tar -C /tmp/x`),
+or a program that runs the tool (`env`, `sudo`, `nice`, `timeout`, `npx`). Variable names are read after the
+shell removes quotes (`env TAR_"OPTIONS=-P" tar ...`). A `-C` inside a group or an old-style bundle (`tar xCf`)
 or attached to its option (`unzip -d/tmp/x`) is not read.
 A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
 command line is not seen.

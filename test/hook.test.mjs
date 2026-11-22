@@ -377,7 +377,11 @@ test('#396: scope none reads where tar -C, unzip -d and rsync put files, where t
   // --overwrite writes through a link it finds.
   const optionVars = [`TAR_OPTIONS=--to-command=sh tar -xf a.tar -C ${out}`, `export TAR_OPTIONS=-P; tar -xf a.tar -C ${out}`,
     `env TAR_OPTIONS=-P tar -xf a.tar -C ${out}`, `UNZIP="-d src" unzip a.zip -d ${out}`, `UNZIPOPT=-d unzip a.zip -d ${out}`,
-    `tar -xf a.tar -C ${out} --overwrite`];
+    `tar -xf a.tar -C ${out} --overwrite`,
+    // The second review: a name quoted apart is still the variable once the shell removes the quotes, and env, sudo,
+    // nice or timeout before the tool can bring options of their own.
+    `env TAR_"OPTIONS=-P" tar -xf a.tar -C ${out}`, `export UNZ"IP"='-d src'; unzip a.zip -d ${out}`, `sudo tar -xf a.tar -C ${out}`,
+    `timeout 60 unzip a.zip -d ${out}`, `nice rsync -a other/ ${out}/`];
   for (const command of optionVars) assert.ok(denied(bash(dir, ro, command, gk)), command);
   // A link into the repo under the folder, already there or made on the same line, takes the files back into the repo.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-396-')).replaceAll('\\', '/');
