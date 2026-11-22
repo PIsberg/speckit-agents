@@ -38,7 +38,9 @@ export const CASES = {
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
 // the word alone. A word inside prose ("it was not APPROVED") is not a verdict.
-export function gateWord({ ends = [], text = '' }) {
+export const LOAD_WORDS = ['PASS', 'FAIL', 'NOT MEASURED'];
+export function gateWord({ ends = [], text = '', words = undefined, lastLineOnly = false }) {
+  if (words !== undefined || lastLineOnly) throw new Error('not implemented: gateWord words and lastLineOnly (012 T023)');
   const rec = ends.find((e) => e?.word === 'APPROVED' || e?.word === 'REJECTED');
   if (rec) return { word: rec.word, source: 'hook record' };
   const last = String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => /^(APPROVED|REJECTED)$/.test(l)).pop();
