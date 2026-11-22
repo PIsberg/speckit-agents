@@ -1235,6 +1235,68 @@ test('#370: a resumed test-writer\'s RED on a parse error is sent back again; a 
   assert.ok(denied(send(broken, 'tw1')), 'after a resume, a new report is checked again');
 });
 
+// #394: the marker an accepted report leaves spared every later report of the same agent until its next hooked tool
+// call. spec-gatekeeper and security-reviewer hook only Bash, so one resumed with SendMessage that reported again
+// without a Bash call kept its old word, and so did any agent that reported again with no tool call at all. A
+// hand-back is now always a new report; a Stop is the same report only right after a hand-back, or when its
+// transcript and message are those of the Stop that set the marker (the agent's transcript grows between reports).
+const handAs = (dir, args, agent_id, message, extra = {}) => run(dir, args, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id, ...extra });
+
+test('#394: a resumed spec-gatekeeper that hands back again with no tool call is drift-checked and recorded', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 Tests in test/a.test.js for FR-001\n');
+  r.write('test/a.test.js', '// names no requirement\n');
+  commitAll(r, 'feat');
+  const ends = ['ends', '--record', 'APPROVED', 'REJECTED'];
+  const recorded = () => JSON.parse(fs.readFileSync(path.join(stateDir(r.dir), 'ends', '001-demo.json'), 'utf8')).word;
+  assert.equal(handAs(r.dir, ends, 'gk1', 'FR-001 has no test\nREJECTED'), null);
+  assert.equal(stopAs(r.dir, ends, 'gk1', 'FR-001 has no test\nREJECTED'), null, 'the Stop after the hand-back is the same report');
+  assert.equal(recorded(), 'REJECTED');
+  assert.ok(denied(handAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED')), 'the drift check runs on the resumed report');
+  r.write('test/a.test.js', '// 001 FR-001\n');
+  commitAll(r, 'test names FR-001');
+  assert.equal(handAs(r.dir, ends, 'gk1', 'fine now\nAPPROVED'), null);
+  assert.equal(recorded(), 'APPROVED', 'the later word is recorded');
+});
+
+test('#394: a resumed security-reviewer\'s report without its word is sent back, though it ran no Bash', () => {
+  const { dir } = repo();
+  const ends = ['ends', 'VERDICT: PASS', 'VERDICT: FAIL'];
+  assert.equal(handAs(dir, ends, 'sr1', 'a secret in src/a.js:3\nVERDICT: FAIL'), null);
+  assert.ok(denied(handAs(dir, ends, 'sr1', 'I looked again and it is fine.')), 'checked afresh');
+  assert.equal(handAs(dir, ends, 'sr1', 'I looked again and it is fine.'), null, 'and never gagged');
+});
+
+test('#394: under claude -p, where reports come at Stop, a resumed agent\'s later Stop is a new report', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [x] T001 Tests in test/a.test.js for FR-001\n');
+  r.write('test/a.test.js', '// names no requirement\n');
+  commitAll(r, 'feat');
+  const ends = ['ends', '--record', 'APPROVED', 'REJECTED'];
+  const transcript = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-394-')), 'agent.jsonl');
+  fs.writeFileSync(transcript, '{"type":"assistant"}\n');
+  const stop = (message) => run(r.dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk1', last_assistant_message: message, agent_transcript_path: transcript });
+  assert.equal(stop('FR-001 has no test\nREJECTED'), null);
+  assert.equal(stop('FR-001 has no test\nREJECTED'), null, 'the same Stop again is the same report');
+  fs.appendFileSync(transcript, '{"type":"user"}\n{"type":"assistant"}\n');
+  assert.equal(stop('fine now\nAPPROVED')?.decision, 'block', 'the resumed report is drift-checked');
+});
+
+test('#394: a resumed implementer\'s second RED counts, and a resumed spec-auditor\'s PASS is recorded, with no tool call between', () => {
+  const { dir } = repo();
+  pass(dir);
+  assert.match(report(dir, 'RESULT: RED', 'i1').systemMessage, /1 of 3/);
+  assert.equal(stopAs(dir, ['result'], 'i1', 'RESULT: RED'), null);
+  assert.match(report(dir, 'still red\nRESULT: RED', 'i1').systemMessage, /2 of 3/);
+  const verdict = () => JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'verdicts', '001-demo.json'), 'utf8')).verdict;
+  handAs(dir, ['verdict'], 'sa1', 'T001 has no test\nVERDICT: FAIL');
+  assert.equal(verdict(), 'FAIL');
+  handAs(dir, ['verdict'], 'sa1', 'fixed upstream\nVERDICT: PASS');
+  assert.equal(verdict(), 'PASS', 'the resumed verdict is recorded');
+});
+
 // #376: result read the retry record, appended a RED and wrote it back in place, with no lock: two implementers ending
 // together (slices built side by side) both read the old list and one RED was lost, 4 and 5 times in 12 trials.
 test('#376: two implementers reporting RED at once both count, 12 times in 12', async () => {
