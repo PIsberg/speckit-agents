@@ -1296,7 +1296,11 @@ an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `dr
 `--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run (and, after a hand-back, a `<key>.handback.json` that says only whether its report had a `No test:` line, [#354](https://github.com/PIsberg/speckit-agents/issues/354)), and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
-`retries/` or `ends/`. That is inside `.git`, so it is never committed, and it is shared by every worktree of
+`retries/` or `ends/`. Files under `agents/`, `team/`, `project/`, `choice/` and `patch/` older than 30 days
+are removed at the next agent launch, at most once a day (`.pruned` records when); `verdicts/`, `retries/`,
+`ends/` and `audit/` hold a feature's standing and are never pruned
+([#380](https://github.com/PIsberg/speckit-agents/issues/380); one checkout had 147 files in `agents/` after 6
+weeks). That is inside `.git`, so it is never committed, and it is shared by every worktree of
 the repo, which lets parallel implementers in worktrees pass the same gate.
 
 ### Context budget
@@ -1671,11 +1675,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 654 tests:
+`npm test` runs 656 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 231 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 233 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
