@@ -218,7 +218,7 @@ the case at test/e2e.test.mjs:1454 passes `{ permissionMode: 'auto' }` (:1460) w
 reports, and under `auto` Claude Code withholds a subagent's plain-text report (plan.md, Design,
 Verdict). The send-back assertion (:1461) already passes; only the main session's result (:1462) fails.
 
-- [ ] T026 [US1] Correct the FR-006 case in test/e2e.test.mjs (:1454), within that one test so the test
+- [X] T026 [US1] Correct the FR-006 case in test/e2e.test.mjs (:1454), within that one test so the test
   counts README.md and CLAUDE.md state do not move. Covers FR-006 and both `ends` entries of
   agents/load-tester.md (frontmatter :17, PreToolUse SubagentHandback, and :23, Stop), which CLAUDE.md "Verify" asks an e2e case of.
   (a) Stop entry: drop the `{ permissionMode: 'auto' }` option and keep the two `say` reports and both
