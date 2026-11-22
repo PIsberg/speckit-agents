@@ -118,6 +118,18 @@ if (forkFlag && noFork) {
 // slashes works in all three. $HOME does not: Git Bash expands it to /c/Users/..., which node.exe
 // resolves to C:\c\Users\..., the hook crashes, and a crashed hook fails open without a word.
 const hookPath = path.join(claudeDir, 'hooks', HOOK_FILE).split(path.sep).join('/');
+// #377: every agent and role skill carries the command in a single-quoted YAML scalar ('node "<path>" gate'), and
+// settings.json's gates go through sh, Git Bash or PowerShell. An apostrophe ends the YAML scalar; a double quote
+// ends the path's quotes; $ and a backtick are expanded by the shells. Escaping would have to be right for YAML and
+// all three shells at once, so such a path is refused before anything is written. Uninstall writes no command.
+const UNQUOTABLE = ["'", '"', '$', '`'];
+const badChar = UNQUOTABLE.find((c) => hookPath.includes(c));
+if (badChar && !uninstall) {
+  console.error(`ERROR: ${claudeDir} holds ${badChar}, which the hook command cannot carry: it is written inside YAML quotes and run `
+    + 'through a shell, where it would break the agent files or be expanded, and every guardrail would fail open. '
+    + 'Install into a Claude config directory whose path has no \', ", $ or ` (--claude-dir, or CLAUDE_CONFIG_DIR).');
+  process.exit(1);
+}
 const hookCommand = (mode) => `node "${hookPath}" ${mode}`;
 const log = (verb, what) => console.log(`${dryRun ? '[dry-run] ' : ''}${verb.padEnd(10)} ${what}`);
 const read = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
@@ -588,8 +600,12 @@ write(manifestFile, `${JSON.stringify({
 }, null, 2)}\n`);
 
 if (!dryRun) {
-  // Run the installed hook the way Claude Code will. Outside a Spec Kit repo it must exit 0 silently.
-  const smoke = spawnSync('node', [hookPath, 'gate'], { input: '{}', encoding: 'utf8', cwd: os.tmpdir(), shell: false });
+  // Run the installed hook the way Claude Code will. Outside a Spec Kit repo it must exit 0 silently. On Linux and
+  // macOS that is the command string as written, through sh (#377); on Windows the shell is Git Bash or PowerShell,
+  // which this cannot pick for Claude Code, so node is started directly.
+  const smoke = process.platform === 'win32'
+    ? spawnSync('node', [hookPath, 'gate'], { input: '{}', encoding: 'utf8', cwd: os.tmpdir(), shell: false })
+    : spawnSync('/bin/sh', ['-c', hookCommand('gate')], { input: '{}', encoding: 'utf8', cwd: os.tmpdir() });
   if (smoke.status !== 0) {
     console.error(`\nERROR: the installed hook does not run: ${smoke.error?.message ?? smoke.stderr}`);
     console.error('Every guardrail fails open until this is fixed. Is `node` on the PATH Claude Code sees?');
