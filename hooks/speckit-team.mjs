@@ -2433,6 +2433,114 @@ const RSYNC_VALUED = ['-e', '-f', '-B', '-T', '-M', '--exclude', '--include', '-
 const PATCH_VALUED = ['-p', '-i', '-o', '-d', '-B', '-D', '-F', '-r', '-V', '-z', '-Y', '-g', '--strip', '--input', '--output',
   '--directory', '--prefix', '--ifdef', '--fuzz', '--reject-file', '--version-control', '--suffix', '--basename-prefix', '--get',
   '--quoting-style', '--reject-format', '--read-only'];
+// #396: the folder an extract or a sync writes into, read only where the line leaves no doubt: every option is one
+// these lists know (no abbreviations), the folder is named once by a word of its own, and no member list or option can
+// put a file elsewhere (a member named before -C, -P, --to-command, a snapshot or log file, --remove-source-files).
+// `null` for anything else, which stays a write only the run can tell.
+const TAR_SAFE_LETTERS = 'xzjJZvpokm';
+const TAR_SAFE_LONG = ['--extract', '--get', '--gzip', '--gunzip', '--ungzip', '--bzip2', '--xz', '--zstd', '--verbose',
+  '--keep-old-files', '--skip-old-files', '--no-same-owner', '--no-same-permissions', '--touch'];
+function tarDest(a) {
+  let dest = null; let k = 0;
+  const take = (v) => { if (dest !== null || v === undefined || v.startsWith('-')) return false; dest = v; return true; };
+  // The old-style bundle (`xzf a.tgz`): its f takes the next word; a C there is read by position, so it fails closed.
+  if (a[0] && !a[0].startsWith('-')) {
+    k = 1;
+    for (const c of a[0]) {
+      if (c === 'f') { if (a[k++] === undefined) return null; } else if (!TAR_SAFE_LETTERS.includes(c)) return null;
+    }
+  }
+  for (; k < a.length; k++) {
+    const w = a[k];
+    if (w === '-C' || w === '--directory') { if (!take(a[++k])) return null; continue; }
+    if (w.startsWith('--directory=')) { if (!take(w.slice(12))) return null; continue; }
+    if (w === '--file' || w === '--strip-components') { k++; continue; }
+    if (w.startsWith('--file=') || w.startsWith('--strip-components=')) continue;
+    if (w.startsWith('--')) { if (TAR_SAFE_LONG.includes(w)) continue; return null; }
+    if (w.startsWith('-') && w.length > 1) {
+      // A group of safe letters; an f takes the rest of the word, or the next word when it is last.
+      const g = w.slice(1);
+      const f = g.indexOf('f');
+      if (![...(f < 0 ? g : g.slice(0, f))].every((c) => TAR_SAFE_LETTERS.includes(c))) return null;
+      if (f === g.length - 1) k++;
+      continue;
+    }
+    return null;
+  }
+  return dest;
+}
+function unzipDest(a) {
+  let dest = null; const operands = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '-d') { if (dest !== null || a[k + 1] === undefined || a[k + 1].startsWith('-')) return null; dest = a[++k]; continue; }
+    if (w.startsWith('-')) { if (/^-[oqnja]+$/.test(w)) continue; return null; }
+    operands.push(w);
+  }
+  return operands.length === 1 ? dest : null;
+}
+const RSYNC_SAFE_LETTERS = 'arvlptgoDzhcuHqi';
+const RSYNC_SAFE_LONG = ['--archive', '--recursive', '--verbose', '--quiet', '--links', '--perms', '--times', '--group', '--owner',
+  '--devices', '--specials', '--compress', '--human-readable', '--checksum', '--update', '--delete', '--delete-before',
+  '--delete-during', '--delete-after', '--progress', '--itemize-changes', '--stats', '--hard-links', '--existing',
+  '--ignore-existing', '--size-only'];
+function rsyncDest(a) {
+  const operands = [];
+  for (let k = 0; k < a.length; k++) {
+    const w = a[k];
+    if (w === '--exclude' || w === '--include') { k++; continue; }
+    if (w.startsWith('--exclude=') || w.startsWith('--include=')) continue;
+    if (w.startsWith('--')) { if (RSYNC_SAFE_LONG.includes(w)) continue; return null; }
+    if (w.startsWith('-') && w.length > 1) { if ([...w.slice(1)].every((c) => RSYNC_SAFE_LETTERS.includes(c))) continue; return null; }
+    operands.push(w);
+  }
+  const dest = operands.at(-1);
+  // A remote destination (`host:path`, `host::module`) is not a file here; a Windows drive letter is.
+  if (operands.length < 2 || (/^[^/\\]*:/.test(dest) && !/^[A-Za-z]:[/\\]/.test(dest))) return null;
+  return dest;
+}
+// #396, the security review of #402: what can still move the files of an extract or a sync whose folder was read.
+// Options a variable adds (GNU tar's TAR_OPTIONS, unzip's UNZIP and UNZIPOPT, here or in the hook's own environment;
+// rsync's popt aliases in ~/.popt or /etc/popt), a link already under the folder (a symlink or a junction, walked up
+// to FOLDER_WALK entries, more counts as one), and another command on the line that may make one (anything but
+// FOLDER_COMPANIONS: `mkdir -p x && tar -xf a.tar -C x` passes, `ln -s ... x/sub && tar ...` does not).
+const FOLDER_WALK = 5000;
+const FOLDER_COMPANIONS = new Set(['mkdir', 'cd', 'pushd', 'popd', 'ls', 'echo', 'printf', 'true', 'pwd', 'test', '[', 'rm', 'rmdir', 'cat',
+  'wc', 'head', 'tail', 'du', 'sleep']);
+function linkUnder(root) {
+  let st;
+  try { st = fs.lstatSync(root); } catch { return false; }
+  if (st.isSymbolicLink()) return true;
+  if (!st.isDirectory()) return false;
+  let budget = FOLDER_WALK;
+  const stack = [root];
+  while (stack.length) {
+    let entries;
+    try { entries = fs.readdirSync(stack.pop(), { withFileTypes: true }); } catch { return true; }
+    for (const e of entries) {
+      if (--budget < 0 || e.isSymbolicLink()) return true;
+      if (e.isDirectory()) stack.push(path.join(e.parentPath ?? e.path, e.name));
+    }
+  }
+  return false;
+}
+function folderDoubt(prog, folder, abs, { command, others, assigned, wrapped }) {
+  // A wrapper (env, sudo, nice, timeout, a runner) may bring variables or options of its own. The names are the ones
+  // the shell assigns once it has removed quotes (`env TAR_"OPTIONS=-P"`, `export UNZ"IP"=...`); the raw line is
+  // matched as well, which only errs toward a deny.
+  if (wrapped) return `what ${prog} writes when another program runs it`;
+  const optionVar = /^(TAR_\w+|UNZIP|UNZIPOPT)$/i;
+  if ((prog === 'tar' || prog === 'unzip') && (/\b(TAR_\w+|UNZIP|UNZIPOPT)\b/.test(command) || assigned.some((k) => optionVar.test(k))
+    || Object.keys(process.env).some((k) => optionVar.test(k)))) {
+    return `what ${prog} writes with the options a variable adds`;
+  }
+  if (prog === 'rsync' && [path.join(os.homedir(), '.popt'), '/etc/popt', '/etc/popt.d'].some((f) => fs.existsSync(f))) {
+    return 'what rsync writes with the aliases popt adds';
+  }
+  if (others.some((p) => !FOLDER_COMPANIONS.has(p))) return `what ${prog} writes into ${folder} after the rest of the line`;
+  if (abs !== null && linkUnder(abs)) return `what ${prog} writes through a link under ${folder}`;
+  return null;
+}
 // #378: what curl, wget, sort, awk -i inplace, patch, tar, unzip and rsync write: `targets` they name, and `unknown`
 // when only the run can tell (a file named by its URL, an archive's contents, a patch's files, a sync's destination).
 function toolWrites(prog, a) {
@@ -2465,14 +2573,21 @@ function toolWrites(prog, a) {
   } else if (prog === 'patch') {
     if (!optionWords(a, { valued: PATCH_VALUED }).some((w) => longIs(w, '--dry-run', 5))) out.unknown = 'the files patch changes';
   } else if (prog === 'tar') {
-    if (tarExtracts(a)) out.unknown = 'what tar extracts';
+    if (tarExtracts(a)) {
+      const dest = tarDest(a);
+      if (dest === null) out.unknown = 'what tar extracts'; else { out.targets = [path.posix.join(dest, '*')]; out.folder = dest; }
+    }
   } else if (prog === 'unzip') {
     // unzip turns an option off with a - inside its group (`-l-`) or a doubled dash (`--l`): such a word fails closed.
     const opts = optionWords(a, { valued: ['-d', '-P', '-O', '-I'], stop: '-x' });
-    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) out.unknown = 'what unzip extracts';
+    if (opts.some((w) => /^--|^-.+-/.test(w)) || !opts.some((w) => groupHas(w, 'lptvZ', 'dPOI'))) {
+      const dest = unzipDest(a);
+      if (dest === null) out.unknown = 'what unzip extracts'; else { out.targets = [path.posix.join(dest, '*')]; out.folder = dest; }
+    }
   } else if (prog === 'rsync') {
     if (!optionWords(a, { valued: RSYNC_VALUED }).some((w) => longIs(w, '--dry-run', 5) || groupHas(w, 'n', 'efBTM'))) {
-      out.unknown = 'what rsync copies into its destination';
+      const dest = rsyncDest(a);
+      if (dest === null) out.unknown = 'what rsync copies into its destination'; else { out.targets = [path.posix.join(dest, '*')]; out.folder = dest; }
     }
   } else if (formatterWrites(prog, a)) out.unknown = `the files ${prog} rewrites`;
   return out.targets.length || out.unknown ? out : null;
@@ -2489,7 +2604,9 @@ function bashWrites(command) {
   };
   const isDir = (w) => dir !== null && !w.includes(DYN) && (() => { try { return fs.statSync(path.resolve(dir, w)).isDirectory(); } catch { return false; } })();
   const exists = (w, base) => base !== null && !w.includes(DYN) && fs.existsSync(path.resolve(base, w));
-  for (const cmd of shellCommands(command, null, null, 0, {}, true)) {
+  const assigned = {};
+  const cmds = [...shellCommands(command, null, assigned, 0, {}, true)];
+  for (const cmd of cmds) {
     for (const t of cmd.writes ?? []) at(t);
     const words = unprefixed(cmd);
     if (!words.length) continue;
@@ -2500,6 +2617,13 @@ function bashWrites(command) {
     if (tool) {
       tool.targets.forEach((w) => at(w));
       if (tool.unknown) found.unknown.push(tool.unknown);
+      if (tool.folder !== undefined) {
+        const others = cmds.filter((c) => c !== cmd).map((c) => unprefixed(c)).filter((w) => w.length).map((w) => program(w[0]));
+        const abs = tool.folder.includes(DYN) || (dir === null && !path.isAbsolute(tool.folder)) ? null : path.resolve(dir, tool.folder);
+        const doubt = folderDoubt(program(run[0]), tool.folder, abs,
+          { command, others, assigned: Object.keys(assigned), wrapped: cmd.length !== words.length || run !== words });
+        if (doubt) found.unknown.push(doubt);
+      }
       continue;
     }
     if (prog === 'cd' || prog === 'pushd') {

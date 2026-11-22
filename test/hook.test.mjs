@@ -341,6 +341,73 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
   assert.equal(bash(dir, ['scope', 'no-tests'], 'prettier --write src', { agent_type: 'implementer' }), null);
 });
 
+// #396: #378 denied every extract and sync to the read-only roles, although scope none allows a write outside the
+// repo: the folder tar -C, unzip -d and rsync's last operand name was not read. It is read now where the line leaves
+// no doubt (options this hook knows, the folder named once, no member list), and judged like any other target.
+test('#396: scope none reads where tar -C, unzip -d and rsync put files, where the line leaves no doubt', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  const gk = { agent_type: 'spec-gatekeeper' };
+  const out = path.join(os.tmpdir(), 'speckit-396-out').replaceAll('\\', '/');
+  const outside = [
+    `tar -xf a.tar -C ${out}`, `tar xzf a.tgz -C ${out}`, `tar -x -z -f a.tgz --directory=${out}`, `tar --extract --file a.tar --directory ${out}`,
+    `tar -xzvf a.tgz -C ${out} --strip-components=1`, `tar -C ${out} -xf a.tar`, `mkdir -p ${out} && tar -xf a.tar -C ${out}`,
+    `unzip -o a.zip -d ${out}`, `unzip -qq a.zip -d ${out}`, `unzip -d ${out} a.zip`,
+    `rsync -a other/ ${out}/`, `rsync -av --delete --exclude .git other/ ${out}`, `rsync -a --exclude=node_modules src/ ${out}/copy`,
+  ];
+  for (const command of outside) assert.equal(bash(dir, ro, command, gk), null, command);
+  const still = [
+    // The folder is in the repo, or named twice.
+    'tar -xf a.tar -C src', 'tar -xf a.tar --directory=src/main', `tar -xf a.tar -C ${out} -C src`, 'unzip a.zip -d src/main',
+    `unzip a.zip -d ${out} -d src`, `rsync -a ${out}/ src/`, `rsync -a other/ ${out}/ src/`, 'tar -xf a.tar', 'unzip a.zip',
+    // Members named on the line, which tar extracts where -C stood when it read them, and unzip's member and -x lists.
+    `tar -xf a.tar src/a.js -C ${out}`, `tar -xf a.tar -C ${out} src/a.js`, `tar -xf a.tar -C ${out} -- x`, `unzip a.zip src/a.js -d ${out}`,
+    `unzip a.zip -x b -d ${out}`,
+    // Options that write a file of their own, run a command, or move where members land.
+    `tar -xPf a.tar -C ${out}`, `tar -xf a.tar -C ${out} --absolute-names`, `tar -xf a.tar -C ${out} --to-command=sh`,
+    `tar -xf a.tar -C ${out} --checkpoint-action=exec=sh`, `tar -xf a.tar -C ${out} -g src/snap`, `tar -xf a.tar --index-file=src/i -C ${out}`,
+    `tar -xf a.tar -C ${out} --transform=s,^,../,`, `tar -xf a.tar -C ${out} -I sh`, `tar -xf a.tar --dir=${out}`,
+    `rsync -a --remove-source-files src/ ${out}/`, `rsync -a --log-file=src/log other/ ${out}`, `rsync -a --backup-dir=src/b other/ ${out}`,
+    `rsync -a --write-batch=src/b other/ ${out}`, `rsync -a -e sh other/ ${out}`, 'rsync -a other/ host:/tmp/x',
+    // -C or -d where this reader does not take the folder from: in a group or an old-style bundle, attached, or from the shell.
+    `tar xCf ${out} a.tar`, `tar -xzC ${out} -f a.tgz`, `unzip a.zip -d${out}`, 'tar -xf a.tar -C "$D"', 'unzip a.zip -d $(mktemp -d)',
+  ];
+  for (const command of still) assert.ok(denied(bash(dir, ro, command, gk)), command);
+  // The security review of #402: options a variable adds (TAR_OPTIONS, UNZIP, UNZIPOPT) are not on the line, and
+  // --overwrite writes through a link it finds.
+  const optionVars = [`TAR_OPTIONS=--to-command=sh tar -xf a.tar -C ${out}`, `export TAR_OPTIONS=-P; tar -xf a.tar -C ${out}`,
+    `env TAR_OPTIONS=-P tar -xf a.tar -C ${out}`, `UNZIP="-d src" unzip a.zip -d ${out}`, `UNZIPOPT=-d unzip a.zip -d ${out}`,
+    `tar -xf a.tar -C ${out} --overwrite`,
+    // The second review: a name quoted apart is still the variable once the shell removes the quotes, and env, sudo,
+    // nice or timeout before the tool can bring options of their own.
+    `env TAR_"OPTIONS=-P" tar -xf a.tar -C ${out}`, `export UNZ"IP"='-d src'; unzip a.zip -d ${out}`, `sudo tar -xf a.tar -C ${out}`,
+    `timeout 60 unzip a.zip -d ${out}`, `nice rsync -a other/ ${out}/`];
+  for (const command of optionVars) assert.ok(denied(bash(dir, ro, command, gk)), command);
+  // A link into the repo under the folder, already there or made on the same line, takes the files back into the repo.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-396-')).replaceAll('\\', '/');
+  try {
+    const plain = path.join(tmp, 'plain').replaceAll('\\', '/');
+    fs.mkdirSync(path.join(plain, 'deep'), { recursive: true });
+    fs.writeFileSync(path.join(plain, 'deep', 'f.txt'), 'x');
+    assert.equal(bash(dir, ro, `tar -xf a.tar -C ${plain}`, gk), null, 'a folder of plain files');
+    const linked = path.join(tmp, 'linked').replaceAll('\\', '/');
+    fs.mkdirSync(path.join(linked, 'deep'), { recursive: true });
+    fs.symlinkSync(path.join(dir, 'src'), path.join(linked, 'deep', 'sub'), 'junction');
+    const whole = path.join(tmp, 'whole').replaceAll('\\', '/');
+    fs.symlinkSync(dir, whole, 'junction');
+    for (const command of [`tar -xf a.tar -C ${linked}`, `unzip a.zip -d ${linked}`, `rsync -a other/ ${linked}/`, `tar -xf a.tar -C ${whole}`,
+      `rsync -a other/ ${whole}/x`, `mkdir -p ${tmp}/new && ln -s ${dir.replaceAll('\\', '/')}/src ${tmp}/new/sub && tar -xf a.tar -C ${tmp}/new`,
+      `cp -a other ${tmp}/new2 && rsync -a other/ ${tmp}/new2`, `tar -xf b.tar -C ${tmp}/new3 && tar -xf a.tar -C ${tmp}/new3`]) {
+      assert.ok(denied(bash(dir, ro, command, gk)), command);
+    }
+    assert.equal(bash(dir, ro, `mkdir -p ${tmp}/new4 && tar -xf a.tar -C ${tmp}/new4`, gk), null, 'a folder made on the line');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  // A writing role's lane judges the folder: implementer may not unpack into the tests.
+  assert.ok(denied(bash(dir, ['scope', 'no-tests'], 'tar -xf a.tar -C test', { agent_type: 'implementer' })));
+  // A remote destination is no file of the repo: left to the lane check, as every sync was before.
+  assert.equal(bash(dir, ['scope', 'tests'], 'rsync -a test/ host:/srv/app', { agent_type: 'test-writer' }), null);
+});
+
 test('scope none on Bash (#209): a read-only agent runs checks but writes nothing in the repo', () => {
   const { dir } = repo();
   const ro = ['scope', 'none'];

@@ -1119,7 +1119,9 @@ API: the frontmatter entry never ran, the settings entry did, with the agent's i
 
 A `scope` rule judges a path by where it really is: the repo and the file are both resolved through
 symlinks, Windows junctions and 8.3 short names before they are compared. Paths outside the repo
-are not the rule's business. Until 2026-10-08 the comparison used the path as given, so a repo
+are not the rule's business. The resolution happens when the hook runs, before the command does: a link that
+appears in between (made by a background job the session started earlier) is not seen, for any target. Until
+2026-10-08 the comparison used the path as given, so a repo
 reached by another name (macOS's `/var` is `/private/var`, a short-named Windows profile such as
 `C:\Users\RUNNER~1`) made every file look outside it, and every lane let the write through.
 
@@ -1165,7 +1167,21 @@ an option of its own, not as another option's value (`rsync --exclude -n`), and 
 any prefix the GNU tools take (`tar --extr`, `sort --out=f`); Go's and LLVM's `-w=true`, `--w` and `--i`
 count as their write flags. In a group of short options a letter after one that takes a value is that
 value (`rsync -aen` is no dry run). An `unzip` option turned off inside its group (`-l-`, `--l`) is a write only the run can tell
-too. A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
+too. Where an extract or a sync puts its files is read only where the line leaves no doubt (#396): `tar` with
+one `-C` or `--directory` word and no member names, `unzip` with one `-d` word and one archive, `rsync` with a
+local last operand, each with only options that cannot put a file elsewhere (`tar -xzvf`, `--strip-components`,
+`unzip -oq`, `rsync -av --delete --exclude`; not `tar -P`, `--to-command`, `-g`, `rsync --remove-source-files`,
+`--log-file`, nor an option the hook does not list, abbreviations included). That folder is then judged like any
+named target, so a read-only role may unpack outside the repo (`tar -xf a.tar -C /tmp/x`) and not into it; any
+other extract or sync stays a write only the run can tell. So does one the folder cannot be trusted for: a variable
+that adds options (`TAR_OPTIONS`, `UNZIP`, `UNZIPOPT`, on the line or in the hook's environment; rsync's popt
+aliases, when `~/.popt` or `/etc/popt` exists), a symlink or junction already under the folder (up to 5,000
+entries are walked; more counts as a link), or another command on the line that could make one (only `mkdir`, `cd`,
+`ls`, `echo`, `rm` and a few other plain commands may share it: `mkdir -p /tmp/x && tar -xf a.tar -C /tmp/x`),
+or a program that runs the tool (`env`, `sudo`, `nice`, `timeout`, `npx`). Variable names are read after the
+shell removes quotes (`env TAR_"OPTIONS=-P" tar ...`). A `-C` inside a group or an old-style bundle (`tar xCf`)
+or attached to its option (`unzip -d/tmp/x`) is not read.
+A tool's own config file (`~/.curlrc`, a formatter's settings) is not read, so what it adds to the
 command line is not seen.
 For the writing agents a target only the run can tell (`> "$OUT"`, `rm $(...)`, `xargs rm`, `find -delete`,
 `git format-patch` into the current folder, the commands above) and a
@@ -1677,11 +1693,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 659 tests:
+`npm test` runs 660 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 234 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 235 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 139 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
