@@ -61,24 +61,11 @@ jobs:
         env:
           SPECKIT_REQUIRE_CLAUDE: '1'
           SPECKIT_E2E_TIME_SCALE: ${{ runner.os == 'Windows' && '3' || '1' }}
-      # Neither `claude plugin validate` nor `claude plugin test` type-checks the mod, and the types
-      # it checks against (.claude-plugin/types, tsconfig.json) are laid only when a session loads it.
-      # A headless session needs no login to load it: it exits 1 at the model call, after the types
-      # are laid, so its status is not the gate; the tsconfig check after it is.
-      # eslint and typescript at the versions package.json pins, from the lockfile: Dependabot moves
-      # them there, and nowhere else names them.
-      - name: Install eslint and typescript (Linux)
+      # eslint at the version package.json pins, from the lockfile: Dependabot moves it there, and nowhere
+      # else names it. The board mod's type-check is in the live-board job (#399).
+      - name: Install eslint (Linux)
         if: runner.os == 'Linux'
         run: npm ci --ignore-scripts --no-audit --no-fund
-      # Not on latest.yml's legs (inputs.claude-code set): Claude Code 2.1.330 lays no types in a session that is not
-      # logged in, so the step cannot run there (#399). It stays required on every push and pull request.
-      - name: Type-check the board mod (Linux)
-        if: runner.os == 'Linux' && inputs.claude-code == ''
-        shell: bash
-        run: |
-          CLAUDE_CONFIG_DIR="$RUNNER_TEMP/claude-types" claude --plugin-dir mods/speckit-board -p "/speckit-board refresh" > /dev/null || true
-          test -f mods/speckit-board/tsconfig.json
-          npx --no-install tsc -p mods/speckit-board --noEmit
       # The same eslint .pre-commit-config.yaml runs, on the files it sees: the tracked JavaScript. A
       # commit made without pre-commit installed is checked here.
       - name: Lint (Linux)
@@ -136,6 +123,22 @@ jobs:
       - run: vhs --version && ttyd --version && claude --version
       - name: L3 to L6, pressing the band's [ clear ]
         run: node tools/live-board.mjs band "$RUNNER_TEMP/live-band"
+      # Neither `claude plugin validate` nor `claude plugin test` type-checks the mod, and the types it is
+      # checked against (.claude-plugin/types/, tsconfig.json) are laid only when a session loads it. The band
+      # run's interactive session has just loaded it from this checkout. A headless one is not enough: on
+      # Claude Code 2.1.330, `claude -p` without a login stops before it loads the mod and lays nothing, and
+      # with the fake API it answers and still lays nothing (#399). So the check runs here, on every Claude
+      # Code the job installs, latest.yml's legs included, and also after a failed check of the band run.
+      # typescript at the version package.json pins, from the lockfile.
+      - name: Install typescript (Linux)
+        if: runner.os == 'Linux' && !cancelled()
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Type-check the board mod (Linux)
+        if: runner.os == 'Linux' && !cancelled()
+        shell: bash
+        run: |
+          test -f mods/speckit-board/tsconfig.json
+          npx --no-install tsc -p mods/speckit-board --noEmit
       - name: L3, L4 and L6, pressing the pane's [ clear ]
         run: node tools/live-board.mjs pane "$RUNNER_TEMP/live-pane"
       # The screens vhs wrote, to read a failed check off.

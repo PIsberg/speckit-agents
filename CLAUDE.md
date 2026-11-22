@@ -50,20 +50,20 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 658 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 659 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one; `SPECKIT_E2E_TIME_SCALE=3`
   triples their timeouts and session kill timers (CI's Windows leg, #329).
 - CI runs it on Linux, macOS and Windows with Claude Code 2.1.293 (`package.json` `config.claudeCode`,
   the oldest supported, moved by hand; `latest.yml` runs the same jobs weekly on `latest` and the newest stable Node, #381) and `SPECKIT_REQUIRE_CLAUDE=1` (those tests fail instead of
-  skipping), then on Linux `npm ci` and type-checks the board mod:
-  `npx --no-install tsc -p mods/speckit-board --noEmit`, after a
-  `claude --plugin-dir mods/speckit-board` session has laid its types, and lints with
+  skipping), then on Linux `npm ci` and lints with
   `npx --no-install eslint` (`eslint.config.mjs`; pre-commit's eslint hook runs the same one, from
   `node_modules`, so a clone needs `npm ci` once before it can commit JavaScript). A
   `live-board` job runs `tools/live-board.mjs` on Linux and macOS (vhs from its release, version and
-  checksums in the job's `env:`).
+  checksums in the job's `env:`), then on Linux type-checks the board mod with
+  `npx --no-install tsc -p mods/speckit-board --noEmit` against the types its interactive session laid
+  (a headless `claude -p` lays none on 2.1.330, #399).
 - Every version is pinned in one place (README.md, "Where each version is pinned"), held by
   `test/versions.test.mjs`: never write a tool's version into a workflow, a hook config or these docs.
 - Unit tests cannot prove Claude Code fires a hook; `e2e.test.mjs` does. A new hook entry gets a case

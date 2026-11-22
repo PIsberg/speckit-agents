@@ -41,6 +41,31 @@ test('versions: no workflow spells out a version package.json holds', () => {
   assert.match(t, /^\s+run: npm ci\b/m, 'CI installs the devDependencies from the lockfile');
 });
 
+// #399: on Claude Code 2.1.330 a headless session that is not logged in stops before it loads the mod, so
+// it lays no types; an interactive one against the fake API does. The check runs where the live-board
+// job's session has just loaded the mod from this checkout, on every Claude Code the jobs install.
+test('versions: the board type-check runs after the live-board session laid its types, on every leg (#399)', () => {
+  const t = read('.github', 'workflows', 'test.yml');
+  const jobAt = (name) => t.search(new RegExp(`^  ${name}:$`, 'm'));
+  const step = (name) => {
+    const at = t.indexOf(`- name: ${name}`);
+    assert.ok(at > 0, `test.yml has a step "${name}"`);
+    const rest = t.slice(at + 1);
+    const end = rest.search(/^ {6}- (name|uses|run):/m);
+    return { at, text: end < 0 ? rest : rest.slice(0, end) };
+  };
+  const check = step('Type-check the board mod (Linux)');
+  const band = t.indexOf('node tools/live-board.mjs band');
+  assert.ok(jobAt('live-board') > 0 && check.at > jobAt('live-board'), 'the type-check is a live-board step');
+  assert.ok(band > 0 && check.at > band, 'it runs after the band run has loaded the mod');
+  assert.match(check.text, /test -f mods\/speckit-board\/tsconfig\.json/, 'a session that laid nothing fails the step');
+  assert.match(check.text, /npx --no-install tsc -p mods\/speckit-board --noEmit/);
+  assert.doesNotMatch(check.text, /inputs\.claude-code/, 'latest.yml legs type-check too');
+  assert.doesNotMatch(t, /claude --plugin-dir mods\/speckit-board -p /, 'no headless session is relied on to lay the types');
+  const install = step('Install typescript (Linux)');
+  assert.ok(install.at > jobAt('live-board') && install.at < check.at, 'the live-board job installs typescript before the check');
+});
+
 test('versions: vhs and its checksums are one env block, used through it', () => {
   const t = read('.github', 'workflows', 'test.yml');
   const env = /^ {6}VHS_VERSION: '?(\d+\.\d+\.\d+)'?$/m.exec(t);

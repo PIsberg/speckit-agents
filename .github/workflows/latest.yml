@@ -5,7 +5,8 @@ name: latest
 # e2e tests pin. #280 (the permissionMode cases failing on 2.1.319) was found on a developer's machine, not by CI.
 # Weekly and by hand, never required for a pull request. `latest` and '*' are a channel and a range, not versions,
 # so nothing here is a second pin to move (test/versions.test.mjs). Not `current`: setup-node took it to a v27 alpha. A failed scheduled or manual run opens one issue,
-# or comments on the open one. A pull request that changes this file runs it too, and files nothing.
+# or comments on the open one. A pull request that changes this file runs it too, and files nothing. The board
+# mod's type-check runs on these legs as on the pinned ones, after the live-board session laid the types (#399).
 on:
   schedule:
     - cron: '41 5 * * 2'
