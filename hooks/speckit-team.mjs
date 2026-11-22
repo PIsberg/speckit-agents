@@ -864,8 +864,11 @@ function sendBackOnce(rec, why) {
 // #240: the output of a RED that ran no expectation, or null. A missing module is one only when it is a
 // test file (#245): a RED for a production file not written yet is valid. #374: a SyntaxError is a fault only as
 // the line a runtime prints for a file that does not parse, `SyntaxError: <message>` opening a line, after a
-// file:line (`test/a.test.mjs:1`), `Uncaught` or pytest's `E`; a test expecting one names it in its assertion.
-const RED_FAULTS = [/^[ \t>*-]*(?:(?:Uncaught|E|[^\s:]*[/\\.]\S*)[ \t]+)?(?<f>SyntaxError): \S/m,
+// file:line (`test/a.test.mjs:1`), `Uncaught` or pytest's `E`; a test expecting one names it in its assertion. #395: also
+// after a task ID and the file (`T001 test/a.test.mjs: SyntaxError: ...`), and as the error a code span quotes after
+// "fails with", test-writer's wording for every failure in the full run of 2026-11-22.
+const RED_FAULTS = [/^[ \t>*-]*(?:T\d{3,}[ \t]+)?(?:(?:Uncaught|E|[^\s:]*[/\\.]\S*)[ \t]+)?(?<f>SyntaxError): \S/m,
+  /\bfail(?:s|ed)? with `(?<f>SyntaxError): [^`\s]/,
   /\bReferenceError: [\w$.]+ is not defined\b/, /\bNameError: name '[^']+' is not defined\b/];
 const redFaultIn = (text) => { const m = RED_FAULTS.map((re) => text.match(re)).find(Boolean); return m ? (m.groups?.f ?? m[0]) : missingTestModule(text); };
 const redFaultWhy = (fault) => `Your RED reports ${fault}: the test file did not run, so none of its expectations was checked. `

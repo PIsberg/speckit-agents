@@ -1433,6 +1433,28 @@ test('ends (#374): a RED whose test expects a SyntaxError goes through; a file t
   });
 });
 
+// #395: #374 narrowed the fault to the line a runtime prints, so a report that words it differently got through. Two
+// wordings are faults again: the issue's (a task ID and the file before the error) and the one test-writer used for
+// every failure in the full run of 2026-11-22 ("It fails with \`Error: not implemented\`."), the error in a code span
+// after "fails with". A test that expects a SyntaxError still goes through, worded either way.
+test('ends (#395): a parse error after a task ID and file, or quoted after "fails with", is sent back; an expected one is not', () => {
+  const { dir } = repo();
+  pass(dir);
+  const ends = ['ends', 'RED', 'BLOCKED', 'FIXED'];
+  let n = 0;
+  const send = (message) => run(dir, ends, { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, agent_id: `tw${++n}` });
+  const broken = ['T001 test/a.test.mjs: SyntaxError: Unexpected token \')\'\n\nRED',
+    '- `test/math.test.js:9`, 001 FR-002: `sum([5])` equals 5. It fails with `SyntaxError: Unexpected token \',\'`.\n\nRED',
+    'Every test fails with `SyntaxError: Cannot use import statement outside a module`.\n\nRED'];
+  for (const message of broken) assert.ok(denied(send(message)), message);
+  const expected = ['- `test/parse.test.js:4`, 001 FR-001: `parse("{")` throws a SyntaxError. It fails with `Error: not implemented`.\n\nRED',
+    'T002 test/parse.test.js: expects `SyntaxError: bad json` but parse returned {}\n\nRED',
+    'It fails with `AssertionError: Missing expected exception (SyntaxError).`\n\nRED',
+    'T003 test/parse.test.js:9 expected [Function parse] to throw SyntaxError\n\nRED',
+    'It fails with `Expected: SyntaxError: bad json`\n\nRED'];
+  for (const message of expected) assert.equal(denied(send(message)), false, message);
+});
+
 // #245: a missing module that is itself a test file (a helper, a fixture) means the test file did not run
 // either. Only the path the error names is judged, against the repo's test patterns: Node ESM's absolute
 // path, Node CJS's relative one from its Require stack, a relative path as a report gives it, or a Python
