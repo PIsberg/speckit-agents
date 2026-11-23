@@ -501,6 +501,23 @@ What it led to: the plan stop still recommends one at a time, now with these num
 the worktrees and their branches are removed before the tick commit (`8385810`). Side by side can pay
 off only for slices that each take minutes to build, which no run has measured.
 
+### The run citations in the prompts (#432)
+
+The prompts carried the runs that led to their rules: "In the 004 run ...", token counts, dates. The
+rule stays where it was; the run behind it is in this file and in `docs/rules.md`. Removed on
+2026-11-23 (bytes of the source files, tokens an estimate at 4 bytes a token, not counted):
+
+| File | Before | After | Saved |
+|---|--:|--:|--:|
+| `skills/speckit-team/SKILL.md` | 35,833 | 34,400 | 1,433 (4.0%) |
+| `agents/architect.md` | 11,034 | 9,990 | 1,044 (9.5%) |
+| `agents/product-owner.md` | 4,522 | 4,459 | 63 |
+
+About 360 tokens less on every main-session response of a `/speckit-team` run, read from the cache,
+and about 260 on every architect launch. #432 estimated 30 to 40% of the skill and the architect; the
+citations were a smaller share than that. Whether rule adherence held without them is not measured
+with a real model (#322).
+
 ## Roles as skills against roles as agents
 
 The same fixture request built twice on 2026-10-25 with real models (plan D4, FR-014): once with the
