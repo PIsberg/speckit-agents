@@ -531,6 +531,21 @@ global-config checks below), on a busier machine: 79.4 to 90.2 ms before, 67.6 t
 config exists but cannot be read it sets the same fallback the failed `rev-parse` set (#215), so the git calls
 after it still read the repo.
 
+### The fast track's hook cost per tool call (#444)
+
+patcher's `patch` hook ran up to 11 git commands on every tool call, read-only ones included, and a write started a
+second process for `scope protected`. Now `patch` applies the protected-path rule itself, reuses the git dir the
+repo lookup found, keeps the start commit's test patterns and own-repo answer in its start record, and skips the
+measuring on a read-only tool (Read, Grep, Glob, LS) that follows a read-only tool which passed every check; any
+other call removes that mark, and the end check always measures. Measured 2026-11-23 on Windows 11 in a throwaway
+repo, 2 rounds of 30, old and new interleaved:
+
+| Call | Before | After |
+|---|--:|--:|
+| A read after a read that passed | 155 to 156 ms | 46 ms |
+| A write (two processes before, one after) | 216 to 218 ms | 144 ms |
+| Any other call | 155 to 157 ms | 144 ms |
+
 ## Roles as skills against roles as agents
 
 The same fixture request built twice on 2026-10-25 with real models (plan D4, FR-014): once with the

@@ -493,7 +493,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/patcher.md: Lane
 <!-- fingerprint: 08103761 -->
-- Not the protected paths; 30 production lines and 2 files. hook `scope protected`, `patch`.
+- Not the protected paths; 30 production lines and 2 files. hook `patch` (the `scope protected` rule in the same process, #444).
 
 ### agents/patcher.md: Report
 <!-- fingerprint: c5918333 -->
