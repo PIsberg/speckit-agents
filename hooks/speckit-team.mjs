@@ -690,6 +690,17 @@ function dropRoleFiles(sessionId) {
   try { names = fs.readdirSync(path.join(stateDir, 'role')); } catch { /* no folder, no claims */ }
   for (const n of names) if (n.startsWith(`${sessionId}.`) && n.endsWith('.claim')) fs.rmSync(path.join(stateDir, 'role', n), { force: true });
 }
+// #429: the model a main-session launch goes out on instead of its agent's `model:` line, or null. Only under the
+// `fast` tier the installer records in its manifest beside this script, and only for the two mechanical launches the
+// skill marks: implementer's stub pass (a line starting `stub`) and architect's dictated revision (`dictated:`).
+function quickModel(role, ti) {
+  if (ti?.model !== undefined) return null;
+  const prompt = typeof ti?.prompt === 'string' ? ti.prompt : '';
+  const mechanical = (role === 'implementer' && /^stub\b/m.test(prompt)) || (role === 'architect' && /^dictated:/m.test(prompt));
+  if (!mechanical) return null;
+  const m = readState(path.join(TEAM_DIR, 'hooks', 'speckit-agents.install.json'));
+  return m && typeof m === 'object' && String(m.managedBy).includes('speckit-agents: managed by install.mjs') && m.models === 'fast' ? 'haiku' : null;
+}
 // The role skills a typed `--team skill-agents` (every role) or `--team hybrid` (the writers) needs, found from this
 // script's own folder.
 function missingRoleSkills(roles = TEAM_ROLES) {
@@ -1573,6 +1584,10 @@ if (mode === 'gate') {
     if (team && 'bad' in team) addNote(`speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply`);
     else if (team) addNote(`speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}`);
     if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
+    // #429: under `--models fast` a stub pass and a dictated revision go out on haiku. Only the model changes, and only
+    // when the call names none.
+    const quick = quickModel(role, input.tool_input);
+    if (quick) emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...input.tool_input, model: quick } } });
     finish();
   }
   if (event === 'PreToolUse' && input.tool_name === 'Skill') {

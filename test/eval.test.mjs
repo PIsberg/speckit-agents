@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CASES, LOAD_WORDS, armArg, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
+import { CASES, LOAD_WORDS, armArg, parseArgs, fullRunArgs, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
 import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
 import * as fullRun from '../tools/full-run.mjs'; // loadRequest is read from the namespace: 012 T023 adds it
 import { drift } from '../hooks/speckit-drift.mjs';
@@ -432,4 +432,13 @@ test('012 T022 SC-004: gateReport with role load-tester reads that role report, 
   jsonl(sk, [used('s1', 'Skill', { skill: 'speckit-role-load-tester' }), said('s2', 'Measurements\nFAIL'), used('s3', 'Skill', { skill: 'speckit-role-spec-gatekeeper' }), said('s4', 'APPROVED')]);
   assert.equal(gateReport({ transcript: sk, skillAgents: true, role: 'load-tester' }), 'Measurements\nFAIL');
   assert.equal(gateReport({ transcript: sk, skillAgents: true }), 'APPROVED');
+});
+
+// #429: an eval's runs install the team on a model tier, passed to each full run.
+test('#429 eval: --models is passed to every full run, and an unknown tier is refused', () => {
+  assert.equal(parseArgs(['--out', 'x', '--arm', 'a=.']).models, null);
+  assert.equal(parseArgs(['--out', 'x', '--arm', 'a=.', '--models', 'sonnet']).models, 'sonnet');
+  assert.throws(() => parseArgs(['--out', 'x', '--arm', 'a=.', '--models', 'haiku']), /--models takes one of default, sonnet, opus, fast/);
+  assert.deepEqual(fullRunArgs({ models: 'sonnet' }).slice(-2), ['--models', 'sonnet']);
+  assert.ok(!fullRunArgs({ models: null }).includes('--models'));
 });

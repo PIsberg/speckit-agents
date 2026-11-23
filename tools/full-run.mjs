@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--models <tier>]
 //                         [--large-slices] [--constitution library]
 //                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken|neighbour|other-fr|contest|patch-bug] [--claim] [--team-root <checkout>]
 //
@@ -459,8 +459,12 @@ export function tempOutProblem(out, { platform = process.platform, tmp = os.tmpd
     + 'then writes to C:\\tmp\\... instead of the scratch repo. Use a folder outside it.';
 }
 
+// #429: install.mjs's model tiers; --models installs the run's team on one.
+const MODEL_TIERS = ['default', 'sonnet', 'opus', 'fast'];
+export const installArgs = ({ models }) => (models ? ['--models', models] : []);
+
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--hybrid') { o.hybrid = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
@@ -475,9 +479,13 @@ export function args(argv) {
     }
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
+    else if (k === '--models') {
+      if (!MODEL_TIERS.includes(v)) throw new Error(`--models takes one of ${MODEL_TIERS.join(', ')}`);
+      o.models = v;
+    }
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>] [--models <tier>]');
   if (o.hybrid && o.skillAgents) throw new Error('--hybrid and --skill-agents are two different teams: pass one');
   const c = CASES[o.case];
   if (o.hybrid && (c.gate || c.load || c.contest || c.patch)) throw new Error(`--hybrid runs only a whole pipeline, not the one-step case ${o.case}`);
@@ -508,7 +516,7 @@ function main() {
   const confFile = o.login && !process.env.CLAUDE_CONFIG_DIR ? path.join(os.homedir(), '.claude.json') : path.join(cfg, '.claude.json');
   if (!o.login) env.CLAUDE_CONFIG_DIR = cfg;
   const target = o.login ? ['--claude-dir', path.join(repo, '.claude')] : [];
-  const install = run(process.execPath, [path.join(o.teamRoot, 'install.mjs'), ...target], { env });
+  const install = run(process.execPath, [path.join(o.teamRoot, 'install.mjs'), ...target, ...installArgs(o)], { env });
   if (install.status !== 0) throw new Error(`install.mjs failed: ${install.stdout}${install.stderr}`);
   const shadow = o.login ? shadowingSkills(cfg, path.join(repo, '.claude')) : [];
   if (shadow.length) {

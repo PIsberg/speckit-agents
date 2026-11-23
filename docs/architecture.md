@@ -19,6 +19,9 @@ The pipeline coordinates autonomous subagents around GitHub Spec Kit. Each agent
 | [`security-reviewer`](../agents/security-reviewer.md) | magenta | sonnet | Opt-in security review (spec & result phases) |
 | [`patcher`](../agents/patcher.md) | cyan | sonnet | Fast track for small fixes (at most 30 lines) |
 
+The Model column is the shipped tier; `node install.mjs --models default|sonnet|opus|fast` sets every agent's line,
+and `fast` also has the `gate` hook put stub passes and `dictated:` revisions on haiku (#429).
+
 ### Inline mode: `--team skill-agents`
 
 Typed as `/speckit-team --team skill-agents <request>`, the same seven roles run in the main session

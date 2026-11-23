@@ -4933,3 +4933,59 @@ test('#428: a writer role report with no end word denies the gate launch once, t
     if (role === 'implementer') assert.equal(redCountOf(dir), 1, 'counted as RED, as at a role call');
   }
 });
+
+// #429: with the team installed as `--models fast`, the main session's launch of a stub pass (implementer, a `stub` line)
+// or a dictated revision (architect, a `dictated:` line) goes out on haiku: the hook sets the Agent call's model.
+function tierHook(models) {
+  const hook = skillHook();
+  if (models !== undefined) {
+    fs.writeFileSync(path.join(path.dirname(hook), 'speckit-agents.install.json'),
+      typeof models === 'string' && models.startsWith('{') ? models : JSON.stringify({ managedBy: 'speckit-agents: managed by install.mjs', models }));
+  }
+  return hook;
+}
+const launchWith = (dir, hook, subagent_type, prompt, extra = {}) => run(dir, ['gate'], {
+  hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1',
+  tool_input: { description: 'x', subagent_type, prompt, run_in_background: false, ...extra.tool_input }, ...extra.input,
+}, hook);
+const modelOf = (out) => out?.hookSpecificOutput?.updatedInput?.model;
+
+test('#429: under --models fast a stub pass and a dictated revision go out on haiku, every other field kept', () => {
+  const hook = tierHook('fast');
+  const { dir } = repo();
+  pass(dir);
+  const stub = launchWith(dir, hook, 'implementer', 'stub T001 T002');
+  assert.equal(modelOf(stub), 'haiku', JSON.stringify(stub));
+  assert.deepEqual({ ...stub.hookSpecificOutput.updatedInput, model: undefined },
+    { description: 'x', subagent_type: 'implementer', prompt: 'stub T001 T002', run_in_background: false, model: undefined });
+  assert.equal(stub.hookSpecificOutput.permissionDecision, undefined, 'no permission decision: the rewrite only');
+  assert.equal(modelOf(launchWith(dir, hook, 'implementer', 'Team: test-writer, implementer\nstub T001')), 'haiku', 'after a Team line');
+  assert.equal(modelOf(launchWith(dir, hook, 'architect', 'dictated: specs/001-demo/plan.md, under ## Summary: say X')), 'haiku');
+  assert.equal(modelOf(launchWith(dir, hook, 'architect', 'Project: billing\ndictated: in tasks.md, drop T013 everywhere')), 'haiku', 'after a Project line');
+});
+
+test('#429: no rewrite for any other launch, tier, or a model the call already names', () => {
+  const fast = tierHook('fast');
+  const { dir } = repo();
+  pass(dir);
+  for (const [role, prompt] of [['implementer', 'T001 T002 and the red output'], ['implementer', 'the stub of T003 failed'], ['architect', 'specs/001-demo'],
+    ['architect', 'not dictated: a full revision'], ['test-writer', 'stub T001'], ['spec-auditor', 'dictated: x'], ['patcher', 'stub']]) {
+    const out = launchWith(dir, fast, role, prompt);
+    assert.equal(modelOf(out), undefined, `${role} "${prompt}": ${JSON.stringify(out)}`);
+  }
+  assert.equal(modelOf(launchWith(dir, fast, 'implementer', 'stub T001', { tool_input: { model: 'opus' } })), undefined, 'the call names its model');
+  assert.equal(modelOf(launchWith(dir, fast, 'implementer', 'stub T001', { input: { agent_id: 'sub1' } })), undefined, 'from a subagent');
+  for (const models of [undefined, 'default', 'sonnet', 'opus', 'haiku', '{not json', '{"models":"fast"}']) {
+    const out = launchWith(dir, tierHook(models), 'implementer', 'stub T001');
+    assert.equal(modelOf(out), undefined, `manifest ${models}: ${JSON.stringify(out)}`);
+  }
+});
+
+test('#429: the rewrite keeps the notes a launch says', () => {
+  const hook = tierHook('fast');
+  const { dir } = repo();
+  pass(dir);
+  const out = launchWith(dir, hook, 'implementer', 'Team: test-writer, implementer\nstub T001');
+  assert.equal(modelOf(out), 'haiku', JSON.stringify(out));
+  assert.match(msg(out), /team for this session: test-writer, implementer/);
+});

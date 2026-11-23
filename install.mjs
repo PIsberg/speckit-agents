@@ -11,6 +11,11 @@
 //   node install.mjs --no-fork       turn Claude Code's fork subagents off for every project, so
 //                                    the team's agents run in the foreground; later reruns keep it
 //   node install.mjs --fork          remove what --no-fork wrote
+//   node install.mjs --models default|sonnet|opus|fast
+//                                    which model each agent runs on: default as shipped (opus on architect
+//                                    and spec-auditor, sonnet on the rest), sonnet or opus on every agent, or
+//                                    fast: sonnet on every agent, and the hook puts stub passes and dictated
+//                                    architect revisions on haiku; later reruns keep it (#429)
 //
 // Any other argument is refused before anything is written.
 //
@@ -93,9 +98,16 @@ if (dirArg >= 0 && (!argv[dirArg + 1] || argv[dirArg + 1].startsWith('--'))) {
   console.error('ERROR: --claude-dir needs a directory.');
   process.exit(1);
 }
+// #429: the model tier. The hook reads it from the manifest (`fast`), so its names are a contract with the hook.
+const MODEL_TIERS = ['default', 'sonnet', 'opus', 'fast'];
+const modelsAt = argv.indexOf('--models');
+if (modelsAt >= 0 && !MODEL_TIERS.includes(argv[modelsAt + 1])) {
+  console.error(`ERROR: --models takes one of ${MODEL_TIERS.join(', ')}.`);
+  process.exit(1);
+}
 // A mistyped flag used to be ignored: `--dryrun` wrote everything and `--unistall` installed.
-const FLAGS = ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board', '--no-fork', '--fork'];
-const unknown = argv.find((a, i) => !FLAGS.includes(a) && !(i === dirArg + 1 && dirArg >= 0));
+const FLAGS = ['--uninstall', '--dry-run', '--force', '--claude-dir', '--board', '--no-board', '--no-fork', '--fork', '--models'];
+const unknown = argv.find((a, i) => !FLAGS.includes(a) && !(i === dirArg + 1 && dirArg >= 0) && !(i === modelsAt + 1 && modelsAt >= 0));
 if (unknown !== undefined) {
   console.error(`ERROR: unknown argument ${unknown}. node install.mjs --help lists the flags.`);
   process.exit(1);
@@ -535,12 +547,17 @@ if (major < 22) {
   process.exit(1);
 }
 
+// #429: the tier given, else the one the last install recorded, else the shipped lines.
+const models = modelsAt >= 0 ? argv[modelsAt + 1] : MODEL_TIERS.includes(manifest?.models) ? manifest.models : 'default';
+// An agent's frontmatter `model:` line for the tier; `default` keeps the source's.
+const withModel = (text) => (models === 'default' ? text : text.replace(/^model: .*$/m, `model: ${models === 'opus' ? 'opus' : 'sonnet'}`));
 // Rendered before anything is written, so a source that cannot be rendered writes nothing.
 const rendered = new Map();
 try {
   for (const { src, dst, role } of files()) {
     const text = fs.readFileSync(path.join(SRC, src), 'utf8');
-    rendered.set(dst, (role ? roleSkill(role, text) : text).replaceAll('{{HOOK}}', hookPath).replace(MARKER, STAMPED));
+    const source = !role && /^agents[\\/]/.test(src) ? withModel(text) : text;
+    rendered.set(dst, (role ? roleSkill(role, text) : source).replaceAll('{{HOOK}}', hookPath).replace(MARKER, STAMPED));
   }
 } catch (e) {
   console.error(`ERROR: ${e.message}`);
@@ -609,6 +626,7 @@ write(manifestFile, `${JSON.stringify({
   forkOff: wantFork,
   addedForkEnv: fork.added,
   addedNoNetworkRule: rule.added,
+  models,
 }, null, 2)}\n`);
 
 if (!dryRun) {
