@@ -4503,6 +4503,29 @@ test('#418: lane load sends back a change to an existing test file that says loa
   assert.match(out.reason, /test\/load\/parse\.test\.mjs/);
 });
 
+// #423: a load run's output (coverage, bench files) is not load-tester's change. The Stop check counts only files
+// git does not ignore, so output the project ignores passes; output it does not ignore is sent back by name, and
+// the role deletes what its runs left (agents/load-tester.md).
+test('#423: lane load passes run output the project ignores and names output it does not', () => {
+  const r = repo();
+  const { dir, write: w } = r;
+  w('.gitignore', 'coverage/\n');
+  commitAll(r, 'ignore coverage');
+  pass(dir);
+  const start = (id) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: id });
+  const stop = (id) => run(dir, ['lane', 'load'], { hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'load-tester' });
+  start('a1');
+  w('test/load/a.load.test.mjs', 'x\n');
+  w('coverage/lcov.info', 'TN:\n');
+  assert.equal(stop('a1'), null, 'ignored output is not a change');
+  start('a2');
+  w('bench-results.json', '{}\n');
+  const out = stop('a2');
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(out.reason, /bench-results\.json/);
+  assert.doesNotMatch(out.reason, /lcov\.info/);
+});
+
 // 012 T004 (FR-001, FR-002, FR-003, FR-017, SC-003, contract 1): the team.
 test('012 T004 FR-001 FR-003 contract 1: a Team line naming load-tester records it in pipeline order', () => {
   const { dir } = repo();
