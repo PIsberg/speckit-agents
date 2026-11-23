@@ -2490,6 +2490,15 @@ test('#422: the accept path stashes the load tests it names and nothing else', (
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
+// #424: FR-016 has a load test run under the project's ordinary test command. Where that command lists its files
+// or needs config (a package.json script, a surefire includes list), a new load test needs an edit outside lane
+// load, which the role cannot make: it reports NOT MEASURED with the edit, never PASS on a test nothing runs.
+test('#424: load-tester reports NOT MEASURED, naming the edit, when the test command would not run a new load test', () => {
+  const lt = installedAgent('load-tester');
+  assert.match(lt, /would not pick a new load test up without an edit outside your lane[^]*?end `NOT MEASURED` and name the edit/);
+  assert.match(lt, /never `PASS` on a load test the command does not run/);
+});
+
 test('012 T008 FR-002 edge cases: an opt-in role not asked for gets no skipped row, and a team with no implementer is still measured', () => {
   const skill = teamSkill();
   const seven = flat(skillSection(skill, '## 7. Hand over'));

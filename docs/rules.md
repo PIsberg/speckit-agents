@@ -398,13 +398,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Writes only load tests and `specs/<feature>/load-test.md`; leaves a file already in a load directory whose own name does not say load (#418). hook `scope load` and `lane load`.
 
 ### agents/load-tester.md: Process
-<!-- fingerprint: 3ad01d12 -->
+<!-- fingerprint: bcc249d8 -->
 - Find the load surface in the diff; none found is NOT MEASURED. pinned.
 - Check the instrument: the working tree's build, a non-empty and complete result set, skips listed as not measured, a feature switch engaged. pinned; a missed check leaves a wrong number nobody sees, unseen.
 - Run `probe` before the first measurement and after the last; its `noisy:` lines go under Warnings. script (`probe` answers; reporting it is asked); pinned.
 - Gate only on deterministic measures, ceilings from a failing first run times a margin, no budget row before its failing run. pinned, unseen.
 - Workloads: sizes doubled, cold and warm apart, concurrency swept, accuracy rates, the host's control subtracted. pinned, unseen.
 - Harness and record: load tests where `lane load` accepts them, reduced by default and the full sweep behind an environment variable, versions compared in one sitting, `load-test.md` rewritten each run. pinned.
+- `NOT MEASURED`, naming the edit, when the project's test command would not run a new load test without an edit outside the lane (#424, FR-016). pinned.
 - Delete run output outside the lane that git does not ignore. text; hook `lane load` sends it back by name and passes what git ignores (#423).
 
 ### agents/load-tester.md: Verdict

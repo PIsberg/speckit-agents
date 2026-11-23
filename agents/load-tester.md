@@ -71,7 +71,9 @@ The hook denies a write outside it and checks the whole diff at your Stop.
      from each measurement.
 7. Harness and record. Put load tests where lane load accepts them (`test/load/`, `*.load.test.*`). Each
    runs a reduced version (a smaller workload) under the project's ordinary test command, and a breach of
-   a ceiling makes it fail the command (red). Behind an environment variable the record names, the full
+   a ceiling makes it fail the command (red). If that command would not pick a new load test up without an
+   edit outside your lane (a script in `package.json`, a runner's include list), end `NOT MEASURED` and name
+   the edit: never `PASS` on a load test the command does not run. Behind an environment variable the record names, the full
    sweep runs. Before you keep a load test, see it fail on an impossible ceiling. Delete output your runs
    leave outside your lane that git does not ignore (a bench file, coverage): your Stop counts it as yours.
    - Compare versions in one sitting, in alternating order, several runs each. Call a difference real only
