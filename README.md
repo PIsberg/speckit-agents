@@ -850,7 +850,7 @@ and any other change is caught at the end.
 
 #### What the hooks stop
 
-- **Writes** (`scope protected`): a `Write`, `Edit`, `MultiEdit` or `NotebookEdit` to a protected
+- **Writes** (`patch`, with the rule of `scope protected`): a `Write`, `Edit`, `MultiEdit` or `NotebookEdit` to a protected
   path, the installed team or the git directory is denied before it runs.
 - **History and remote commands**: `patcher` may not run `git commit`, `merge`, `rebase`, `stash`,
   `tag`, `branch` (except the listing forms such as `git branch --show-current`), `switch`, `push`,
@@ -1100,8 +1100,8 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `scope only <prefixes>` | product-owner, architect: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit\|Bash` | writing outside their prefixes, with a write tool or a Bash command that names the file ([What a scope rule reads in a Bash command](#what-a-scope-rule-reads-in-a-bash-command)) |
 | `scope tests` | test-writer: run inside its `gate` entry as `gate scope tests`, on `Write|Edit|MultiEdit|NotebookEdit|Bash` only ([#337](https://github.com/PIsberg/speckit-agents/issues/337)) | writing production code, or Spec Kit and project paths under `.specify/` |
 | `scope no-tests` | implementer: run inside its `gate retries` entry as `gate retries scope no-tests`, on the same tools (#337) | writing test files, or Spec Kit's config under `.specify/` (`feature.json` picks the feature whose retry count applies) |
-| `scope protected` | patcher: PreToolUse `Write\|Edit\|MultiEdit\|NotebookEdit` | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
-| `patch` | patcher: PreToolUse on every tool, and Stop | going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, a production change with no test file unless the report has a `No test: <reason>` line (#243), and no accepted record unless the run is within budget |
+| `scope protected` | no entry since #444: `patch` applies its rule | writing a protected path, the installed team's files, or the git directory ([The fast track](#the-fast-track)) |
+| `patch` | patcher: PreToolUse on every tool, and Stop | a write to a protected path (the `scope protected` rule, in the same process since [#444](https://github.com/PIsberg/speckit-agents/issues/444)); going past 30 production lines or 2 files, `git commit`, `git push`, `gh` and the other history commands, `git reset --hard`, `git clean` and wholesale restores, a write to a file uncommitted at the start; git's network transports for every Bash command it lets through (with the installer's allow rule for the export line, or in `bypassPermissions`); at the end, a protected change or a commit, a production change with no test file unless the report has a `No test: <reason>` line (#243), and no accepted record unless the run is within budget |
 | `ends DONE FAILED ESCALATE` | patcher: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `DONE`, `FAILED` or `ESCALATE` (refused once, never twice); records nothing |
 | `scope none` | spec-auditor, spec-gatekeeper, security-reviewer: PreToolUse `Bash` | a Bash command that writes a file in the repo, writes to a path only the run can tell, or changes the working tree or the history with git (`checkout`, `stash`, `reset`, `add`, `commit` and the like); checks, tests and writes outside the repo pass ([#209](https://github.com/PIsberg/speckit-agents/issues/209)) |
 | every `scope` rule | all five writing agents, and the three read-only ones on Bash | writing into the git directory (also a linked worktree's main one), where verdicts and retry counts live |
@@ -1734,12 +1734,12 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 735 tests:
+`npm test` runs 738 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 268 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 151 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |

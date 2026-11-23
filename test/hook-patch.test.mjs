@@ -1449,3 +1449,36 @@ test('patch: a run with a project record active measures the same budget and pro
   overBash(r.dir, /31 changed production lines/);
   assert.ok(denied(patchTool(r.dir, 'Write', { file_path: path.join(r.dir, '.specify', 'projects', 'billing', 'notes.md') }, { session_id: 's1' })), 'project path protected');
 });
+
+// ---- #444: patcher's hook cost per tool call ----
+// A write started two hook processes (patch and scope protected), 157 + 61 ms on Windows. patch now judges the
+// protected path itself, so the agent's frontmatter runs one process per write.
+test('#444: patch alone denies a Write to a protected path, naming it, and lets a production Write through', () => {
+  const r = fresh({ 'src/fix.js': 'export const a = 1;\n' });
+  begin(r.dir);
+  const out = patchTool(r.dir, 'Write', { file_path: path.join(r.dir, '.specify/memory/constitution.md'), content: 'x' });
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(why(out), /may not write \.specify\/memory\/constitution\.md: it is a protected path/);
+  assert.ok(!denied(patchTool(r.dir, 'Edit', { file_path: path.join(r.dir, 'src/fix.js'), old_string: 'a = 1', new_string: 'a = 2' })));
+});
+
+test('#444: the installed patcher starts one hook process per write: no scope protected entry beside patch', () => {
+  const fm = fs.readFileSync(path.join(path.dirname(HOOK), '..', 'agents', 'patcher.md'), 'utf8').split(/^---$/m)[1];
+  assert.doesNotMatch(fm, /scope protected/);
+  assert.match(fm, /matcher: "\.\*"\n\s+hooks:\n\s+- type: command\n\s+command: 'node "\{\{HOOK\}\}" patch'/);
+});
+
+// A read-only tool after a read-only tool that passed skips the measuring (about 60 ms of git); any other call
+// measures, so a change made through Bash is caught at the next call whatever came before it.
+test('#444: after passing reads, a Bash change over budget is caught at the next read', () => {
+  const r = forty();
+  begin(r.dir);
+  const read = () => patchTool(r.dir, 'Read', { file_path: path.join(r.dir, 'src/forty.js') });
+  assert.ok(!denied(read()));
+  assert.ok(!denied(read()), 'a second read');
+  okBash(r.dir, 'the Bash call itself');
+  edit(r.dir, 'src/forty.js', 0, 35);
+  const out = read();
+  assert.ok(denied(out), 'the read after Bash measures: ' + JSON.stringify(out));
+  assert.match(why(out), /Fast-track budget exceeded: 35 changed production lines/);
+});

@@ -66,7 +66,8 @@ test('install lays down agents, skill, hook and both settings gates, keeping oth
   assert.ok(fs.existsSync(path.join(dir, 'agents', 'patcher.md')), 'agents/patcher.md installed');
   const patcher = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
   assert.match(patcher, new RegExp(`node "${hookPath}" patch`));
-  assert.match(patcher, new RegExp(`node "${hookPath}" scope protected`));
+  // #444: patch judges the protected paths itself, so a write starts one hook process.
+  assert.doesNotMatch(patcher, /scope protected/);
   assert.match(patcher, new RegExp(`node "${hookPath}" ends DONE FAILED ESCALATE`));
   assert.ok(fs.existsSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md')), 'skills/speckit-patch installed');
   const patchSkill = fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
@@ -551,7 +552,8 @@ test('#209 #210: every team agent with Bash runs its scope hook on Bash, and the
     if (rule === 'none') assert.match(fm, /^disallowedTools:.*\bWrite\b/m, `${a}: scope none only for an agent that cannot write`);
   }
   const patcher = fs.readFileSync(path.join(dir, 'agents', 'patcher.md'), 'utf8');
-  assert.match(patcher, /- matcher: "Write\|Edit\|MultiEdit\|NotebookEdit"\r?\n\s+hooks:\r?\n\s+- type: command\r?\n\s+command: '.*" scope protected'/, 'patcher\'s Bash stays with patch mode');
+  assert.match(patcher, /- matcher: "\.\*"\r?\n\s+hooks:\r?\n\s+- type: command\r?\n\s+command: '.*" patch'/, 'patcher\'s writes and Bash are patch mode\'s, one process a call (#444)');
+  assert.equal(patcher.split(/^---$/m)[1].match(/\.mjs" (?:scope|gate|patch)\b/g)?.length, 2, 'patch at PreToolUse and at Stop, nothing beside it');
   for (const role of Object.keys(expected)) {
     const skill = fs.readFileSync(path.join(dir, 'skills', `speckit-role-${role}`, 'SKILL.md'), 'utf8');
     assert.match(skill, /- matcher: "Write\|Edit\|MultiEdit\|NotebookEdit\|Bash"\r?\n\s+hooks:\r?\n\s+- type: command\r?\n\s+command: '.*" scope role'/, `speckit-role-${role}`);

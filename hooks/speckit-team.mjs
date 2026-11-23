@@ -8,7 +8,8 @@
 //   scope tests             PreToolUse Write/Edit: allow only test files and specs/*/tasks.md
 //   scope no-tests          PreToolUse Write/Edit: allow anything except test files and .specify/
 //   scope protected         PreToolUse Write/Edit: deny CI, Spec Kit, specs/ and .claude/ paths, the installed
-//                           team, and in the speckit-agents repo its own sources; allow the rest
+//                           team, and in the speckit-agents repo its own sources; allow the rest. patcher's writes get
+//                           this rule from `patch` (#444); the mode stays for the tests and a hand-wired entry
 //   gate                    PreToolUse / UserPromptExpansion: block implementation until
 //                           spec-auditor has passed the current spec, plan, tasks, constitution; skipped in a
 //                           subagent whose session's team (recorded at the main session's launch of a team
@@ -302,13 +303,13 @@ function fsRepoDirs() {
       }
     }
     const slash = (p) => fs.realpathSync.native(p).split(path.sep).join('/');
-    return [slash(specDir), slash(common)];
+    return [slash(specDir), slash(common), slash(gitDir)];
   } catch { return null; }
 }
 function repoDirs() {
   const fast = fsRepoDirs();
   if (fast) return fast;
-  const args = ['-c', 'core.quotepath=off', 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'];
+  const args = ['-c', 'core.quotepath=off', 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir', '--git-dir'];
   const once = () => {
     try { return { out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) {
       return { err: String(e?.stderr ?? e?.message ?? '') };
@@ -326,7 +327,8 @@ function repoDirs() {
   if (CLI) projectRefuse(`git could not read the repository here (${why}).`);
   return emit({ systemMessage: `speckit-team: ${mode} could not read the git repository here (${why}); no decision made.` });
 }
-const [root, commonDir] = repoDirs();
+// #444: the third is the worktree's own git dir, which the fast track's records use.
+const [root, commonDir, ownGitDir] = repoDirs();
 if (!root || !commonDir || !fs.existsSync(path.join(root, '.specify'))) notSpecKit();
 inSpecKitRepo = true;
 
@@ -3286,7 +3288,7 @@ function letThrough() {
 }
 
 if (mode === 'patch') {
-  const acceptedFile = path.join(git(root, 'rev-parse', '--absolute-git-dir'), 'speckit-team', 'patch-accepted.json');
+  const acceptedFile = path.join(ownGitDir, 'speckit-team', 'patch-accepted.json');
   const undoFile = path.join(path.dirname(acceptedFile), 'patch-undo.json');
   const viaHandback = event === 'PreToolUse' && input.tool_name === 'SubagentHandback';
   const isEnd = viaHandback || event !== 'PreToolUse';
@@ -3299,13 +3301,22 @@ if (mode === 'patch') {
   if (!isEnd) fs.rmSync(handbackFile(key), { force: true });
   const f = patchFile(key);
   if (isEnd && !fs.existsSync(f)) process.exit(0);
+  // #444: a read-only tool right after a read-only tool that passed every check changes nothing the checks
+  // measure, so it skips them (about 60 ms of git on Windows). Any other call removes the mark first, so what a
+  // Bash or write call changed is measured at the next call; the end check always measures.
+  const readOnly = !isEnd && ['Read', 'Grep', 'Glob', 'LS'].includes(input.tool_name);
+  const cleanFile = path.join(stateDir, 'patch-clean', path.basename(f));
+  if (readOnly && fs.existsSync(cleanFile) && fs.existsSync(f)) letThrough();
+  fs.rmSync(cleanFile, { force: true });
   if (viaHandback) writeJson(handbackFile(key), { noTest: NO_TEST_LINE.test(reportText(true)), at: new Date().toISOString() });
   if (!fs.existsSync(f)) {
     const sha = git(root, 'rev-parse', 'HEAD');
     if (!sha) deny('Fast track: this repo has no commit to measure the change from. Commit first, or use /speckit-team.');
     const dirty = Object.fromEntries(changedSince('HEAD').map((rel) => [rel, stateOf(rel)]));
     fs.mkdirSync(path.dirname(f), { recursive: true });
-    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, team: teamState(), remotes: remoteRefs(), at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
+    // #444: the start commit's test patterns and whether it is this repo, read once instead of on every call.
+    const testPaths = git(root, 'cat-file', 'blob', `${sha}:.specify/test-paths`) ?? '';
+    try { fs.writeFileSync(f, JSON.stringify({ sha, dirty, team: teamState(), remotes: remoteRefs(), testPaths, own: isOwnRepo(sha), at: new Date().toISOString() }, null, 1), { flag: 'wx' }); } catch { /* written by a parallel call */ }
   }
   const start = readState(f);
   const plain = (o) => o && typeof o === 'object' && !Array.isArray(o);
@@ -3318,6 +3329,11 @@ if (mode === 'patch') {
     deny(`Fast track: the budget cannot be measured: ${f} is unreadable or names a commit this repo does not have. `
       + 'Report this; the user deletes the file to start over.');
   }
+  if (typeof start.own === 'boolean' && !ownRepo.has(start.sha)) ownRepo.set(start.sha, start.own);
+  if (typeof start.testPaths === 'string' && !testsAtMemo.has(start.sha)) {
+    const t = parseTestPaths(start.testPaths);
+    testsAtMemo.set(start.sha, { isTest: t.isTest, bad: t.bad });
+  }
   const bad = testsAt(start.sha).bad;
   if (bad) {
     if (isEnd) emit({ systemMessage: `speckit-team: fast-track check could not run for ${who}: ${bad} (as committed at ${start.sha.slice(0, 12)}).` });
@@ -3325,6 +3341,10 @@ if (mode === 'patch') {
       + 'Report this to the user, who fixes and commits the file, then starts a new run.');
   }
   if (isEnd) endCheck(start, viaHandback, key, acceptedFile, undoFile);
+  // #444: the protected-path check `scope protected` made in a second process.
+  const wti = input.tool_input || {};
+  const wrote = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(input.tool_name) ? str(wti.file_path ?? wti.notebook_path) : null;
+  if (wrote) { const w = laneProblem(who, ['protected'], path.resolve(cwd, wrote), wrote, false); if (w) deny(w); }
   const moved = remotesChanged(start.remotes);
   if (moved.length) {
     deny(`Fast track: remote-tracking refs changed during the run: ${moved.join(', ')}. A push or a fetch happened, which the fast track never does. `
@@ -3367,5 +3387,6 @@ if (mode === 'patch') {
       + '. Tests and docs do not count. Stop: leave the work uncommitted and report ESCALATE; the developer re-runs the change with /speckit-team.'
       + (pending ? ` First restore the protected files, naming each one (git checkout ${start.sha.slice(0, 12)} -- <file>, or rm <file> for a new file), and undo any commit (git reset --soft ${start.sha.slice(0, 12)}).` : ''));
   }
+  if (readOnly) { fs.mkdirSync(path.dirname(cleanFile), { recursive: true }); fs.writeFileSync(cleanFile, ''); }
   letThrough();
 }

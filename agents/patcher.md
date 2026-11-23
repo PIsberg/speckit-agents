@@ -11,10 +11,6 @@ hooks:
       hooks:
         - type: command
           command: 'node "{{HOOK}}" patch'
-    - matcher: "Write|Edit|MultiEdit|NotebookEdit"
-      hooks:
-        - type: command
-          command: 'node "{{HOOK}}" scope protected'
     - matcher: "SubagentHandback"
       hooks:
         - type: command
