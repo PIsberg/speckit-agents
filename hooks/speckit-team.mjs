@@ -1924,19 +1924,15 @@ function holdAudit(feat, launch) {
     + `Ask the user (AskUserQuestion): audit again, or stop and fix the spec first. Only on a yes, run node "${process.argv[1]}" audit --approve, then launch the audit again. A PASS clears the count.`);
 }
 
+const auditStartFile = (key) => path.join(stateDir, 'agents', `${key}.audit-start.json`);
 if (mode === 'verdict') {
-  // The auditor's first tool call records the files it starts from: a verdict is about the files it
-  // read, and one that finishes after they changed would stamp itself on files nobody audited (#77).
-  const startFile = agentKey && path.join(stateDir, 'agents', `${agentKey}.audit-start.json`);
+  // The auditor's start (`start` at SubagentStart, #445) records the files it starts from: a verdict is about the files
+  // it read, and one that finishes after they changed would stamp itself on files nobody audited (#77). An auditor
+  // resumed after a fix keeps its first start, so its verdict on the changed files is not recorded (owner decision
+  // 2026-11-23: the skill never resumes an agent, and the narrowed matcher saves a process on every audit tool call).
+  const startFile = agentKey && auditStartFile(agentKey);
   const doneFile = agentKey && path.join(stateDir, 'agents', `${agentKey}.verdict-done`);
-  if (event === 'PreToolUse' && input.tool_name !== 'SubagentHandback') {
-    const feat = feature();
-    if (!startFile || !feat) process.exit(0);
-    // Work after a report is a new audit by the same agent (one resumed with SendMessage): it starts afresh.
-    if (fs.existsSync(doneFile)) { fs.rmSync(doneFile, { force: true }); fs.rmSync(startFile, { force: true }); }
-    if (!fs.existsSync(startFile)) writeJson(startFile, { feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
-    process.exit(0);
-  }
+  if (event === 'PreToolUse' && input.tool_name !== 'SubagentHandback') process.exit(0);
   const viaHandback = event === 'PreToolUse';
   const text = reportText(viaHandback);
   const found = verdictIn(text);
@@ -2164,6 +2160,11 @@ function pruneState(now = Date.now()) {
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
+  // #445: spec-auditor's audit starts with the agent, so its verdict PreToolUse entry runs only on SubagentHandback.
+  if (type === 'spec-auditor' && agentId && AGENT_ID.test(agentId) && !fs.existsSync(auditStartFile(agentKey))) {
+    const feat = feature();
+    if (feat) writeJson(auditStartFile(agentKey), { feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString() });
+  }
   if ((type === 'product-owner' || type === 'architect' || READ_ONLY_ROLES.includes(type)) && agentId && AGENT_ID.test(agentId) && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
     if (start) writeJson(baseFile(agentKey), start);

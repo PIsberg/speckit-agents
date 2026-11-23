@@ -752,7 +752,8 @@ test('stop after a handback verdict does not demand the line again', () => {
 // #77: a verdict describes the files the auditor read, not the files on disk when it stops. Seen in
 // feature 003: an audit launched on old files finished ten hours late, and its FAIL replaced a newer
 // audit's PASS on the current files.
-const readAs = (dir, id) => run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: id });
+// #445: the auditor's start record is written at its SubagentStart, not at its first tool call.
+const readAs = (dir, id) => run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'spec-auditor', agent_id: id, session_id: 's1' });
 const gateOpen = (dir) => !denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {} }));
 
 test('a late verdict on files that changed after the auditor started does not replace a newer one', () => {
@@ -790,14 +791,39 @@ test('ticking a task during the audit does not make its verdict stale', () => {
   assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
 });
 
-test('an auditor resumed after its report starts a new audit from the files it reads then', () => {
+// #445 (owner decision 2026-11-23): the start record is the agent's start, so an auditor resumed with SendMessage after
+// a fix reports on files that changed since; its verdict is not recorded and a fresh audit is asked for. The skill never
+// resumes an agent.
+test('#445: an auditor resumed after a fix is not recorded; a fresh auditor on the same files is', () => {
   const { dir, write: w } = repo();
   readAs(dir, 'aud1');
   handback(dir, 'verdict', 'VERDICT: FAIL', { agent_id: 'aud1' });
   w(`${FEAT}/plan.md`, '# Plan\nRevised for the FAIL.\n');
-  readAs(dir, 'aud1');
-  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /recorded VERDICT: PASS/);
+  run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: 'aud1' });
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud1' }).systemMessage, /VERDICT: PASS was not recorded.*run @agent-spec-auditor again/s);
+  assert.ok(!gateOpen(dir));
+  readAs(dir, 'aud2');
+  assert.match(handback(dir, 'verdict', 'VERDICT: PASS', { agent_id: 'aud2' }).systemMessage, /recorded VERDICT: PASS/);
   assert.ok(gateOpen(dir));
+});
+
+test('#445: SubagentStart writes the start record for spec-auditor only, and a tool call writes none', () => {
+  const { dir } = repo();
+  const startOf = (id) => path.join(stateDir(dir), 'agents', `${id}.audit-start.json`);
+  run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id: 'r1' });
+  assert.ok(!fs.existsSync(startOf('r1')), 'a tool call starts nothing');
+  for (const agent_type of ['spec-gatekeeper', 'architect', 'implementer']) {
+    run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type, agent_id: `x-${agent_type}`, session_id: 's1' });
+    assert.ok(!fs.existsSync(startOf(`x-${agent_type}`)), agent_type);
+  }
+  readAs(dir, 'a1');
+  const rec = JSON.parse(fs.readFileSync(startOf('a1'), 'utf8'));
+  assert.equal(rec.feature, FEAT);
+  assert.equal(typeof rec.fingerprint, 'string');
+  const { dir: none } = repo();
+  fs.rmSync(path.join(none, '.specify', 'feature.json'));
+  readAs(none, 'a2');
+  assert.ok(!fs.existsSync(path.join(stateDir(none), 'agents', 'a2.audit-start.json')), 'no active feature: nothing');
 });
 
 test('an unreadable audit start record is treated as stale, not as a match', () => {
@@ -2555,7 +2581,7 @@ test('project start: with a record, SubagentStart gives the block as additionalC
     const out = startAs(dir, role, { agent_id: `a-${role}` });
     assert.deepEqual(out, { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: blockOf(dir, 'billing') } }, role);
   }
-  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-product-owner.json', 'a-spec-auditor.json', 'a-spec-gatekeeper.json'], 'lane start records for the roles no gate starts: the two planning roles and the read-only ones (#412)');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-product-owner.json', 'a-spec-auditor.audit-start.json', 'a-spec-auditor.json', 'a-spec-gatekeeper.json'], 'lane start records for the roles no gate starts: the two planning roles and the read-only ones (#412), and spec-auditor\'s audit start (#445)');
   assert.equal(startAs(dir, 'implementer', { session_id: 's2' }), null, "another session's record is not used");
 });
 
@@ -2750,7 +2776,8 @@ test('an agent_id that is not an id never puts state outside .git/speckit-team/a
   const escaped = () => [dir, path.join(dir, '.git'), stateDir(dir)]
     .flatMap((d) => fs.readdirSync(d).filter((f) => f.startsWith('escaped')).map((f) => path.join(d, f)));
   assert.equal(write(dir, ['gate'], 'src/main/App.java', { agent_id }), null, 'gate: the audit passed, the write goes through');
-  run(dir, ['verdict'], { hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: {}, agent_id });
+  // #445: the audit start is SubagentStart's, which writes nothing for an id that is not one.
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'spec-auditor', agent_id, session_id: 's1' });
   const ends = ['ends', 'DONE'];
   const report = { hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'no word' }, agent_id };
   assert.ok(denied(run(dir, ends, report)), 'ends: refused once');
@@ -2758,7 +2785,7 @@ test('an agent_id that is not an id never puts state outside .git/speckit-team/a
   assert.ok(denied(run(dir, ['result'], report)), 'result: refused once');
   assert.deepEqual(escaped(), []);
   const kept = fs.readdirSync(path.join(stateDir(dir), 'agents'));
-  assert.ok(kept.length >= 4, `the state is kept under agents/: ${kept}`);
+  assert.ok(kept.length >= 3, `the state is kept under agents/: ${kept}`);
 });
 
 

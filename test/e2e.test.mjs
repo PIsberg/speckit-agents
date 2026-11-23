@@ -713,7 +713,7 @@ test('#304: with two installs, an approved audit launch after two FAILs runs: bo
 
 // #77: the PreToolUse entry on every tool records the files the audit starts from. Without it, the
 // second audit's PASS would be stamped on the spec it edited mid-run and replace the first one.
-test("spec-auditor's verdict is not recorded when the files changed after its first tool call", { skip: noClaude, timeout: 180_000 }, async () => {
+test("spec-auditor's verdict is not recorded when the files changed after it started (#445: the start record is SubagentStart's)", { skip: noClaude, timeout: 180_000 }, async () => {
   const s = setup();
   const first = await session(s, { [MAIN]: [agent('spec-auditor', 'e2e auditor')], 'e2e auditor': [call('Read', { file_path: spec(s) }), say('No findings.\nVERDICT: PASS')] });
   const recorded = state(s, 'verdicts', '001-x.json');
