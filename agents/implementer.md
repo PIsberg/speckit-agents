@@ -41,7 +41,7 @@ brief state.
    cover your change: your tasks' test files and those that import or name the files you changed.
    Run the full suite only when your prompt says `last round` and not `worktree` (a worktree lacks
    the other slices' code, so their tests fail there; the main session runs the suite after the
-   merge); spec-gatekeeper runs it again before the PR. Check each command's own exit status: through a pipe to `tail`, `tee` or `grep`,
+   merge); without `last round`, spec-gatekeeper or the main session runs it on your commit. Check each command's own exit status: through a pipe to `tail`, `tee` or `grep`,
    the status you see is the last stage's. Give each run a Bash `timeout` that covers it, up to
    600000 ms: past the default 2 minutes Claude Code moves the command to the background, where
    you cannot wait for it.

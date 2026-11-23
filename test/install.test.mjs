@@ -651,6 +651,29 @@ test('installed implementer runs the full suite only in the round the skill call
   assert.ok(skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 7.')).includes('`last round`'), 'the skill names the last round');
 });
 
+// #430: the last implementer's full suite and spec-gatekeeper's gates ran back to back on one commit with
+// nothing changed between them. With spec-gatekeeper in the team, no launch asks an implementer for the suite
+// and the main session runs none after a side-by-side merge: spec-gatekeeper's run is the one full run.
+test('installed skill asks for the full suite only when spec-gatekeeper will not run it next (#430)', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
+  const inputs = skill.slice(skill.indexOf('- implementer: the round'), skill.indexOf('- spec-gatekeeper: the feature directory'));
+  assert.match(inputs, /`last round` when no round follows and spec-gatekeeper is not in the team/);
+  const build = skill.slice(skill.indexOf('## 4-5.'), skill.indexOf('## 5b.'));
+  assert.match(build, /implementer gets `last round` unless spec-gatekeeper is in the team/, 'the one-round brief');
+  assert.match(build, /\*\*Green\*\* \(implementer, the round's implementation task IDs, and `last round` when no round follows and spec-gatekeeper is not in the team\)/);
+  assert.match(build, /with spec-gatekeeper in the team the suite runs once, at spec-gatekeeper, on the implementer's commit/);
+  assert.match(build, /after the last round's merge, unless spec-gatekeeper is in the team/, 'no main-session run ahead of the gatekeeper');
+  const verify = skill.slice(skill.indexOf('## 6.'), skill.indexOf('## 7.'));
+  assert.ok(!/with `last round`/.test(verify.slice(0, verify.indexOf('If security-reviewer is in the team'))), 'step 6 runs only with spec-gatekeeper, so its implementers never get the suite');
+  assert.match(verify, /never `last round`/);
+  const security = verify.slice(verify.indexOf('If security-reviewer is in the team'));
+  assert.match(security, /`last round` only when spec-gatekeeper is not in the team/);
+  const implementer = flat(fs.readFileSync(path.join(dir, 'agents', 'implementer.md'), 'utf8'));
+  assert.match(implementer, /without `last round`, spec-gatekeeper or the main session runs it on your commit/);
+});
+
 // #40, checked against a fake API with Claude Code 2.1.296 and git 2.55: a worktree starts from the
 // last commit, so it lacks test-writer's uncommitted tests; ticks on adjacent lines of tasks.md in two
 // branches conflict when merged; and `git add -A` commits a worktree left in place as an embedded

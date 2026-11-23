@@ -59,7 +59,7 @@ and answers, or another agent's full report.
   implementer launch only to tick them. In a one-round run (step 4-5) the brief instead.
 - implementer: the round's task IDs plus test-writer's report for them (test files and failing
   output, trimmed); on a relaunch, the failing output of the last attempt instead; `last round`
-  when no round follows (step 4-5). For a stub pass, `stub` and the task IDs.
+  when no round follows and spec-gatekeeper is not in the team (step 4-5). For a stub pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory and, when tasks are unbuilt (step 6), the `Unbuilt:` line.
 
 In a run whose team is not the full team, every launch prompt carries one `Team:` line with the
@@ -303,7 +303,7 @@ while building never call for a re-audit.
 Skip a step whose role is absent from the team, and never launch anyone for the tasks of an absent
 role. Without architect there is no `tasks.md`: run one round on a brief, the request text or, with
 product-owner, the approved `spec.md`. One test-writer then one implementer get the brief in their
-prompt in place of task IDs and tick nothing; implementer gets `last round`. A stub pass runs only
+prompt in place of task IDs and tick nothing; implementer gets `last round` unless spec-gatekeeper is in the team. A stub pass runs only
 when test-writer reports a missing production symbol. Without test-writer, nobody writes tests: never
 ask implementer for a test file, since its lane check makes it delete one at its Stop; leave them out
 of its brief, and the hand-over lists the tests the request named as not written.
@@ -338,9 +338,10 @@ For each round:
    it reports a task number that cannot hold, send a test-writer the number the code allows when
    the task's intent is plain, and list the task at hand-over; otherwise the architect rewrites it.
 3. **Green** (implementer, the round's implementation task IDs, and `last round` when no round
-   follows). An implementer runs the tests that cover its change, and the full suite only in the
-   last round; spec-gatekeeper runs it once more. In the 004 run the full suite ran 5 times, about
-   14.5 of the 48 agent-minutes. Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
+   follows and spec-gatekeeper is not in the team). An implementer runs the tests that cover its
+   change, and the full suite only with `last round`: with spec-gatekeeper in the team the suite runs
+   once, at spec-gatekeeper, on the implementer's commit (#430). In the 004 run the full suite ran 5
+   times, about 14.5 of the 48 agent-minutes. Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
    relaunch it with the failing output. After 3 REDs in a row the hook blocks implementer: do not
    retry, and never delete the retry record yourself.
    With no active feature (no `.specify/feature.json`, or one naming no directory) the hook counts
@@ -361,7 +362,7 @@ call chained with `&&`: merge the branches the results name (`worktreeBranch`) i
 branch in task order, `git worktree remove` each `worktreePath` and `git branch -d` its branch, and
 only then tick the tasks each report names as done and commit. A worktree lacks the other slices'
 code, so an implementer there runs its own tasks' tests, never the full suite: run it yourself at the
-end of that call after the last round's merge, and on a failure relaunch one implementer without a
+end of that call after the last round's merge, unless spec-gatekeeper is in the team and runs it next, and on a failure relaunch one implementer without a
 worktree, with the output and `last round`. The worktrees sit inside the repository
 (`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
 the 2026-10-25 run committed both and spent a commit taking them out.
@@ -389,17 +390,17 @@ task order, for example:
 and start once every other task is ticked.
 A task still unticked then (a final test run, a docs task no round took), limited to the chosen
 roles' tasks, is one more round: launch
-implementer for it with `last round`, and verify after its GREEN. Hand to the user only a task no
+implementer for it, never `last round` (spec-gatekeeper runs the suite again), and verify after its GREEN. Hand to the user only a task no
 agent can do. On REJECTED, route each reason to test-writer or implementer, whichever is chosen (a reason for a
 role not chosen goes to the user) (an implementer then
-with `last round`), then re-run spec-gatekeeper.
+without `last round`), then re-run spec-gatekeeper.
 A reason that asks for a test of behaviour the code already has goes to test-writer, which shows it
 passing, names the production line to break and ends `FIXED`. Never ask test-writer to change
 production code: its scope denies it (2026-11-11: `BLOCKED`, with its tests committed). Show the test
 failing yourself, in one Bash call that makes the break, runs the test, restores with
 `git checkout -- <file>` and ends on `git status --short`, and put that call's output in
 spec-gatekeeper's prompt.
-If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), an implementer then with `last round`; the fix changes code spec-gatekeeper approved, so re-run spec-gatekeeper (when chosen) before you relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to handover.
+If security-reviewer is in the team: after spec-gatekeeper verification (or after the last round when spec-gatekeeper is absent), launch security-reviewer in the foreground (`run_in_background: false`) with `phase: result` to inspect the code diff and dependencies. On FAIL, route CRITICAL and HIGH findings to implementer (or test-writer, or to the user if neither is chosen), an implementer then with `last round` only when spec-gatekeeper is not in the team; the fix changes code spec-gatekeeper approved, so re-run spec-gatekeeper (when chosen) before you relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to handover.
 
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.

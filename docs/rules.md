@@ -60,14 +60,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The main session orchestrates and does not do the agents' work. text.
 
 ### skills/speckit-team/SKILL.md: Handoffs
-<!-- fingerprint: 521f3538 -->
+<!-- fingerprint: d10a91dd -->
 - Launch every agent in the foreground; without a `run_in_background` parameter, end the turn and wait. pinned (`test/e2e.test.mjs` pins the parameter's behaviour); a breach costs tokens.
 - A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost); a resumed agent's later reports are still checked and counted: hook `result` and `ends` close its last report at its next tool call (#370), and judge every hand-back, and a Stop that is not the counted one, as a new report (#394).
 - Do not ask an agent for more than its Report allows; one line before and after each launch. pinned.
 - Prompts carry only the role's Inputs; never paste the conversation or another full report. text, unseen (cost).
 - architect: a `dictated:` revision when the answers fix every edit. pinned.
 - test-writer ticks its own tasks. text.
-- implementer: `last round` when no round follows; `stub` for a stub pass. pinned.
+- implementer: `last round` when no round follows and spec-gatekeeper is not in the team (#430); `stub` for a stub pass. pinned.
 - spec-gatekeeper: the `Unbuilt:` line. pinned.
 - The `Team:` line, exact and in pipeline order. hook `gate` (records it at the launch and opens the audit gate by it), pinned.
 - The `Project:` line. hook `start` (injects the block), pinned.
@@ -146,7 +146,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: 265dc12e -->
+<!-- fingerprint: 6c2f1ae3 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
@@ -154,7 +154,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
 - Side-by-side slices in worktrees, merged in task order. pinned.
-- The full suite of a side-by-side round: the main session runs it after the last round's merge, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
+- One full suite run per build: with spec-gatekeeper in the team, no implementer gets `last round` and spec-gatekeeper's gates are the run (#430). pinned. Unmeasured: a regression the last implementer would have caught now costs a REJECTED and a relaunch.
+- The full suite of a side-by-side round: the main session runs it after the last round's merge unless spec-gatekeeper runs it next, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
 
 ### skills/speckit-team/SKILL.md: 5b. Load test: load-tester
 <!-- fingerprint: dec7a9e5 -->
@@ -163,9 +164,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A `FAIL` stops for the user; on accept only `load-test.md` is committed and the load tests are stashed. pinned; a breach leaves a load test in the PR, unseen.
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
-<!-- fingerprint: fbbe77e0 -->
+<!-- fingerprint: 8da5f3cc -->
 - Start once the last round is GREEN and every task is ticked; the `Unbuilt:` line for an absent role's tasks. pinned.
-- REJECTED reasons to test-writer or implementer, or the user. pinned.
+- REJECTED reasons to test-writer or implementer, or the user; an implementer here never gets `last round` (#430). pinned.
 - A test of behaviour the code already has: test-writer writes it and ends `FIXED`; the main session shows it failing in one Bash call that restores and ends on `git status --short`, and gives spec-gatekeeper the output. pinned (#298); hook `scope` denies test-writer the production write. That the session restored the file is text: the output in the prompt shows a breach, nothing refuses one.
 - security-reviewer on the result, then spec-gatekeeper again after its fix. pinned.
 
@@ -359,10 +360,10 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Only the tasks, the report and the tests; spec and plan stay unread. pinned (brief), text, unseen (cost).
 
 ### agents/implementer.md: Process
-<!-- fingerprint: 4f588567 -->
+<!-- fingerprint: 9a23234f -->
 - Confirm the red state first. text.
 - The least code that turns the tests green. text.
-- The full suite only in the last round, and never in a worktree, which lacks the other slices' code. pinned (#309). Seen 2026-11-11: two worktree implementers ended RED for each other's stubs, 2 of the 3 that lock the role out.
+- The full suite only with `last round`, which the skill leaves out when spec-gatekeeper runs it next (#430), and never in a worktree, which lacks the other slices' code. pinned (#309). Seen 2026-11-11: two worktree implementers ended RED for each other's stubs, 2 of the 3 that lock the role out.
 - Check each command's own exit status, not a pipe's. text, unseen.
 - A Bash `timeout` that covers the run. pinned.
 - Tick and commit; in a worktree tick nothing. pinned.
