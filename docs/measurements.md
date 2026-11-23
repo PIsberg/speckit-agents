@@ -1348,6 +1348,47 @@ fallen from ~26% to ~16% of the input: no Spec Kit skill (`speckit-specify`, `-p
 architect role read `.claude/skills/speckit-plan/SKILL.md` through Bash instead. What is left is the
 pipeline skill itself and the role skills. One run each.
 
+## The load cases of 2026-11-23 (#417)
+
+Taken 2026-11-23 for [#417](https://github.com/PIsberg/speckit-agents/issues/417) (feature 012's SC-001,
+SC-002, SC-004 and SC-006), Claude Code 2.1.330 for the agents-mode runs and 2.1.331 for the skill-agents
+runs (it updated between them), Windows 11, main session `sonnet`, load-tester on its own `model:` line,
+`--login` on the owner's subscription with the personal team reinstalled from main at `69883cf` (#175).
+`node tools/eval.mjs --arm branch=. --runs 5 --case load-quadratic,load-linear,load-pinned,load-empty,load-skipped,load-noisy --login`,
+then the same with `--case load-quadratic --skill-agents`. Dollars are per 5 runs; about $0.27 to $0.31 a run.
+
+| Case | Right answer | Right | Input tokens | Cost |
+|---|---|--:|--:|--:|
+| `load-quadratic` | `FAIL` | 5/5 | 1.31M | $1.39 |
+| `load-linear` | `PASS` | 5/5 | 1.41M | $1.41 |
+| `load-pinned` | `FAIL` or `NOT MEASURED` | 3/5 | 1.41M | $1.35 |
+| `load-empty` | `FAIL` or `NOT MEASURED` | 0/5 | 1.38M | $1.36 |
+| `load-skipped` | `FAIL` or `NOT MEASURED` | 0/5 | 1.58M | $1.44 |
+| `load-noisy` | `PASS` with a `noisy:` line | 0/5 | 1.50M | $1.41 |
+| `load-quadratic`, `--skill-agents` | `FAIL` | 1/5 | 2.60M | $1.55 |
+
+SC-001 holds (5 of 5, each naming the growth measurement). SC-002, SC-004 and SC-006 do not.
+
+What the reports show. Every miss of the three broken-instrument cases was `PASS`, all on the quadratic
+`dedupe` the variants share. The agent usually saw the broken instrument: it rewrote the empty and the
+skipped load test (its lane allows it) and twice named the pinned import an "instrument failure", then
+gated its own test. Two rules let that through: the Verdict section's `FAIL` list named only an empty or
+short result and an unengaged switch, and the ceiling rule (the highest reading times 2.2) set a growth
+ceiling on the build under test, 9.1 per doubling against a reading of 4.15, which passes quadratic growth.
+load-quadratic failed 5 of 5 only because there the agent set its growth ceiling from linear (2.8), not by
+the rule; the role skill in `--team skill-agents` mostly followed the rule, kept growth as a trend
+("quadratic") and passed, which is the SC-004 gap. In load-noisy four reports warned about the busy machine
+but reworded the probe's line ("Noisy host: ..."), so no line started `noisy:`; the fifth gated raw cpu
+growth with no control and flipped to `FAIL` at 320k items, outside the spec's sizes.
+
+What changed. [#456](https://github.com/PIsberg/speckit-agents/issues/456) (PR #457): an instrument failure
+in a committed load test is `FAIL` for the run, a committed skip is `NOT MEASURED` at best, a growth
+ceiling is the growth the work needs (2x per doubling for one pass) plus 40% and is measured on a work count
+or a same-run control, and the probe's `noisy:` lines are copied as they are. The cases are to be run again
+on that build.
+
+What it does not show. One fixture, one model, 5 runs a cell; the skill-agents mode only on load-quadratic.
+
 ## The drift check's git calls (#342)
 
 Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`

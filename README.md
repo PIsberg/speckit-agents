@@ -2137,8 +2137,13 @@ One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](t
 | `load-skipped` | a load test with a skipped case | `FAIL` or `NOT MEASURED`, never `PASS` |
 | `patch-bug` | one turn of `/speckit-patch` on a one-line behaviour bug (`sum([])` throws) that no test tries ([#247](https://github.com/PIsberg/speckit-agents/issues/247)) | a commit that touches a test file; a fix committed with a `No test:` line and no test is the exemption taken for a behaviour change |
 
-The six `load-*` cases are not yet run with a model: the cases, their fixtures and their scoring are tested
-without one (`test/eval.test.mjs`), and what load-tester does on them is not measured. The word is the last
+The six `load-*` cases ran 5 times each with real models on 2026-11-23
+([#417](https://github.com/PIsberg/speckit-agents/issues/417)): load-quadratic and load-linear 5 of 5,
+load-pinned 3 of 5, load-empty, load-skipped and load-noisy 0 of 5, and load-quadratic in `--team
+skill-agents` 1 of 5. The causes, two load-tester rules, and their fix are in
+[docs/measurements.md](docs/measurements.md#the-load-cases-of-2026-11-23-417)
+([#456](https://github.com/PIsberg/speckit-agents/issues/456)). The cases, their fixtures and their
+scoring are also tested without a model (`test/eval.test.mjs`). The word is the last
 non-empty line of load-tester's report, read with `gateWord`'s `words` and `lastLineOnly` options.
 
 The gate cases ([`test/fixtures/full-run/gate/`](test/fixtures/full-run/gate/)) skip the pipeline: the

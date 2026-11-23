@@ -95,6 +95,24 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-23</b>: Claude Code 2.1.330 and 2.1.331, Windows 11, the six scored load cases and load-quadratic in skill-agents mode, 35 runs on the owner's subscription (#417)</summary>
+
+Setup: `tools/eval.mjs --login` from a worktree of main at `69883cf`, the personal team reinstalled from it first (#175). $9.91 in all.
+
+| Check | Result |
+|---|---|
+| SC-001, a quadratic feature | `FAIL` naming the growth measurement, 5 of 5. |
+| A linear feature | `PASS`, 5 of 5. |
+| SC-002, a broken committed load test | Not held: `PASS` in 2 of 5 pinned, 5 of 5 empty and 5 of 5 skipped runs. Twice the report named the pinned import an instrument failure and still passed. |
+| SC-004, the same verdict as a role skill | Not held: load-quadratic `FAIL` 1 of 5 with `--team skill-agents`. |
+| SC-006, a busy machine | Not held as scored: no report line started `noisy:` (4 reworded the warning), and one verdict flipped to `FAIL`. |
+
+The causes and the change they led to ([#456](https://github.com/PIsberg/speckit-agents/issues/456)) are in
+[docs/measurements.md](measurements.md#the-load-cases-of-2026-11-23-417).
+
+</details>
+
+<details>
 <summary><b>2026-11-22</b>, third run: Claude Code 2.1.330, Windows 11, one <code>--skill-agents</code> run on the owner's subscription with the read-only roles' lane check, passed (#412)</summary>
 
 Setup: `node tools/full-run.mjs --login --skill-agents`, the clean case, from `fix/216-question-options` at `295050c` (the chain #411, #413, #414 and #216's change), the personal team reinstalled from it first (#175). Main session on Sonnet. $0.72, 3 turns (the spec stop, the plan stop, the build), 180 s from the first to the last row of the transcript.
