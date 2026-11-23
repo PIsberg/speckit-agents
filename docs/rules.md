@@ -123,8 +123,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Draft from what the repo states, mark inferred rules, ask, then `speckit-constitution`. text.
 
 ### skills/speckit-team/SKILL.md: 1. Spec: product-owner
-<!-- fingerprint: 71925798 -->
-- Relay the questions with product-owner's options as listed, recommended first; relaunch until `READY FOR PLAN`. pinned (#216).
+<!-- fingerprint: 690e3bbf -->
+- Relay the questions with product-owner's options as listed, recommended first; relaunch only on a report without `READY FOR PLAN`. pinned (#216).
+- One stop for the questions and the spec; every answer the recommended one and the spec approved: `clarifications --recommended` chained to the commit, no product-owner launch; only an explicit approval ends the stop. pinned (#427); script `clarifications --recommended` (all or nothing); hook `gate` refuses an architect or spec-auditor launch, agent or role skill, while `## Open Questions` lists a question.
 - Work on a feature branch. text; visible in the PR.
 - security-reviewer on the spec, FAIL routing, two FAILs to the user. pinned.
 - Stop for the spec review; commit it with the architect's launch. pinned.
@@ -233,11 +234,12 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' specs are not inputs. text, unseen (cost).
 
 ### agents/product-owner.md: Process
-<!-- fingerprint: b1268795 -->
+<!-- fingerprint: 18632438 -->
 - Stop without `.specify/` or the skill; a new feature reads speckit-specify, a revision leaves it unread. pinned; e2e that nothing is preloaded (#257); no hook.
-- An answer goes under `## Clarifications`, `### Session`, as `- Q: ... → A: ...`, and into what it settles. pinned; spec-auditor reads the result.
+- An answer goes under `## Clarifications`, `### Session`, as `- Q: ... → A: ...`, and into what it settles; an answered question leaves `## Open Questions`. pinned; spec-auditor reads the result; hook `gate` holds the architect while one is listed (#427).
 - A finding judged wrong is reported `contested` with its file:line; an upheld contest is recorded. pinned.
 - At most 5 open questions, highest impact first, each with 2 to 4 options (AskUserQuestion's limit, #216) or at most 5 words. pinned, unseen.
+- The spec written as if each recommendation were taken, the questions under `## Open Questions` as `### Q<n>:` with `- **A (recommended): <answer>.**` lines. pinned (#427); script `clarifications --recommended` refuses another form and changes nothing.
 - Tick a checklist item only after checking it this run. text, unseen.
 
 ### agents/product-owner.md: Lane
@@ -247,9 +249,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - No technologies in the spec; every requirement testable. text; spec-auditor checks.
 
 ### agents/product-owner.md: Report
-<!-- fingerprint: 9afc558c -->
+<!-- fingerprint: 79a07e0f -->
 - Each open question with its options, recommended first (#216). pinned.
-- At most 20 lines; `READY FOR PLAN` last, only with no open question. text; no `ends` hook.
+- At most 20 lines; `READY FOR PLAN` last, only with no `[NEEDS CLARIFICATION]` marker; questions under `## Open Questions` may remain (#427). pinned; no `ends` hook.
 
 ## agents/architect.md
 

@@ -42,7 +42,7 @@ The `security-reviewer` agent is an opt-in reviewer (`/speckit-team --security` 
    - Runs after `product-owner` reports `READY FOR PLAN`, before the user reviews `spec.md`.
    - Inspects `spec.md`, `plan.md`, and constitution for threat models, trust boundaries, auth/access controls, and sensitive data exposure.
    - On `FAIL` (CRITICAL or HIGH findings), routes findings back to `product-owner` (or the user if absent), then re-runs. After two FAILs the findings go to the user.
-   - On `PASS`, advances to the user spec review stop.
+   - On `PASS`, advances to the user's stop for the spec and its open questions (#427).
 
 2. **Result Review Phase (`phase: result`)**:
    - Runs after `spec-gatekeeper` verification (or after the final build round when `spec-gatekeeper` is absent), before handover.

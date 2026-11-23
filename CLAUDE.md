@@ -23,7 +23,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `agents/*.md`: the nine subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`, `relay`, `project`, `check`, `decisions`, `probe`. `hooks/speckit-drift.mjs`: the drift check, installed
+  `ends`, `start`, `lane`, `patch`, `relay`, `project`, `check`, `decisions`, `clarifications`, `probe`. `hooks/speckit-drift.mjs`: the drift check, installed
   beside it and loaded at spec-gatekeeper's `APPROVED` (#228); `tools/drift.mjs` is its command line.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
@@ -50,7 +50,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 720 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 726 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one; `SPECKIT_E2E_TIME_SCALE=3`

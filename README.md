@@ -53,8 +53,9 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
   ([The retry limit](#the-retry-limit))
-- **You decide at four stops, and you merge.** The pipeline asks which team to use, then asks you to
-  answer the spec's questions, approve the spec, and approve the plan, then stops at the pull request.
+- **You decide at three stops, and you merge.** The pipeline asks which team to use, then asks you to
+  answer the spec's questions and approve the spec in one stop, and to approve the plan, then stops at
+  the pull request.
   ([Quick start](#quick-start))
 - **Or no agents at all.** `/speckit-team --team noagents <request>` runs Spec Kit's own commands
   in your session, with the spec and plan stops and no audit; only your typed flag turns the audit
@@ -241,13 +242,17 @@ Start it in a fresh session (`/clear` first): every response of the run re-reads
 earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
 ([Feature 004](docs/measurements.md#feature-004-interactive)).
 
-`/speckit-team` runs the whole pipeline from the main session. It stops for you at four points:
+`/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
 
 1. to choose the team, unless `--team` names it: the full team, build only, implement only, or
    spec and build with no audit; 
-2. to answer the product owner's questions;
-3. to approve the spec;
-4. to approve the plan and tasks. If `tasks.md` has two or more `[P]` slices that touch disjoint
+2. to answer the product owner's questions and approve the spec, in one stop: the product owner
+   writes the spec as if you took each of its recommended answers and lists the questions under
+   `## Open Questions`, so when you take every recommendation and approve, the hook's
+   `clarifications --recommended` records the answers and no product owner is launched again
+   ([#427](https://github.com/PIsberg/speckit-agents/issues/427)); any other answer goes to one
+   product-owner revision and the stop repeats;
+3. to approve the plan and tasks. If `tasks.md` has two or more `[P]` slices that touch disjoint
    files, this stop also asks whether to build them side by side or one at a time.
 
 In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
@@ -332,10 +337,10 @@ and the denial tells the agent whose lane production code is in.
 
 ### The pipeline
 
-`/speckit-team` first asks which team to use, the team question, the first of the pipeline's four
+`/speckit-team` first asks which team to use, the team question, the first of the pipeline's three
 stops (the demo answers it with the full team). It then launches product-owner, which writes the
-spec and returns its questions, and the main session puts product-owner's questions to you: the
-second. Recorded on 2026-10-17 (Claude Code 2.1.302) with the idea "Let greet say hello in the
+spec and returns its questions, and the main session puts product-owner's questions to you, with the
+spec to approve: the second (one stop since #427; the recording below predates it). Recorded on 2026-10-17 (Claude Code 2.1.302) with the idea "Let greet say hello in the
 user's own language": product-owner, in the background as in any interactive session with fork
 subagents on, wrote `specs/002-localized-greeting` and returned two questions. Haiku's first call to
 ask them failed on an empty second question ("Invalid tool parameters"), and it asked again.
@@ -1113,6 +1118,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `project <name> [--init]` | CLI | prints the formatted project block and knowledge file listing, enforcing size/file limits; `--init` creates the starter `instructions.md` |
 | `check` | CLI: the first step of `/speckit-team` and `/speckit-patch` | a run whose team is not this install alone: mixed builds, a second install of another build, a project install in a folder Claude Code has not trusted (exit 1, the skill stops); `note:` lines for the rest. `check team`, which `/speckit-team` runs, adds one `state:` line each for the working tree, the constitution (rules, template or missing) and the branch, so step 0 is one call ([#230](https://github.com/PIsberg/speckit-agents/issues/230), [Troubleshooting](#troubleshooting)). `--project <name>` after either adds the `project` mode's block, or exits 1 with its refusal line ([#338](https://github.com/PIsberg/speckit-agents/issues/338)) |
 | `decisions --recommended` | CLI: the plan stop of `/speckit-team`, when every answer is the recommended option | hand-written edits at the plan stop: it records each answer in `plan.md` and applies the recommended options' `Spec:` lines to `spec.md`, or changes nothing and names the line it could not place (exit 1). The `Skill\|Agent` `gate` refuses a spec-auditor launch while `plan.md` still lists an open decision, so a failed record is not followed by an audit of an unsettled plan ([measurements](docs/measurements.md#the-plan-stop-in-one-call)) |
+| `clarifications --recommended` | CLI: the spec stop of `/speckit-team`, when every answer is the recommended one | a product-owner launch only to write answers that took every recommendation: it writes each question under `## Open Questions` of `spec.md` as `- Q: <question> → A: <answer>` under `## Clarifications`, `### Session <today>`, and drops the section, or changes nothing and names what it could not read (a question with no `(recommended)` option, a `[NEEDS CLARIFICATION]` marker left; exit 1). The `Skill\|Agent` `gate` refuses an architect or spec-auditor launch, agent or role skill, while `spec.md` still lists an open question ([#427](https://github.com/PIsberg/speckit-agents/issues/427)) |
 | `relay` | `settings.json`: `PostToolUse` on `Agent` | never decides: hands the main session, as `additionalContext` after the Agent call returns, every message the team's hooks gave inside the subagents of its session (a lane `WARNING` at a second Stop, a lane check that could not run, a verdict not recorded, an `APPROVED` recorded as `REJECTED`), which otherwise reach only the subagent's transcript ([#231](https://github.com/PIsberg/speckit-agents/issues/231)) |
 | `ends --record APPROVED REJECTED` | spec-gatekeeper: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not its verdict (refused once, never twice); `APPROVED` while the [drift check](#checking-old-features-for-drift) finds, in the active feature's `tasks.md`, a ticked test task citing an FR ID none of its test files holds, or an FR of its `spec.md` in no test line naming the feature's number that no task excuses with `No test: <reason>` ([#235](https://github.com/PIsberg/speckit-agents/issues/235)) (refused at every hand-back and once at Stop, then recorded as `REJECTED` with `claimed` and `drift`; `REJECTED` always passes, [#228](https://github.com/PIsberg/speckit-agents/issues/228)); records the accepted word. The same check runs on the spec-gatekeeper role in `--team skill-agents`: blocked once at its Stop, or the next role call denied once ([#351](https://github.com/PIsberg/speckit-agents/issues/351)) |
 | `ends RED BLOCKED FIXED` | test-writer: PreToolUse `SubagentHandback`, and Stop | a report whose last line is not `RED`, `BLOCKED` or `FIXED` (a correction of an existing test that adds no failing one, #74, or a test of behaviour the code already has, which the main session then shows failing, #298), such as the bare "placeholder" one test-writer handed back on 2026-10-08 (refused once, never twice); records nothing, so it never replaces the gatekeeper's word. A `RED` whose output is a `SyntaxError: <message>` line as a runtime prints it for a file that does not parse (opening a line, or after a `file:line`, `Uncaught` or pytest's `E`, with a task ID before them or not, or quoted in a code span after "fails with", the wording test-writer used in the run of 2026-11-22, [#395](https://github.com/PIsberg/speckit-agents/issues/395); a test that expects a SyntaxError and names it in its assertion is a valid RED, [#374](https://github.com/PIsberg/speckit-agents/issues/374)), a `ReferenceError ... is not defined` or a Python `NameError` is refused once the same way, and a second such report is kept in `ends/red-faults.json` (#240), and so is one on a missing module the error names by a test path, a helper or a fixture (#245); a missing production file, a package or a path outside the repo is a valid RED. A `RED` or `FIXED` while a ticked test task cites an ID none of its test files holds (the task half of the drift check; an FR of `spec.md` no test names yet stays the gate's) is refused once with the lines, and a second such report goes through with a message naming them ([#315](https://github.com/PIsberg/speckit-agents/issues/315): found only at the gate, it cost the run of 2026-11-11 a verify round and a launch). The test-writer role of `--team skill-agents` gets the same check where its role is closed: blocked once at its Stop, or denied once at the next role call, which goes through when made again ([#316](https://github.com/PIsberg/speckit-agents/issues/316)), and so does its `RED` on a syntax, name or missing-test-module error, kept in `ends/red-faults.json` ([#334](https://github.com/PIsberg/speckit-agents/issues/334)) |
@@ -1727,13 +1733,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 720 tests:
+`npm test` runs 726 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 257 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 262 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 148 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 149 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

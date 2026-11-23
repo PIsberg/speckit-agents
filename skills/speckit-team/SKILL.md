@@ -229,14 +229,23 @@ The constitution is the user's rules: draft them, never decide them.
 
 ## 1. Spec: product-owner
 Only when product-owner is in the team; without it, skip this step.
-Launch with the idea. Relay its questions with AskUserQuestion, product-owner's options as it listed
-them, recommended first, then relaunch it with the answers. Repeat until `READY FOR PLAN`.
+Launch with the idea. It writes `spec.md` as if each of its questions took the recommended answer, and
+lists them under `## Open Questions`, the spec's last section; relaunch it only on a report that does not
+end `READY FOR PLAN`.
 Then make sure the work is on a feature branch. Spec Kit's git extension creates one during
 speckit-specify; Spec Kit 1.x installs that extension only with `specify init --extension git`.
 If you are still on main or master, create the branch yourself, named after the feature directory
 (`git switch -c <its basename>`); uncommitted work moves with it.
 If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), a contested finding as in step 3, then relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to the spec review stop.
-**Stop:** the user reviews `spec.md`. Once they approve, commit it, and the constitution if step 0b
+**Stop:** one stop for the questions and the spec. Relay the questions with AskUserQuestion,
+product-owner's options as it listed them, recommended first, and ask in the same call whether the
+user approves `spec.md` as written; with no question, the stop is the spec review alone. When every
+answer is the recommended one (also when the user gave it in advance) and the spec is approved, launch
+no product-owner: run `node "{{HOOK}}" clarifications --recommended` chained with `&&` to the commit
+below, in one Bash call. It writes each answer under `## Clarifications` and drops `## Open Questions`.
+On exit 1 it changed nothing, and the hook refuses the architect while a question is open: relaunch product-owner with the answers. Any other answer,
+or a change to the spec, goes to one product-owner relaunch, and the stop repeats on its revision.
+Only an explicit approval of `spec.md` ends the stop. Then commit it, and the constitution if step 0b
 wrote it, on that branch, in the message that launches the architect: Claude Code runs the calls of
 one message in order, so the commit lands before the architect starts and needs no request of its
 own, which would re-read your whole context.
