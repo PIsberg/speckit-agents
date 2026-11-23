@@ -9,8 +9,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CASES, armArg, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
+import { CASES, LOAD_WORDS, armArg, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
 import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
+import * as fullRun from '../tools/full-run.mjs'; // loadRequest is read from the namespace: 012 T023 adds it
 import { drift } from '../hooks/speckit-drift.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,7 +25,7 @@ const commit = (repo, files, msg) => {
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
 test('eval: the cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug']);
+  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -319,4 +320,116 @@ test('#255 eval: claude --version is spawned without shell: true (DEP0190)', () 
     assert.deepEqual(platform === 'win32' ? [cmd, argv.at(-1)] : [cmd, argv], platform === 'win32' ? ['cmd', 'claude --version'] : ['claude', ['--version']]);
   }
   assert.doesNotMatch(fs.readFileSync(path.join(ROOT, 'tools', 'eval.mjs'), 'utf8'), /shell:/);
+});
+
+// ---- 012 load cases (T022): SC-001, SC-002, SC-004, SC-006 ----
+const LOAD_CASES = { 'load-quadratic': 'FAIL', 'load-linear': 'PASS', 'load-noisy': 'PASS' };
+const LOAD_NOT_PASS = ['load-pinned', 'load-empty', 'load-skipped'];
+const loadScore = (name, word, report) => scoreRun(name, { repo: scratch().repo, report: { gate: { word, report: report ?? `Measurements\n${word}` } } });
+
+test('012 T022 SC-001 SC-002 SC-006: the six load cases exist, are one turn on a built feature, and name their right answer', () => {
+  assert.deepEqual(Object.keys(CASES).filter((k) => k.startsWith('load-')).sort(), [...Object.keys(LOAD_CASES), ...LOAD_NOT_PASS].sort());
+  for (const [name, right] of Object.entries(LOAD_CASES)) assert.equal(CASES[name]?.right, right, `${name} is right on ${right}`);
+  for (const name of LOAD_NOT_PASS) assert.ok(CASES[name]?.right, `${name} names its right answer (not PASS)`);
+  for (const name of [...Object.keys(LOAD_CASES), ...LOAD_NOT_PASS]) assert.ok(CASES[name]?.load, `${name} carries its load variant`);
+});
+
+test('012 T022 SC-001 SC-002: scoreRun on load-quadratic is right only on FAIL', () => {
+  for (const [word, right] of [['FAIL', true], ['PASS', false], ['NOT MEASURED', false], [null, false]]) {
+    assert.equal(loadScore('load-quadratic', word).right, right, `load-quadratic saw ${word}`);
+  }
+});
+
+test('012 T022 SC-002 SC-004: scoreRun on load-linear is right only on PASS', () => {
+  for (const [word, right] of [['PASS', true], ['FAIL', false], ['NOT MEASURED', false], [null, false]]) {
+    assert.equal(loadScore('load-linear', word).right, right, `load-linear saw ${word}`);
+  }
+});
+
+test('012 T022 SC-002 SC-006: for a broken instrument both FAIL and NOT MEASURED are right and PASS is wrong', () => {
+  for (const name of LOAD_NOT_PASS) {
+    for (const [word, right] of [['FAIL', true], ['NOT MEASURED', true], ['PASS', false], [null, false]]) {
+      assert.equal(loadScore(name, word).right, right, `${name} saw ${word}`);
+    }
+  }
+});
+
+test('012 T022 SC-006: load-noisy is right on PASS only when the report carries a noisy line', () => {
+  assert.equal(loadScore('load-noisy', 'PASS', 'Measurements\n...\nWarnings\nnoisy: other processes used 31% of the machine\nPASS').right, true);
+  assert.equal(loadScore('load-noisy', 'PASS', 'Measurements\n...\nWarnings\nnone\nPASS').right, false, 'PASS without a noisy line is wrong');
+  assert.equal(loadScore('load-noisy', 'FAIL', 'Warnings\nnoisy: busy\nFAIL').right, false);
+  assert.equal(loadScore('load-noisy', null, '').right, false);
+});
+
+test('012 T022 FR-006 SC-004: gateWord with LOAD_WORDS and lastLineOnly reads only the last non-empty line, NOT MEASURED included', () => {
+  const g = (text) => gateWord({ text, words: LOAD_WORDS, lastLineOnly: true }).word;
+  assert.deepEqual(LOAD_WORDS, ['PASS', 'FAIL', 'NOT MEASURED']);
+  assert.equal(g('Measurements\n...\n\nPASS\n'), 'PASS');
+  assert.equal(g('Measurements\nFAIL\n'), 'FAIL');
+  assert.equal(g('Not measured: x\n\nNOT MEASURED\n\n'), 'NOT MEASURED');
+  assert.equal(g('PASS\nthen the role kept talking'), null, 'a word above the last line is not the verdict');
+  assert.equal(g('It did not PASS'), null, 'a word inside prose is not the verdict');
+  assert.equal(g('PASS FAIL'), null, 'whole-line match only');
+  assert.equal(g(''), null);
+});
+
+test('012 T022 SC-004: gateWord with neither option still reads APPROVED and REJECTED as before', () => {
+  assert.equal(gateWord({ ends: [{ word: 'REJECTED' }], text: 'APPROVED' }).word, 'REJECTED');
+  assert.equal(gateWord({ ends: [], text: 'The gate ran.\n\nREJECTED\n' }).word, 'REJECTED');
+  assert.equal(gateWord({ ends: [], text: 'It was not APPROVED, and I will not say REJECTED here.' }).word, null);
+  assert.equal(gateWord({ ends: [], text: 'PASS' }).word, null, 'PASS is not a gate word without the option');
+});
+
+test('012 T022 SC-001: buildRepo lays specs/001-dedupe with its variant, ticked tasks, an audit PASS, and a green suite', () => {
+  for (const c of [...Object.keys(LOAD_CASES), ...LOAD_NOT_PASS]) {
+    const { repo } = scratch({ case: c });
+    const feature = JSON.parse(fs.readFileSync(path.join(repo, '.specify', 'feature.json'), 'utf8')).feature_directory;
+    assert.equal(feature, 'specs/001-dedupe', `${c}: the feature`);
+    assert.ok(!/\[ \]/.test(fs.readFileSync(path.join(repo, feature, 'tasks.md'), 'utf8')), `${c}: every task ticked`);
+    assert.ok(fs.existsSync(path.join(repo, 'src', 'dedupe.js')), `${c}: src/dedupe.js`);
+    assert.equal(git(repo, 'branch', '--show-current').stdout.trim(), '001-dedupe');
+    assert.equal(git(repo, 'status', '--short').stdout, '', `${c}: committed`);
+    const verdict = JSON.parse(fs.readFileSync(path.join(repo, '.git', 'speckit-team', 'verdicts', '001-dedupe.json'), 'utf8'));
+    assert.equal(verdict.verdict, 'PASS', `${c}: the audit gate is open`);
+    assert.equal(node(repo, 'test/dedupe.test.js').status, 0, `${c}: the functional test passes`);
+  }
+});
+
+test('012 T022 SC-001 SC-002 SC-006: the variants differ: linear is not the quadratic source, and pinned, empty and skipped each carry their flaw', () => {
+  const files = (c) => { const { repo } = scratch({ case: c }); return git(repo, 'ls-files').stdout.split('\n').filter(Boolean).map((f) => [f, fs.readFileSync(path.join(repo, f), 'utf8')]); };
+  const src = (c) => files(c).find(([f]) => f === 'src/dedupe.js')?.[1];
+  assert.ok(src('load-quadratic') && src('load-linear'), 'both lay src/dedupe.js');
+  assert.notEqual(src('load-quadratic'), src('load-linear'), 'the linear variant has its own source');
+  const loadTest = (c, re) => files(c).some(([f, t]) => /load/i.test(f) && /\.[cm]?js$/.test(f) && re.test(t));
+  assert.ok(loadTest('load-pinned', /vendor|older|pinned/i), 'pinned: a load test importing an older vendored copy');
+  assert.ok(loadTest('load-empty', /catch/), 'empty: a load test that catches the workload throw');
+  assert.ok(loadTest('load-skipped', /skip/), 'skipped: a load test with a skipped case');
+});
+
+test('012 T022 SC-004: loadRequest asks only for load-tester on the built feature, differs by mode, and ends on its word', () => {
+  assert.equal(typeof fullRun.loadRequest, 'function', 'tools/full-run.mjs exports loadRequest');
+  const a = fullRun.loadRequest();
+  const s = fullRun.loadRequest({ skillAgents: true });
+  assert.match(a, /specs\/001-dedupe/);
+  assert.match(a, /load-tester/);
+  assert.match(a, /PASS.*FAIL.*NOT MEASURED/s, 'names the three words');
+  assert.match(a, /last line/i);
+  assert.notEqual(a, s);
+  assert.match(s, /role skill|skill/i);
+});
+
+test('012 T022 SC-004: gateReport with role load-tester reads that role report, and the default role ignores it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skeval-lt-'));
+  const main = path.join(dir, 'sess.jsonl');
+  jsonl(main, [used('m1', 'Agent', { subagent_type: 'load-tester' }), said('m2', 'done')]);
+  const sub = path.join(dir, 'sess', 'subagents');
+  const agent = (id, type, rows) => { jsonl(path.join(sub, `agent-${id}.jsonl`), rows); fs.writeFileSync(path.join(sub, `agent-${id}.meta.json`), JSON.stringify({ agentType: type })); };
+  agent('a1', 'load-tester', [said('l1', 'Measurements\nWarnings\nnoisy: busy 40%\n\nPASS', { timestamp: '2026-11-20T08:00:00Z' })]);
+  agent('a2', 'spec-gatekeeper', [said('g1', 'APPROVED', { timestamp: '2026-11-20T09:00:00Z' })]);
+  assert.equal(gateReport({ transcript: main, role: 'load-tester' }), 'Measurements\nWarnings\nnoisy: busy 40%\n\nPASS');
+  assert.equal(gateReport({ transcript: main }), 'APPROVED', 'the default role is still spec-gatekeeper');
+  const sk = path.join(dir, 'skill.jsonl');
+  jsonl(sk, [used('s1', 'Skill', { skill: 'speckit-role-load-tester' }), said('s2', 'Measurements\nFAIL'), used('s3', 'Skill', { skill: 'speckit-role-spec-gatekeeper' }), said('s4', 'APPROVED')]);
+  assert.equal(gateReport({ transcript: sk, skillAgents: true, role: 'load-tester' }), 'Measurements\nFAIL');
+  assert.equal(gateReport({ transcript: sk, skillAgents: true }), 'APPROVED');
 });

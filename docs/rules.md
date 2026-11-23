@@ -60,7 +60,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The main session orchestrates and does not do the agents' work. text.
 
 ### skills/speckit-team/SKILL.md: Handoffs
-<!-- fingerprint: 0f6a576c -->
+<!-- fingerprint: 521f3538 -->
 - Launch every agent in the foreground; without a `run_in_background` parameter, end the turn and wait. pinned (`test/e2e.test.mjs` pins the parameter's behaviour); a breach costs tokens.
 - A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost); a resumed agent's later reports are still checked and counted: hook `result` and `ends` close its last report at its next tool call (#370), and judge every hand-back, and a Stop that is not the counted one, as a new report (#394).
 - Do not ask an agent for more than its Report allows; one line before and after each launch. pinned.
@@ -90,7 +90,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Say how to bring foreground launches back when the Agent tool has no `run_in_background`. text.
 
 ### skills/speckit-team/SKILL.md: Team
-<!-- fingerprint: 1b01364f -->
+<!-- fingerprint: 940decc7 -->
 - How `--team`, `--security` and `--project` are read, and the refusals before any launch. pinned.
 - `noagents` is chosen only by typing it. hook `gate` (reads the typed command at `UserPromptExpansion`).
 - `skill-agents` is chosen only by typing it. hook `gate` (denies a role skill outside a typed `--team skill-agents`).
@@ -105,7 +105,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - After 3 failed runs of the same tests, hand the output to the user. text.
 
 ### skills/speckit-team/SKILL.md: Skill agents
-<!-- fingerprint: 1ee467cf -->
+<!-- fingerprint: 330de70d -->
 - One Skill call per role, one role per response, its Inputs as `args`. pinned.
 - Each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, the verdict and the word. hook `scope role`, `lane role`, `gate`.
 - After spec-auditor's or spec-gatekeeper's report, the next Skill call's `args` starts with its last line. pinned; hook `gate` reads it.
@@ -156,6 +156,12 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Side-by-side slices in worktrees, merged in task order. pinned.
 - The full suite of a side-by-side round: the main session runs it after the last round's merge, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
 
+### skills/speckit-team/SKILL.md: 5b. Load test: load-tester
+<!-- fingerprint: dec7a9e5 -->
+- Only when `--load-test` or `--team` names it, once the last round is GREEN and before spec-gatekeeper, in the foreground. pinned; hook `gate` (denies a launch before the audit passed).
+- The report's last line is `PASS`, `FAIL` or `NOT MEASURED`; anything else is relaunched once, then handed to the user. hook `ends` (refuses once); pinned.
+- A `FAIL` stops for the user; on accept only `load-test.md` is committed and the load tests are stashed. pinned; a breach leaves a load test in the PR, unseen.
+
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
 <!-- fingerprint: fbbe77e0 -->
 - Start once the last round is GREEN and every task is ticked; the `Unbuilt:` line for an absent role's tasks. pinned.
@@ -164,7 +170,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - security-reviewer on the result, then spec-gatekeeper again after its fix. pinned.
 
 ### skills/speckit-team/SKILL.md: 7. Hand over
-<!-- fingerprint: 8dc4d8c8 -->
+<!-- fingerprint: c5cd1219 -->
 - Open the PR, do not merge, watch CI. text.
 - Report the roles, skipped rows, unticked tasks and the retry count's source. pinned.
 
@@ -373,6 +379,37 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 ### agents/implementer.md: Report
 <!-- fingerprint: 824a3852 -->
 - `RESULT: GREEN`, `RED` or `STUB` last; 3 REDs in a row block. hook `result`, `gate retries`.
+
+## agents/load-tester.md
+
+### agents/load-tester.md: (opening)
+<!-- fingerprint: 0382dda5 -->
+- Changes no production code and no functional test. hook `scope load`.
+
+### agents/load-tester.md: Inputs
+<!-- fingerprint: d01e1496 -->
+- The feature directory, the diff, the constitution, the test command and the existing load tests. text.
+
+### agents/load-tester.md: Lane
+<!-- fingerprint: 3e8b487e -->
+- Writes only load tests and `specs/<feature>/load-test.md`. hook `scope load` and `lane load`.
+
+### agents/load-tester.md: Process
+<!-- fingerprint: 8feace08 -->
+- Find the load surface in the diff; none found is NOT MEASURED. pinned.
+- Check the instrument: the working tree's build, a non-empty and complete result set, skips listed as not measured, a feature switch engaged. pinned; a missed check leaves a wrong number nobody sees, unseen.
+- Run `probe` before the first measurement and after the last; its `noisy:` lines go under Warnings. script (`probe` answers; reporting it is asked); pinned.
+- Gate only on deterministic measures, ceilings from a failing first run times a margin, no budget row before its failing run. pinned, unseen.
+- Workloads: sizes doubled, cold and warm apart, concurrency swept, accuracy rates, the host's control subtracted. pinned, unseen.
+- Harness and record: load tests where `lane load` accepts them, reduced by default and the full sweep behind an environment variable, versions compared in one sitting, `load-test.md` rewritten each run. pinned.
+
+### agents/load-tester.md: Verdict
+<!-- fingerprint: 54d02ef9 -->
+- FAIL on a failed gating measurement or instrument check, NOT MEASURED when none ran, PASS only when one ran and all passed. pinned; recorded nowhere, so it never touches spec-auditor's verdict.
+
+### agents/load-tester.md: Report
+<!-- fingerprint: a295eebf -->
+- At most 40 lines in a fixed order, the last line `PASS`, `FAIL` or `NOT MEASURED`. hook `ends` (the last line); pinned (the order).
 
 ## agents/spec-gatekeeper.md
 

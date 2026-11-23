@@ -14,20 +14,21 @@
 //
 // Any other argument is refused before anything is written.
 //
-// What gets installed: eight subagents, three skills, seven role skills (speckit-role-<role>), one hook script with its drift check, and settings.json gates
-// (PreToolUse, UserPromptExpansion, SubagentStart for the eight roles to record start and inject project context,
+// What gets installed: nine subagents, three skills, eight role skills (speckit-role-<role>), one hook script with its drift check, and settings.json gates
+// (PreToolUse, UserPromptExpansion, SubagentStart for the nine roles to record start and inject project context,
 // and PostToolUse on Agent to relay what a subagent's hooks said to the main session).
 //
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
 //   /speckit-team <request>                   the pipeline; it asks which roles take part
 //   /speckit-team --security <request>        opts in the security agent (spec review and result review)
+//   /speckit-team --load-test <request>       opts in the load-tester (measures the load surface after green)
 //   /speckit-team --project <name> <request>  runs with the standing context from .specify/projects/<name>/
 //   /speckit-team --team <roles> <request>    only the roles you name, comma-separated, from product-owner,
-//                                             architect, spec-auditor, test-writer, implementer, spec-gatekeeper,
-//                                             security-reviewer
+//                                             architect, spec-auditor, test-writer, implementer, load-tester,
+//                                             spec-gatekeeper, security-reviewer
 //   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
 //   /speckit-team --team skill-agents <request> every role runs as a skill in this session, not a subagent
-//                                             (the seven speckit-role-<role> skills, generated from agents/)
+//                                             (the eight speckit-role-<role> skills, generated from agents/)
 //   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
 import { createHash } from 'node:crypto';
@@ -60,7 +61,7 @@ const STAMPED = `${MARKER} (speckit-agents ${VERSION}, build ${BUILD})`;
 const HOOK_FILE = 'speckit-team.mjs';
 // The drift check the hook loads from beside itself at spec-gatekeeper's APPROVED (#228).
 const DRIFT_FILE = 'speckit-drift.mjs';
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 // settings.json gates for the main session. Agent-scoped hooks live in each agent's frontmatter.
 const SETTINGS_GATES = [
   // Claude calling the speckit-implement skill itself, and the main session launching an agent (the
@@ -70,7 +71,7 @@ const SETTINGS_GATES = [
   // /speckit-team starts a request; typed with --team noagents, it records that no agent runs.
   { event: 'UserPromptExpansion', matcher: 'speckit-implement|speckit\\.implement|speckit-team' },
   // product-owner, architect and the read-only agents have no gate to record where they started, so this
-  // does it once, as each starts, for the lane check at their Stop (#88, #412). For all eight roles it also injects the
+  // does it once, as each starts, for the lane check at their Stop (#88, #412). For all nine roles it also injects the
   // session's project block as the agent's starting context, when the launch named one (007).
   { event: 'SubagentStart', matcher: AGENTS.join('|'), mode: 'start' },
   // What a subagent's hooks said at its Stop reaches only its own transcript; this hands it to the main

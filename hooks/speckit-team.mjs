@@ -60,6 +60,9 @@ const TEST_PATTERNS = [
   /Tests?\.swift$/,
 ];
 const TASKS_FILE = /^specs\/[^/]+\/tasks\.md$/;
+// 012: the `load` lane. A load test is a test (isTest) whose path says load; load-test.md is the role's record.
+const LOAD_PATTERNS = [/(^|[/._-])load([/._-]|$)/i, /[a-z0-9]Load(Tests?|IT|Spec)\.[A-Za-z]+$/];
+const LOAD_RECORD = /^specs\/[^/]+\/load-test\.md$/;
 // Spec Kit's config is in no agent's code lane: feature.json picks the feature the gate and the retry
 // count are kept for, and test-paths decides what counts as a test.
 const SPECKIT_CONFIG = /^\.specify\//;
@@ -114,7 +117,7 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
 const [mode, ...args] = process.argv.slice(2);
 // `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
 // exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
-const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions';
+const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions' || mode === 'probe';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
 const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -192,6 +195,48 @@ const deny = (reason) => emit({ hookSpecificOutput: {
 const block = (reason) => emit({ decision: 'block', reason });
 
 const cwd = str(input.cwd) ?? process.cwd();
+// `probe` (012): how busy the machine is and how fast a fixed workload runs, so a load test can say when
+// other processes disturbed it. `node:os` and `node:crypto` only; synchronous.
+const cpuTimes = () => os.cpus().reduce((a, c) => {
+  const t = Object.values(c.times).reduce((x, y) => x + y, 0);
+  return { idle: a.idle + c.times.idle, total: a.total + t };
+}, { idle: 0, total: 0 });
+function probeReading() {
+  const a = cpuTimes();
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1000);
+  const b = cpuTimes();
+  const total = b.total - a.total;
+  const busy = total > 0 ? Math.min(100, Math.max(0, Math.round((1 - (b.idle - a.idle) / total) * 100))) : 0;
+  const buf = Buffer.alloc(1024 * 1024, 7);
+  const runs = [];
+  for (let i = 0; i < 5; i++) {
+    const t0 = process.hrtime.bigint();
+    for (let j = 0; j < 64; j++) createHash('sha256').update(buf).digest();
+    runs.push(Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  runs.sort((x, y) => x - y);
+  return { busy, ms: Math.round(runs[2] * 100) / 100 };
+}
+function noisyLines(start, end) {
+  const out = [];
+  const worst = Math.max(start.busy, end.busy);
+  if (worst >= 10) out.push(`noisy: other processes used ${worst}% of the machine (10% or more)`);
+  if (end.ms >= start.ms * 1.2) out.push(`noisy: the fixed probe ran ${Math.round((end.ms / start.ms - 1) * 100)}% slower at the end than at the start (20% or more)`);
+  return out;
+}
+if (mode === 'probe') {
+  let start = null;
+  if (args.length) {
+    const parts = args[0] === '--since' && args.length === 2 ? args[1].split(',') : null;
+    const nums = parts && parts.length === 2 && parts.every((x) => /^\d+(\.\d+)?$/.test(x.trim())) ? parts.map(Number) : null;
+    if (!nums || !(nums[1] > 0)) projectRefuse('--since takes two non-negative numbers, busy percent and probe ms, as --since <busy>,<ms>; the second above 0');
+    start = { busy: nums[0], ms: nums[1] };
+  }
+  const end = probeReading();
+  const lines = [`probe: busy ${end.busy}% probe ${end.ms} ms${start ? ` (start: busy ${start.busy}%, probe ${start.ms} ms)` : ''}`];
+  if (start) lines.push(...noisyLines(start, end));
+  projectSay(lines.join('\n'), 0);
+}
 // Most calls come from outside any Spec Kit repo: the settings.json gates run on every Skill and Agent
 // call in every repo. The repo's root is the working directory or an ancestor of it, so when none of them
 // holds .specify/ the answer needs no git process. A GIT_DIR or GIT_WORK_TREE can put the work tree
@@ -463,7 +508,8 @@ function testsAt(rev) {
   }
   return testsAtMemo.get(rev);
 }
-const inLane = (rule, rel) => (rule === 'tests' ? !SPECKIT_CONFIG.test(rel) && (isTest(rel) || TASKS_FILE.test(rel)) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
+const isLoadTest = (rel) => isTest(rel) && LOAD_PATTERNS.some((re) => re.test(rel));
+const inLane = (rule, rel) => (rule === 'load' ? !SPECKIT_CONFIG.test(rel) && (isLoadTest(rel) || LOAD_RECORD.test(rel)) : rule === 'tests' ? !SPECKIT_CONFIG.test(rel) && (isTest(rel) || TASKS_FILE.test(rel)) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 // A prefix ending in / is a directory; anything else must match the whole path.
 const inPrefixes = (prefixes, rel) => prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)));
 
@@ -536,7 +582,7 @@ const writeJson = (f, obj) => { fs.mkdirSync(path.dirname(f), { recursive: true 
 
 // The team of a /speckit-team run, recorded at the main session's Agent launch (contracts/team-choice.md, 7).
 const CORE_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper'];
-const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'];
+const TEAM_ROLES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer'];
 const SESSION_ID = /^[\w-]{1,128}$/;
 
 // #231: a hook's systemMessage in a subagent lands in that subagent's transcript only, and under claude -p
@@ -597,7 +643,7 @@ function dropRoleFiles(sessionId) {
 function missingRoleSkills() {
   return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
 }
-const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word, and the retry limit at each implementer call (3 RESULT: RED in a row on the active feature). Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit without an active feature (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
+const SKILL_AGENTS_START = `speckit-team: skill-agents for this request: the roles run as skills in this session. Enforced by the hook: each role's lane, the audit gate before test-writer, implementer, load-tester and spec-gatekeeper, spec-auditor's verdict and spec-gatekeeper's word, and the retry limit at each implementer call (3 RESULT: RED in a row on the active feature). Not enforced: the audit gate on each tool call inside test-writer and implementer, and inside load-tester (a spec, plan or tasks edit there is caught when the next of them or spec-gatekeeper starts), the retry limit without an active feature (the skill counts), the check that a report ends in its word, each role's own context (every role sees this conversation), each agent's tool list (a role may use every tool of this session, MCP tools included, and a read-only role's write through one is not checked), and a role's lane after its turn ends without a Stop (an interrupt or an API error; the role's lane check and report then do not run).`;
 // The project of a session's launches (feature 007, contracts/project.md section 5): a name, never content.
 const projectFile = (sessionId) => path.join(stateDir, 'project', `${sessionId}.json`);
 const parseProject = (prompt) => /^Project: ?([A-Za-z0-9][A-Za-z0-9_-]{0,63})[ \t]*$/m.exec(prompt)?.[1] ?? null;
@@ -627,6 +673,9 @@ function typedRoles(args) {
       words = words.slice(2);
     } else if (words[0] === '--security' && !seen.has('--security')) {
       seen.add('--security');
+      words = words.slice(1);
+    } else if (words[0] === '--load-test' && !seen.has('--load-test')) {
+      seen.add('--load-test');
       words = words.slice(1);
     } else break;
   }
@@ -691,6 +740,7 @@ const ROLE_LANES = {
   "spec-auditor": ['none'],
   "test-writer": ['tests'],
   "implementer": ['no-tests'],
+  "load-tester": ['load'],
   "spec-gatekeeper": ['none'],
   "security-reviewer": ['none'],
 };
@@ -750,7 +800,7 @@ function laneOutside(base, rule, prefixes, whoName) {
   const no = (why) => ({ problem: `lane check could not run for ${whoName}: ${why}` });
   if (!base || typeof base !== 'object') return no('its start record is unreadable.');
   if (typeof base.sha !== 'string' || !/^[0-9a-f]{40,64}$/.test(base.sha) || !Array.isArray(base.dirty)) return no('its start record is incomplete.');
-  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) return no(`${testPaths.bad}.`);
+  if ((rule === 'tests' || rule === 'no-tests' || rule === 'load') && testPaths.bad) return no(`${testPaths.bad}.`);
   // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
   if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) return no(`its start commit ${base.sha.slice(0, 12)} is not in this repo.`);
   // `none`, a read-only role's (#412): every changed file is outside.
@@ -1154,7 +1204,7 @@ function laneProblem(actor, ruleArgs, abs, shown, viaBash) {
     return `${actor} may not write ${named}: it is a protected path (${why}). The fast track does not change it. `
       + 'Stop and report ESCALATE; the developer uses /speckit-team.';
   }
-  if ((rule === 'tests' || rule === 'no-tests') && testPaths.bad) {
+  if ((rule === 'tests' || rule === 'no-tests' || rule === 'load') && testPaths.bad) {
     return `${actor} may not write ${rel} until the test patterns can be read: ${testPaths.bad}. `
       + 'Report this to the user, who fixes the file; do not edit it yourself.';
   }
@@ -1168,6 +1218,10 @@ function laneProblem(actor, ruleArgs, abs, shown, viaBash) {
     }
     return `${actor} writes only test files and ticks tasks.md; ${rel} is production code and belongs to implementer. `
       + 'If it is a test file the patterns miss, add a regex line to .specify/test-paths.';
+  }
+  if (rule === 'load' && !inLane('load', rel)) {
+    return `${actor} (load-tester) writes only load tests and specs/<feature>/load-test.md; ${rel} is outside that lane. `
+      + 'Production code, functional tests, tasks.md and the spec belong to other roles: report what should change instead.';
   }
   if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
     return `${actor} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
@@ -1402,7 +1456,7 @@ if (mode === 'gate') {
     if (choice !== undefined && Array.isArray(choice?.typed)) {
       // #373: the roles the user typed after --team, held until the user says otherwise.
       const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
-      const dropped = choice.typed.filter((r) => CORE_ROLES.includes(r) && !launched.includes(r));
+      const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester') && !launched.includes(r));
       if (dropped.length && !answeredSince(choice)) {
         deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
           + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
@@ -1444,7 +1498,7 @@ if (mode === 'gate') {
         deny(`speckit-role-${roleSkill} runs only in a request typed as /speckit-team --team skill-agents <request>.`);
       }
       const auditGate = () => {
-        const gap = ['test-writer', 'implementer', 'spec-gatekeeper'].includes(roleSkill) ? auditProblem() : null;
+        const gap = ['test-writer', 'implementer', 'load-tester', 'spec-gatekeeper'].includes(roleSkill) ? auditProblem() : null;
         if (gap) deny(`Implementation gate: ${gap}. Run ${auditorRef()} and get VERDICT: PASS first.`);
       };
       const live = readState(roleFile(id));

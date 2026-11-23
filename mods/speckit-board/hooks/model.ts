@@ -17,7 +17,7 @@ export const teamRole = (agentType: string): string | undefined =>
 export const ROLE_COLOR: Record<string, string> = {
   'product-owner': 'blue', architect: 'purple', 'spec-auditor': 'yellow',
   'test-writer': 'orange', implementer: 'green', 'spec-gatekeeper': 'red',
-  'security-reviewer': 'magenta', patcher: 'cyan',
+  'security-reviewer': 'magenta', 'load-tester': 'pink', patcher: 'cyan',
 }
 
 export const roleColor = (role: string): string | undefined =>

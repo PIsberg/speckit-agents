@@ -1,6 +1,6 @@
 # speckit-agents
 
-Source for a Claude Code subagent team around GitHub Spec Kit: eight agents, three skills, one hook
+Source for a Claude Code subagent team around GitHub Spec Kit: nine agents, three skills, one hook
 script and an installer. This file is how to work on it; the map below says where the rest is.
 
 ## Docs map
@@ -20,14 +20,14 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `specs/<NNN-feature>/`: one feature's spec, plan, contracts and tasks, and the decisions behind it.
 
 ## Layout
-- `agents/*.md`: the eight subagents, `patcher` (the fast track's) among them. The installer replaces
+- `agents/*.md`: the nine subagents, `patcher` (the fast track's) among them. The installer replaces
   `{{HOOK}}` with the installed hook's absolute path; never write a path or `$HOME` there.
 - `hooks/speckit-team.mjs`: every guardrail, one script; modes `scope`, `gate`, `verdict`, `result`,
-  `ends`, `start`, `lane`, `patch`, `relay`, `project`, `check`, `decisions`. `hooks/speckit-drift.mjs`: the drift check, installed
+  `ends`, `start`, `lane`, `patch`, `relay`, `project`, `check`, `decisions`, `probe`. `hooks/speckit-drift.mjs`: the drift check, installed
   beside it and loaded at spec-gatekeeper's `APPROVED` (#228); `tools/drift.mjs` is its command line.
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
-- `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates seven from
+- `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates eight from
   `agents/<role>.md` for `--team skill-agents`, with `scope role` and `lane role` in their frontmatter.
 - `install.mjs`: the installer; `setup.sh` and `setup.ps1` only check for Node and call it.
 - `mods/speckit-board/`: an experimental board mod (it also draws the session's context, tokens and cost), read in place through `claude plugin` with this
@@ -50,7 +50,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   when it builds features here.
 
 ## Verify
-- `npm test`: every suite, no network beyond localhost, 674 tests (the files and what each runs:
+- `npm test`: every suite, no network beyond localhost, 719 tests (the files and what each runs:
   README.md, "Test suite"), through `tools/test.mjs`, which takes `node --test` options and files
   (`node tools/test.mjs --test-name-pattern=x test/hook.test.mjs`). Tests that need `claude` skip
   without it. `SPECKIT_E2E_CONCURRENCY=1` runs the e2e tests one by one; `SPECKIT_E2E_TIME_SCALE=3`
@@ -97,7 +97,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   repository, recognised by the `name` in the committed `package.json` (itself in the list). A new
   guardrail file of the team gets an entry and a case in `test/hook.test.mjs`.
 - `Team:` line of every launch prompt in a run with a chosen team: the skill writes it, the hook reads
-  it with `TEAM_ROLES` (the seven roles without `patcher`), spec-gatekeeper reports an absent role's check
+  it with `TEAM_ROLES` (the eight roles without `patcher`), spec-gatekeeper reports an absent role's check
   as skipped. `Unbuilt:` line after it: the task IDs of an absent test-writer or implementer, which
   spec-gatekeeper's open-task check skips. Both halves are held together by `test/install.test.mjs`.
 - `Project:` line of every launch prompt in a run with an active project: the skills (`speckit-team`
@@ -126,5 +126,5 @@ planned last. Read that plan only when you work on that feature.
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan:
-`specs/010-context-cost-stats/plan.md`
+`specs/012-load-test-agent/plan.md`
 <!-- SPECKIT END -->

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const INSTALL = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'install.mjs');
-const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
+const AGENTS = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer', 'patcher'];
 const UNRELATED = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] };
 
 function claudeDir(settings) {
@@ -36,7 +36,7 @@ const gates = (s) => Object.entries(s.hooks ?? {}).flatMap(([event, groups]) => 
   .filter((g) => g.hooks.some((h) => h.command.includes('speckit-team.mjs'))).map((g) => `${event}:${g.matcher}`));
 // The settings.json entries the installer owns, as `event:matcher`, sorted.
 // SubagentStart matches the eight roles, so every team agent can start with its session's project.
-const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|spec-gatekeeper|security-reviewer|patcher';
+const START_MATCHER = 'product-owner|architect|spec-auditor|test-writer|implementer|load-tester|spec-gatekeeper|security-reviewer|patcher';
 // #231: PostToolUse on Agent relays what a subagent's hooks said at its Stop to the main session.
 const GATES = ['PostToolUse:Agent', 'PreToolUse:Skill|Agent', `SubagentStart:${START_MATCHER}`, 'UserPromptExpansion:speckit-implement|speckit\\.implement|speckit-team'];
 // Prose wraps at any space, so a phrase is matched on the text with its line breaks collapsed.
@@ -535,9 +535,9 @@ test('#209 #210: every team agent with Bash runs its scope hook on Bash, and the
   assert.equal(install(dir).status, 0);
   const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
   const expected = { 'product-owner': 'only specs/ .specify/feature.json', architect: 'only specs/ CLAUDE.md', 'test-writer': 'tests',
-    implementer: 'no-tests', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
+    implementer: 'no-tests', 'load-tester': 'load', 'spec-auditor': 'none', 'spec-gatekeeper': 'none', 'security-reviewer': 'none' };
   // #337: test-writer and implementer run their scope rule in the gate's process, one node per tool call.
-  const gated = { 'test-writer': 'gate scope', implementer: 'gate retries scope' };
+  const gated = { 'test-writer': 'gate scope', implementer: 'gate retries scope', 'load-tester': 'gate scope' };
   for (const [a, rule] of Object.entries(expected)) {
     const text = fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8').replace(/\r\n/g, '\n');
     const fm = text.slice(0, text.indexOf('\n---', 4));
@@ -1329,6 +1329,7 @@ const teamSkill = () => {
 const installedAgent = (a) => {
   const dir = claudeDir();
   assert.equal(install(dir).status, 0);
+  assert.ok(fs.existsSync(path.join(dir, 'agents', `${a}.md`)), `agents/${a}.md installed`);
   return flat(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'));
 };
 // The text of one `## ` section, heading line included, up to the next `## ` heading.
@@ -1543,7 +1544,7 @@ test('006 T016 FR-011: README has a "Choosing the team" section whose table name
   assert.ok(sec, 'README.md has a "#### Choosing the team" subsection');
   const hookSrc = repoText('hooks', 'speckit-team.mjs');
   const roles = hookSrc.match(/const TEAM_ROLES = \[([^\]]*)\]/)[1].split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
-  assert.equal(roles.length, 7);
+  assert.equal(roles.length, 8); // 012 T024 FR-017: load-tester joins the seven
   const rows = sec.split('\n').filter((l) => l.trim().startsWith('|'));
   for (const r of roles) {
     const row = rows.find((l) => l.includes(r));
@@ -2324,5 +2325,226 @@ test('#230: both pipeline skills run the check first and stop on its exit 1', ()
     const first = section.split('\n').find((l) => l.startsWith('- '));
     assert.ok(first?.includes(`node "${hookPath}" check`), `${skill}: first precondition runs the check: ${first}`);
     assert.match(flat(section.slice(0, 900)), /exit 1.{0,80}stop|stop.{0,80}exit 1/i, skill);
+  }
+});
+
+// ---- 012 load-tester: the installed role and the skill text ----
+// 012 T003 also updates AGENTS, START_MATCHER and the #209/#210 test's maps above (FR-003, FR-017).
+test('012 T003 FR-001 FR-003 FR-017 contract 2: the installed load-tester has its tools, colour, hooks and body sections', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  assert.ok(fs.existsSync(path.join(dir, 'agents', 'load-tester.md')), 'agents/load-tester.md installed');
+  const text = fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8').replace(/\r\n/g, '\n');
+  const fm = text.slice(0, text.indexOf('\n---', 4));
+  assert.match(fm, /speckit-agents: managed by install\.mjs/);
+  assert.match(fm, /^name:\s*load-tester$/m);
+  assert.match(fm, /^model:\s*sonnet$/m);
+  assert.match(fm, /^color:\s*pink$/m);
+  assert.match(fm, /^tools:\s*Bash, Edit, Read, Write$/m);
+  assert.doesNotMatch(fm, /^disallowedTools:/m);
+  assert.doesNotMatch(fm, /omitClaudeMd/);
+  assert.ok(fm.includes(`node "${hookPath}" gate scope load`), 'the gate and the load lane in one process');
+  assert.ok(fm.includes(`node "${hookPath}" lane load`), 'the Stop lane check');
+  assert.ok(fm.includes('ends PASS FAIL "NOT MEASURED"'), 'the verdict words');
+  assert.match(fm, /matcher: "SubagentHandback"/);
+  assert.match(fm, /^\s*Stop:/m);
+  assert.ok(fm.indexOf('lane load') < fm.lastIndexOf('ends PASS FAIL'), 'lane before ends at Stop');
+  const body = text.slice(text.indexOf('\n---', 4) + 4);
+  assert.ok(body.split('\n').length <= 101, 'the body is at most 100 lines');
+  for (const h of ['Inputs', 'Lane', 'Process', 'Verdict', 'Report']) assert.match(body, new RegExp(`^## ${h}\\b`, 'm'), `section ${h}`);
+});
+
+test('012 T003 FR-006 FR-007 contract 4: the Report section names value, unit, ceiling or control, and the three last lines', () => {
+  const body = flat(installedAgent('load-tester'));
+  const report = body.slice(body.indexOf('## Report'));
+  assert.match(report, /value/i);
+  assert.match(report, /unit/i);
+  assert.match(report, /ceiling/i);
+  assert.match(report, /control/i);
+  for (const w of ['PASS', 'FAIL', 'NOT MEASURED']) assert.ok(report.includes(w), w);
+  assert.match(report, /Measurements[^]*Not measured[^]*Warnings/, 'the report order');
+  assert.match(report, /40 lines/);
+});
+
+test('012 T003 FR-001 contract 2: the role skill speckit-role-load-tester is generated, and --help names --load-test and load-tester', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const file = roleSkillPath(dir, 'load-tester');
+  assert.ok(fs.existsSync(file), 'skills/speckit-role-load-tester/SKILL.md installed');
+  const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
+  assert.match(text, /^name: speckit-role-load-tester$/m);
+  assert.match(text, /scope role/);
+  assert.match(text, /lane role/);
+  const help = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(help.stdout + help.stderr, /--load-test/);
+  assert.match(help.stdout + help.stderr, /load-tester/);
+});
+
+test('012 T008 FR-001 FR-002 contract 1: the skill takes --load-test as a leading flag and names load-tester in the Team, Handoffs and Skill agents sections', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /--load-test/);
+  const team = flat(skillSection(skill, '## Team'));
+  assert.match(team, /`--team`, `--security`(,| and) `--load-test`|`--load-test`/);
+  assert.match(team, /load-tester/);
+  assert.match(team, /opt-in|--load-test/i);
+  assert.match(team, /(not|never) in the (default|full) team|only when (asked|requested|named)|opt-in/i, 'never in the default team');
+  const handoffs = flat(skillSection(skill, '## Handoffs'));
+  assert.match(handoffs, /- load-tester:/, 'a Handoffs bullet for its Inputs');
+  assert.match(handoffs, /load-tester:[^-]*feature directory/i);
+  const sa = flat(skillSection(skill, '## Skill agents'));
+  assert.match(sa, /load-tester/);
+  assert.match(sa, /--load-test/);
+});
+
+test('012 T008 FR-005 FR-006 FR-010 FR-016 US1-1 US1-2 US5-1: step 5b runs after green and before spec-gatekeeper, stops on any verdict but PASS, and commits and stashes as D6 A says', () => {
+  const skill = teamSkill();
+  const a = skill.indexOf('\n## 4-5.'), b = skill.indexOf('\n## 5b. Load test: load-tester'), c = skill.indexOf('\n## 6.');
+  assert.ok(a >= 0 && b > a && c > b, '## 5b. Load test: load-tester sits between ## 4-5. and ## 6.');
+  const sec = flat(skillSection(skill, '## 5b. Load test: load-tester'));
+  assert.match(sectionHead(skill, '## 5b. Load test: load-tester'), /\b(only|skip|unless|without|when|if)\b[^]*?load-tester/i, 'opens with the condition on load-tester');
+  assert.match(sec, /foreground/);
+  assert.match(sec, /\*\*Stop:\*\*/, 'a Stop');
+  assert.match(sec, /FAIL/);
+  assert.match(sec, /NOT MEASURED/);
+  assert.match(sec, /last line/i);
+  assert.match(sec, /(absent|different|any other)[^.]*last line|last line[^.]*(absent|different|any other)/i, 'an absent or other last line is refused');
+  assert.match(sec, /committed? in the message that launches spec-gatekeeper|commit[^.]*launch(es)? spec-gatekeeper/i, 'its files are committed with the next launch');
+  assert.match(sec, /accept/i);
+  assert.match(sec, /only `?load-test\.md`?|`?load-test\.md`? only/i, 'on accept only the record is committed');
+  assert.ok(sec.includes('git stash push --include-untracked'), 'the load tests are stashed');
+  assert.match(sec, /specs\/<[^>]*>\/load-test\.md|load-test\.md/);
+  const seven = flat(skillSection(skill, '## 7. Hand over'));
+  assert.match(seven, /stash/i, 'step 7 names the stash');
+  assert.match(seven, /load tests?|files/i);
+});
+
+test('012 T008 FR-002 edge cases: an opt-in role not asked for gets no skipped row, and a team with no implementer is still measured', () => {
+  const skill = teamSkill();
+  const seven = flat(skillSection(skill, '## 7. Hand over'));
+  assert.match(seven, /load-tester[^.]*(not asked|opt-in|--load-test)[^.]*(no|not)[^.]*skipped|(no|not)[^.]*skipped[^.]*load-tester/i, 'step 7: no skipped row for load-tester when not asked');
+  const sec = flat(skillSection(skill, '## 5b. Load test: load-tester'));
+  assert.match(sec, /no implementer|without (an )?implementer|as it stands/i);
+  assert.match(sec, /NOT MEASURED[^.]*(listed|reported|report)|report[^.]*NOT MEASURED/i, 'NOT MEASURED goes on but is reported');
+});
+
+// ---- 012 load-tester: instrument, budget and workload rules in the installed body ----
+test('012 T012 FR-008 FR-009 US2-1 US2-2 US2-3 US2-4 US1-3: the body checks the artifact, the result count, the skips and the switch, and names the no-runner case', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /working tree/i, 'the artifact measured is the working tree\'s build');
+  assert.match(proc, /(pinned|older|published|other than)[^.]*(release|build|version|artifact)|resolved/i, 'which artifact the harness resolved');
+  assert.match(proc, /empty|non-empty/i, 'an empty result set');
+  assert.match(proc, /expected count|expected number|fewer than expected|short of/i, 'the expected count');
+  assert.match(proc, /exit status|exit code/i, 'whatever the harness exit status');
+  assert.match(proc, /skipp?ed[^.]*(not passed|never (a )?pass|listed|Not measured)/i, 'a skip is listed as skipped');
+  assert.match(proc, /(engag|took effect)[^.]*(assert|first|fail)|(assert|first)[^.]*(engag)/i, 'a feature switch is asserted engaged first');
+  assert.match(proc, /(cache|routing|early exit)/i, 'the switch examples');
+  assert.match(proc, /no (way|runner|benchmark)[^.]*NOT MEASURED|NOT MEASURED[^.]*no (way|runner)/i, 'no way to run a benchmark gives NOT MEASURED');
+  const verdict = body.slice(body.indexOf('## Verdict'), body.indexOf('## Report'));
+  assert.match(verdict, /instrument/i, 'an instrument check failing is FAIL');
+  assert.match(verdict, /empty|expected count|short/i, 'an empty or short result set is FAIL');
+  assert.match(verdict, /switch|engage/i, 'a switch that did not engage is FAIL');
+  assert.match(verdict, /skip/i, 'skips alone give NOT MEASURED');
+});
+
+test('012 T016 FR-011 FR-012 FR-013 US3-1 US3-2 US3-3 US3-4 SC-005: the body probes before and after, gates only on deterministic measures, and writes a budget only after its failing first run', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const hookPath = path.join(dir, 'hooks', 'speckit-team.mjs').split(path.sep).join('/');
+  const body = flat(fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8'));
+  assert.ok(body.includes(`node "${hookPath}" probe`), 'runs the installed hook probe');
+  assert.match(body, /probe --since/, 'and probe --since after the measurements');
+  assert.ok(body.indexOf('" probe') < body.indexOf('probe --since'), 'probe before probe --since');
+  assert.match(body, /noisy/i, 'the noisy warning');
+  assert.match(body, /10%/);
+  assert.match(body, /20%/);
+  assert.match(body, /(allocat|work count|ratio|accuracy)/i, 'deterministic measures');
+  assert.match(body, /wall-clock[^.]*(trend|never gat|not gat)|(trend|never gat)[^.]*wall-clock/i, 'wall-clock is a trend');
+  assert.match(body, /processor time|cpu time/i);
+  assert.match(body, /2\.2x|2\.2 times/i, 'the 2.2x default margin');
+  assert.match(body, /(project|constitution)[^.]*tighten|tighten[^.]*(project|constitution)/i, 'a project may tighten it');
+  assert.match(body, /(no workload can meet|cannot meet|impossible)[^.]*ceiling|ceiling[^.]*(no workload can meet|cannot meet|impossible)/i, 'first a ceiling nothing can meet');
+  assert.match(body, /fail(ing|ed)? first run|first (run )?(is )?(seen )?fail/i, 'the failing first run');
+  assert.match(body, /re-?derive/i, 're-derive from a failing run');
+  assert.match(body, /never raise|do not raise|not raise the (number|ceiling)/i, 'never raise the number until green');
+  assert.match(body, /(highest|max)[^.]*reading/i, 'the margin is over the highest reading');
+  assert.match(body, /(row|budget)[^.]*only after[^.]*fail|only after[^.]*fail[^.]*(row|budget)/i, 'a budget row only after the failing first run');
+});
+
+test('012 T018 FR-014 US4-1 US4-2 US4-3 US4-4 US4-5: the body sweeps sizes, separates cold from warm, sweeps concurrency, reports error rates and subtracts a host control', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /(four|4) sizes|at least (four|4)/i, 'at least four sizes');
+  assert.match(proc, /doubl/i, 'each double the last');
+  assert.match(proc, /per doubling|each doubling/i, 'growth per doubling');
+  assert.match(proc, /cold[^.]*warm|warm[^.]*cold/i, 'cold and warm apart');
+  assert.match(proc, /vary|varied|distinct|different inputs/i, 'inputs varied so a cache cannot answer');
+  assert.match(proc, /concurren/i, 'a concurrency sweep');
+  assert.match(proc, /queue/i, 'flat throughput with rising latency is a queue, not a regression');
+  assert.match(proc, /false[- ]positive/i);
+  assert.match(proc, /false[- ]negative/i);
+  assert.match(proc, /(changes?|flips?) (a )?verdicts?[^.]*FAIL|FAIL[^.]*(changes?|flips?) (a )?verdicts?/i, 'a speed gain that changes verdicts is FAIL');
+  assert.match(proc, /(do-nothing|no-op|empty) control/i, 'a do-nothing control');
+  assert.match(proc, /host/i);
+  assert.match(proc, /subtract/i);
+  assert.match(proc, /where the feature has|each where|only where|when the feature/i, 'each dimension only where the feature has it');
+});
+
+// ---- 012 load-tester: harness, record and comparison rules in the installed body ----
+test('012 T020 FR-016 US5-1 contract 5: the body puts load tests in a path lane `load` accepts, reduced by default, the full sweep behind a named environment variable', () => {
+  const body = installedAgent('load-tester');
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /(ordinary|normal|existing) test command/i, 'the reduced version runs under the ordinary test command');
+  assert.match(proc, /reduced|small version|smaller/i, 'a reduced version by default');
+  assert.match(proc, /full sweep/i, 'the full sweep');
+  assert.match(proc, /environment variable|env var/i, 'selected by an environment variable');
+  assert.match(proc, /(name|names|document|write)[^.]*(environment variable|env var)|(environment variable|env var)[^.]*(procedure|record|load-test\.md)/i, 'the procedure names the variable');
+  assert.match(proc, /(test\/load\/|\.load\.test\.|LoadTest)[^.]*(lane|path|accept)|(lane|path)[^.]*accept/i, 'load tests go where lane load accepts them');
+  assert.match(proc, /(fail|red)[^.]*(breach|ceiling)|(breach|ceiling)[^.]*(fail|red)/i, 'the reduced test fails the command on a breach');
+  assert.match(proc, /(seen|see|watch|confirm)[^.]*fail(ing)?[^.]*(breach|ceiling|impossible)|(impossible|breach)[^.]*(seen|see)[^.]*fail/i, 'seen failing on a breach before it is kept');
+});
+
+test('012 T020 FR-016 US5-2 contract 5: the body leaves specs/<feature>/load-test.md with Procedure, Environment, Budgets and Readings', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /load-test\.md/);
+  for (const sec of ['## Procedure', '## Environment', '## Budgets', '## Readings']) assert.ok(body.includes(sec), `the record has ${sec}`);
+  assert.match(body, /date[^.]*(OS|processor)|(OS|processor)[^.]*date/i, 'the environment: date, OS, processor');
+  assert.match(body, /versions? compared|compared versions?/i, 'the versions compared');
+  assert.match(body, /(rewrite|rewritten|overwrit)[^.]*(each|every) run|(each|every) run[^.]*(rewrite|overwrit)/i, 'rewritten on each run');
+});
+
+test('012 T020 FR-015 US5-3: the body compares versions in one sitting, alternating order, and calls a difference real only when the ranges do not overlap', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /one sitting/i);
+  assert.match(body, /alternat/i, 'alternating order');
+  assert.match(body, /ranges? (do(es)? not|don't|never) overlap|non-?overlapping ranges?|only when the ranges/i, 'real only when the ranges do not overlap');
+});
+
+test('012 T020 edge cases: capped load lists the tiers left out as skipped, an unexplained move says the cause is unknown, an unreproducible FAIL is unstable with both readings', () => {
+  const body = installedAgent('load-tester');
+  assert.match(body, /cap(ped)?[^.]*tiers?|tiers?[^.]*cap(ped)?/i, 'a capped run names the tiers the cap left out');
+  assert.match(body, /(cause|reason)[^.]*unknown|unknown[^.]*(cause|reason)/i, 'a move with no code change: the cause is unknown');
+  assert.match(body, /(do not|never|not) guess/i, 'and it is not guessed');
+  assert.match(body, /unstable/i, 'a FAIL that does not reproduce is unstable');
+  assert.match(body, /both readings/i, 'with both readings');
+});
+
+test('012 T020 FR-016 contract 2: the load-tester body stays within 100 lines and its Process has a harness and record step', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const raw = fs.readFileSync(path.join(dir, 'agents', 'load-tester.md'), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(raw.split(/^---$/m)[2].trim().split('\n').length <= 100, 'the body (frontmatter excluded) is at most 100 lines');
+  const proc = raw.slice(raw.indexOf('## Process'), raw.indexOf('## Verdict'));
+  assert.match(proc, /^\d+\. (Harness|Record)/mi, 'a numbered Process step for the harness and record');
+});
+
+// 012 T024 FR-017: the README guardrail table describes the load-tester's hook entries (red until T025).
+test('012 T024 FR-017: README guardrail table has rows for `gate scope load`, `lane load`, `ends PASS FAIL "NOT MEASURED"` and `probe`', () => {
+  const lines = repoText('README.md').split('\n');
+  for (const mode of ['gate scope load', 'lane load', 'ends PASS FAIL "NOT MEASURED"', 'probe']) {
+    const row = lines.find((l) => l.startsWith('| `' + mode));
+    assert.ok(row, `the guardrail table has a row for ${mode}`);
+    assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${mode} row names where it runs and what it stops`);
   }
 });

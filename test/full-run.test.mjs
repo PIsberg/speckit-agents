@@ -641,3 +641,17 @@ test('full run: the command refuses an --out under the Temp folder before writin
   assert.match(r.stderr, /Temp folder/);
   assert.ok(!fs.existsSync(out), 'nothing written');
 });
+
+// 012 T010 FR-002 SC-003: load-tester is opt-in through --load-test, which a full run never passes.
+test('012 T010 FR-002 SC-003: checkRun fails a run that launched load-tester or called speckit-role-load-tester', () => {
+  const agents = checkRun({ repo: state().repo, usage: { main: { launches: [{ type: 'product-owner', background: false }, { type: 'load-tester', background: false }], waits: 0 } },
+    costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true, agentTexts: [{ file: 'agent-a.jsonl', text: '{"prompt":"T001: go"}' }] });
+  assert.ok(agents.some((f) => /load-tester/.test(f) && /--load-test/.test(f)), JSON.stringify(agents));
+  const skills = checkRun({ repo: state().repo, usage: { main: { launches: [], waits: 0, skills: [...roleSkills(), 'speckit-role-load-tester'] } },
+    costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true, agentTexts: [], skillAgents: true });
+  assert.equal(skills.length, 1, JSON.stringify(skills));
+  assert.match(skills[0], /speckit-role-load-tester was called.*--load-test/);
+  const clean = checkRun({ repo: state().repo, usage: { main: { launches: [], waits: 0, skills: roleSkills() } },
+    costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true, agentTexts: [], skillAgents: true });
+  assert.deepEqual(clean, [], 'control: no load-tester, no failure');
+});
