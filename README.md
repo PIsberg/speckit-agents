@@ -1576,7 +1576,8 @@ claude --plugin-dir <path to this checkout>/mods/speckit-board
 - **A pane**, opened with `/speckit-board` or the band's `board` button:
   - the next step: while building, the next open task of `tasks.md`; otherwise what the pipeline
     needs (`spec-auditor: audit spec, plan and tasks`, `re-audit: spec, plan or tasks changed`,
-    `ready for the PR`), or which team agent it is waiting for;
+    `ready for the PR`), or which team agent it is waiting for (load-tester, too, once every task is
+    done, [#425](https://github.com/PIsberg/speckit-agents/issues/425));
   - the six phases, one a row with its note (`approved`, `PASS`, `edited since PASS`), the build
     row with the progress bar and the retry meter;
   - the team agents of this session, running ones first, each name in its agent file's color, with
