@@ -5072,3 +5072,40 @@ test('#447: a held launch in a later turn (another prompt_id) goes, before its t
   assert.ok(denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q1' })));
   assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q2' })));
 });
+
+// #463: in a live run spec-gatekeeper rejected a finished build only because two tasks the implementer had built were
+// still `- [ ]` in tasks.md, which cost an implementer launch to tick them and a second gatekeeper. A GREEN while a task
+// its own launch prompt named is unticked is sent back once, naming the tasks. A stub pass and a worktree launch tick
+// nothing by rule, so they are not checked.
+function agentTranscript(dir, prompt) {
+  const file = path.join(dir, '..', `agent-${path.basename(dir)}-${Math.random().toString(36).slice(2)}.jsonl`);
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', message: { role: 'user', content: prompt } })}\n`);
+  return file;
+}
+const greenStop = (dir, transcript, extra = {}) => run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im1',
+  last_assistant_message: 'All tests pass.\nRESULT: GREEN', agent_transcript_path: transcript, ...extra });
+test('#463: a GREEN with a task of its prompt still unticked is sent back once, naming it', () => {
+  const { dir } = repo();
+  pass(dir);
+  const t = agentTranscript(dir, 'Round 1 implementation task IDs: T002\nTest-writer report: T001 red.');
+  const first = greenStop(dir, t);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^RESULT: GREEN, but tasks\.md still has T001, T002 unticked, which your prompt names\. Tick each task you finished/);
+  const again = greenStop(dir, t, { stop_hook_active: true, last_assistant_message: 'All tests pass, T001 is test-writer\'s.\nRESULT: GREEN' });
+  assert.notEqual(again?.decision, 'block', 'never twice');
+  assert.match(msg(again), /implementer reported GREEN/);
+});
+
+test('#463: no send-back when the prompt\'s tasks are ticked, for a stub pass or a worktree, or without a transcript', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [X] T002 implement\n');
+  assert.notEqual(greenStop(dir, agentTranscript(dir, 'T001 T002'))?.decision, 'block', 'all ticked');
+  const r2 = repo();
+  pass(r2.dir);
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'stub T002'), { last_assistant_message: 'RESULT: STUB' })?.decision, 'block', 'stub');
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'T002\nworktree'))?.decision, 'block', 'worktree');
+  assert.notEqual(greenStop(r2.dir, undefined)?.decision, 'block', 'no transcript');
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'T999 is not in tasks.md'))?.decision, 'block', 'an ID tasks.md lacks');
+  assert.notEqual(run(r2.dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im2', last_assistant_message: 'RESULT: RED', agent_transcript_path: agentTranscript(r2.dir, 'T002') })?.decision, 'block', 'a RED');
+});

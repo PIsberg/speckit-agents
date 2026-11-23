@@ -1528,6 +1528,20 @@ test('#429: an Agent call\'s model overrides the agent\'s model line, and under 
   assert.match(model('e2e full revision'), /sonnet/, `fast puts architect on sonnet: ${story(r)}`);
 });
 
+// #463: an implementer's RESULT: GREEN while a task its prompt names is unticked comes back once, naming it. Needs Claude
+// Code's agent_transcript_path at SubagentStop with the launch prompt as its first user row; with the hook a no-op
+// (SPECKIT_E2E_NO_HOOK=1) the agent never gets the send-back.
+test('#463: an implementer GREEN with T001 of its prompt unticked is sent back once, naming it', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [call('Agent', { description: 'implementer', subagent_type: 'implementer', prompt: 'e2e green T001: go', run_in_background: false })],
+    'e2e green T001': [say('Built it.\nRESULT: GREEN'), say('T001 is done but I left it unticked.\nRESULT: GREEN')],
+  });
+  assert.ok(r.requests['e2e green T001'].length >= 2, `the agent was sent back:\n${story(r)}`);
+  assert.match(shown(r.requests['e2e green T001'][1]), /tasks\.md still has T001 unticked, which your prompt names/, story(r));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => {
   for (const [name, opts, fn] of queued) nodeTest(name, { ...opts, ...(opts.timeout && { timeout: scaled(opts.timeout) }) }, fn);

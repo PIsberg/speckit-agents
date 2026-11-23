@@ -1260,6 +1260,19 @@ function lastGatekeeperWord(text) {
   return text.split('\n').map(lastWord).reverse().find((w) => w === 'APPROVED' || w === 'REJECTED') ?? null;
 }
 
+// #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
+// worktree launch, which tick nothing by rule, or when the agent's transcript cannot be read.
+function untickedOfPrompt(feat) {
+  const first = lines(readOr(str(input.agent_transcript_path) ?? '', '')).map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .find((r) => r?.type === 'user');
+  const c = first?.message?.content;
+  const prompt = typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('\n') : '';
+  if (!prompt || /^\s*stub\b/m.test(prompt) || /\bworktree\b/.test(prompt)) return [];
+  const tasks = readOr(path.join(root, feat, 'tasks.md'), '');
+  return [...new Set(prompt.match(/\bT\d{3,}\b/g) ?? [])].sort()
+    .filter((id) => new RegExp(`^\\s*[-*]\\s+\\[ \\]\\s.*\\b${id}\\b`, 'm').test(tasks));
+}
+
 function lastAssistantText() {
   const last = str(input.last_assistant_message);
   if (last) return last;
@@ -1991,6 +2004,18 @@ if (mode === 'result') {
     if (!viaHandback && !input.stop_hook_active) block(ask);
   }
   const result = found ? found[1].toUpperCase() : 'RED';
+  // #463: a GREEN while tasks its own prompt names are still unticked cost a gatekeeper REJECTED and a launch to tick
+  // them; sent back once per agent, naming them.
+  if (result === 'GREEN') {
+    const open = untickedOfPrompt(feat);
+    const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ticks-asked`);
+    if (open.length && asked && !fs.existsSync(asked)) {
+      const why = `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which your prompt names. Tick each task you finished (- [x]); `
+        + 'name any you did not finish and why. Then end with RESULT: GREEN again.';
+      if (viaHandback) { writeJson(asked, {}); deny(why); }
+      if (!input.stop_hook_active) { writeJson(asked, {}); block(why); }
+    }
+  }
   markReport(done, viaHandback, { result });
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
   const closed = auditSkipped() ? null : auditProblem();
