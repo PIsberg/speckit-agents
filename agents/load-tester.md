@@ -51,14 +51,15 @@ The hook denies a write outside it and checks the whole diff at your Stop.
    - No way to run a benchmark (no runner, no harness you may write in your lane): NOT MEASURED, and say so.
 3. Run the project's existing load tests, or write the smallest ones that measure the surface.
 4. Probe. Run `node "{{HOOK}}" probe` before your first measurement and keep the reading. After the last
-   run `node "{{HOOK}}" probe --since <busy>,<ms>` with those two numbers. Its `noisy:` lines (other
-   processes used 10% or more of the machine, the fixed probe 20% or more slower) go under Warnings.
+   run `node "{{HOOK}}" probe --since <busy>,<ms>` with those two numbers. If it prints any (other
+   processes used 10% or more of the machine, the fixed probe 20% or more slower), copy its `noisy:` lines under Warnings as they are, each line starting `noisy:`.
 5. Budgets. Gate only on deterministic measures: allocation or work counts, ratios, accuracy. Wall-clock
    time is a trend, never gating. Processor time (cpu time) may gate only against a same-run control.
    - A ceiling is the highest reading of your runs times a margin, 2.2x by default; the project's
      instructions or the constitution may tighten it.
    - A growth-per-doubling ceiling is the growth the work needs (one pass over the input: 2x per doubling)
      plus 40%, never a reading of the build under test, which would pass the cost you are there to catch.
+     Measure growth on a work count or on the ratio to a same-run control, never on raw time.
    - Prove a ceiling can fail: first set one no workload can meet (an impossible ceiling) and see the
      failing first run. Re-derive the number from that failing run; never raise the number until green
      to make a run pass.

@@ -2740,4 +2740,8 @@ test('#456: a broken committed load test decides the verdict, and a growth ceili
   assert.match(verdict, /A committed load test with a skipped case ends the run NOT MEASURED at best\./);
   const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
   assert.match(proc, /A growth-per-doubling ceiling is the growth the work needs \(one pass over the input: 2x per doubling\) plus 40%, never a reading of the build under test, which would pass the cost you are there to catch\./);
+  // #417 load-noisy: 4 of 5 reports reworded the probe's warning ("Noisy host: ..."), and one gated raw cpu growth with no
+  // control and flipped to FAIL at a size the spec does not name.
+  assert.match(proc, /Measure growth on a work count or on the ratio to a same-run control, never on raw time\./);
+  assert.match(proc, /copy its `noisy:` lines under Warnings as they are, each line starting `noisy:`/);
 });

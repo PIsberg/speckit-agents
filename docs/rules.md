@@ -410,12 +410,12 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Writes only load tests and `specs/<feature>/load-test.md`; leaves a file already in a load directory whose own name does not say load (#418). hook `scope load` and `lane load`.
 
 ### agents/load-tester.md: Process
-<!-- fingerprint: 6684b686 -->
+<!-- fingerprint: 688bf52d -->
 - Find the load surface in the diff; none found is NOT MEASURED. pinned.
 - Check the instrument: the working tree's build, a non-empty and complete result set, skips listed as not measured, a feature switch engaged. pinned; a missed check leaves a wrong number nobody sees, unseen.
-- Run `probe` before the first measurement and after the last; its `noisy:` lines go under Warnings. script (`probe` answers; reporting it is asked); pinned.
+- Run `probe` before the first measurement and after the last; its `noisy:` lines go under Warnings as they are, each starting `noisy:` (#456). script (`probe` answers; reporting it is asked); pinned. Before the verbatim rule 4 of 5 load-noisy reports (#417) reworded the line ("Noisy host: ...").
 - Gate only on deterministic measures, ceilings from a failing first run times a margin, no budget row before its failing run. pinned, unseen.
-- A growth-per-doubling ceiling from the growth the work needs (one pass: 2x) plus 40%, never from the build under test (#456). pinned; seen breaking before the rule: a ceiling of 4.15 x 2.2 passed a quadratic dedupe in the #417 runs of 2026-11-23.
+- A growth-per-doubling ceiling from the growth the work needs (one pass: 2x) plus 40%, never from the build under test, and measured on a work count or a ratio to a same-run control, never raw time (#456). pinned; seen breaking before the rule: a ceiling of 4.15 x 2.2 passed a quadratic dedupe in the #417 runs of 2026-11-23.
 - Workloads: sizes doubled, cold and warm apart, concurrency swept, accuracy rates, the host's control subtracted. pinned, unseen.
 - Harness and record: load tests where `lane load` accepts them, reduced by default and the full sweep behind an environment variable, versions compared in one sitting, `load-test.md` rewritten each run. pinned.
 - `NOT MEASURED`, naming the edit, when the project's test command would not run a new load test without an edit outside the lane (#424, FR-016). pinned.
