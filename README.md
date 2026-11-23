@@ -508,7 +508,8 @@ exists, naming the tasks nobody builds.
 installed skill (`speckit-role-<role>`), and launches no agent. Type it; the team question does not
 offer it, and a free-text answer of `skill-agents` only gets a reminder of the typed form. It takes
 no role names and not `noagents`, and combines with `--security` and `--project`. The hook starts
-the mode from the typed command (`UserPromptExpansion`) and answers with a start message. If a
+the mode from the typed command (`UserPromptExpansion`) and answers with a start message, which names
+load-tester only when you typed `--load-test` ([#419](https://github.com/PIsberg/speckit-agents/issues/419)). If a
 `speckit-role-<role>` skill is missing it blocks and tells you to run `node install.mjs`. Launching
 any agent ends the mode.
 
@@ -1733,11 +1734,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 732 tests:
+`npm test` runs 733 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 265 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 266 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 151 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |

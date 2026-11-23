@@ -4587,8 +4587,21 @@ test('012 T004 FR-001 FR-017 contract 3: the role skill speckit-role-load-tester
 
 test('012 T004 FR-001 contract 1: the skill-agents start message names load-tester among the audit-gated roles', () => {
   const { dir } = repo();
-  const out = typedWith(dir, skillHook(), '--team skill-agents add a flag');
+  const out = typedWith(dir, skillHook(), '--load-test --team skill-agents add a flag');
+  assert.match(msg(out), /audit gate before test-writer, implementer, load-tester and spec-gatekeeper/);
   assert.match(msg(out), /audit gate on each tool call inside [^.]*load-tester/);
+  const after = typedWith(repo().dir, skillHook(), '--team skill-agents --load-test add a flag');
+  assert.match(msg(after), /inside [^.]*load-tester/, 'the flag after --team counts too');
+});
+
+// #419: FR-002 says a run without load-tester gets no added prompt text, and the start message named it in every
+// skill-agents run. Without --load-test it is the message from before 012 again.
+test('#419: without --load-test the skill-agents start message does not name load-tester', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team skill-agents add a load-test flag');
+  assert.doesNotMatch(msg(out), /load-tester/);
+  assert.match(msg(out), /the audit gate before test-writer, implementer and spec-gatekeeper, /);
+  assert.match(msg(out), /inside test-writer and implementer \(a spec, plan or tasks edit there is caught/);
 });
 
 // ---- 012 probe (FR-013, SC-006, contract 6). Load cannot be set, so thresholds are driven through --since. ----
