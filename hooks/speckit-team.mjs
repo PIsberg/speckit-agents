@@ -863,6 +863,18 @@ function answeredSince(rec) {
   }
   return false;
 }
+// #447: whether the user answered since a held request: a launch in a later turn than the request's (another prompt_id; a new
+// turn starts only from a prompt) or, within it, an answer in the transcript. A record without the request's prompt_id
+// takes this held launch's, so the next turn is told apart without waiting for its transcript row to be written.
+function answeredLater(choice, id) {
+  const now = str(input.prompt_id);
+  if (typeof choice?.prompt_id === 'string' && now && now !== choice.prompt_id) return true;
+  if (answeredSince(choice)) return true;
+  if (now && typeof choice?.prompt_id !== 'string' && choice && typeof choice === 'object') {
+    try { writeJson(choiceFile(id), { ...choice, prompt_id: now }); } catch { /* unrecorded: the transcript decides, as before */ }
+  }
+  return false;
+}
 // The role ended when the record holds a prompt_id and this call carries another: a new prompt is a new turn.
 // A record or input without a string prompt_id leaves the role live.
 function roleEnded(rec) {
@@ -1502,7 +1514,7 @@ if (mode === 'gate') {
       let offset = null;
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
-      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), ...(ask ? { ask: true } : {}), at: new Date().toISOString() });
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), ...(ask ? { ask: true } : {}), ...(str(input.prompt_id) ? { prompt_id: str(input.prompt_id) } : {}), at: new Date().toISOString() });
     }
     // `skill-agents noagents` and `hybrid noagents` (or `hybrid skill-agents`) are refused combinations, which the skill
     // reports; the hook records nothing.
@@ -1560,14 +1572,14 @@ if (mode === 'gate') {
       // #373: the roles the user typed after --team, held until the user says otherwise.
       const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
       const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester') && !launched.includes(r));
-      if (dropped.length && !answeredSince(choice)) {
+      if (dropped.length && !answeredLater(choice, id)) {
         deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
           + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
       }
       fs.rmSync(choiceFile(id), { force: true });
     } else if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
-      if (smaller && !answeredSince(choice)) {
+      if (smaller && !answeredLater(choice, id)) {
         deny(choice?.ask === true
           ? 'speckit-team: nobody chose this team. The request was typed with --team ?, so ask the team question (## Team of the skill) and stop; '
             + 'launch with this Team: line only after the user has answered. The full team, the recommended option, needs no answer.'

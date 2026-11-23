@@ -1171,6 +1171,9 @@ test('#366 a smaller team typed without --team waits for the user\'s answer: den
   const first = await session(s, script, { prompt: `/speckit-team ${MAIN}` });
   assert.match(lastResult(first.requests[MAIN][1]), /nobody chose this team/, story(first));
   assert.equal(first.requests['e2e test-writer'].length, 0, `no agent ran:\n${story(first)}`);
+  // #447: the hold keeps the turn it was in, from the request or the held launch, so a later turn goes even before its
+  // transcript row is written. That needs Claude Code to send a prompt_id with the launch.
+  assert.equal(typeof state(s, 'choice', `${sessionId(first)}.json`).prompt_id, 'string', story(first));
   const answered = await session(s, script, { prompt: 'Build only.', args: ['--resume', sessionId(first)], idBase: 100 });
   assert.doesNotMatch(lastResult(answered.requests[MAIN][1]), /nobody chose this team/, story(answered));
   assert.ok(answered.requests['e2e test-writer'].length >= 1, `the agent ran after the answer:\n${story(answered)}`);
