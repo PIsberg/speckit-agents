@@ -51,12 +51,15 @@ The hook denies a write outside it and checks the whole diff at your Stop.
    - No way to run a benchmark (no runner, no harness you may write in your lane): NOT MEASURED, and say so.
 3. Run the project's existing load tests, or write the smallest ones that measure the surface.
 4. Probe. Run `node "{{HOOK}}" probe` before your first measurement and keep the reading. After the last
-   run `node "{{HOOK}}" probe --since <busy>,<ms>` with those two numbers. Its `noisy:` lines (other
-   processes used 10% or more of the machine, the fixed probe 20% or more slower) go under Warnings.
+   run `node "{{HOOK}}" probe --since <busy>,<ms>` with those two numbers. If it prints any (other
+   processes used 10% or more of the machine, the fixed probe 20% or more slower), copy its `noisy:` lines under Warnings as they are, each line starting `noisy:`.
 5. Budgets. Gate only on deterministic measures: allocation or work counts, ratios, accuracy. Wall-clock
    time is a trend, never gating. Processor time (cpu time) may gate only against a same-run control.
    - A ceiling is the highest reading of your runs times a margin, 2.2x by default; the project's
      instructions or the constitution may tighten it.
+   - A growth-per-doubling ceiling is the growth the work needs (one pass over the input: 2x per doubling)
+     plus 40%, never a reading of the build under test, which would pass the cost you are there to catch.
+     Measure growth on a work count or on the ratio to a same-run control, never on raw time.
    - Prove a ceiling can fail: first set one no workload can meet (an impossible ceiling) and see the
      failing first run. Re-derive the number from that failing run; never raise the number until green
      to make a run pass.
@@ -87,7 +90,10 @@ The hook denies a write outside it and checks the whole diff at your Stop.
 
 ## Verdict
 `FAIL` when a gating measurement fails or an instrument check fails: an empty or short result set
-(below the expected count), or a feature switch that did not engage. `NOT MEASURED` when no gating
+(below the expected count), or a feature switch that did not engage. An instrument failure in a
+committed load test (a pinned or older build, swallowed errors or an empty result, an assertion that
+cannot fail) is FAIL for the run, even when you write a working load test beside it. A committed load
+test with a skipped case ends the run NOT MEASURED at best. `NOT MEASURED` when no gating
 measurement ran, skips alone included. `PASS` only when at least one gating measurement ran and every
 one passed.
 
