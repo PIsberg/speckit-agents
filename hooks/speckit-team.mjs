@@ -751,8 +751,9 @@ function typedRoles(args) {
     } else if (words[0] === '--security' && !seen.has('--security')) {
       seen.add('--security');
       words = words.slice(1);
-    } else if (words[0] === '--load-test' && !seen.has('--load-test')) {
-      seen.add('--load-test');
+    } else if (['--load-test', '--yes', '--side-by-side'].includes(words[0]) && !seen.has(words[0])) {
+      // #431: --yes and --side-by-side lead the arguments as --load-test does.
+      seen.add(words[0]);
       words = words.slice(1);
     } else break;
   }
@@ -1494,12 +1495,14 @@ if (mode === 'gate') {
     // same record keeps them, so a launch whose Team line drops one is held the same way. A list the skill refuses
     // (a word that is no team role) records nothing: no launch follows it.
     const typedTeam = roles?.length && roles.every((r) => TEAM_ROLES.includes(r)) ? TEAM_ROLES.filter((r) => roles.includes(r)) : null;
-    if (roles === null || typedTeam) {
+    // #431: `--team ?` asks the team question; without --team the full team runs unasked. Both hold a smaller team.
+    const ask = roles?.length === 1 && roles[0] === '?';
+    if (roles === null || ask || typedTeam) {
       const t = str(input.transcript_path);
       let offset = null;
       // A session's first prompt comes before its transcript exists: everything in it is after the request.
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
-      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), at: new Date().toISOString() });
+      if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), ...(ask ? { ask: true } : {}), at: new Date().toISOString() });
     }
     // `skill-agents noagents` and `hybrid noagents` (or `hybrid skill-agents`) are refused combinations, which the skill
     // reports; the hook records nothing.
@@ -1565,9 +1568,11 @@ if (mode === 'gate') {
     } else if (choice !== undefined) {
       const smaller = Boolean(team) && !('bad' in team) && !CORE_ROLES.every((r) => team.roles.includes(r));
       if (smaller && !answeredSince(choice)) {
-        deny('speckit-team: nobody chose this team. The request was typed without --team and no answer has come since, '
-          + 'so ask the team question (## Team of the skill) and stop; launch with this Team: line only after the user has answered. '
-          + 'The full team, the recommended option, needs no answer.');
+        deny(choice?.ask === true
+          ? 'speckit-team: nobody chose this team. The request was typed with --team ?, so ask the team question (## Team of the skill) and stop; '
+            + 'launch with this Team: line only after the user has answered. The full team, the recommended option, needs no answer.'
+          : 'speckit-team: nobody chose this team. The request was typed without --team, so the full team runs: launch with no Team: line. '
+            + 'To run fewer roles the user types /speckit-team --team <roles> <request>, or --team ? <request> to be asked.');
       }
       fs.rmSync(choiceFile(id), { force: true });
     }

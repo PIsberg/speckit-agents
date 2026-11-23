@@ -1947,7 +1947,8 @@ test('team choice: typed without --team, a launch naming less than the full team
   add(...NOT_ANSWERS);
   const out = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t });
   assert.ok(denied(out), 'held: nobody chose implementer alone');
-  assert.match(reasonOf(out), /nobody chose this team.*typed without --team.*ask the team question/s);
+  // #431: without --team the full team runs and nothing is asked, so the denial points at the typed forms.
+  assert.match(reasonOf(out), /^speckit-team: nobody chose this team\. The request was typed without --team, so the full team runs: launch with no Team: line\. To run fewer roles the user types \/speckit-team --team <roles> <request>, or --team \? <request> to be asked\.$/);
   assert.ok(!fs.existsSync(teamFile(dir)), 'and no team is recorded for it');
   add(userLine('Implement only.'));
   assert.ok(!denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'after a typed answer it goes');
@@ -4988,4 +4989,36 @@ test('#429: the rewrite keeps the notes a launch says', () => {
   const out = launchWith(dir, hook, 'implementer', 'Team: test-writer, implementer\nstub T001');
   assert.equal(modelOf(out), 'haiku', JSON.stringify(out));
   assert.match(msg(out), /team for this session: test-writer, implementer/);
+});
+
+// #431: `--team ?` asks the team question (no --team now runs the full team unasked); a smaller team waits for the answer
+// with the old instruction. `--yes` and `--side-by-side` are leading flags like --security, so --team after them still counts.
+test('#431: typed --team ?, a launch naming less than the full team waits for the answer to the question', () => {
+  const { dir, t, add } = choiceRepo();
+  typedTeam(dir, '--team ? add sum()', { transcript_path: t });
+  add(...NOT_ANSWERS);
+  const out = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t });
+  assert.ok(denied(out), 'held until the answer');
+  assert.match(reasonOf(out), /nobody chose this team\. The request was typed with --team \?, so ask the team question \(## Team of the skill\) and stop; launch with this Team: line only after the user has answered\./);
+  add(...askLines('q1'));
+  assert.ok(!denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), 'after the answer it goes');
+  const full = choiceRepo();
+  typedTeam(full.dir, '--team ? add sum()', { transcript_path: full.t });
+  assert.ok(!denied(agentLaunch(full.dir, 'go', { transcript_path: full.t })), 'the full team needs no answer');
+});
+
+test('#431: --yes and --side-by-side lead like --security, and --team after them is still read', () => {
+  const a = choiceRepo();
+  typedTeam(a.dir, '--yes --side-by-side --team spec-auditor,test-writer,implementer add sum()', { transcript_path: a.t });
+  const dropped = agentLaunch(a.dir, 'go\nTeam: test-writer, implementer', { transcript_path: a.t });
+  assert.ok(denied(dropped), 'the typed team is held (#373)');
+  assert.match(reasonOf(dropped), /drops spec-auditor/);
+  for (const args of ['--yes --team skill-agents add', '--side-by-side --team skill-agents add', '--security --yes --project x --team skill-agents add']) {
+    const { dir } = repo();
+    typedWith(dir, skillHook(), args);
+    assert.equal(teamRecord(dir).skillAgents, true, args);
+  }
+  const { dir } = repo();
+  typedWith(dir, skillHook(), '--yes --yes --team skill-agents add');
+  assert.ok(!fs.existsSync(teamFile(dir)) || teamRecord(dir).skillAgents !== true, 'a flag given twice ends the flags, as --security twice does');
 });

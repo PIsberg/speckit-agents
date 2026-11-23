@@ -687,7 +687,7 @@ test('installed skill and implementer agree on building [P] slices side by side 
   assert.match(implementer, /When your prompt says `worktree`, tick nothing/);
   assert.match(implementer, /never with `worktree`/, 'the stub pass ticks nothing in a worktree either');
   const skill = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-team', 'SKILL.md'), 'utf8'));
-  const side = skill.slice(skill.indexOf('Only if the user chose side by side'), skill.indexOf('## 6.'));
+  const side = skill.slice(skill.indexOf('Only with `--side-by-side` (step 2)'), skill.indexOf('## 6.'));
   for (const term of ['`isolation: "worktree"`', '`worktree` in its prompt', 'in the message that launches the implementers', 'After each implementer step, in one Bash call', '`worktreeBranch`', 'in task order', '`git worktree remove`', '`git branch -d`']) {
     assert.ok(side.includes(term), term);
   }
@@ -712,7 +712,8 @@ test('installed skill and implementer agree on building [P] slices side by side 
   const ask = skill.slice(skill.indexOf('slices whose tasks are all `[P]`'), skill.indexOf('## 3.'));
   // #114: the two runs of 2026-10-25 built one two-slice feature both ways, so the recommendation
   // stands on numbers and no longer on there being no run.
-  assert.match(ask, /one at a time \(recommended: in two real runs of one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3\)/);
+  // #431: one at a time is the default and nothing is asked; the numbers stay as the reason.
+  assert.match(ask, /one at a time unless the request has `--side-by-side`; do not ask\. In two real runs of one two-slice feature side by side took 140 s and 7 build launches against 95 s and 3/);
   assert.doesNotMatch(ask, /no run with real models/);
 });
 
@@ -1583,7 +1584,7 @@ const mdSection = (text, heading) => {
   const end = rest.search(new RegExp(`^#{1,${level}} `, 'm'));
   return end < 0 ? rest : rest.slice(0, end);
 };
-const WORD_NUM = { three: 3, four: 4 };
+const WORD_NUM = { two: 2, three: 3, four: 4 };
 
 test('006 T016 FR-011: README has a "Choosing the team" section whose table names every role', () => {
   const sec = mdSection(repoText('README.md'), '#### Choosing the team');
@@ -1665,13 +1666,14 @@ test('006 T016 FR-011: CLAUDE.md Rules name the Team: and Unbuilt: lines as held
   }
 });
 
-// #427 merged the questions and the spec approval into one stop: three, from the four of 006 D4.
-test('006 T016 D4 contract 8: README says three stops, and the list names the team question first', () => {
+// #427 merged the questions and the spec approval into one stop: three, from the four of 006 D4. #431 asks the team
+// question only on --team ?: two.
+test('006 T016 D4 contract 8 #431: README says two stops, the spec first, and names --team ? and --yes', () => {
   const readme = repoText('README.md');
   const a = flat(readme).match(/You decide at (\w+) stops/);
-  assert.ok(a && WORD_NUM[a[1]] === 3, `"You decide at ... stops": ${a && a[0]}`);
+  assert.ok(a && WORD_NUM[a[1]] === 2, `"You decide at ... stops": ${a && a[0]}`);
   const b = flat(readme).match(/It stops for you at (\w+) points/);
-  assert.ok(b && WORD_NUM[b[1]] === 3, `"It stops for you at ... points": ${b && b[0]}`);
+  assert.ok(b && WORD_NUM[b[1]] === 2, `"It stops for you at ... points": ${b && b[0]}`);
   const after = readme.slice(readme.indexOf('It stops for you at')).split('\n').slice(1);
   const items = [];
   let cur = null;
@@ -1681,10 +1683,12 @@ test('006 T016 D4 contract 8: README says three stops, and the list names the te
     else if (items.length && !l.trim()) break;
     else if (items.length) break;
   }
-  assert.equal(items.length, 3, items.join(' / '));
-  assert.match(flat(items[1]), /questions and approve the spec, in one stop/, 'the second is the spec stop, questions included (#427)');
-  assert.match(items[0], /team/i, 'the first item is the team question');
-  assert.match(flat(items[0]), /--team/, 'skipped when --team names the team');
+  assert.equal(items.length, 2, items.join(' / '));
+  assert.match(flat(items[0]), /questions and approve the spec, in one stop/, 'the first is the spec stop, questions included (#427)');
+  assert.match(flat(items[1]), /approve the plan and tasks/, 'the second is the plan stop');
+  const tail = flat(readme.slice(readme.indexOf('It stops for you at'), readme.indexOf('It stops for you at') + 2500));
+  assert.match(tail, /`--team \?` adds a first stop/, 'the team question only on --team ?');
+  assert.match(tail, /`--yes` answers both stops/, '--yes answers both');
 });
 
 test('006 T016 constitution VIII: README e2e counts equal the tests from the scope-hook case to the end of e2e.test.mjs', () => {
@@ -1698,31 +1702,28 @@ test('006 T016 constitution VIII: README e2e counts equal the tests from the sco
   assert.ok(sec.includes('Skill|Agent'), 'the sentence names the Skill|Agent gate');
 });
 
-// 006 T019 FR-010, US4-1, constitution VIII: the pipeline demo shows the team question.
-test('006 T019 FR-010 US4-1: pipeline.tape answers the team question before the wait for the product owner dialog', () => {
+// 006 T019 FR-010, US4-1, constitution VIII: the pipeline demo shows the first stop. #431: no team question without --team.
+test('006 T019 #431: pipeline.tape goes from the idea straight to the product owner dialog, with no team question', () => {
   const tape = repoText('docs', 'media', 'pipeline.tape');
   const lines = tape.split('\n');
-  assert.match(lines[0], /team/i, 'first-line comment names the team question');
   assert.match(lines[0], /product.owner/i, 'first-line comment names the product owner stop');
+  assert.doesNotMatch(lines[0], /team question/i);
   const type = lines.findIndex((l) => /^Type "\/speckit-team /.test(l));
   const wait = lines.findIndex((l) => /^Wait\+Screen@10m \/Submit\|Esc to cancel\//.test(l));
   assert.ok(type >= 0 && wait > type, 'Type line, then the product owner wait');
+  assert.doesNotMatch(lines[type], /--team/, 'typed without --team');
   const between = lines.slice(type + 1, wait).join('\n');
-  assert.match(between, /Wait\S* .*(Full team|team)/i, 'waits for the team dialog');
-  assert.match(between, /^Enter$/m, 'answers with Enter (the first option, Full team)');
-  const firstEnter = lines.slice(type + 1, wait).findIndex((l) => l === 'Enter');
-  const teamWait = lines.slice(type + 1, wait).findIndex((l) => /Wait\S* .*team/i.test(l));
-  assert.ok(teamWait >= 0 && firstEnter > teamWait, 'the Enter follows the wait for the team dialog');
+  assert.doesNotMatch(between, /Full team/, 'no team dialog to wait for');
+  assert.doesNotMatch(between, /^Enter$/m, 'nothing to answer before the product owner dialog');
 });
 
-test('006 T019 FR-010 US4-1: README "The pipeline" names the team question as the first of three stops', () => {
+test('006 T019 #431: README "The pipeline" names product-owner\'s questions and the spec as the first of two stops', () => {
   const sec = flat(mdSection(repoText('README.md'), '### The pipeline'));
-  assert.ok(!sec.includes("the first of the pipeline's four stops"), 'the four-stop wording is gone (#427)');
-  assert.match(sec, /team question[^.]*first of the pipeline's three stops/i, 'paragraph: team question is the first of three');
-  assert.match(sec, /product-owner's questions[^.]*second/i, "product-owner's questions are the second");
+  assert.ok(!/three stops|four stops/.test(sec), 'no three- or four-stop wording');
+  assert.match(sec, /product-owner's questions[^.]*first of the pipeline's two stops/i);
   const alt = sec.match(/!\[([^\]]*)\]\(docs\/media\/pipeline\.gif\)/);
   assert.ok(alt, 'pipeline.gif image');
-  assert.match(alt[1], /team/i, 'alt text names the team question');
+  assert.doesNotMatch(alt[1], /which team/i, 'alt text names no team question');
 });
 
 // 007 T010: speckit-team SKILL.md parses --project, validates with the project CLI mode,
@@ -1989,7 +1990,7 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /before it writes/i);
   assert.match(sec, /steps 1 to 6/);
   assert.match(sec, /stops? .{0,40}hold/i);
-  assert.match(sec, /side-by-side question is not asked|does not ask the side-by-side question/i);
+  assert.match(sec, /`--side-by-side` does not apply/, '#431: side by side is a typed flag, which skill-agents ignores');
   assert.match(sec, /--project/);
   // #335: the block is already in the session from ## Project step 2: no project command without a name (it
   // exits 1), and no copy of the block in every role call's args.
@@ -2023,19 +2024,20 @@ test('#428: argument-hint and ## Team name --team hybrid; ## Hybrid makes the wr
   assert.match(sec, /Never launch one of them as an agent: that ends the mode\./);
   assert.match(sec, /spec-auditor, spec-gatekeeper, security-reviewer \(with `--security`\) and load-tester \(with `--load-test`\) are Agent launches in the foreground/);
   assert.match(sec, /with no `Team:` line/);
-  assert.match(sec, /side-by-side question is not asked/);
+  assert.match(sec, /`--side-by-side` does not apply/);
   assert.match(sec, /every Agent launch carries the `Project:` line/);
 });
 
 // #181 L2 and L3: what T006 and SC-002 promise of the skill text. Every /speckit-team run reads the skill, so
 // the mode's text is capped; the team question is the one of 1030987, the last main before feature 009.
-const TEAM_QUESTION_BEFORE_009 = 'With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:\n1. Full team (Recommended): all six roles.\n2. Build only: test-writer, implementer.\n3. Implement only: implementer.\n4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.\n\n';
+// #431: the options are the same; the question is asked only on `--team ?`.
+const TEAM_QUESTION_BEFORE_009 = '`--team ?` (the list is the one word `?`) asks instead, once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:\n1. Full team (Recommended): all six roles.\n2. Build only: test-writer, implementer.\n3. Implement only: implementer.\n4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.\n\n';
 test('#181 009 T006 SC-002: the skill-agents text stays under 3,000 characters, the team question is unchanged, and a dirty tree is asked about', () => {
   const source = repoText('skills/speckit-team/SKILL.md').replace(/\r\n/g, '\n');
   const team = skillSection(source, '## Team');
   const added = skillSection(source, '## Skill agents').length + team.split('\n').filter((l) => /skill-agents/.test(l)).join('\n').length;
   assert.ok(added <= 3000, `## Skill agents and the ## Team lines naming skill-agents are ${added} characters`);
-  assert.equal(team.slice(team.indexOf('With no roles named'), team.indexOf('A free-text answer ("Other")')), TEAM_QUESTION_BEFORE_009);
+  assert.equal(team.slice(team.indexOf('`--team ?` (the list'), team.indexOf('A free-text answer ("Other")')), TEAM_QUESTION_BEFORE_009);
   // Spec edge case: a dirty tree gets the default run's precondition, which ## Skill agents runs as written.
   assert.match(skillSection(source, '## 0. Preconditions'), /`state: working tree clean`\. On any other working tree line, ask before going on\./);
   assert.match(flat(skillSection(source, '## Skill agents')), /Steps 0 to 7 run as written/);
@@ -2702,4 +2704,28 @@ test('#429: an unknown or missing --models value is refused before anything is w
 test('#429: --help names --models and its four tiers', () => {
   const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
   assert.match(r.stdout, /--models default\|sonnet\|opus\|fast/);
+});
+
+// #431: fewer mandatory stops. No --team runs the full team unasked and --team ? asks; --yes answers the spec and plan
+// stops with every recommendation; side by side is opt-in with --side-by-side and never asked.
+test('#431: ## Team runs the full team without --team, asks only on --team ?, and reads --yes and --side-by-side as leading flags', () => {
+  const team = flat(skillSection(teamSkill(), '## Team'));
+  assert.match(team, /`--team`, `--security`, `--load-test`, `--project`, `--yes` and `--side-by-side` lead the arguments/);
+  assert.match(team, /With no roles named \(no `--team`\), the full team runs: ask nothing/);
+  assert.match(team, /`--team \?` \(the list is the one word `\?`\) asks instead, once, before any launch, with one AskUserQuestion call/);
+  assert.match(team, /- `\?` with a role name: `\?` asks for the team and takes none;/);
+  assert.match(team, /`--yes` answers the spec stop and the plan stop in advance with every recommended option/);
+  assert.match(team, /step 0b's constitution approval, and every stop a FAIL, a REJECTED or a limit brings, still wait for the user/);
+});
+
+test('#431: steps 1 and 2 take the recommendations under --yes, and step 2 never asks about side by side', () => {
+  const skill = teamSkill();
+  assert.match(flat(skillSection(skill, '## 1. Spec: product-owner')), /With `--yes` \(## Team\), this stop takes every recommended answer and the approval without asking/);
+  const plan = flat(skillSection(skill, '## 2. Plan and tasks: architect'));
+  assert.match(plan, /With `--yes` \(## Team\), this stop takes every recommended answer and the approval without asking/);
+  assert.match(plan, /build them one at a time unless the request has `--side-by-side`; do not ask/);
+  assert.doesNotMatch(plan, /ask at the\s+same stop, with AskUserQuestion, whether to build them/);
+  assert.match(flat(skillSection(skill, '## 4-5. Red and green, one round at a time')), /Only with `--side-by-side` \(step 2\), the slices/);
+  assert.match(flat(skillSection(skill, '## Skill agents')), /`--side-by-side` does not apply/);
+  assert.match(flat(skillSection(skill, '## Hybrid')), /Side-by-side slices are not built: `--side-by-side` does not apply\./);
 });

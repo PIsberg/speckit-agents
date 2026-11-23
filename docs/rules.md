@@ -90,14 +90,16 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Say how to bring foreground launches back when the Agent tool has no `run_in_background`. text.
 
 ### skills/speckit-team/SKILL.md: Team
-<!-- fingerprint: 34d34b05 -->
+<!-- fingerprint: 4925cc0b -->
 - How `--team`, `--security` and `--project` are read, and the refusals before any launch. pinned.
 - `noagents` is chosen only by typing it. hook `gate` (reads the typed command at `UserPromptExpansion`).
 - `skill-agents` is chosen only by typing it. hook `gate` (denies a role skill outside a typed `--team skill-agents`).
 - `hybrid` is chosen only by typing it, and takes no role names, `noagents` or `skill-agents`. hook `gate` (records it only from the typed command, and denies a writer role skill outside a typed `--team skill-agents` or `--team hybrid`, #428); the refusal message is pinned.
-- With no `--team`, one question, full team first. pinned; hook `gate` refuses a launch whose `Team:` line names less than the full team until the user's answer is in the transcript after the typed request (#366).
+- With no `--team`, the full team and no question; `--team ?` asks one question, full team first (#431). pinned; hook `gate` refuses a launch whose `Team:` line names less than the full team until the user's answer is in the transcript after the typed request (#366).
 - Without product-owner, a `team/` branch before the first launch. pinned.
 - One line naming the team and what is skipped. pinned.
+- `--yes` and `--side-by-side` lead the arguments with the other flags. pinned; hook `gate` reads a `--team` after them (#431).
+- `--yes`: the spec and plan stops take every recommendation and the approval without asking; the constitution approval and every FAIL, REJECTED or limit stop still wait. pinned (#431). Unmeasured: how often a run under `--yes` builds a spec the user would have answered otherwise.
 
 ### skills/speckit-team/SKILL.md: No agents
 <!-- fingerprint: 7ba38cc5 -->
@@ -106,7 +108,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - After 3 failed runs of the same tests, hand the output to the user. text.
 
 ### skills/speckit-team/SKILL.md: Skill agents
-<!-- fingerprint: 330de70d -->
+<!-- fingerprint: dee6a827 -->
 - One Skill call per role, one role per response, its Inputs as `args`. pinned.
 - Each role's lane, the audit gate before test-writer, implementer and spec-gatekeeper, the verdict and the word. hook `scope role`, `lane role`, `gate`.
 - After spec-auditor's or spec-gatekeeper's report, the next Skill call's `args` starts with its last line. pinned; hook `gate` reads it.
@@ -115,7 +117,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `--project`: the block is already in the session from `## Project` step 2; never pasted into a role call's `args` (#335). pinned.
 
 ### skills/speckit-team/SKILL.md: Hybrid
-<!-- fingerprint: 4280aa85 -->
+<!-- fingerprint: 478a099b -->
 - product-owner, architect, test-writer and implementer as Skill calls, one per response; RED counted by the skill. pinned; hook `scope role`, `lane role` and `gate` hold each writer role's lane, the audit gate and the retry limit as in skill-agents (#428).
 - spec-auditor, spec-gatekeeper, security-reviewer and load-tester as foreground Agent launches with no `Team:` line. pinned; hook `gate` denies their role skills in a hybrid request, keeps the request's team at their launch, and closes the writer role before it (its lane check and report word, as at a role call).
 - Never launch a writer role as an agent. pinned; hook `gate` ends the mode at such a launch, so the full team's agent gates apply from there.
@@ -132,19 +134,20 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Draft from what the repo states, mark inferred rules, ask, then `speckit-constitution`. text.
 
 ### skills/speckit-team/SKILL.md: 1. Spec: product-owner
-<!-- fingerprint: 690e3bbf -->
+<!-- fingerprint: 31447d7b -->
 - Relay the questions with product-owner's options as listed, recommended first; relaunch only on a report without `READY FOR PLAN`. pinned (#216).
 - One stop for the questions and the spec; every answer the recommended one and the spec approved: `clarifications --recommended` chained to the commit, no product-owner launch; only an explicit approval ends the stop. pinned (#427); script `clarifications --recommended` (all or nothing); hook `gate` refuses an architect or spec-auditor launch, agent or role skill, while `## Open Questions` lists a question.
 - Work on a feature branch. text; visible in the PR.
 - security-reviewer on the spec, FAIL routing, two FAILs to the user. pinned.
-- Stop for the spec review; commit it with the architect's launch. pinned.
+- Stop for the spec review, which `--yes` answers with the recommendations and the approval (#431); commit it with the architect's launch. pinned.
 
 ### skills/speckit-team/SKILL.md: 2. Plan and tasks: architect
-<!-- fingerprint: f6f8315c -->
+<!-- fingerprint: 1ea85635 -->
 - Read only `## Open Decisions`; ask every decision at one stop. pinned.
 - Answers that all take the recommendation: launch no one, record them with `decisions --recommended` in the message that commits and launches the audit. script `decisions` (all or nothing), pinned; hook `gate` refuses a spec-auditor launch while `plan.md` has an open decision.
 - Otherwise one architect revision and the `Spec:` lines to product-owner in one message. pinned.
-- Ask once whether to build `[P]` slices side by side. pinned.
+- `[P]` slices one at a time unless the request has `--side-by-side`; never asked (#431). pinned.
+- `--yes` takes every recommended decision and the approval at this stop. pinned (#431).
 
 ### skills/speckit-team/SKILL.md: 3. Audit: spec-auditor
 <!-- fingerprint: 0ffcae43 -->
@@ -156,14 +159,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: d53c1510 -->
+<!-- fingerprint: 0fe72712 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
 - Stubs only when the tests will call something missing. text.
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
-- Side-by-side slices in worktrees, merged in task order. pinned.
+- Side-by-side slices, only with `--side-by-side`, in worktrees, merged in task order. pinned.
 - One full suite run per build: with spec-gatekeeper in the team, no implementer gets `last round` and spec-gatekeeper's gates are the run (#430). pinned. Unmeasured: a regression the last implementer would have caught now costs a REJECTED and a relaunch.
 - The full suite of a side-by-side round: the main session runs it after the last round's merge unless spec-gatekeeper runs it next, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
 
