@@ -1931,6 +1931,11 @@ test('009 T001 FR-009: a role skill the user wrote is refused, and --force backs
   assert.equal(fs.readFileSync(path.join(path.dirname(own), kept[0]), 'utf8'), mine);
 });
 
+test('#428: --help names /speckit-team --team hybrid', () => {
+  const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(r.stdout, /\/speckit-team --team hybrid <request> +product-owner, architect, test-writer and implementer run as/);
+});
+
 test('009 T001: --help names /speckit-team --team skill-agents', () => {
   const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
   assert.match(r.stdout, /\/speckit-team --team skill-agents/);
@@ -1998,6 +2003,28 @@ test('009 T005 FR-001 FR-002 FR-003 FR-004 FR-007 contract 1, plan P5 D8: ## Ski
   assert.match(sec, /3 .{0,40}`?RESULT: RED`? in a row/, 'the skill counts RED itself');
   assert.match(sec, /start message/i, 'the hook start message is mentioned as not repeated');
   assert.match(sec, /not repeat|does not repeat|never repeat/i);
+});
+
+// #428: the hybrid team's skill text, the half the hook's `gate` does not hold (which roles are Skill calls and
+// which are Agent launches, and that a writer is never launched as an agent).
+test('#428: argument-hint and ## Team name --team hybrid; ## Hybrid makes the writers Skill calls and the gates foreground agents', () => {
+  const skill = teamSkill();
+  assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /\|hybrid\]/);
+  const team = flat(skillSection(skill, '## Team'));
+  assert.match(team, /typed as `\/speckit-team --team hybrid <request>`/);
+  assert.match(team, /free-text answer of `hybrid` is not that choice/);
+  assert.match(team, /- `hybrid` with a role name, or followed by `noagents` or `skill-agents`/);
+  const question = team.slice(team.indexOf('With no roles named'), team.indexOf('A free-text answer ("Other")'));
+  assert.doesNotMatch(question, /hybrid/, 'the question does not offer it');
+  assert.ok(skill.indexOf('\n## Skill agents') < skill.indexOf('\n## Hybrid'), '## Hybrid follows ## Skill agents');
+  const sec = flat(skillSection(skill, '## Hybrid'));
+  assert.match(sec, /product-owner, architect, test-writer and implementer run as `## Skill agents` says/);
+  assert.match(sec, /one Skill call to `speckit-role-<role>`, one role per response, and you count its RED/);
+  assert.match(sec, /Never launch one of them as an agent: that ends the mode\./);
+  assert.match(sec, /spec-auditor, spec-gatekeeper, security-reviewer \(with `--security`\) and load-tester \(with `--load-test`\) are Agent launches in the foreground/);
+  assert.match(sec, /with no `Team:` line/);
+  assert.match(sec, /side-by-side question is not asked/);
+  assert.match(sec, /every Agent launch carries the `Project:` line/);
 });
 
 // #181 L2 and L3: what T006 and SC-002 promise of the skill text. Every /speckit-team run reads the skill, so

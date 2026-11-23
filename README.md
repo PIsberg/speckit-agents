@@ -80,6 +80,7 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - [How it works](#how-it-works)
   - [The pipeline skill](#the-pipeline-skill)
     - [Running the roles as skills (`--team skill-agents`)](#running-the-roles-as-skills---team-skill-agents)
+    - [Writers as skills, gates as agents (`--team hybrid`)](#writers-as-skills-gates-as-agents---team-hybrid)
   - [The fast track](#the-fast-track)
   - [Project knowledge](#project-knowledge)
   - [Guardrails](#guardrails)
@@ -445,6 +446,8 @@ architect, test-writer, implementer). Its free-text answer is a role list. All s
 team. The `security-reviewer` is opt-in, included via `--security` or named in `--team` (`security-reviewer` or alias `security`). The `load-tester` is opt-in too, included via `--load-test` or named in `--team` (no alias); it runs after the audit has passed and before spec-gatekeeper, and a `FAIL` stops the run for you to fix or accept; on accept only `specs/<feature>/load-test.md` is committed and the load tests are stashed by name, so nothing else uncommitted goes into the stash ([#422](https://github.com/PIsberg/speckit-agents/issues/422)). `patcher` is not a team role.
 Two typed forms run no agent: `--team noagents` (Spec Kit's own skills, below) and
 `--team skill-agents` (the team's roles as skills in your session, [below](#running-the-roles-as-skills---team-skill-agents)).
+A third, `--team hybrid`, runs the four writing roles as skills and the gates as agents
+([below](#writers-as-skills-gates-as-agents---team-hybrid)).
 
 The skill refuses before launching anything, naming the valid roles: a name that is not a role;
 `noagents` with a role; neither test-writer nor implementer; architect without product-owner;
@@ -559,6 +562,44 @@ will watch, when time and cost matter more than an independent review. Part of t
 model mix: the default run's architect and spec-auditor ran on opus, so the pair is not a
 like-for-like price comparison. Whether skills still win on a feature large enough to fill the
 context is not measured.
+
+#### Writers as skills, gates as agents (`--team hybrid`)
+
+`/speckit-team --team hybrid <request>` runs product-owner, architect, test-writer and implementer as
+role skills in your session, as `--team skill-agents` does, and launches spec-auditor and
+spec-gatekeeper (and security-reviewer with `--security`, load-tester with `--load-test`) as foreground
+agents, as the default team does ([#428](https://github.com/PIsberg/speckit-agents/issues/428)). The
+writers keep what skills save (no cold start, nothing re-read, no lossy handoff between stub, red and
+green); the gates keep what agents give a review: a fresh context without your `CLAUDE.md`
+(`omitClaudeMd`), a tool list without Write and Edit, their own `model:` line, and the agent hooks that
+record the verdict and the word. Type it: the team question does not offer it, and a free-text answer
+of `hybrid` only gets a reminder of the typed form. It takes no role names and not `noagents` or
+`skill-agents` after it, and combines with `--security`, `--load-test` and `--project`. The hook starts
+the mode from the typed command with its own start message, and blocks with `node install.mjs` when
+one of the four writer role skills is missing; the gates' role skills are not needed.
+
+What the hook does differently from skill-agents:
+
+- A gate's role skill (`speckit-role-spec-auditor`, `-spec-gatekeeper`, `-security-reviewer`,
+  `-load-tester`) is denied with the agent to launch instead, and the audit gate's denial names
+  `@agent-spec-auditor`.
+- A gate's launch keeps the request's team and closes the writer role before it, with the checks the
+  next role skill call would run: files outside the writer's lane deny the launch until they are
+  restored, and a test-writer or implementer report with none of its words denies it once (made again,
+  it goes through and the implementer's counts as `RESULT: RED`). A gate never starts on a writer's
+  unchecked changes.
+- Launching a writer as an agent ends the mode, as any launch ends skill-agents; the full team's gates
+  apply from there.
+
+Not enforced, as in skill-agents, for the four writer roles: the audit gate on each tool call inside
+test-writer and implementer, each writer role's own context and tool list, and a writer role's lane
+after a turn that ended without a Stop.
+
+**What was verified how.** Covered by test only (`test/hook.test.mjs`, `test/install.test.mjs` and
+`test/full-run.test.mjs`, "#428"): the typed forms and refusals, the start message, the gate role skill
+denial, the team kept at a gate's launch and ended at a writer's, the writer role closed at a gate's
+launch, and the skill's text. Not measured yet: cost and time against the other two modes on the
+fixture, which `node tools/full-run.mjs --hybrid` runs ([Full run with real models](#full-run-with-real-models)).
 
 #### Settling decisions
 
@@ -1110,7 +1151,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback`; its entry carries the agent's scope rule (`gate scope tests`), which it applies to a write or Bash call after the gate lets it through, so one process decides both (#337: about 120 instead of 225 ms of hook processes per write on Windows) | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents`, and in it the audit gate before test-writer, implementer and spec-gatekeeper; on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents` (a writer role's also allowed in `--team hybrid`, a gate role's denied there), and in it the audit gate before test-writer, implementer and spec-gatekeeper; in `--team hybrid`, at the main session's launch of a gate, the acting writer role's lane and report word, as at its next role call ([#428](https://github.com/PIsberg/speckit-agents/issues/428)); on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
@@ -1352,7 +1393,7 @@ Verdicts, retry counts, the gatekeeper's last word and per-agent start points li
 `$(git rev-parse --git-common-dir)/speckit-team/` (`verdicts/`, `retries/`, `ends/` per feature, where
 an `APPROVED` the drift check turned down is a `REJECTED` with `claimed` and `drift` fields,
 `agents/`, `team/`: one small record per session that launched a team role or typed
-`--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run (and, after a hand-back, a `<key>.handback.json` that says only whether its report had a `No test:` line, [#354](https://github.com/PIsberg/speckit-agents/issues/354)), and `patch-accepted.json`, one
+`--team noagents`, `notices/`: what a subagent's hooks said, per session, until the `relay` entry hands it to the main session, and `role/`: the role acting in a `--team skill-agents` or `--team hybrid` session, with the claims that keep each of its Stops to one send-back however many role skills the turn loaded, [#284](https://github.com/PIsberg/speckit-agents/issues/284)). The fast track adds `patch/`, one start record per run (and, after a hand-back, a `<key>.handback.json` that says only whether its report had a `No test:` line, [#354](https://github.com/PIsberg/speckit-agents/issues/354)), and `patch-accepted.json`, one
 per worktree under `$(git rev-parse --git-dir)/speckit-team/`, which exists only while the last
 check accepted the run. Both are safe to delete. The fast track never writes `verdicts/`,
 `retries/` or `ends/`. Files under `agents/`, `team/`, `project/`, `choice/` and `patch/` older than 30 days
@@ -1739,9 +1780,9 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 269 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 281 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 151 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 162 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -1753,7 +1794,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 5 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs), and how its width probe treats a probe that shows nothing typed, with a fake vhs (#408) |
 | [`test/eval.test.mjs`](test/eval.test.mjs) | 34 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 36 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 38 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--skill-agents` and `--hybrid` (#428), `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |
@@ -2088,7 +2129,10 @@ audit `PASS` is recorded by the hook itself, so the gate is open and the fingerp
 the run asks for the last step only. `--claim` adds a false hand-over to the request (the implementer
 "reported all tasks done, all requirements covered"), the case of
 [#187](https://github.com/PIsberg/speckit-agents/issues/187). `--skill-agents` runs the same case with
-the role skills instead of agents.
+the role skills instead of agents. `--hybrid` types `/speckit-team --team hybrid` for a whole pipeline
+and fails the run on a writer launched as an agent, a gate called as a role skill, a writer role
+skill never called, or a spec-auditor or spec-gatekeeper never launched; it takes no one-step case
+(#428).
 
 What the gate cases measure is the model, not the guardrails: on 2026-11-01 every one scored 6 of 6 on
 main, and 6 of 6 again with spec-gatekeeper's vacuous-test rule removed, with the hook replaced by
@@ -2281,7 +2325,12 @@ spec-gatekeeper) or `speckit-implement`. Call the Skill `speckit-role-spec-audit
 `VERDICT: PASS` first; do not launch `@agent-spec-auditor`, because any agent launch ends the mode.
 If the PASS was not recorded, the next call's `args` did not start with the `VERDICT: PASS` line: call the role skill again with it.
 A `speckit-role-<role> runs only in a request typed as /speckit-team --team skill-agents` denial
-means the request was not typed that way.
+means the request was not typed that way (for a writer role, the denial names `--team hybrid` too).
+
+### "speckit-role-<role> does not run in --team hybrid"
+
+In a `--team hybrid` request the session called a gate's role skill. Launch `@agent-<role>` in the
+foreground instead; the four writers are the only role skills of the mode.
 
 ### "the Team line drops spec-auditor, which this request's team has"
 
@@ -2418,6 +2467,9 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
 - **`--team skill-agents` trades isolation for cost.** Every role runs on the session's model, with
   the session's `CLAUDE.md`, and sees the whole conversation; the hook enforces lanes, the audit
   gate and the retry limit at each Skill call, and the verdict records; not the report's last line or tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
+- **`--team hybrid` isolates only the gates.** The four writers share the session's context, model and
+  tool list as in skill-agents; spec-auditor, spec-gatekeeper, security-reviewer and load-tester run as
+  agents. Its cost and time against the other modes are not measured yet (#428).
 - **Role skills are not denied outside a Spec Kit repo.** Inside one, the hook denies a
   `speckit-role-<role>` call outside a typed `/speckit-team --team skill-agents` request. In a repo
   without `.specify/` every hook mode exits with no output, as the constitution requires of the team

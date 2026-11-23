@@ -34,6 +34,16 @@ before implementer (#341). Not enforced:
 the report's last line, each role's own context and tool list. See the README's
 "Running the roles as skills".
 
+### Hybrid mode: `--team hybrid`
+
+Typed as `/speckit-team --team hybrid <request>`, product-owner, architect, test-writer and
+implementer run inline as role skills, under the same role record, `scope role` and `lane role` as in
+skill-agents, while spec-auditor, spec-gatekeeper, security-reviewer and load-tester are launched as
+agents with their own context, tool list and hooks (#428). The `gate` hook denies a gate's role skill
+in this mode, keeps the team record at a gate's launch, and closes the acting writer role there with
+its lane and report-word checks. A writer launched as an agent ends the mode. See the README's
+"Writers as skills, gates as agents".
+
 ## Security Reviewer Dual-Gate Lifecycle
 
 The `security-reviewer` agent is an opt-in reviewer (`/speckit-team --security` or `--team ...,security-reviewer`) executing in two inspection gates:

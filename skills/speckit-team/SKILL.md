@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...|noagents|skill-agents] [--security] [--load-test] [--project <name>] <feature idea>"
+argument-hint: "[--team <role>,<role>...|noagents|skill-agents|hybrid] [--security] [--load-test] [--project <name>] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -132,6 +132,11 @@ question's options and the question does not offer it; a free-text answer of `sk
 that choice: say in one line that it is typed as `/speckit-team --team skill-agents <request>`, and
 stop. `--security` and `--project` combine with it.
 
+`--team hybrid` (the list is the one word `hybrid`, in any case) runs product-owner, architect, test-writer and
+implementer as skills in this session and the gates as agents, by `## Hybrid`. It is chosen only by typing it,
+as `skill-agents` is: a free-text answer of `hybrid` is not that choice; say in one line that it is typed as
+`/speckit-team --team hybrid <request>`, and stop. `--security`, `--load-test` and `--project` combine with it.
+
 With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
 1. Full team (Recommended): all six roles.
 2. Build only: test-writer, implementer.
@@ -146,6 +151,7 @@ Before anything is launched, refuse in one message that says why and lists the v
 - an empty team: no roles named;
 - `noagents` with a role: no agents means no roles;
 - `skill-agents` with a role name or with `noagents`: skill-agents runs every role as a skill and takes no role names;
+- `hybrid` with a role name, or followed by `noagents` or `skill-agents`: hybrid fixes which roles are skills and takes no role names;
 - neither `test-writer` nor `implementer`: one of them is required;
 - `architect` without `product-owner`: architect plans from product-owner's spec;
 - `spec-auditor` without `architect`: spec-auditor audits architect's plan and tasks.
@@ -188,6 +194,9 @@ Agent tool check. Wait only at the two stops below.
 
 ## Skill agents
 Only after `--team skill-agents` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. Steps 0 to 7 run as written, with no Agent call: each step's launch of a role is one Skill call to `speckit-role-<role>`, with `args` the role's Inputs from `## Handoffs`. Say in one line naming the role what you call, then call it. Run one role at a time, one role per response, never two in one message: the side by side launches of step 4-5 run one after the other, each after the previous role's report, and the side-by-side question is not asked. The architect revision after product-owner's `Spec:` lines is the same Skill call. A role the user answered a question for, or that goes on in a later turn, is called again: its lane runs from that call. Read the report as the agent's report, the message before your next call; after spec-auditor's or spec-gatekeeper's report, the Skill call starts its `args` with the report's last line (`VERDICT: PASS`, `APPROVED`); steps 1 to 6 stop where they stop and hold for the user as written. `--project <name>`: the block is already in this session from `## Project` step 2; every role follows it as `## No agents` step 1 does, so never paste it into a Skill call's `args`. With `--security`, security-reviewer runs at both points, the spec and the result. With `--load-test`, load-tester runs as `speckit-role-load-tester` at step 5b. Count RED yourself: 3 rounds ending `RESULT: RED` in a row go to the user. Run the audit and its verdict before test-writer, implementer and spec-gatekeeper; the hook denies a call until VERDICT: PASS. The hook stops writes outside each role's lane and records spec-auditor's verdict and spec-gatekeeper's word. Nothing runs before it writes: a role calls the Skill before it writes.
+
+## Hybrid
+Only after `--team hybrid` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. product-owner, architect, test-writer and implementer run as `## Skill agents` says: each launch of one is one Skill call to `speckit-role-<role>`, one role per response, and you count its RED. Never launch one of them as an agent: that ends the mode. spec-auditor, spec-gatekeeper, security-reviewer (with `--security`) and load-tester (with `--load-test`) are Agent launches in the foreground, as steps 1 to 6 say without `--team`, with no `Team:` line; the hook denies their role skills. Read a gate's report as the agent's report; its launch closes the writer role before it. Side-by-side slices are not built and the side-by-side question is not asked. `--project <name>`: the writer roles follow the block in this session as in `## Skill agents`; every Agent launch carries the `Project:` line.
 
 ## Project
 `--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before any launch: say why and list available projects by running `node "{{HOOK}}" project`.

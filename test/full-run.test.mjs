@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -454,6 +454,43 @@ test('full run: skill-agents mode fails on any launch and on a core role skill n
   const sec = run({ launches: [], waits: 0, skills: [...roleSkills(), 'speckit-role-security-reviewer'] });
   assert.equal(sec.length, 1, JSON.stringify(sec));
   assert.match(sec[0], /speckit-role-security-reviewer was called.*--security/);
+});
+
+// #428: the full run in hybrid mode, for the benchmark against agents and skill-agents.
+const WRITERS = ['product-owner', 'architect', 'test-writer', 'implementer'];
+test('#428 full run: --hybrid is a flag without a value, types --team hybrid, and runs only a whole pipeline', () => {
+  assert.equal(args(['--hybrid', '--out', 'x']).hybrid, true);
+  assert.equal(args(['--out', 'x']).hybrid, false);
+  assert.equal(args(['--hybrid', '--out', 'x', '--max-cost', '3']).maxCost, 3, 'the flag takes no value');
+  assert.throws(() => args(['--hybrid', '--skill-agents', '--out', 'x']), /--hybrid and --skill-agents/);
+  assert.throws(() => args(['--hybrid', '--out', 'x', '--case', 'defect']), /--hybrid runs only a whole pipeline/);
+  assert.throws(() => args(['--hybrid', '--out', 'x', '--case', 'load-linear']), /--hybrid runs only a whole pipeline/);
+  assert.equal(firstPrompt('add sum()', { hybrid: true }), '/speckit-team --team hybrid add sum()');
+});
+
+test('#428 full run: hybrid mode fails on a writer launched as an agent, a gate called as a skill, and a role never run', () => {
+  const run = (main, agentTexts = [{ file: 'agent-a.jsonl', text: '{"prompt":"audit"}' }]) => checkRun({ repo: state().repo, usage: { main },
+    costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true, agentTexts, hybrid: true });
+  const gates = [{ type: 'spec-auditor', background: false }, { type: 'spec-gatekeeper', background: false }];
+  assert.deepEqual(run({ launches: gates, waits: 0, skills: roleSkills(WRITERS) }), [], 'the four writer skills and the two gate agents');
+  const writer = run({ launches: [...gates, { type: 'implementer', background: false }], waits: 0, skills: roleSkills(WRITERS) });
+  assert.equal(writer.length, 1, JSON.stringify(writer));
+  assert.match(writer[0], /implementer was launched as an agent in a hybrid run/);
+  const gateSkill = run({ launches: gates, waits: 0, skills: [...roleSkills(WRITERS), 'speckit-role-spec-auditor'] });
+  assert.equal(gateSkill.length, 1, JSON.stringify(gateSkill));
+  assert.match(gateSkill[0], /speckit-role-spec-auditor was called in a hybrid run/);
+  for (const missing of WRITERS) {
+    const f = run({ launches: gates, waits: 0, skills: roleSkills(WRITERS.filter((r) => r !== missing)) });
+    assert.equal(f.length, 1, `${missing}: ${JSON.stringify(f)}`);
+    assert.match(f[0], new RegExp(`the Skill speckit-role-${missing} was never called`));
+  }
+  for (const gate of ['spec-auditor', 'spec-gatekeeper']) {
+    const f = run({ launches: gates.filter((g) => g.type !== gate), waits: 0, skills: roleSkills(WRITERS) });
+    assert.equal(f.length, 1, `${gate}: ${JSON.stringify(f)}`);
+    assert.match(f[0], new RegExp(`${gate} was never launched`));
+  }
+  const noTexts = run({ launches: gates, waits: 0, skills: roleSkills(WRITERS) }, []);
+  assert.match(noTexts.join('\n'), /no agent transcript was found/, 'the gates are agents, so the leak check needs their transcripts');
 });
 
 test('full run: without the option a run with no launch still fails as before (T019)', () => {
