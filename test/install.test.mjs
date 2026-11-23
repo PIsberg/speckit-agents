@@ -2729,3 +2729,15 @@ test('#431: steps 1 and 2 take the recommendations under --yes, and step 2 never
   assert.match(flat(skillSection(skill, '## Skill agents')), /`--side-by-side` does not apply/);
   assert.match(flat(skillSection(skill, '## Hybrid')), /Side-by-side slices are not built: `--side-by-side` does not apply\./);
 });
+
+// #456: in #417's scored runs a broken committed load test (pinned, swallowed errors, a skip) ended PASS 11 of 14 times,
+// once with the instrument failure named in the report; and a growth ceiling set on the build under test passed the
+// quadratic dedupe the cases are built on.
+test('#456: a broken committed load test decides the verdict, and a growth ceiling comes from the growth the work needs', () => {
+  const body = flat(installedAgent('load-tester'));
+  const verdict = body.slice(body.indexOf('## Verdict'), body.indexOf('## Report'));
+  assert.match(verdict, /An instrument failure in a committed load test \(a pinned or older build, swallowed errors or an empty result, an assertion that cannot fail\) is FAIL for the run, even when you write a working load test beside it\./);
+  assert.match(verdict, /A committed load test with a skipped case ends the run NOT MEASURED at best\./);
+  const proc = body.slice(body.indexOf('## Process'), body.indexOf('## Verdict'));
+  assert.match(proc, /A growth-per-doubling ceiling is the growth the work needs \(one pass over the input: 2x per doubling\) plus 40%, never a reading of the build under test, which would pass the cost you are there to catch\./);
+});

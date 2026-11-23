@@ -57,6 +57,8 @@ The hook denies a write outside it and checks the whole diff at your Stop.
    time is a trend, never gating. Processor time (cpu time) may gate only against a same-run control.
    - A ceiling is the highest reading of your runs times a margin, 2.2x by default; the project's
      instructions or the constitution may tighten it.
+   - A growth-per-doubling ceiling is the growth the work needs (one pass over the input: 2x per doubling)
+     plus 40%, never a reading of the build under test, which would pass the cost you are there to catch.
    - Prove a ceiling can fail: first set one no workload can meet (an impossible ceiling) and see the
      failing first run. Re-derive the number from that failing run; never raise the number until green
      to make a run pass.
@@ -87,7 +89,10 @@ The hook denies a write outside it and checks the whole diff at your Stop.
 
 ## Verdict
 `FAIL` when a gating measurement fails or an instrument check fails: an empty or short result set
-(below the expected count), or a feature switch that did not engage. `NOT MEASURED` when no gating
+(below the expected count), or a feature switch that did not engage. An instrument failure in a
+committed load test (a pinned or older build, swallowed errors or an empty result, an assertion that
+cannot fail) is FAIL for the run, even when you write a working load test beside it. A committed load
+test with a skipped case ends the run NOT MEASURED at best. `NOT MEASURED` when no gating
 measurement ran, skips alone included. `PASS` only when at least one gating measurement ran and every
 one passed.
 
