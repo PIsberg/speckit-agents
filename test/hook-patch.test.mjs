@@ -1482,3 +1482,42 @@ test('#444: after passing reads, a Bash change over budget is caught at the next
   assert.ok(denied(out), 'the read after Bash measures: ' + JSON.stringify(out));
   assert.match(why(out), /Fast-track budget exceeded: 35 changed production lines/);
 });
+
+// #462: an ESCALATE (or any run the end check did not accept) kept patcher's work only in the working tree, so undoing it
+// to start /speckit-team threw the diagnosis and the code away. The end record now also names a patch of patcher's own
+// changes, the developer's uncommitted work left out, which git apply puts back on the start commit.
+const draftFile = (dir) => path.join(stateDir(dir), 'patch-draft.patch');
+test('#462: a run not accepted keeps patcher\'s changes as patch-draft.patch, without the developer\'s own work', () => {
+  const { dir } = fresh({ 'src/a.js': nl(40, 'a'), 'src/b.js': nl(5, 'b'), 'src/gone.js': nl(3, 'g') });
+  git(dir, 'config', 'core.autocrlf', 'false');
+  put(dir, 'src/b.js', `${nl(5, 'b')}mine\n`); put(dir, 'src/mine.js', 'my own work\n');
+  begin(dir);
+  edit(dir, 'src/a.js', 0, 40); put(dir, 'src/new.js', nl(3, 'n')); fs.rmSync(path.join(dir, 'src/gone.js'));
+  assert.match(msg(stop(dir)), /fast track stopped/);
+  assert.equal(undoRecord(dir).draft, draftFile(dir).split(path.sep).join('/'));
+  const draft = fs.readFileSync(draftFile(dir), 'utf8');
+  assert.match(draft, /^diff --git a\/src\/a\.js b\/src\/a\.js$/m);
+  assert.match(draft, /^diff --git a\/src\/new\.js b\/src\/new\.js$/m, 'a new file is in it');
+  assert.match(draft, /^diff --git a\/src\/gone\.js b\/src\/gone\.js$/m, 'a deletion is in it');
+  assert.doesNotMatch(draft, /src\/b\.js|mine\.js/, 'the developer\'s uncommitted work is not');
+  // The undo, then the draft on the start: patcher's work is back.
+  const [restore, remove] = undoRecord(dir).undo.split(' && ');
+  execFileSync('git', ['restore', `--source=${startSha(dir)}`, '--staged', '--worktree', '--', ...quotedArgs(restore)], { cwd: dir });
+  for (const rel of quotedArgs(remove)) fs.rmSync(path.join(dir, rel), { force: true });
+  execFileSync('git', ['apply', draftFile(dir)], { cwd: dir });
+  assert.equal(fs.readFileSync(path.join(dir, 'src/new.js'), 'utf8'), nl(3, 'n'));
+  assert.ok(!fs.existsSync(path.join(dir, 'src/gone.js')));
+});
+
+test('#462: an accepted run, and one that changed nothing, leave no draft', () => {
+  const ok = fresh({ 'src/a.js': nl(10, 'a') });
+  begin(ok.dir);
+  edit(ok.dir, 'src/a.js', 0, 2);
+  noStop(stop(ok.dir, EXEMPT));
+  assert.equal(undoRecord(ok.dir).draft, null);
+  assert.ok(!fs.existsSync(draftFile(ok.dir)));
+  const none = fresh();
+  begin(none.dir);
+  noStop(stop(none.dir));
+  assert.equal(undoRecord(none.dir).draft, null);
+});

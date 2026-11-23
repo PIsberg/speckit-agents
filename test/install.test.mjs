@@ -1932,6 +1932,15 @@ test('009 T001 FR-009: a role skill the user wrote is refused, and --force backs
   assert.equal(fs.readFileSync(path.join(path.dirname(own), kept[0]), 'utf8'), mine);
 });
 
+// #462: an ESCALATE with a saved draft is a three-way choice, never a silent undo that throws patcher's work away.
+test('#462: speckit-patch offers to keep patcher\'s draft on ESCALATE, and still never starts /speckit-team', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  const report = flat(fs.readFileSync(path.join(dir, 'skills', 'speckit-patch', 'SKILL.md'), 'utf8').split('## 5. Report')[1]);
+  assert.match(report, /When the record's `draft` is not `null`, ask with AskUserQuestion, recommended first: keep the draft and restore the tree \(run the undo exactly as given, then `git switch -` back to where the run started, and tell the user to type `\/speckit-team <the change> \(patcher's draft: <draft>\)`\); keep the changes in the working tree and stop; or undo and stop\. Without a `draft`, then the undo\./);
+  assert.match(report, /Never start `\/speckit-team`\./);
+});
+
 test('#428: --help names /speckit-team --team hybrid', () => {
   const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
   assert.match(r.stdout, /\/speckit-team --team hybrid <request> +product-owner, architect, test-writer and implementer run as/);

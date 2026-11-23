@@ -1025,6 +1025,16 @@ explicit yes, never `git stash`, `git reset --hard`, `git clean` or `git checkou
 your work too ([#213](https://github.com/PIsberg/speckit-agents/issues/213)). A test runs the command
 on a stopped run and checks that the tree is back at the start with your own changes kept.
 
+Undoing used to throw `patcher`'s diagnosis and code away when the change was simply too big for the fast
+track. So a run the end check does not accept also leaves `patcher`'s own changes as a patch,
+`<git dir>/speckit-team/patch-draft.patch` (the same files as the undo, yours never in it; new files and
+deletions included), named in the record's `draft` field (`null` for an accepted run or one that changed
+nothing) ([#462](https://github.com/PIsberg/speckit-agents/issues/462)). On `ESCALATE` with a draft, the
+skill asks: keep the draft and restore the tree (it runs the undo, switches back to where the run started,
+and tells you to type `/speckit-team <the change> (patcher's draft: <path>)`), keep the changes in the
+working tree, or undo. `git apply <path>` on the start commit puts the work back; a test checks that. The
+skill never starts `/speckit-team` itself.
+
 #### What is prompt text, and what was verified
 
 For the whole team, every rule of every skill and agent and what holds it (a hook, a script the skill
@@ -1797,8 +1807,8 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 288 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 168 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 84 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 169 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

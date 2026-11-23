@@ -79,7 +79,7 @@ the PR link.
 - `FAILED`: say which test failed or that tests were not run; no commit, no PR; then the undo.
 - `DONE` with an empty `files`: say that `patcher` changed no file; no commit, no PR.
 - `ESCALATE`: say why, that the work is uncommitted in the working tree, and that `/speckit-team`
-  is the way on; then the undo. Never start `/speckit-team`.
+  is the way on. When the record's `draft` is not `null`, ask with AskUserQuestion, recommended first: keep the draft and restore the tree (run the undo exactly as given, then `git switch -` back to where the run started, and tell the user to type `/speckit-team <the change> (patcher's draft: <draft>)`); keep the changes in the working tree and stop; or undo and stop. Without a `draft`, then the undo. Never start `/speckit-team`.
 
 The undo: if the record's `sha` equals the start and its `undo` is not `null`, show that command,
 the one that takes back `patcher`'s changes and nothing else, and ask whether to run it; run it

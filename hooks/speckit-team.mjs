@@ -3238,6 +3238,20 @@ function undoCommand(sha, m) {
     m.untracked.length ? `rm -f -- ${m.untracked.map(shellQuote).join(' ')}` : null,
   ].filter(Boolean).join(' && ') || null;
 }
+// #462: patcher's own changes since `sha` as one patch (the files undoCommand would take back, so never the developer's
+// uncommitted work), for /speckit-team to start from after an ESCALATE. `git diff --no-index` exits 1 when the files
+// differ, so its output is taken from the error. null when there is nothing, or git cannot make it.
+function draftPatch(sha, m) {
+  const raw = (args) => {
+    try { return execFileSync('git', ['-c', 'core.quotepath=off', ...args], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 << 20 }); } catch (e) { return typeof e?.stdout === 'string' && e.status === 1 ? e.stdout : null; }
+  };
+  const tracked = m.changed.filter((rel) => !m.untracked.includes(rel));
+  const parts = [tracked.length ? raw(['diff', '--binary', sha, '--', ...tracked]) : '',
+    ...m.untracked.map((rel) => raw(['diff', '--no-index', '--binary', '--', '/dev/null', rel]))];
+  if (parts.some((p) => p === null)) return null;
+  const text = parts.join('');
+  return text.trim() ? text : null;
+}
 const undoSentence = (sha, m) => {
   const undo = undoCommand(sha, m);
   return undo ? ` To undo only patcher's changes, run: ${undo}. Ask the developer first: it discards them.` : '';
@@ -3267,7 +3281,11 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   // SubagentStop message reaches only patcher's own transcript, never the main session, so the skill reads
   // these from a file next to the accepted record. Written before the message goes out, in its words.
   const end = (outcome, message) => {
-    writeJson(undoFile, { key, sha: start.sha, undo: undoCommand(start.sha, m), outcome, message, at: new Date().toISOString() });
+    // #462: a run not accepted keeps patcher's work as a patch beside the record.
+    const draftFile = path.join(path.dirname(undoFile), 'patch-draft.patch');
+    const patch = outcome === 'accepted' ? null : draftPatch(start.sha, m);
+    if (patch) fs.writeFileSync(draftFile, patch); else fs.rmSync(draftFile, { force: true });
+    writeJson(undoFile, { key, sha: start.sha, undo: undoCommand(start.sha, m), draft: patch ? fwdPath(draftFile) : null, outcome, message, at: new Date().toISOString() });
     emit({ systemMessage: message });
   };
   const team = teamChanged(start.team);

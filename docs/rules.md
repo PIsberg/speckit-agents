@@ -221,8 +221,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A missing record's cause is the end record's `outcome` and `message`, quoted. script (hook `patch` writes it), pinned (#221). A message that names no test file says the change needs its test or the `No test:` line: the same message, pinned by `test/install.test.mjs` (#243).
 
 ### skills/speckit-patch/SKILL.md: 5. Report
-<!-- fingerprint: 97caf9c6 -->
+<!-- fingerprint: 5aa62dd1 -->
 - Read the end record first; offer its `undo`, run it only on an explicit yes. script (hook `patch` writes it), pinned (#213).
+- On `ESCALATE` with a `draft` in the end record, ask: keep the draft and restore the tree (the undo, `git switch -`, and the `/speckit-team` line naming the draft), keep the changes, or undo (#462). script (hook `patch` writes `patch-draft.patch` for every run the end check does not accept), pinned.
 - Never undo another way. text; a breach shows as lost work, not in the state.
 
 ### skills/speckit-patch/SKILL.md: 6. Merging
