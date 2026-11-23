@@ -1166,7 +1166,7 @@ function noWordWhy(role, at) {
   const words = { 'spec-auditor': ['VERDICT: PASS', 'VERDICT: FAIL'], 'spec-gatekeeper': ['APPROVED', 'REJECTED'], ...END_WORDS }[role];
   return `The ${role} role's report has no final line that is exactly one of: ${words.join(', ')}. `
     + (at === 'skill' ? "Start the `args` of this Skill call with the report's last line, that word, and make the call again."
-      : at === 'agent' ? 'End the report with that line, then make the launch again.' : 'End the report with that line.');
+      : at === 'agent' ? 'Write the report now as a message of its own whose last line is that word, then make the launch again.' : 'End the report with that line.');
 }
 function refuseOnce(rec, at, key, why) {
   if (at === 'stop') { if (sendBackOnce(rec, key)) block(why); return; }

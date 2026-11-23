@@ -179,7 +179,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--no-board` | remove the board mod, only if the installer installed it, and keep the team |
 | `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
 | `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
-| `--models TIER` | which model each agent runs on ([#429](https://github.com/PIsberg/speckit-agents/issues/429)): `default`, the `model:` lines as shipped (opus on architect and spec-auditor, sonnet on the rest); `sonnet` or `opus` on every agent; or `fast`, sonnet on every agent and haiku for implementer's stub passes and architect's `dictated:` revisions, which the `gate` hook sets on those Agent calls (a call that already names a model keeps it). Later reruns keep the tier; `--models default` goes back. Only the installed agents' `model:` line changes; the role skills of `--team skill-agents` and `--team hybrid` run on the session's model whatever the tier |
+| `--models TIER` | which model each agent runs on ([#429](https://github.com/PIsberg/speckit-agents/issues/429)): `default`, the `model:` lines as shipped (opus on architect and spec-auditor, sonnet on the rest); `sonnet` or `opus` on every agent; or `fast`, sonnet on every agent and haiku for implementer's stub passes and architect's `dictated:` revisions, which the `gate` hook sets on those Agent calls (a call that already names a model keeps it). Later reruns keep the tier; `--models default` goes back. Only the installed agents' `model:` line changes; the role skills of `--team skill-agents` and `--team hybrid` run on the session's model whatever the tier. One fixture run each on 2026-11-23: `default` $1.44, `sonnet` $0.92, `fast` $0.75, all passing ([measurements](docs/measurements.md#team-shapes-and-model-tiers-one-run-each-2026-11-23)); whether sonnet audits as well as opus on real defects is not measured |
 
 Any other argument is refused before anything is written, so a mistyped `--dryrun` stops with an
 error instead of installing for real.
@@ -610,8 +610,11 @@ after a turn that ended without a Stop.
 **What was verified how.** Covered by test only (`test/hook.test.mjs`, `test/install.test.mjs` and
 `test/full-run.test.mjs`, "#428"): the typed forms and refusals, the start message, the gate role skill
 denial, the team kept at a gate's launch and ended at a writer's, the writer role closed at a gate's
-launch, and the skill's text. Not measured yet: cost and time against the other two modes on the
-fixture, which `node tools/full-run.mjs --hybrid` runs ([Full run with real models](#full-run-with-real-models)).
+launch, and the skill's text. Measured once a shape on the fixture on 2026-11-23 (Claude Code 2.1.331): hybrid
+$0.84 and $0.93 in 250 and 321 s, against $1.44 in 390 s for agents and $0.61 in 177 s for skill-agents, every
+run passing `tools/full-run.mjs`'s checks
+([measurements](docs/measurements.md#team-shapes-and-model-tiers-one-run-each-2026-11-23)). One sample a
+shape, so no rate.
 
 #### Settling decisions
 
@@ -2492,7 +2495,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   gate and the retry limit at each Skill call, and the verdict records; not the report's last line or tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
 - **`--team hybrid` isolates only the gates.** The four writers share the session's context, model and
   tool list as in skill-agents; spec-auditor, spec-gatekeeper, security-reviewer and load-tester run as
-  agents. Its cost and time against the other modes are not measured yet (#428).
+  agents. One run a shape on the fixture put it between them in dollars (#428).
 - **Role skills are not denied outside a Spec Kit repo.** Inside one, the hook denies a
   `speckit-role-<role>` call outside a typed `/speckit-team --team skill-agents` request. In a repo
   without `.specify/` every hook mode exits with no output, as the constitution requires of the team

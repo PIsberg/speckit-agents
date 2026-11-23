@@ -117,9 +117,10 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - `--project`: the block is already in the session from `## Project` step 2; never pasted into a role call's `args` (#335). pinned.
 
 ### skills/speckit-team/SKILL.md: Hybrid
-<!-- fingerprint: 478a099b -->
+<!-- fingerprint: 044a20fb -->
 - product-owner, architect, test-writer and implementer as Skill calls, one per response; RED counted by the skill. pinned; hook `scope role`, `lane role` and `gate` hold each writer role's lane, the audit gate and the retry limit as in skill-agents (#428).
 - spec-auditor, spec-gatekeeper, security-reviewer and load-tester as foreground Agent launches with no `Team:` line. pinned; hook `gate` denies their role skills in a hybrid request, keeps the request's team at their launch, and closes the writer role before it (its lane check and report word, as at a role call).
+- Before a gate's launch, the writer role's report as its own message ending in its word, the launch in the next response. pinned; hook `gate` refuses the launch once when test-writer's or implementer's report has no word, and counts a missing `RESULT:` as `RESULT: RED`. Seen 2026-11-23: in both hybrid full runs the gatekeeper went out with no report, and in one the relaunch had none either.
 - Never launch a writer role as an agent. pinned; hook `gate` ends the mode at such a launch, so the full team's agent gates apply from there.
 - No side-by-side slices, no side-by-side question. pinned.
 - `--project`: the writer roles follow the block in the session; every Agent launch carries the `Project:` line. pinned; hook `gate` reads the line at the launch.

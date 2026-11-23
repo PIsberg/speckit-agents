@@ -95,6 +95,22 @@ Setup: a scratch Spec Kit repo with `.specify/projects/demo/` holding `instructi
 ## The team and the fast track
 
 <details>
+<summary><b>2026-11-23</b>, later: Claude Code 2.1.331, Windows 11, six full runs on the owner's subscription, one per team shape and model tier (#428, #429, #445, #431)</summary>
+
+Setup: `node tools/full-run.mjs --login`, the clean case, from a worktree of PR #458's head (`6d5680b`), the personal team reinstalled from it first (#175). $5.49 in all.
+
+| Check | Result |
+|---|---|
+| The six runs | All passed every check: default, `--skill-agents`, `--hybrid` twice, `--models sonnet`, `--models fast`. Costs and times are in [docs/measurements.md](measurements.md#team-shapes-and-model-tiers-one-run-each-2026-11-23). |
+| `--team hybrid` (#428) | The four writer roles ran as role skills and spec-auditor and spec-gatekeeper as agents, as typed. In both runs the first spec-gatekeeper launch went out with no implementer report and was refused once; one run then wrote the report, the other relaunched without it and counted as `RESULT: RED`. |
+| `--models fast` (#429) | The stub pass ran on `claude-haiku-5-5`, set by the `gate` hook; every other agent on sonnet. |
+| spec-auditor's narrowed `verdict` entry (#445) | Recorded `PASS` in every run, from the start record the `start` entry wrote at SubagentStart. |
+| No team question (#431) | No run asked one; every run went to the spec stop first. |
+| A requirement the stub meets (#321) | The default run's test-writer ended `RED`, noting FR-001 as met by the stub, with no `BLOCKED` and no second launch. |
+
+</details>
+
+<details>
 <summary><b>2026-11-23</b>: Claude Code 2.1.330 and 2.1.331, Windows 11, the six scored load cases and load-quadratic in skill-agents mode, 35 runs on the owner's subscription (#417)</summary>
 
 Setup: `tools/eval.mjs --login` from a worktree of main at `69883cf`, the personal team reinstalled from it first (#175). $9.91 in all.

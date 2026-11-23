@@ -2026,6 +2026,9 @@ test('#428: argument-hint and ## Team name --team hybrid; ## Hybrid makes the wr
   assert.match(sec, /with no `Team:` line/);
   assert.match(sec, /`--side-by-side` does not apply/);
   assert.match(sec, /every Agent launch carries the `Project:` line/);
+  // The hybrid full runs of 2026-11-23: both launched spec-gatekeeper right after the implementer role's last tool call, with no
+  // report; the hook refused once, and in one run the relaunch came with no report either and counted as RESULT: RED.
+  assert.match(sec, /Before a gate's launch, write the writer role's report as a message of its own whose last line is its word \(`RESULT: GREEN`, `RED`\), and launch in the next response\./);
 });
 
 // #181 L2 and L3: what T006 and SC-002 promise of the skill text. Every /speckit-team run reads the skill, so
