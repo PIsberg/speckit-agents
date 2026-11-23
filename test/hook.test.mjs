@@ -4634,6 +4634,25 @@ test('#419: without --load-test the skill-agents start message does not name loa
   assert.match(msg(out), /inside test-writer and implementer \(a spec, plan or tasks edit there is caught/);
 });
 
+// #420, 012 SC-003 and FR-002: a run without load-tester gets no added text. The launch prompts are the model's,
+// written from the skill; what the hook adds to a run is its own messages and context. Through a whole request
+// without the role, typed both ways, nothing the hook says names load-tester, and no hook rewrites a launch prompt.
+test('#420: in a run without load-tester no hook output names it, and no launch prompt is rewritten', () => {
+  for (const typed of ['add sum()', '--team skill-agents add sum()', '--team test-writer,implementer add sum()', '--security add sum()']) {
+    const { dir } = repo();
+    const hook = skillHook();
+    const outs = [typedWith(dir, hook, typed)];
+    for (const role of ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer']) {
+      outs.push(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: role, prompt: `${role}: go` } }, hook));
+      outs.push(subagentStart(dir, `a-${role}`, role, { session_id: 's1' }));
+      outs.push(run(dir, ['relay'], { hook_event_name: 'PostToolUse', tool_name: 'Agent', session_id: 's1', tool_input: {}, tool_response: {} }, hook));
+    }
+    const said = JSON.stringify(outs);
+    assert.doesNotMatch(said, /load-tester|load test/i, `${typed}: ${said}`);
+    assert.doesNotMatch(said, /updatedInput/, `${typed}: a hook rewrote a launch`);
+  }
+});
+
 // ---- 012 probe (FR-013, SC-006, contract 6). Load cannot be set, so thresholds are driven through --since. ----
 const probe = (...args) => spawnSync(process.execPath, [HOOK, 'probe', ...args], { encoding: 'utf8', cwd: os.tmpdir() });
 
