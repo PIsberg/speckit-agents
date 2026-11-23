@@ -16,23 +16,21 @@ hooks: the README.md of the speckit-agents repo.
 Launch every agent in the foreground (`run_in_background: false`). Its report is the tool's
 result or, when the result says so, the agent's own message (its `SubagentHandback` call, as in
 Claude Code 2.1.296). A background launch costs you an extra request that only waits, and each
-request re-reads your whole context: in the 2026-10-07 runs those waits were 41% and 44% of the
-main session's input. Agents meant to run side by side go in one message as several Agent calls.
+request re-reads your whole context. Agents meant to run side by side go in one message as several Agent calls.
 
 If your Agent tool has no `run_in_background` parameter, every agent runs in the background
 whatever you pass. Then launch it and end your turn: its completion notification brings the
 report. Do not poll it, sleep, or read its output file.
 
 Launch a fresh agent for every phase and every fix round, and let it end when it reports. Never
-send a running or finished agent a new task with SendMessage: it keeps everything it has read. In
-the 001 run one architect kept alive across 4 audit rounds grew to 726k tokens of context over 729
-requests; a fresh one starts near 14k.
+send a running or finished agent a new task with SendMessage: it keeps everything it has read, and
+its context grows with every round; a fresh one starts near 14k tokens.
 
 Every report you receive stays in your context for the rest of the run and is re-read with each
 later request, so each agent's Report section caps its length. Do not ask an agent for more
 detail than that, and do not restate a report to the user in full. Before each launch, tell the
 user in one line what the agent will do (for the architect's first pass, that it is the longest
-step: 654 s in the 004 run); after its report, one line with its last word, what it changed and
+step); after its report, one line with its last word, what it changed and
 how long it took (`duration_ms` in the result). While an agent works, the user sees only the Agent
 call's `description` and the agent's tool calls, never its text (Claude Code 2.1.296), so let the
 description name the step and the task IDs (`Red: T001 to T007`).
@@ -44,13 +42,11 @@ and answers, or another agent's full report.
   by decision ID. Answers that all take the recommended option are no revision: you record them
   yourself (step 2). When the answers or findings fully determine every edit (a value, a list entry,
   a wording), start the prompt with `dictated:` and give each exact edit with where it goes (file
-  and heading or line): the architect then greps and edits without re-reading the artifacts. In
-  the 003 run a revision that named the line cost 0.11M tokens; one with fully decided changes that
-  named only the files cost 0.70M. Anything that needs design judgement is a full revision, and so
+  and heading or line): the architect then greps and edits without re-reading the artifacts.
+  Anything that needs design judgement is a full revision, and so
   is an edit a dictated architect reports as `needs revision`. An ID an answer drops or renames is
   one edit for every mention (`drop T013 everywhere under specs/004-x/`), which the architect
-  greps for itself: in the 004 run a list of lines from a grep cut at 200 columns missed four of
-  them, and cost one more architect.
+  greps for itself: a list of lines from your own grep can miss some.
 - spec-auditor: the feature directory.
 - security-reviewer: when in spec state, the feature directory and `spec.md`; when reviewing the result, the feature directory and the command to inspect the diff (`git diff main...HEAD` or `master...HEAD`).
 - load-tester: the feature directory (`.specify/feature.json` names it) and the command to inspect the diff (`git diff main...HEAD` or `master...HEAD`).
@@ -99,7 +95,7 @@ in as many calls as it takes, all before the next launch.
   command for this step.
 - The conversation holds nothing but this run. If it already holds other work, tell the user once,
   in one line, that every response of the run re-reads it and that `/clear` before `/speckit-team`
-  avoids that (in the 004 run, 2.73M of the main session's 8.92M). Then go on.
+  avoids that. Then go on.
 - `state: working tree clean`. On any other working tree line, ask before going on.
 - `state: constitution holds rules`. When it is missing or still the template (placeholder tokens
   such as `[PROJECT_NAME]` or `[PRINCIPLE_1_NAME]` remain), run step 0b first.
@@ -260,7 +256,7 @@ are in `## Open Decisions`, the last section of `plan.md`. Read only that sectio
 stop with AskUserQuestion, recommended option first, each option's description saying what
 follows from it. With more than 4, ask first one question that lists every decision with its
 options: take every recommended option (recommended), or decide one by one. The user can also
-answer with exceptions (`D5: B`). In the 004 run 5 of 6 answers were the recommended option.
+answer with exceptions (`D5: B`).
 When every answer is the option the architect recommended, also when the user gave it in advance,
 its plan and tasks already follow it, so launch no one: no architect, no product-owner, never a
 dictated revision. Record the answers yourself, in the message that commits them and launches the
@@ -272,15 +268,9 @@ It makes the whole record and reads nothing into your context: under each decisi
 under the heading where the `Spec:` line puts it. On exit 1 it changed nothing and names the line it
 could not place, and the hook refuses the audit while a decision is open: make that record by hand
 (replace it without reading `spec.md` first when the quote is right), commit, and launch the audit again.
-In four full runs of 2026-11-08 and 2026-11-10 the main session wrote these edits with a script of its
-own, in 3 or 4 responses. In two full runs of 2026-10-24 and 2026-10-25 an architect and a
-product-owner were launched for one such Edit each instead, 0.16M tokens and about 44 s.
 Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
 the two write different files, and the first audit then reads a spec that agrees with the plan.
-In the 004 run a decision that contradicted FR-012 failed the first audit, and the fix cost a
-product-owner and a second audit (229 s, 0.59M tokens). In the 003 run four architect revisions
-only applied answers, 7.37M tokens together.
 If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
 same stop, with AskUserQuestion, whether to build them one at a time (recommended: in two real runs of
 one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3) or side by
@@ -322,14 +312,12 @@ that cover it, as the architect wrote them. A round is at most 4 slices, in task
 `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
 longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer
 and one implementer per round, and finish it before starting the next. Every launch starts from
-nothing (11k to 14k tokens before it reads a file) and reads the code again, so up to three
-launches per slice made the build the longest part of a run. Never hand the whole feature to one
+nothing (11k to 14k tokens before it reads a file) and reads the code again. Never hand the whole feature to one
 test-writer or one implementer.
 
 Take the rounds from the `Round <n>:` lines of the architect's last report that gave them, and
 launch the first round's first agent in the response that reads the audit's PASS; read `tasks.md`
-only when no report gave them. In the 2026-10-25 run a response spent only on reading `tasks.md`
-cost 60k tokens.
+only when no report gave them.
 
 For each round:
 1. **Stubs** (implementer, only if the round's tests will call a file, function or type that does
@@ -349,8 +337,7 @@ For each round:
 3. **Green** (implementer, the round's implementation task IDs, and `last round` when no round
    follows and spec-gatekeeper is not in the team). An implementer runs the tests that cover its
    change, and the full suite only with `last round`: with spec-gatekeeper in the team the suite runs
-   once, at spec-gatekeeper, on the implementer's commit (#430). In the 004 run the full suite ran 5
-   times, about 14.5 of the 48 agent-minutes. Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
+   once, at spec-gatekeeper, on the implementer's commit (#430). Every report ends with `RESULT: GREEN` or `RESULT: RED`. On RED,
    relaunch it with the failing output. After 3 REDs in a row the hook blocks implementer: do not
    retry, and never delete the retry record yourself.
    With no active feature (no `.specify/feature.json`, or one naming no directory) the hook counts
@@ -361,8 +348,7 @@ For each round:
 
 Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
 touch disjoint files run side by side instead. The round's stub pass stays one implementer, without a
-worktree: stubs take seconds, and in the side-by-side run of 2026-10-25 two stub implementers and their
-merge cost a launch and a main-session response more. Then one loop per slice, each step's agents
+worktree: stubs take seconds, and two in worktrees cost a launch and a merge more. Then one loop per slice, each step's agents
 launched together in one message, each implementer with `isolation: "worktree"` and `worktree` in its
 prompt and never `last round`, so that it ticks nothing (ticks on adjacent lines of `tasks.md` conflict when the branches merge).
 A worktree starts from the last commit, without uncommitted work: commit the round's tests and
@@ -373,8 +359,7 @@ only then tick the tasks each report names as done and commit. A worktree lacks 
 code, so an implementer there runs its own tasks' tests, never the full suite: run it yourself at the
 end of that call after the last round's merge, unless spec-gatekeeper is in the team and runs it next, and on a failure relaunch one implementer without a
 worktree, with the output and `last round`. The worktrees sit inside the repository
-(`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository:
-the 2026-10-25 run committed both and spent a commit taking them out.
+(`.claude/worktrees/`), so a `git add -A` while one is in place commits it as an embedded repository.
 
 ## 5b. Load test: load-tester
 Only when load-tester is in the team (`--load-test` or named in `--team`); otherwise skip this step. Start it once the last
@@ -405,7 +390,7 @@ role not chosen goes to the user) (an implementer then
 without `last round`), then re-run spec-gatekeeper.
 A reason that asks for a test of behaviour the code already has goes to test-writer, which shows it
 passing, names the production line to break and ends `FIXED`. Never ask test-writer to change
-production code: its scope denies it (2026-11-11: `BLOCKED`, with its tests committed). Show the test
+production code: its scope denies it. Show the test
 failing yourself, in one Bash call that makes the break, runs the test, restores with
 `git checkout -- <file>` and ends on `git status --short`, and put that call's output in
 spec-gatekeeper's prompt.

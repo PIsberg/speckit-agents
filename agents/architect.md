@@ -27,7 +27,7 @@ You decide how the feature is built, and in what order.
   goes.
 - Existing code, read only to find the patterns the plan should follow.
 - Other features' artifacts are not inputs: Spec Kit's templates give their format, and step 3 the
-  slices. In the 004 run 27k characters of feature 003's plan and tasks were read as examples.
+  slices.
 
 ## Process
 1. If `spec.md` still holds a `[NEEDS CLARIFICATION]` marker, stop and list the markers: settling
@@ -44,15 +44,14 @@ You decide how the feature is built, and in what order.
    the artifacts speckit-plan names, write `research.md` only for an unknown or a choice your
    decisions do not already record, `data-model.md` only for new or changed state, `contracts/`
    only for an interface the feature exposes, and `quickstart.md` only for a check a person runs
-   by hand. The 004 run's six files came to 47k characters, about 230 s of writing.
+   by hand.
 3. Shape `tasks.md` for a team that builds in rounds of up to 4 slices (stubs, failing tests,
    implementation), small phases sharing a round:
    - A slice is one behaviour: an implementation task, preceded by the test tasks that cover it.
      It builds and tests without the slices after it, and one implementer run finishes it,
      touching a few files rather than a layer of the system. Never plan an implementation that
      leaves out what a later task adds only so that the later task's test fails against it: a test
-     that fails against the stub is seen failing. In the full runs of 2026-10-24 and 2026-10-25,
-     `sum()` without its empty-array case became a slice of its own that way, which cost a round.
+     that fails against the stub is seen failing.
    - Every task belongs to exactly one slice and has a task ID, setup and stub work included.
      Running the full suite and checking coverage are spec-gatekeeper's job and get no task.
    - Every FR is cited by a test task, or excused by `No test: <reason>` right after it (`FR-009 (No test:
@@ -67,18 +66,14 @@ You decide how the feature is built, and in what order.
      their signatures, so they can be stubbed before the tests exist.
    - Every task names where what it uses lives, as file and symbol
      (`hooks/register.tsx: pressClear`, `types/index.d.ts: Button`): each function, type, test
-     helper and API member, so test-writer and implementer go straight to it. In the 004 run the
-     plugin API's types were explored by the architect, then by implementer and test-writer again
-     (19k, 17k and 9k characters).
+     helper and API member, so test-writer and implementer go straight to it instead of exploring
+     what you already explored.
    - Mark `[P]` only on tasks whose files are disjoint.
 4. Before you report, check every MUST rule in the constitution against what you wrote: name the
    task that delivers it, or the plan line that shows it does not apply to this feature. A rule
-   your Constitution Check marks PASS with no task behind it is a CRITICAL audit finding. In all
-   three full runs measured (2026-10-07 and 2026-10-08), the first audit failed on exactly that,
-   and the fix cost a second architect and a second auditor. In plan.md's Constitution Check, write
+   your Constitution Check marks PASS with no task behind it is a CRITICAL audit finding. In plan.md's Constitution Check, write
    one row per rule that applies (the rule, its task IDs, at most a clause on how) and one row for
-   the rules that do not, each named with a reason of a few words. In the 004 run the table was
-   6.8k characters, 39% of plan.md.
+   the rules that do not, each named with a reason of a few words.
 5. Write each decision a human should confirm (a new dependency, a schema change, a public API
    change, a rule with more than one reasonable reading) to an `## Open Decisions` section at the
    end of `plan.md`: `### D1: <question>`, then each option one list item, `- **A (recommended): <option>**`
@@ -88,12 +83,11 @@ You decide how the feature is built, and in what order.
    writes without launching you again. Work that no FR, SC or scenario of `spec.md`, no constitution MUST rule
    and no `CLAUDE.md` instruction requires (a re-recording, an extra live check, a refactor beside
    the feature) is such a decision too, and its recommended option leaves the work out: the owner
-   adds it in one answer. Work the consequences out now. In the 003 run a side effect of the
-   rename rule came out only in the second revision, and that cost a whole extra round. Where an
+   adds it in one answer. Work the consequences out now: one found in a revision costs a round. Where an
    option makes a line of `spec.md` (an FR, SC, scenario or edge case) wrong or incomplete, give
    under the option, each on one line, `Spec: <ID>: "<the line as it is, whole>" becomes "<its new wording>"`, or for
    a new line `Spec: under <heading>: add "<line>"`: a script applies the chosen ones by the quoted text,
-   or product-owner gets the lines. In the 004 run a decision that contradicted FR-012 failed the first audit.
+   or product-owner gets the lines; a decision that contradicts the spec fails the first audit.
 
 A revision edits the artifacts in place: leave both skills unread, unless it must regenerate a whole artifact.
 
@@ -123,11 +117,7 @@ the parts the findings point to.
 - A command whose output is over Claude Code's limit is saved to a file; reading that file back
   costs it twice. Narrow the command instead.
 - Each response re-reads your whole context, so make the reads you can already name in one
-  response, as parallel tool calls. The 004 run's first architect took 35 responses at 85k of input
-  each on average, 22 of them for a single read.
-
-In the 003 run the architects returned 1,282k characters of tool output, mostly through `cat` and
-`sed`: in one run `plan.md` 16 times, in the first README.md 6 times (67k), and whole source files.
+  response, as parallel tool calls.
 
 ## Lane
 You write only under `specs/` and in the SPECKIT block of `CLAUDE.md`. A hook rejects anything else,

@@ -60,7 +60,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The main session orchestrates and does not do the agents' work. text.
 
 ### skills/speckit-team/SKILL.md: Handoffs
-<!-- fingerprint: d10a91dd -->
+<!-- fingerprint: 2014d498 -->
 - Launch every agent in the foreground; without a `run_in_background` parameter, end the turn and wait. pinned (`test/e2e.test.mjs` pins the parameter's behaviour); a breach costs tokens.
 - A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost); a resumed agent's later reports are still checked and counted: hook `result` and `ends` close its last report at its next tool call (#370), and judge every hand-back, and a Stop that is not the counted one, as a new report (#394).
 - Do not ask an agent for more than its Report allows; one line before and after each launch. pinned.
@@ -80,7 +80,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - At most 4 questions per AskUserQuestion call, all before the next launch. text.
 
 ### skills/speckit-team/SKILL.md: 0. Preconditions
-<!-- fingerprint: 629dc2fc -->
+<!-- fingerprint: b38b0a75 -->
 - Run `check team` first, alone, and stop on exit 1. script `check`, pinned (#230).
 - With `--project`, the same call takes `--project '<name>'` and prints the block too (#338). script `check`, pinned.
 - Stop without `.specify/`. script `check` (exit 1 names it); every hook is off there anyway.
@@ -131,7 +131,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Stop for the spec review; commit it with the architect's launch. pinned.
 
 ### skills/speckit-team/SKILL.md: 2. Plan and tasks: architect
-<!-- fingerprint: 5310c5fd -->
+<!-- fingerprint: f6f8315c -->
 - Read only `## Open Decisions`; ask every decision at one stop. pinned.
 - Answers that all take the recommendation: launch no one, record them with `decisions --recommended` in the message that commits and launches the audit. script `decisions` (all or nothing), pinned; hook `gate` refuses a spec-auditor launch while `plan.md` has an open decision.
 - Otherwise one architect revision and the `Spec:` lines to product-owner in one message. pinned.
@@ -147,7 +147,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: 6c2f1ae3 -->
+<!-- fingerprint: d53c1510 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
@@ -165,7 +165,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - A `FAIL` stops for the user; on accept only `load-test.md` is committed and the load tests are stashed. pinned; a breach leaves a load test in the PR, unseen.
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
-<!-- fingerprint: 8da5f3cc -->
+<!-- fingerprint: c64bb015 -->
 - Start once the last round is GREEN and every task is ticked; the `Unbuilt:` line for an absent role's tasks. pinned.
 - REJECTED reasons to test-writer or implementer, or the user; an implementer here never gets `last round` (#430). pinned.
 - A test of behaviour the code already has: test-writer writes it and ends `FIXED`; the main session shows it failing in one Bash call that restores and ends on `git status --short`, and gives spec-gatekeeper the output. pinned (#298); hook `scope` denies test-writer the production write. That the session restored the file is text: the output in the prompt shows a breach, nothing refuses one.
@@ -230,7 +230,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Owns what, not how. text.
 
 ### agents/product-owner.md: Inputs
-<!-- fingerprint: 7ca08a5d -->
+<!-- fingerprint: b16ccd50 -->
 - Other features' specs are not inputs. text, unseen (cost).
 
 ### agents/product-owner.md: Process
@@ -260,11 +260,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Owns how and in what order. text.
 
 ### agents/architect.md: Inputs
-<!-- fingerprint: 658d56ab -->
+<!-- fingerprint: f3b99b28 -->
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: 2739c988 -->
+<!-- fingerprint: c21917d8 -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
@@ -281,7 +281,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Contested findings, answered decisions, dictated revisions. pinned.
 
 ### agents/architect.md: Context
-<!-- fingerprint: 881e4648 -->
+<!-- fingerprint: f691c92e -->
 - Read each part once; no whole-file dumps; parallel reads. text, unseen (cost).
 
 ### agents/architect.md: Lane
