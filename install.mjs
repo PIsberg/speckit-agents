@@ -24,7 +24,7 @@
 // and PostToolUse on Agent to relay what a subagent's hooks said to the main session).
 //
 // Then, in Claude Code (slash commands you type in a session, not installer flags):
-//   /speckit-team <request>                   the pipeline; it asks which roles take part
+//   /speckit-team <request>                   the pipeline, with the full team
 //   /speckit-team --security <request>        opts in the security agent (spec review and result review)
 //   /speckit-team --load-test <request>       opts in the load-tester (measures the load surface after green)
 //   /speckit-team --project <name> <request>  runs with the standing context from .specify/projects/<name>/
@@ -36,6 +36,9 @@
 //                                             (the eight speckit-role-<role> skills, generated from agents/)
 //   /speckit-team --team hybrid <request>       product-owner, architect, test-writer and implementer run as
 //                                             skills in this session, the gates as agents (#428)
+//   /speckit-team --team ? <request>          asks which team runs first; without --team the full team runs
+//   /speckit-team --yes <request>             takes every recommendation at the spec and plan stops (#431)
+//   /speckit-team --side-by-side <request>    builds [P] slices side by side in worktrees; one at a time otherwise
 //   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
 import { createHash } from 'node:crypto';

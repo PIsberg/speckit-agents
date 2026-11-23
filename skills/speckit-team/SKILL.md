@@ -2,7 +2,7 @@
 # speckit-agents: managed by install.mjs. Edit the source repo and reinstall, not this copy.
 name: speckit-team
 description: Run a feature through the Spec Kit agent team, product-owner to spec-gatekeeper, stopping where a human decides.
-argument-hint: "[--team <role>,<role>...|noagents|skill-agents|hybrid] [--security] [--load-test] [--project <name>] <feature idea>"
+argument-hint: "[--team <role>,<role>...|?|noagents|skill-agents|hybrid] [--security] [--load-test] [--project <name>] [--yes] [--side-by-side] <feature idea>"
 disable-model-invocation: true
 ---
 
@@ -107,9 +107,9 @@ in as many calls as it takes, all before the next launch.
   Then go on.
 
 ## Team
-`--team`, `--security`, `--load-test` and `--project` lead the arguments before the request text, in any order (`--team <roles> --project <name>`, `--security <request>`, etc.), each at most once. A `--team`, `--security`, `--load-test` or `--project` after the request text has started is request text.
+`--team`, `--security`, `--load-test`, `--project`, `--yes` and `--side-by-side` lead the arguments before the request text, in any order (`--team <roles> --project <name>`, `--security <request>`, etc.), each at most once. One of them after the request text has started is request text.
 
-`--team` counts only as the first word of the arguments (or the first word after a leading `--project <name>` or `--security`): `--team <role>[,<role>...] <request>`. The
+`--team` counts only as the first word of the arguments (or the first word after the other leading flags): `--team <role>[,<role>...] <request>`. The
 role list is the words after it up to and including the first word that does not end in a comma
 (`test-writer, implementer` and `test-writer,implementer` both name two roles). Names are
 case-insensitive, a name given twice counts once, and order does not matter. The team roles, in
@@ -137,18 +137,22 @@ implementer as skills in this session and the gates as agents, by `## Hybrid`. I
 as `skill-agents` is: a free-text answer of `hybrid` is not that choice; say in one line that it is typed as
 `/speckit-team --team hybrid <request>`, and stop. `--security`, `--load-test` and `--project` combine with it.
 
-With no roles named (no `--team`), ask once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
+With no roles named (no `--team`), the full team runs: ask nothing, and the team notice below says so.
+`--team ?` (the list is the one word `?`) asks instead, once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
 1. Full team (Recommended): all six roles.
 2. Build only: test-writer, implementer.
 3. Implement only: implementer.
 4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.
 
-A free-text answer ("Other") is a role list read as above and checked by the same refusals below. A request with `--team` is not asked: the question is only for requests without it. When `--security` was given with no `--team`, security-reviewer is added to the chosen team.
+A free-text answer ("Other") is a role list read as above and checked by the same refusals below. A request whose `--team` names roles is not asked. When `--security` was given with no `--team` or with `--team ?`, security-reviewer is added to the chosen team.
+
+`--yes` answers the spec stop and the plan stop in advance with every recommended option and approves `spec.md`, `plan.md` and `tasks.md` as written, in every mode: do not ask, take the steps' all-recommended paths (`clarifications --recommended`, `decisions --recommended`), and tell the user in one line at each what was taken. It answers nothing else: step 0b's constitution approval, and every stop a FAIL, a REJECTED or a limit brings, still wait for the user, and nothing is merged.
 
 Before anything is launched, refuse in one message that says why and lists the valid names:
 - a name that is not a team role (also `--team` followed straight by the request: its first word
   is the unknown name): that name is not a team role;
 - an empty team: no roles named;
+- `?` with a role name: `?` asks for the team and takes none;
 - `noagents` with a role: no agents means no roles;
 - `skill-agents` with a role name or with `noagents`: skill-agents runs every role as a skill and takes no role names;
 - `hybrid` with a role name, or followed by `noagents` or `skill-agents`: hybrid fixes which roles are skills and takes no role names;
@@ -193,10 +197,10 @@ Agent tool check. Wait only at the two stops below.
    instead of roles.
 
 ## Skill agents
-Only after `--team skill-agents` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. Steps 0 to 7 run as written, with no Agent call: each step's launch of a role is one Skill call to `speckit-role-<role>`, with `args` the role's Inputs from `## Handoffs`. Say in one line naming the role what you call, then call it. Run one role at a time, one role per response, never two in one message: the side by side launches of step 4-5 run one after the other, each after the previous role's report, and the side-by-side question is not asked. The architect revision after product-owner's `Spec:` lines is the same Skill call. A role the user answered a question for, or that goes on in a later turn, is called again: its lane runs from that call. Read the report as the agent's report, the message before your next call; after spec-auditor's or spec-gatekeeper's report, the Skill call starts its `args` with the report's last line (`VERDICT: PASS`, `APPROVED`); steps 1 to 6 stop where they stop and hold for the user as written. `--project <name>`: the block is already in this session from `## Project` step 2; every role follows it as `## No agents` step 1 does, so never paste it into a Skill call's `args`. With `--security`, security-reviewer runs at both points, the spec and the result. With `--load-test`, load-tester runs as `speckit-role-load-tester` at step 5b. Count RED yourself: 3 rounds ending `RESULT: RED` in a row go to the user. Run the audit and its verdict before test-writer, implementer and spec-gatekeeper; the hook denies a call until VERDICT: PASS. The hook stops writes outside each role's lane and records spec-auditor's verdict and spec-gatekeeper's word. Nothing runs before it writes: a role calls the Skill before it writes.
+Only after `--team skill-agents` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. Steps 0 to 7 run as written, with no Agent call: each step's launch of a role is one Skill call to `speckit-role-<role>`, with `args` the role's Inputs from `## Handoffs`. Say in one line naming the role what you call, then call it. Run one role at a time, one role per response, never two in one message: the side by side launches of step 4-5 run one after the other, each after the previous role's report, and `--side-by-side` does not apply. The architect revision after product-owner's `Spec:` lines is the same Skill call. A role the user answered a question for, or that goes on in a later turn, is called again: its lane runs from that call. Read the report as the agent's report, the message before your next call; after spec-auditor's or spec-gatekeeper's report, the Skill call starts its `args` with the report's last line (`VERDICT: PASS`, `APPROVED`); steps 1 to 6 stop where they stop and hold for the user as written. `--project <name>`: the block is already in this session from `## Project` step 2; every role follows it as `## No agents` step 1 does, so never paste it into a Skill call's `args`. With `--security`, security-reviewer runs at both points, the spec and the result. With `--load-test`, load-tester runs as `speckit-role-load-tester` at step 5b. Count RED yourself: 3 rounds ending `RESULT: RED` in a row go to the user. Run the audit and its verdict before test-writer, implementer and spec-gatekeeper; the hook denies a call until VERDICT: PASS. The hook stops writes outside each role's lane and records spec-auditor's verdict and spec-gatekeeper's word. Nothing runs before it writes: a role calls the Skill before it writes.
 
 ## Hybrid
-Only after `--team hybrid` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. product-owner, architect, test-writer and implementer run as `## Skill agents` says: each launch of one is one Skill call to `speckit-role-<role>`, one role per response, and you count its RED. Never launch one of them as an agent: that ends the mode. spec-auditor, spec-gatekeeper, security-reviewer (with `--security`) and load-tester (with `--load-test`) are Agent launches in the foreground, as steps 1 to 6 say without `--team`, with no `Team:` line; the hook denies their role skills. Read a gate's report as the agent's report; its launch closes the writer role before it. Side-by-side slices are not built and the side-by-side question is not asked. `--project <name>`: the writer roles follow the block in this session as in `## Skill agents`; every Agent launch carries the `Project:` line.
+Only after `--team hybrid` was typed; the hook's start message says what is and is not enforced, so do not repeat it: add the one-line team notice of `## Team`. product-owner, architect, test-writer and implementer run as `## Skill agents` says: each launch of one is one Skill call to `speckit-role-<role>`, one role per response, and you count its RED. Never launch one of them as an agent: that ends the mode. spec-auditor, spec-gatekeeper, security-reviewer (with `--security`) and load-tester (with `--load-test`) are Agent launches in the foreground, as steps 1 to 6 say without `--team`, with no `Team:` line; the hook denies their role skills. Read a gate's report as the agent's report; its launch closes the writer role before it. Side-by-side slices are not built: `--side-by-side` does not apply. `--project <name>`: the writer roles follow the block in this session as in `## Skill agents`; every Agent launch carries the `Project:` line.
 
 ## Project
 `--project` takes exactly the next word: `--project <name>`. If given without `<name>` (or with a missing name) or twice, refuse before any launch: say why and list available projects by running `node "{{HOOK}}" project`.
@@ -242,7 +246,7 @@ speckit-specify; Spec Kit 1.x installs that extension only with `specify init --
 If you are still on main or master, create the branch yourself, named after the feature directory
 (`git switch -c <its basename>`); uncommitted work moves with it.
 If security-reviewer is in the team: launch security-reviewer in the foreground (`run_in_background: false`) with `phase: spec` and the feature directory to review `spec.md`. On FAIL, route CRITICAL and HIGH findings to product-owner (or to the user if product-owner is absent), a contested finding as in step 3, then relaunch security-reviewer. After two FAILs, hand the findings to the user. On PASS, proceed to the spec review stop.
-**Stop:** one stop for the questions and the spec. Relay the questions with AskUserQuestion,
+**Stop:** one stop for the questions and the spec. With `--yes` (## Team), this stop takes every recommended answer and the approval without asking. Relay the questions with AskUserQuestion,
 product-owner's options as it listed them, recommended first, and ask in the same call whether the
 user approves `spec.md` as written; with no question, the stop is the spec review alone. When every
 answer is the recommended one (also when the user gave it in advance) and the spec is approved, launch
@@ -258,7 +262,7 @@ own, which would re-read your whole context.
 ## 2. Plan and tasks: architect
 Only when architect is in the team; without it, skip this step.
 **Stop:** the user settles every open decision and approves `plan.md`, `tasks.md` and the spec
-lines the decisions reword.
+lines the decisions reword. With `--yes` (## Team), this stop takes every recommended answer and the approval without asking.
 The architect's report lists each open decision by ID; its options, and what follows from each,
 are in `## Open Decisions`, the last section of `plan.md`. Read only that section, in one command
 (`sed -n '/^## Open Decisions/,$p'` on the file), and ask about every open decision at this one
@@ -280,12 +284,7 @@ could not place, and the hook refuses the audit while a decision is open: make t
 Otherwise send all the answers to one architect revision (dictated where they fully determine the
 edits, see Handoffs) and, in the same message, the chosen options' `Spec:` lines to product-owner:
 the two write different files, and the first audit then reads a spec that agrees with the plan.
-If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, ask at the
-same stop, with AskUserQuestion, whether to build them one at a time (recommended: in two real runs of
-one two-slice feature, side by side took 140 s and 7 build launches against 95 s and 3) or side by
-side. Say why it matters: each `[P]` slice then gets its own agents instead of sharing its round's,
-and the merges take main-session responses, so it can pay off only for slices that each take
-minutes to build; it also runs several agents against the user's usage limits at once. Ask once per run; the answer holds for every `[P]` group.
+If `tasks.md` has two or more slices whose tasks are all `[P]` and touch disjoint files, build them one at a time unless the request has `--side-by-side`; do not ask. In two real runs of one two-slice feature side by side took 140 s and 7 build launches against 95 s and 3: each `[P]` slice gets its own agents instead of sharing its round's and the merges take main-session responses, so it can pay off only for slices that each take minutes to build, and it runs several agents against the user's usage limits at once. `--side-by-side` holds for every `[P]` group of the run.
 
 ## 3. Audit: spec-auditor
 Only when spec-auditor is in the team; without it, skip this step.
@@ -355,7 +354,7 @@ For each round:
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
-Only if the user chose side by side in step 2, the slices of a round whose tasks are all `[P]` and
+Only with `--side-by-side` (step 2), the slices of a round whose tasks are all `[P]` and
 touch disjoint files run side by side instead. The round's stub pass stays one implementer, without a
 worktree: stubs take seconds, and two in worktrees cost a launch and a merge more. Then one loop per slice, each step's agents
 launched together in one message, each implementer with `isolation: "worktree"` and `worktree` in its

@@ -53,9 +53,9 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
   ([The retry limit](#the-retry-limit))
-- **You decide at three stops, and you merge.** The pipeline asks which team to use, then asks you to
-  answer the spec's questions and approve the spec in one stop, and to approve the plan, then stops at
-  the pull request.
+- **You decide at two stops, and you merge.** The pipeline asks you to answer the spec's questions
+  and approve the spec in one stop, and to approve the plan, then stops at the pull request. `--yes`
+  takes every recommendation at both instead.
   ([Quick start](#quick-start))
 - **Or no agents at all.** `/speckit-team --team noagents <request>` runs Spec Kit's own commands
   in your session, with the spec and plan stops and no audit; only your typed flag turns the audit
@@ -236,7 +236,7 @@ Then, in Claude Code:
 To ground the run in standing project rules, pass `--project <name>`: `/speckit-team --project billing Let users export their reading list as CSV` activates `.specify/projects/billing/` ([Project knowledge](#project-knowledge)).
 
 To run only some of the roles, name them: `/speckit-team --team test-writer,implementer add a hello.txt
-that says hello` skips the team question ([Choosing the team](#choosing-the-team)). To run no agent
+that says hello` runs only those ([Choosing the team](#choosing-the-team)). To run no agent
 at all, `/speckit-team --team noagents <request>` has the session run Spec Kit's own commands
 itself, with the spec and plan stops and no audit.
 
@@ -244,18 +244,23 @@ Start it in a fresh session (`/clear` first): every response of the run re-reads
 earlier work included. In the 004 run that earlier work was 2.73M of the main session's 8.92M
 ([Feature 004](docs/measurements.md#feature-004-interactive)).
 
-`/speckit-team` runs the whole pipeline from the main session. It stops for you at three points:
+`/speckit-team` runs the whole pipeline from the main session, with the full team unless `--team`
+names the roles. It stops for you at two points:
 
-1. to choose the team, unless `--team` names it: the full team, build only, implement only, or
-   spec and build with no audit; 
-2. to answer the product owner's questions and approve the spec, in one stop: the product owner
+1. to answer the product owner's questions and approve the spec, in one stop: the product owner
    writes the spec as if you took each of its recommended answers and lists the questions under
    `## Open Questions`, so when you take every recommendation and approve, the hook's
    `clarifications --recommended` records the answers and no product owner is launched again
    ([#427](https://github.com/PIsberg/speckit-agents/issues/427)); any other answer goes to one
    product-owner revision and the stop repeats;
-3. to approve the plan and tasks. If `tasks.md` has two or more `[P]` slices that touch disjoint
-   files, this stop also asks whether to build them side by side or one at a time.
+2. to approve the plan and tasks, and settle the plan's open decisions.
+
+`--team ?` adds a first stop, the team question: the full team, build only, implement only, or spec
+and build with no audit. `--yes` answers both stops in advance with every recommended option and
+approves as written; the constitution draft, an audit, security or load-test `FAIL`, a `REJECTED`
+and the retry limit still stop for you, and nothing is merged. `[P]` slices are built one at a time
+unless you type `--side-by-side` ([Parallel slices](#parallel-slices)). All three since
+[#431](https://github.com/PIsberg/speckit-agents/issues/431).
 
 In a repo whose constitution (the rules every phase is checked against) is still Spec Kit's
 template, it first drafts one from what the repo already states (`CLAUDE.md`, the build file, CI)
@@ -339,15 +344,14 @@ and the denial tells the agent whose lane production code is in.
 
 ### The pipeline
 
-`/speckit-team` first asks which team to use, the team question, the first of the pipeline's three
-stops (the demo answers it with the full team). It then launches product-owner, which writes the
+`/speckit-team` without `--team` runs the full team and asks nothing first
+([#431](https://github.com/PIsberg/speckit-agents/issues/431)): it launches product-owner, which writes the
 spec and returns its questions, and the main session puts product-owner's questions to you, with the
-spec to approve: the second (one stop since #427; the recording below predates it). Recorded on 2026-10-17 (Claude Code 2.1.302) with the idea "Let greet say hello in the
-user's own language": product-owner, in the background as in any interactive session with fork
-subagents on, wrote `specs/002-localized-greeting` and returned two questions. Haiku's first call to
-ask them failed on an empty second question ("Invalid tool parameters"), and it asked again.
+spec to approve: the first of the pipeline's two stops (one stop since #427). The recording below was
+made on 2026-10-17, before #431, and still opens with the team question, which now comes only with
+`--team ?`; it is to be recorded again.
 
-![/speckit-team asking which team to use, then handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
+![/speckit-team handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 
 ## The team
 
@@ -440,8 +444,9 @@ launches each agent with the inputs it needs and relays the product owner's ques
 
 #### Choosing the team
 
-`/speckit-team [--team <role>[,<role>...]] [--security] <request>`. `--team` counts only as the first word; names are
-case-insensitive and order does not matter. Without it the skill asks one question before any
+`/speckit-team [--team <role>[,<role>...]|?] [--security] [--load-test] [--yes] [--side-by-side] <request>`. `--team` counts only as the first word after the other flags; names are
+case-insensitive and order does not matter. Without it the full team runs and nothing is asked
+([#431](https://github.com/PIsberg/speckit-agents/issues/431)). `--team ?` asks one question before any
 launch, a stop like the others: Full team (recommended), Build only (test-writer, implementer),
 Implement only (implementer), or Spec and build with no audit or verification (product-owner,
 architect, test-writer, implementer). Its free-text answer is a role list. All six core roles is the full
@@ -455,9 +460,10 @@ The skill refuses before launching anything, naming the valid roles: a name that
 `noagents` with a role; neither test-writer nor implementer; architect without product-owner;
 spec-auditor without architect.
 
-A smaller team than the full one goes only after you chose it. In a request typed without `--team`,
-the hook refuses a launch whose `Team:` line names less than the full team until your answer to the
-team question is in the session's transcript after the request; under "we ship today, skip the tests"
+A smaller team than the full one goes only after you chose it. In a request typed without `--team`
+or with `--team ?`, the hook refuses a launch whose `Team:` line names less than the full team until
+an answer of yours (a prompt, or the team question's result) is in the session's transcript after the
+request; without `--team` its refusal tells the session to launch the full team, with `--team ?` to ask; under "we ship today, skip the tests"
 the main session launched implementer alone, unasked, in 2 of 6 scored runs on 2026-11-20
 ([#366](https://github.com/PIsberg/speckit-agents/issues/366)). The full team, the recommended
 option, needs no answer. Typed with `--team <roles>`, the roles you typed are held the same way: a
@@ -729,7 +735,8 @@ made while building never void the audit.
 
 For `[P]` slices of a round touching disjoint files, it can run one loop per slice at once, each
 implementer in its own git worktree, merged back into the feature branch in task order. It does so
-only if you say so at the plan stop, and recommends one at a time. Each slice side by side gets its
+only if you type `--side-by-side` before the request; it never asks
+([#431](https://github.com/PIsberg/speckit-agents/issues/431)), and one at a time is the default. Each slice side by side gets its
 own test-writer and implementer instead of sharing its round's, the merges take main-session
 responses, and several agents draw on your usage limits at once. Measured on 2026-10-25 with real
 models ([#114](https://github.com/PIsberg/speckit-agents/issues/114)), one two-slice feature
@@ -1153,7 +1160,7 @@ without a project record, and 74 ms with one (mean of 20 runs each, p90 51 ms, 7
 | `gate` | test-writer, implementer: PreToolUse on every tool except `SubagentHandback`; its entry carries the agent's scope rule (`gate scope tests`), which it applies to a write or Bash call after the gate lets it through, so one process decides both (#337: about 120 instead of 225 ms of hook processes per write on Windows) | doing anything before the audit passed (reporting back is never blocked) |
 | `gate retries` | implementer: the same | also a fourth attempt after 3 `RESULT: RED` reports in a row on the same plan and tasks (see [The retry limit](#the-retry-limit)) |
 | `result` | implementer: PreToolUse `SubagentHandback`, and Stop | a report without a `RESULT:` line (refused once, then counted as RED); counts the result |
-| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents` (a writer role's also allowed in `--team hybrid`, a gate role's denied there), and in it the audit gate before test-writer, implementer and spec-gatekeeper; in `--team hybrid`, at the main session's launch of a gate, the acting writer role's lane and report word, as at its next role call ([#428](https://github.com/PIsberg/speckit-agents/issues/428)); on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team`, it refuses a launch whose `Team:` line names less than the full team until your answer to the team question (a prompt, or the question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides. Under `install.mjs --models fast` it also sets `model: haiku` on a stub pass or a `dictated:` revision that names no model ([#429](https://github.com/PIsberg/speckit-agents/issues/429)) |
+| `gate` | `settings.json`: PreToolUse `Skill|Agent` and `UserPromptExpansion` (`speckit-implement`, `speckit-team`) | `/speckit-implement`, typed by you or called by Claude, before the audit passed, unless you typed `/speckit-team --team noagents` for the request; a `speckit-role-<role>` Skill call outside `--team skill-agents` (a writer role's also allowed in `--team hybrid`, a gate role's denied there), and in it the audit gate before test-writer, implementer and spec-gatekeeper; in `--team hybrid`, at the main session's launch of a gate, the acting writer role's lane and report word, as at its next role call ([#428](https://github.com/PIsberg/speckit-agents/issues/428)); on the main session's launch of a team role it records the launch's `Team:` line, and on a typed `/speckit-team` it starts a new team record (`noagents`, or none); in a request typed without `--team` or with `--team ?`, it refuses a launch whose `Team:` line names less than the full team until an answer of yours (a prompt, or the team question's result) is in the transcript after the request ([#366](https://github.com/PIsberg/speckit-agents/issues/366), [#431](https://github.com/PIsberg/speckit-agents/issues/431)), and in one typed with `--team <roles>` a launch whose line drops a role you typed, until the same ([#373](https://github.com/PIsberg/speckit-agents/issues/373)); on the main session's launch of spec-auditor after two `VERDICT: FAIL`s in a row it refuses the launch until you say to go on (#242); otherwise it never decides. Under `install.mjs --models fast` it also sets `model: haiku` on a stub pass or a `dictated:` revision that names no model ([#429](https://github.com/PIsberg/speckit-agents/issues/429)) |
 | `verdict` | spec-auditor: PreToolUse (every tool), and Stop | a report without a `VERDICT:` line (refused once, never twice); records the verdict, but only if spec, plan, tasks and constitution are as they were at the auditor's first tool call: a late audit of since-changed files is reported and not recorded, so it cannot replace a newer verdict (#77) |
 | `lane tests` / `lane no-tests` | test-writer, implementer: Stop | finishing with out-of-lane changes, including ones made through Bash or already committed |
 | `lane only <prefixes>` | product-owner, architect: Stop | finishing with changes outside the prefixes of their `scope only` rule, including ones made through Bash or already committed ([#88](https://github.com/PIsberg/speckit-agents/issues/88)) |
@@ -1782,9 +1789,9 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 284 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 286 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 165 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 167 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |

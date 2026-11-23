@@ -221,10 +221,12 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 }
 
 // The first prompt of the run: skill-agents mode names its team on the typed line.
-export function firstPrompt(request, { skillAgents = false, hybrid = false, team = null } = {}) {
-  if (team) return `/speckit-team --team ${team} ${request}`;
-  if (hybrid) return `/speckit-team --team hybrid ${request}`;
-  return skillAgents ? `/speckit-team --team skill-agents ${request}` : `/speckit-team ${request}`;
+// #431: side by side is a typed flag, no longer an answer at the plan stop.
+export function firstPrompt(request, { skillAgents = false, hybrid = false, team = null, sideBySide = false } = {}) {
+  const flags = sideBySide ? '--side-by-side ' : '';
+  if (team) return `/speckit-team ${flags}--team ${team} ${request}`;
+  if (hybrid) return `/speckit-team ${flags}--team hybrid ${request}`;
+  return skillAgents ? `/speckit-team ${flags}--team skill-agents ${request}` : `/speckit-team ${flags}${request}`;
 }
 
 // A gate case's request: the feature is built and audited, run only the last step. The claim is the false
@@ -544,7 +546,7 @@ function main() {
     () => spawn(process.execPath, ['-e', 'for (;;);'], { stdio: 'ignore' })) : [];
   const { turns, session, stopped } = runTurns({
     maxTurns: gate || load || oneTurn ? 1 : o.maxTurns,
-    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid })) : answer(marker, { sideBySide: o.sideBySide })),
+    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid, sideBySide: o.sideBySide })) : answer(marker, { sideBySide: o.sideBySide })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
     ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word) || Boolean(load && gateWord({ text: res?.result, words: LOAD_WORDS, lastLineOnly: true }).word),

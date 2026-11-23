@@ -354,6 +354,10 @@ test('full run: --side-by-side asks for two slices in disjoint files and answers
   assert.match(text, /side by side/);
   assert.ok(text.includes(MARKER), 'still carries the marker');
   assert.doesNotMatch(answer(MARKER), /side by side/, 'the plain run keeps the recommended one at a time');
+  // #431: the plan stop no longer asks, so the run types the flag.
+  assert.equal(firstPrompt('add sum()', { sideBySide: true }), '/speckit-team --side-by-side add sum()');
+  assert.equal(firstPrompt('add sum()', { sideBySide: true, hybrid: true }), '/speckit-team --side-by-side --team hybrid add sum()');
+  assert.equal(firstPrompt('add sum()'), '/speckit-team add sum()');
 });
 
 test('full run: a side-by-side run fails unless implementers went out together in worktrees (#114)', () => {
