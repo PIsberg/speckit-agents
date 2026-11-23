@@ -518,6 +518,19 @@ and about 260 on every architect launch. #432 estimated 30 to 40% of the skill a
 citations were a smaller share than that. Whether rule adherence held without them is not measured
 with a real model (#322).
 
+### The git spawn in every hook call (#433)
+
+Every hook call ran `git rev-parse` to find the work tree and the git directory the worktrees share, 14.4 ms
+median on its own (40 calls, Windows 11, git 2.56, Node 26). With `.git` beside `.specify/` and no other `.git`
+between the working directory and it, the hook now reads both from the file system (a `.git` directory, or a
+`.git` file and its `commondir`); any other layout asks git as before. Measured 2026-11-23 on this repository,
+`gate retries scope no-tests` on a `Read`, the call implementer makes on every tool, 3 rounds of 40, old and new
+interleaved: median 66.1 to 67.4 ms before, 51.8 to 61.2 ms after. A second set with the final code (the `HEAD` and
+global-config checks below), on a busier machine: 79.4 to 90.2 ms before, 67.6 to 80.2 ms after. About 10 ms
+(12 to 16%) less per call. The fast path reads `HEAD` as git would and refuses one it would not, and when a global
+config exists but cannot be read it sets the same fallback the failed `rev-parse` set (#215), so the git calls
+after it still read the repo.
+
 ## Roles as skills against roles as agents
 
 The same fixture request built twice on 2026-10-25 with real models (plan D4, FR-014): once with the
