@@ -1494,7 +1494,8 @@ test('#462: a run not accepted keeps patcher\'s changes as patch-draft.patch, wi
   begin(dir);
   edit(dir, 'src/a.js', 0, 40); put(dir, 'src/new.js', nl(3, 'n')); fs.rmSync(path.join(dir, 'src/gone.js'));
   assert.match(msg(stop(dir)), /fast track stopped/);
-  assert.equal(undoRecord(dir).draft, draftFile(dir).split(path.sep).join('/'));
+  // The hook names the file from git's resolved root (/private/var on macOS, a long name for Windows' 8.3 temp path).
+  assert.equal(fs.realpathSync.native(undoRecord(dir).draft), fs.realpathSync.native(draftFile(dir)));
   const draft = fs.readFileSync(draftFile(dir), 'utf8');
   assert.match(draft, /^diff --git a\/src\/a\.js b\/src\/a\.js$/m);
   assert.match(draft, /^diff --git a\/src\/new\.js b\/src\/new\.js$/m, 'a new file is in it');
