@@ -2900,7 +2900,7 @@ test('#179: outside a Spec Kit repo a role skill call and its scope and lane hoo
 
 test('009 T007 FR-005 FR-006 contract 4 step 2: a role skill outside a typed skill-agents request is denied', () => {
   const { dir } = repo();
-  const want = /speckit-role-product-owner runs only in a request typed as \/speckit-team --team skill-agents <request>\./;
+  const want = /speckit-role-product-owner runs only in a request typed as \/speckit-team --team skill-agents <request> or \/speckit-team --team hybrid <request>\./;
   const none = skillCall(dir, 'speckit-role-product-owner');
   assert.ok(denied(none), 'no team record');
   assert.match(reasonOf(none), want);
@@ -4788,4 +4788,148 @@ test('#427: an architect or spec-auditor launch, agent or role skill, is refused
   const held = skillCall(r.dir, 'speckit-role-architect', { transcript_path: t });
   assert.ok(denied(held), JSON.stringify(held));
   assert.match(whyDenied(held), /spec\.md still has open questions \(Q1\)/);
+});
+
+// ---- #428: --team hybrid, the writer roles as skills in this session and the gates as agents ----
+const HY_TEAM = (id = 's1') => ({ session_id: id, roles: SKILL_ROLES, skillAgents: true, hybrid: true, at: new Date().toISOString() });
+const hybridTeam = (dir, id = 's1') => putJson(teamFile(dir, id), HY_TEAM(id));
+const HY_WRITERS = ['product-owner', 'architect', 'test-writer', 'implementer'];
+const HY_GATES = ['spec-auditor', 'load-tester', 'spec-gatekeeper', 'security-reviewer'];
+
+test('#428: a typed --team hybrid records the hybrid team and answers with its own start message', () => {
+  const { dir } = repo();
+  const out = typedWith(dir, skillHook(), '--team hybrid add a flag');
+  assert.ok(!denied(out) && out?.decision === undefined, JSON.stringify(out));
+  assert.match(msg(out), /^speckit-team: hybrid for this request: product-owner, architect, test-writer and implementer run as skills in this session; spec-auditor, spec-gatekeeper, security-reviewer and load-tester run as agents./);
+  assert.match(msg(out), /Not enforced: the audit gate on each tool call inside test-writer and implementer/);
+  assert.doesNotMatch(msg(out), /skill-agents for this request/);
+  const rec = teamRecord(dir);
+  assert.equal(rec.skillAgents, true);
+  assert.equal(rec.hybrid, true);
+  assert.deepEqual(rec.roles, SKILL_ROLES);
+  assert.ok(!JSON.stringify(rec).includes('add a flag'), 'no request text in the record');
+  const sa = typedWith(repo().dir, skillHook(), '--team skill-agents add a flag');
+  assert.match(msg(sa), /^speckit-team: skill-agents for this request/, 'skill-agents keeps its message');
+});
+
+test('#428: which typed forms start hybrid', () => {
+  const cases = [
+    ['--team hybrid add', true], ['--team Hybrid add', true], ['--team HYBRID', true],
+    ['--security --team hybrid add', true], ['--project x --team hybrid add', true], ['--load-test --team hybrid add', true],
+    ['--team hybrid,implementer add', false], ['--team hybrid, implementer add', false], ['--team implementer, hybrid add', false],
+    ['--team hybrid noagents add', false], ['--team hybrid skill-agents add', false], ['--team hybrid-x add', false],
+    ['hybrid add', false], ['add --team hybrid', false],
+  ];
+  const hook = skillHook();
+  for (const [args, counts] of cases) {
+    const { dir } = repo();
+    typedWith(dir, hook, args);
+    const rec = fs.existsSync(teamFile(dir)) ? teamRecord(dir) : {};
+    assert.equal(rec.hybrid === true, counts, JSON.stringify(args));
+    if (!counts) assert.notEqual(rec.skillAgents, true, JSON.stringify(args));
+  }
+});
+
+test('#428: hybrid needs only the writer role skills, and names a missing one', () => {
+  const out = typedWith(repo().dir, skillHook(['architect']), '--team hybrid add a flag');
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(blockReason(out), /--team hybrid needs the role skills speckit-role-architect, which are not installed/);
+  const { dir } = repo();
+  const gatesGone = typedWith(dir, skillHook(HY_GATES), '--team hybrid add a flag');
+  assert.notEqual(gatesGone?.decision, 'block', JSON.stringify(gatesGone));
+  assert.equal(teamRecord(dir).hybrid, true);
+});
+
+test('#428: in hybrid the writer role skills run and the gate role skills are denied with the agent to launch', () => {
+  const { dir } = repo();
+  hybridTeam(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-product-owner')), 'product-owner');
+  assert.equal(roleRec(dir).role, 'product-owner');
+  for (const role of HY_GATES) {
+    fs.rmSync(roleFile(dir), { force: true });
+    const out = skillCall(dir, `speckit-role-${role}`);
+    assert.ok(denied(out), role);
+    assert.match(reasonOf(out), new RegExp(`^speckit-role-${role} does not run in --team hybrid: ${role} runs as an agent there\\. Launch @agent-${role} in the foreground\\.$`), role);
+    assert.ok(!hasRole(dir), `${role}: no role record`);
+  }
+  pass(dir);
+  for (const role of ['test-writer', 'implementer']) assert.ok(!decided(skillCall(dir, `speckit-role-${role}`)), role);
+  // skill-agents still calls every role as a skill.
+  const sa = repo();
+  skillAgentsTeam(sa.dir);
+  assert.ok(!decided(skillCall(sa.dir, 'speckit-role-spec-auditor')), 'skill-agents spec-auditor role');
+});
+
+test('#428: in hybrid the audit gate names the spec-auditor agent', () => {
+  const { dir } = repo();
+  hybridTeam(dir);
+  const out = skillCall(dir, 'speckit-role-implementer');
+  assert.ok(denied(out));
+  assert.match(reasonOf(out), /^Implementation gate: spec-auditor has not passed specs\/001-demo\. Run @agent-spec-auditor and get VERDICT: PASS first\.$/);
+});
+
+test('#428: a gate agent launch keeps hybrid, a writer agent launch ends it', () => {
+  for (const role of HY_GATES) {
+    const { dir } = repo();
+    hybridTeam(dir);
+    pass(dir);
+    const out = launchAs(dir, role, `${role}: go`);
+    assert.ok(!denied(out), `${role}: ${JSON.stringify(out)}`);
+    const rec = teamRecord(dir);
+    assert.equal(rec.hybrid, true, role);
+    assert.equal(rec.skillAgents, true, role);
+    assert.deepEqual(rec.roles, SKILL_ROLES, role);
+    assert.ok(!decided(skillCall(dir, 'speckit-role-test-writer')), `${role}: the writer roles still run as skills`);
+  }
+  for (const role of HY_WRITERS) {
+    const { dir } = repo();
+    hybridTeam(dir);
+    launchAs(dir, role, `${role}: go`);
+    const rec = teamRecord(dir);
+    assert.notEqual(rec.hybrid, true, role);
+    assert.notEqual(rec.skillAgents, true, role);
+  }
+});
+
+test('#428: a gate agent launch closes the acting writer role, and is denied while it left files outside its lane', () => {
+  const { dir } = repo();
+  hybridTeam(dir);
+  const sha = headSha(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-architect')));
+  putFile(dir, 'src/x.js');
+  const held = launchAs(dir, 'spec-auditor', 'audit');
+  assert.ok(denied(held), JSON.stringify(held));
+  assert.match(reasonOf(held), new RegExp(`^Lane check: architect changed files outside its lane: src/x\\.js\\. Restore them \\(git checkout ${sha.slice(0, 12)} -- <file>, or delete new files\\), then go on\\.$`));
+  assert.equal(roleRec(dir).role, 'architect', 'the record stays until the lane is restored');
+  fs.rmSync(path.join(dir, 'src', 'x.js'));
+  assert.ok(!denied(launchAs(dir, 'spec-auditor', 'audit')), 'restored');
+  assert.ok(!hasRole(dir), 'the role is closed by the launch');
+  assert.equal(stopRole(dir), null, 'its Stop has nothing left to check');
+});
+
+test('#428: outside hybrid, a role record at an agent launch is left to the role skill path', () => {
+  const { dir } = repo();
+  skillAgentsTeam(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-architect')));
+  putFile(dir, 'src/x.js');
+  assert.ok(!denied(launchAs(dir, 'spec-auditor', 'audit')), 'an agent launch ends skill-agents as before');
+});
+
+test('#428: a writer role report with no end word denies the gate launch once, then counts as for a role call', () => {
+  for (const role of ['test-writer', 'implementer']) {
+    const { dir } = repo();
+    hybridTeam(dir);
+    pass(dir);
+    const t = transcriptIn(dir, [userRow('typed')]);
+    assert.ok(!decided(skillCall(dir, `speckit-role-${role}`, { transcript_path: t })), `${role}: its call`);
+    say(t, 'Worked on it.');
+    const first = launchAs(dir, 'spec-gatekeeper', 'verify', { transcript_path: t });
+    assert.ok(denied(first), `${role}: ${JSON.stringify(first)}`);
+    assert.match(reasonOf(first), new RegExp(`^The ${role} role's report has no final line that is exactly one of: .*End the report with that line, then make the launch again\\.$`), role);
+    assert.equal(roleRec(dir).role, role, `${role}: the role still acts`);
+    const again = launchAs(dir, 'spec-gatekeeper', 'verify', { transcript_path: t });
+    assert.ok(!denied(again), `${role}, again: ${JSON.stringify(again)}`);
+    assert.ok(!hasRole(dir), `${role}: closed`);
+    if (role === 'implementer') assert.equal(redCountOf(dir), 1, 'counted as RED, as at a role call');
+  }
 });

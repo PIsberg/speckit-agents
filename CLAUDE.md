@@ -28,7 +28,8 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
 - `skills/<name>/SKILL.md`: `/speckit-team` runs the pipeline, `/speckit-patch` the fast track (one
   `patcher`), `/speckit-triage` suggests a track and runs nothing.
 - `skills/speckit-role-<role>/SKILL.md`: not in the repo; `install.mjs` generates eight from
-  `agents/<role>.md` for `--team skill-agents`, with `scope role` and `lane role` in their frontmatter.
+  `agents/<role>.md` for `--team skill-agents` (the four writers' also for `--team hybrid`, whose gates run as agents,
+  #428), with `scope role` and `lane role` in their frontmatter.
 - `install.mjs`: the installer; `setup.sh` and `setup.ps1` only check for Node and call it.
 - `mods/speckit-board/`: an experimental board mod (it also draws the session's context, tokens and cost), read in place through `claude plugin` with this
   checkout as the marketplace. A prototype retired once feature 001's view ships (owner decision,
@@ -42,7 +43,7 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   `tools/full-run.mjs`: a whole `/speckit-team` run with real models on `test/fixtures/full-run/`, for
   the `full-run` workflow (manual, weekly, `e2e` label; skipped until `FULL_RUN_ENABLED` and the key);
   `--login` runs it on your own Claude Code login instead of a key, `--case` picks a scored case
-  (`pressure`, `defect`, `defect-control`, `untested-fr`, `must-broken`; `tools/eval.mjs` repeats them per arm and counts right answers, #188), `--side-by-side` builds two `[P]`
+  (`pressure`, `defect`, `defect-control`, `untested-fr`, `must-broken`; `tools/eval.mjs` repeats them per arm and counts right answers, #188), `--hybrid` types `--team hybrid` (#428), `--side-by-side` builds two `[P]`
   slices side by side (#114), `--two-slices` the same request one at a time, `--large-slices` two modules
   of six functions instead (#114), `--constitution <name>` another fixture constitution (#42).
 - `docs/media/`: recordings, their tapes and `record.mjs` (README.md, "Recording the demo media").

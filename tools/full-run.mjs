@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents] [--two-slices | --side-by-side]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side]
 //                         [--large-slices] [--constitution library]
 //                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken|neighbour|other-fr|contest|patch-bug] [--claim] [--team-root <checkout>]
 //
@@ -20,7 +20,9 @@
 // in two files and keeps the recommended one at a time: the run then fails if agents went out together.
 // --side-by-side asks the same and answers the plan stop's question with side by side (#114): the run
 // then fails unless implementers went out together in worktrees. --skill-agents types
-// `/speckit-team --team skill-agents`: the run then fails on any agent launch, a core role skill never called, or a security-reviewer role call, which only --security asks for (#176). Nothing is retried.
+// `/speckit-team --team skill-agents`: the run then fails on any agent launch, a core role skill never called, or a security-reviewer role call, which only --security asks for (#176). --hybrid types
+// `/speckit-team --team hybrid` (#428): the run then fails on a writer launched as an agent, a gate called as a role skill, a writer
+// role skill never called or a spec-auditor or spec-gatekeeper never launched; it takes no one-step --case. Nothing is retried.
 // --case picks a scored case with a known right answer (#188, tools/eval.mjs repeats and scores it): pressure adds "skip
 // the tests" to the request; defect and defect-control are one turn on a finished, audited feature whose only
 // difference is a test that passes without the code, and the right answer is spec-gatekeeper's word. --claim
@@ -141,7 +143,7 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false, hybrid = false }) {
   const out = [];
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
@@ -172,6 +174,17 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
     // security-reviewer is opt-in (--security), and a full run never asks for it (#176).
     if (called.includes('speckit-role-load-tester')) out.push('the Skill speckit-role-load-tester was called, but the run did not pass --load-test');
     if (called.includes('speckit-role-security-reviewer')) out.push('the Skill speckit-role-security-reviewer was called, but the run did not pass --security');
+  } else if (hybrid) {
+    // #428: the writers are role skills, the gates agents.
+    const called = usage?.main?.skills ?? [];
+    for (const role of ['product-owner', 'architect', 'test-writer', 'implementer']) {
+      if (!called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was never called`);
+      if (launches.some((l) => l.type === role)) out.push(`${role} was launched as an agent in a hybrid run, where it runs as a skill`);
+    }
+    for (const role of ['spec-auditor', 'spec-gatekeeper']) if (!launches.some((l) => l.type === role)) out.push(`${role} was never launched`);
+    for (const role of ['spec-auditor', 'load-tester', 'spec-gatekeeper', 'security-reviewer']) {
+      if (called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was called in a hybrid run, where it runs as an agent`);
+    }
   } else if (!launches.length) out.push('no agent was launched');
   // load-tester is opt-in (--load-test), and a full run never passes it (012).
   if (launches.some((l) => l.type === 'load-tester')) out.push('load-tester was launched, but the run did not pass --load-test');
@@ -208,8 +221,9 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
 }
 
 // The first prompt of the run: skill-agents mode names its team on the typed line.
-export function firstPrompt(request, { skillAgents = false, team = null } = {}) {
+export function firstPrompt(request, { skillAgents = false, hybrid = false, team = null } = {}) {
   if (team) return `/speckit-team --team ${team} ${request}`;
+  if (hybrid) return `/speckit-team --team hybrid ${request}`;
   return skillAgents ? `/speckit-team --team skill-agents ${request}` : `/speckit-team ${request}`;
 }
 
@@ -446,10 +460,10 @@ export function tempOutProblem(out, { platform = process.platform, tmp = os.tmpd
 }
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
-    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
+    if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--hybrid') { o.hybrid = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
     else if (k === '--model') o.model = v;
     else if (k === '--case') { if (!CASES[v]) throw new Error(`unknown case ${v}; known: ${Object.keys(CASES).join(', ')}`); o.case = v; } else if (k === '--team-root') o.teamRoot = path.resolve(v);
     else if (k === '--claim') { o.claim = true; i--; }
@@ -463,7 +477,10 @@ export function args(argv) {
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>]');
+  if (o.hybrid && o.skillAgents) throw new Error('--hybrid and --skill-agents are two different teams: pass one');
+  const c = CASES[o.case];
+  if (o.hybrid && (c.gate || c.load || c.contest || c.patch)) throw new Error(`--hybrid runs only a whole pipeline, not the one-step case ${o.case}`);
   return o;
 }
 
@@ -519,7 +536,7 @@ function main() {
     () => spawn(process.execPath, ['-e', 'for (;;);'], { stdio: 'ignore' })) : [];
   const { turns, session, stopped } = runTurns({
     maxTurns: gate || load || oneTurn ? 1 : o.maxTurns,
-    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents })) : answer(marker, { sideBySide: o.sideBySide })),
+    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid })) : answer(marker, { sideBySide: o.sideBySide })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
     ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word) || Boolean(load && gateWord({ text: res?.result, words: LOAD_WORDS, lastLineOnly: true }).word),
@@ -542,7 +559,7 @@ function main() {
   const word = load ? { ...gateWord({ text: report0 ?? turns.at(-1)?.result, words: LOAD_WORDS, lastLineOnly: true }), report: report0 }
     : { ...gateWord({ ends, text: turns.at(-1)?.result }), report: report0 };
   const failures = gate || load || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents, hybrid: o.hybrid });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
     if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
@@ -557,7 +574,7 @@ function main() {
   }
   if (!transcript) failures.push('no transcript of the main session was found');
   const all = runFailures(failures, stopped);
-  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
+  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, hybrid: o.hybrid, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(all.length ? `FAILED:\n- ${all.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(all.length ? 1 : 0);

@@ -29,6 +29,8 @@
 //   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
 //   /speckit-team --team skill-agents <request> every role runs as a skill in this session, not a subagent
 //                                             (the eight speckit-role-<role> skills, generated from agents/)
+//   /speckit-team --team hybrid <request>       product-owner, architect, test-writer and implementer run as
+//                                             skills in this session, the gates as agents (#428)
 //   /speckit-patch [--project <name>] <change> the fast track for a small change
 //   /speckit-triage <request>                 suggests which of them fits
 import { createHash } from 'node:crypto';
@@ -151,9 +153,10 @@ function remove(file) {
   if (!dryRun) fs.rmSync(file, { recursive: true, force: true });
 }
 
-// The role skills of /speckit-team --team skill-agents: one per team role, generated from the agent file.
+// The role skills of /speckit-team --team skill-agents (and the writers' of --team hybrid): one per team role, generated
+// from the agent file.
 const ROLE_SKILLS = AGENTS.filter((a) => a !== 'patcher');
-const ROLE_PREAMBLE = `You act as the <role> role inline in this session, for /speckit-team --team skill-agents. Your inputs are $ARGUMENTS and the files they name. There is no SubagentHandback here: your report is a message of yours whose last line is the one your Report section names, after which the orchestrating skill goes on. A skill the text below says is preloaded you invoke with the Skill tool. Launch no agent. The hook holds you to the <role> lane until the next role skill or the end of the turn.
+const ROLE_PREAMBLE = `You act as the <role> role inline in this session, for /speckit-team --team skill-agents (or --team hybrid, whose writer roles run this way). Your inputs are $ARGUMENTS and the files they name. There is no SubagentHandback here: your report is a message of yours whose last line is the one your Report section names, after which the orchestrating skill goes on. A skill the text below says is preloaded you invoke with the Skill tool. Launch no agent. The hook holds you to the <role> lane until the next role skill or the end of the turn.
 
 `;
 function roleSkill(role, agentText) {

@@ -690,10 +690,21 @@ function dropRoleFiles(sessionId) {
   try { names = fs.readdirSync(path.join(stateDir, 'role')); } catch { /* no folder, no claims */ }
   for (const n of names) if (n.startsWith(`${sessionId}.`) && n.endsWith('.claim')) fs.rmSync(path.join(stateDir, 'role', n), { force: true });
 }
-// The role skills a typed `--team skill-agents` needs, found from this script's own folder.
-function missingRoleSkills() {
-  return TEAM_ROLES.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
+// The role skills a typed `--team skill-agents` (every role) or `--team hybrid` (the writers) needs, found from this
+// script's own folder.
+function missingRoleSkills(roles = TEAM_ROLES) {
+  return roles.filter((r) => !fs.existsSync(path.join(TEAM_DIR, 'skills', `speckit-role-${r}`, 'SKILL.md')));
 }
+// #428: in `--team hybrid` the roles that write run as skills in the session, and the gates as agents, each in its own
+// context with its own tool list. A gate's role skill is denied there; a writer's agent launch ends the mode.
+const HYBRID_WRITERS = ['product-owner', 'architect', 'test-writer', 'implementer'];
+const HYBRID_START = (load) => `speckit-team: hybrid for this request: product-owner, architect, test-writer and implementer run as skills in this session; spec-auditor, spec-gatekeeper, security-reviewer and load-tester run as agents. `
+  + `Enforced by the hook: each writer role's lane, the audit gate before test-writer, implementer${load ? ', load-tester' : ''} and spec-gatekeeper, `
+  + "the gates' verdicts and words, their own context and tool list as agents, and the retry limit at each implementer call (3 RESULT: RED in a row on the active feature). "
+  + 'Not enforced: the audit gate on each tool call inside test-writer and implementer (a spec, plan or tasks edit there is caught when the next of them or a gate starts), '
+  + "the retry limit without an active feature (the skill counts), each writer role's own context (every writer role sees this conversation) and tool list "
+  + "(a writer role may use every tool of this session, MCP tools included), and a writer role's lane after its turn ends without a Stop "
+  + "(an interrupt or an API error; the role's lane check and report then do not run).";
 // The start message of a typed --team skill-agents request; it names load-tester only when --load-test was typed (#419:
 // 012 FR-002, no added text in a run without the role).
 const SKILL_AGENTS_START = (load) => (load
@@ -749,7 +760,8 @@ function teamOf() {
   if (!id || !SESSION_ID.test(id)) return null;
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
-  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true };
+  return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true,
+    hybrid: r.skillAgents === true && r.hybrid === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -784,7 +796,8 @@ function changedSince(base) {
 }
 
 // The auditor to run next: in a skill-agents request an agent launch would end the mode (contract section 4).
-const auditorRef = () => (teamOf()?.skillAgents
+// #428: in a hybrid request spec-auditor is an agent.
+const auditorRef = () => (teamOf()?.skillAgents && !teamOf().hybrid
   ? 'the Skill speckit-role-spec-auditor (an agent launch ends skill-agents mode)' : '@agent-spec-auditor');
 
 // 009: the scope rule of each role skill, equal to the `scope` hook in agents/<role>.md (a test holds the twin).
@@ -1048,7 +1061,8 @@ function missingTestModule(text) {
 }
 
 // Close the acting role (contract section 6) at a Skill call ('skill': denies on a lane violation, else
-// returns) or at Stop ('stop': blocks on one, else removes the record and ends the hook).
+// returns), at a gate's Agent launch in a hybrid request ('agent', #428: as 'skill', with no `args` to read) or at
+// Stop ('stop': blocks on one, else removes the record and ends the hook).
 // `gate`, given at a Skill call, runs once the record is known live and before its lane is judged: a spec,
 // plan or tasks edit made inside the role is then named by the audit gate (tests/hook.test.mjs, T007).
 function closeRole(rec, at, gate = null) {
@@ -1070,7 +1084,7 @@ function closeRole(rec, at, gate = null) {
       const text = `Lane check: ${rec.role} changed files outside its lane: ${r.outside.join(', ')}. `
         + `Restore them (git checkout ${rec.sha.slice(0, 12)} -- <file>, or delete new files), then go on.`;
       if (!LANE_WARN_ONLY.has(rec.role)) {
-        if (at === 'skill') deny(text);
+        if (at !== 'stop') deny(text);
         if (sendBackOnce(rec, 'lane')) block(text);
       }
       drop();
@@ -1128,10 +1142,10 @@ function noWordWhy(role, at) {
   const words = { 'spec-auditor': ['VERDICT: PASS', 'VERDICT: FAIL'], 'spec-gatekeeper': ['APPROVED', 'REJECTED'], ...END_WORDS }[role];
   return `The ${role} role's report has no final line that is exactly one of: ${words.join(', ')}. `
     + (at === 'skill' ? "Start the `args` of this Skill call with the report's last line, that word, and make the call again."
-      : 'End the report with that line.');
+      : at === 'agent' ? 'End the report with that line, then make the launch again.' : 'End the report with that line.');
 }
 function refuseOnce(rec, at, key, why) {
-  if (at !== 'skill') { if (sendBackOnce(rec, key)) block(why); return; }
+  if (at === 'stop') { if (sendBackOnce(rec, key)) block(why); return; }
   const sent = Array.isArray(rec.sentBack) ? rec.sentBack : [];
   if (sent.includes(key)) return;
   try { writeJson(roleFile(str(input.session_id)), { ...rec, sentBack: [...sent, key] }); } catch { return; }
@@ -1476,14 +1490,18 @@ if (mode === 'gate') {
       try { if (t) offset = fs.statSync(t).size; } catch (e) { if (e.code === 'ENOENT') offset = 0; }
       if (offset !== null) writeJson(choiceFile(id), { session_id: id, transcript: t, offset, ...(typedTeam ? { typed: typedTeam } : {}), at: new Date().toISOString() });
     }
-    // `skill-agents noagents` is a refused combination, which the skill reports; the hook records nothing.
+    // `skill-agents noagents` and `hybrid noagents` (or `hybrid skill-agents`) are refused combinations, which the skill
+    // reports; the hook records nothing.
     const afterTeam = (str(input.command_args) ?? (str(input.prompt) ?? '').replace(/^\s*\/\S*/, '')).trim().split(/\s+/);
     const nextWord = (afterTeam[afterTeam.indexOf('--team') + 2] ?? '').toLowerCase();
-    if (roles?.length === 1 && roles[0] === 'skill-agents' && nextWord !== 'noagents') {
-      const missing = missingRoleSkills();
-      if (missing.length) block(`speckit-team: --team skill-agents needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
-      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, at: new Date().toISOString() });
-      emit({ systemMessage: SKILL_AGENTS_START(afterTeam.includes('--load-test')) });
+    const typedMode = roles?.length === 1 && (roles[0] === 'skill-agents' ? nextWord !== 'noagents'
+      : roles[0] === 'hybrid' && nextWord !== 'noagents' && nextWord !== 'skill-agents') ? roles[0] : null;
+    if (typedMode) {
+      const hybrid = typedMode === 'hybrid';
+      const missing = missingRoleSkills(hybrid ? HYBRID_WRITERS : TEAM_ROLES);
+      if (missing.length) block(`speckit-team: --team ${typedMode} needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
+      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, ...(hybrid ? { hybrid: true } : {}), at: new Date().toISOString() });
+      emit({ systemMessage: (hybrid ? HYBRID_START : SKILL_AGENTS_START)(afterTeam.includes('--load-test')) });
     }
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
     writeJson(teamFile(id), { session_id: id, roles: [], noagents: true, at: new Date().toISOString() });
@@ -1512,6 +1530,15 @@ if (mode === 'gate') {
       else writeJson(projectFile(id), { session_id: id, name: named, at: new Date().toISOString() });
     }
     if (role === 'patcher') finish();
+    // #428: a gate's launch in a hybrid request keeps the request's team and closes the acting writer role, whose lane
+    // and report are checked as at the next role skill call: a gate never starts on a writer's unchecked changes.
+    const hy = teamOf();
+    if (hy?.hybrid && !HYBRID_WRITERS.includes(role)) {
+      const live = readState(roleFile(id));
+      if (live !== undefined) closeRole(live, 'agent');
+      dropRoleFiles(id);
+      finish();
+    }
     const team = parseTeam(input.tool_input.prompt);
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
@@ -1557,7 +1584,11 @@ if (mode === 'gate') {
       if (agentId) process.exit(0);
       const id = str(input.session_id);
       if (!teamOf()?.skillAgents) {
-        deny(`speckit-role-${roleSkill} runs only in a request typed as /speckit-team --team skill-agents <request>.`);
+        deny(`speckit-role-${roleSkill} runs only in a request typed as /speckit-team --team skill-agents <request>`
+          + `${HYBRID_WRITERS.includes(roleSkill) ? ' or /speckit-team --team hybrid <request>' : ''}.`);
+      }
+      if (teamOf().hybrid && !HYBRID_WRITERS.includes(roleSkill)) {
+        deny(`speckit-role-${roleSkill} does not run in --team hybrid: ${roleSkill} runs as an agent there. Launch @agent-${roleSkill} in the foreground.`);
       }
       const auditGate = () => {
         const gap = ['test-writer', 'implementer', 'load-tester', 'spec-gatekeeper'].includes(roleSkill) ? auditProblem() : null;

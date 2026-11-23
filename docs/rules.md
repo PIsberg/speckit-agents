@@ -90,10 +90,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Say how to bring foreground launches back when the Agent tool has no `run_in_background`. text.
 
 ### skills/speckit-team/SKILL.md: Team
-<!-- fingerprint: 940decc7 -->
+<!-- fingerprint: 34d34b05 -->
 - How `--team`, `--security` and `--project` are read, and the refusals before any launch. pinned.
 - `noagents` is chosen only by typing it. hook `gate` (reads the typed command at `UserPromptExpansion`).
 - `skill-agents` is chosen only by typing it. hook `gate` (denies a role skill outside a typed `--team skill-agents`).
+- `hybrid` is chosen only by typing it, and takes no role names, `noagents` or `skill-agents`. hook `gate` (records it only from the typed command, and denies a writer role skill outside a typed `--team skill-agents` or `--team hybrid`, #428); the refusal message is pinned.
 - With no `--team`, one question, full team first. pinned; hook `gate` refuses a launch whose `Team:` line names less than the full team until the user's answer is in the transcript after the typed request (#366).
 - Without product-owner, a `team/` branch before the first launch. pinned.
 - One line naming the team and what is skipped. pinned.
@@ -112,6 +113,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Steps 1 to 6 stop only where they stop: a role's turn that ends on `VERDICT: PASS`, `RESULT: STUB`, `RED` or `RESULT: GREEN` is sent back once per role call, so the run goes on without the user (#261); so is a first `VERDICT: FAIL`, a `REJECTED`, a `FIXED` and a `RESULT: RED` under the retry limit (#332). hook `lane role`.
 - Count RED yourself: 3 in a row go to the user. hook `lane role` and `gate` count the role's REDs in the retry record and say the third, which is not handed on (#332); `gate` denies a fourth `speckit-role-implementer` call with the agent's text (#341).
 - `--project`: the block is already in the session from `## Project` step 2; never pasted into a role call's `args` (#335). pinned.
+
+### skills/speckit-team/SKILL.md: Hybrid
+<!-- fingerprint: 4280aa85 -->
+- product-owner, architect, test-writer and implementer as Skill calls, one per response; RED counted by the skill. pinned; hook `scope role`, `lane role` and `gate` hold each writer role's lane, the audit gate and the retry limit as in skill-agents (#428).
+- spec-auditor, spec-gatekeeper, security-reviewer and load-tester as foreground Agent launches with no `Team:` line. pinned; hook `gate` denies their role skills in a hybrid request, keeps the request's team at their launch, and closes the writer role before it (its lane check and report word, as at a role call).
+- Never launch a writer role as an agent. pinned; hook `gate` ends the mode at such a launch, so the full team's agent gates apply from there.
+- No side-by-side slices, no side-by-side question. pinned.
+- `--project`: the writer roles follow the block in the session; every Agent launch carries the `Project:` line. pinned; hook `gate` reads the line at the launch.
 
 ### skills/speckit-team/SKILL.md: Project
 <!-- fingerprint: 3e980d17 -->
