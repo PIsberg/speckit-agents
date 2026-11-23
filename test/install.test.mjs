@@ -2465,6 +2465,31 @@ test('012 T008 FR-005 FR-006 FR-010 FR-016 US1-1 US1-2 US5-1: step 5b runs after
   assert.match(seven, /load tests?|files/i);
 });
 
+// #422: on an accepted FAIL the skill stashes the load tests. A stash without a pathspec takes every uncommitted
+// change, the round's unmerged ticks among them. This runs the skill's own command in a scratch repo with a tick
+// in tasks.md and an unrelated untracked file beside the load test: only the load test may go into the stash.
+test('#422: the accept path stashes the load tests it names and nothing else', () => {
+  const sec = skillSection(teamSkill(), '## 5b. Load test: load-tester');
+  const cmd = /`(git stash push [^`]*)`/.exec(sec)?.[1];
+  assert.ok(cmd, 'step 5b gives the stash command');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'speckit-422-'));
+  const git = (...a) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'core.autocrlf=false', ...a], { cwd: repo, encoding: 'utf8' });
+  git('init', '-q');
+  fs.writeFileSync(path.join(repo, 'tasks.md'), '- [ ] T001\n');
+  git('add', 'tasks.md'); git('commit', '-qm', 'tasks');
+  fs.writeFileSync(path.join(repo, 'tasks.md'), '- [X] T001\n');
+  fs.mkdirSync(path.join(repo, 'test', 'load'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'test', 'load', 'a.load.test.mjs'), 'load\n');
+  fs.writeFileSync(path.join(repo, 'notes.txt'), 'mine\n');
+  const args = cmd.replace('<the load test files>', 'test/load/a.load.test.mjs').split(/\s+/).slice(1);
+  const r = git(...args);
+  assert.equal(r.status, 0, r.stderr);
+  const status = git('status', '--short').stdout.split('\n').filter(Boolean).sort();
+  assert.deepEqual(status, [' M tasks.md', '?? notes.txt'], 'the tick and the unrelated file stay');
+  assert.equal(git('show', '--name-only', '--format=', 'stash@{0}^3').stdout.trim(), 'test/load/a.load.test.mjs', 'the load test is in the stash');
+  fs.rmSync(repo, { recursive: true, force: true });
+});
+
 test('012 T008 FR-002 edge cases: an opt-in role not asked for gets no skipped row, and a team with no implementer is still measured', () => {
   const skill = teamSkill();
   const seven = flat(skillSection(skill, '## 7. Hand over'));
