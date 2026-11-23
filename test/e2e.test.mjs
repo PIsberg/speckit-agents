@@ -1490,6 +1490,19 @@ test("012 T006 FR-006: load-tester's report without a verdict line is sent back 
   assert.match(shown(r2.requests[MAIN][1]), /^\s*NOT MEASURED$/m, story(r2));
 });
 
+// #421: load-tester's Stop entry (`lane load` in agents/load-tester.md) runs in a real session: a file written
+// through a command scope cannot read (node -e) is caught after the fact. With SPECKIT_E2E_NO_HOOK=1 no block comes.
+test("#421: load-tester's Stop: lane load sends it back for a file written outside its lane through node -e", { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [agent('load-tester', 'e2e load stop')],
+    'e2e load stop': [unseenWrite('src/sneaky.js'), say('Nothing to measure.\nNOT MEASURED'), say('Nothing to measure.\nNOT MEASURED')],
+  });
+  assert.ok(fs.existsSync(path.join(s.repo, 'src', 'sneaky.js')), `the Bash call never ran:\n${story(r)}`);
+  assert.match(shown(r.requests['e2e load stop'][2]), /Lane check: load-tester changed files outside its lane: src\/sneaky\.js\./, story(r));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => {
   for (const [name, opts, fn] of queued) nodeTest(name, { ...opts, ...(opts.timeout && { timeout: scaled(opts.timeout) }) }, fn);
