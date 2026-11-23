@@ -46,7 +46,7 @@ const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'u
 
 // A Spec Kit repo as far as the gate can tell: an active feature, its four fingerprinted files, and
 // a speckit-implement skill for the typed command to expand. The team goes into its own config dir.
-function setup() {
+function setup({ models = null } = {}) {
   // The long path: on the Windows runner the temp dir is an 8.3 name (RUNNER~1), and Claude Code
   // refuses an isolation worktree whose path git spells differently (2.1.293, #40).
   const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-e2e-')));
@@ -68,7 +68,7 @@ function setup() {
   write('.claude/skills/speckit-implement/SKILL.md', '---\nname: speckit-implement\ndescription: Implement the tasks.\n---\nReply with the word implementing.\n');
   git(repo, 'add', '-A');
   git(repo, 'commit', '-qm', 'init');
-  execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', cfg], { stdio: 'ignore' });
+  execFileSync(process.execPath, [path.join(ROOT, 'install.mjs'), '--claude-dir', cfg, ...(models ? ['--models', models] : [])], { stdio: 'ignore' });
   // SC-004: with the installed hook replaced by a no-op, the fast track's e2e cases must fail.
   if (process.env.SPECKIT_E2E_NO_HOOK === '1') fs.writeFileSync(path.join(cfg, 'hooks', 'speckit-team.mjs'), 'process.exit(0);\n');
   return { repo, cfg, hook: path.join(cfg, 'hooks', 'speckit-team.mjs'), write };
@@ -1501,6 +1501,28 @@ test("#421: load-tester's Stop: lane load sends it back for a file written outsi
   });
   assert.ok(fs.existsSync(path.join(s.repo, 'src', 'sneaky.js')), `the Bash call never ran:\n${story(r)}`);
   assert.match(shown(r.requests['e2e load stop'][2]), /Lane check: load-tester changed files outside its lane: src\/sneaky\.js\./, story(r));
+});
+
+// #429: an Agent call's `model` wins over the agent's `model:` line, and under `--models fast` the hook's rewrite of a
+// stub pass reaches the request: the fake API sees the model each launch went out on. With the hook a no-op
+// (SPECKIT_E2E_NO_HOOK=1) the stub pass goes out on sonnet and this fails.
+test('#429: an Agent call\'s model overrides the agent\'s model line, and under --models fast a stub pass goes out on haiku', { skip: noClaude, timeout: 180_000 }, async () => {
+  const s = setup({ models: 'fast' });
+  recordPass(s);
+  const launchAgent = (type, prompt, extra = {}) => call('Agent', { description: type, subagent_type: type, prompt, run_in_background: false, ...extra });
+  const r = await session(s, {
+    [MAIN]: [[launchAgent('architect', 'e2e named haiku: go', { model: 'haiku' }), launchAgent('test-writer', 'e2e plain red: go'),
+      launchAgent('implementer', 'stub T001 e2e stub pass'), launchAgent('architect', 'e2e full revision: go')]],
+    'e2e named haiku': [say('done')],
+    'e2e plain red': [say('RED')],
+    'e2e stub pass': [say('RESULT: STUB')],
+    'e2e full revision': [say('done')],
+  });
+  const model = (who) => String(r.requests[who][0]?.model);
+  assert.match(model('e2e named haiku'), /haiku/, `the call's model wins over architect's line: ${story(r)}`);
+  assert.match(model('e2e plain red'), /sonnet/, story(r));
+  assert.match(model('e2e stub pass'), /haiku/, `the hook puts the stub pass on haiku: ${story(r)}`);
+  assert.match(model('e2e full revision'), /sonnet/, `fast puts architect on sonnet: ${story(r)}`);
 });
 
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.

@@ -94,6 +94,9 @@ Read the part you need, not the whole file: `grep -n '^#' README.md`, then that 
   in the hook and in `install.mjs`, which writes the exact allow rule for the hook's export line (#122,
   #123), held by `test/hook-patch.test.mjs`. A change to the line adds the old rule to
   `OLD_NO_NETWORK_RULES` in `install.mjs`, so a reinstall replaces it.
+- `--models fast` (#429): `install.mjs` records `models` in its manifest beside the hook, and the hook's `quickModel` reads it to put a
+  stub pass or a `dictated:` revision on haiku through the Agent call's `model`; that Claude Code honours the rewrite is held
+  by `test/e2e.test.mjs`, the tier names by `test/install.test.mjs` and `test/full-run.test.mjs`.
 - `OWN_SOURCES` in the hook lists the team's own sources, which the fast track protects only in this
   repository, recognised by the `name` in the committed `package.json` (itself in the list). A new
   guardrail file of the team gets an entry and a case in `test/hook.test.mjs`.

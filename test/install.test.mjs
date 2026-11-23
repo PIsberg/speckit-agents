@@ -2657,3 +2657,49 @@ test('012 T024 FR-017: README guardrail table has rows for `gate scope load`, `l
     assert.ok(row.split('|').filter((c) => c.trim()).length >= 3, `${mode} row names where it runs and what it stops`);
   }
 });
+
+// #429: --models picks every agent's `model:` line at install, the user's choice kept by later reruns; `fast` also has
+// the hook put stub passes and dictated revisions on haiku.
+const agentModel = (dir, a) => /^model: (.*)$/m.exec(fs.readFileSync(path.join(dir, 'agents', `${a}.md`), 'utf8'))?.[1];
+const SHIPPED_MODELS = { 'product-owner': 'sonnet', architect: 'opus', 'spec-auditor': 'opus', 'test-writer': 'sonnet', implementer: 'sonnet',
+  'load-tester': 'sonnet', 'spec-gatekeeper': 'sonnet', 'security-reviewer': 'sonnet', patcher: 'sonnet' };
+test('#429: --models sets every agent\'s model line, a plain rerun keeps it, --models default puts the shipped lines back', () => {
+  const dir = claudeDir();
+  assert.equal(install(dir).status, 0);
+  for (const [a, m] of Object.entries(SHIPPED_MODELS)) assert.equal(agentModel(dir, a), m, `shipped: ${a}`);
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath(dir), 'utf8')).models, 'default');
+  for (const tier of ['sonnet', 'opus']) {
+    const r = install(dir, '--models', tier);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    for (const a of Object.keys(SHIPPED_MODELS)) assert.equal(agentModel(dir, a), tier, `${tier}: ${a}`);
+    assert.equal(JSON.parse(fs.readFileSync(manifestPath(dir), 'utf8')).models, tier);
+    assert.equal(install(dir).status, 0);
+    for (const a of Object.keys(SHIPPED_MODELS)) assert.equal(agentModel(dir, a), tier, `${tier} after a plain rerun: ${a}`);
+  }
+  assert.equal(install(dir, '--models', 'fast').status, 0);
+  for (const a of Object.keys(SHIPPED_MODELS)) assert.equal(agentModel(dir, a), 'sonnet', `fast: ${a}`);
+  assert.equal(JSON.parse(fs.readFileSync(manifestPath(dir), 'utf8')).models, 'fast');
+  assert.equal(install(dir, '--models', 'default').status, 0);
+  for (const [a, m] of Object.entries(SHIPPED_MODELS)) assert.equal(agentModel(dir, a), m, `back to shipped: ${a}`);
+  // Only the model line changes: every other line of the agent is the source's.
+  const src = fs.readFileSync(path.join(path.dirname(INSTALL), 'agents', 'architect.md'), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  install(dir, '--models', 'sonnet');
+  const out = fs.readFileSync(path.join(dir, 'agents', 'architect.md'), 'utf8').replace(/\r\n/g, '\n').split('\n');
+  const differ = out.filter((l, i) => l !== src[i] && !l.includes('speckit-agents: managed by install.mjs') && !src[i]?.includes('{{HOOK}}'));
+  assert.deepEqual(differ, ['model: sonnet']);
+});
+
+test('#429: an unknown or missing --models value is refused before anything is written', () => {
+  for (const args of [['--models', 'haiku'], ['--models'], ['--models', '--dry-run']]) {
+    const dir = claudeDir();
+    const r = install(dir, ...args);
+    assert.equal(r.status, 1, JSON.stringify(args));
+    assert.match(r.stderr, /--models takes one of default, sonnet, opus, fast/, JSON.stringify(args));
+    assert.deepEqual(fs.readdirSync(dir), [], `${JSON.stringify(args)}: nothing written`);
+  }
+});
+
+test('#429: --help names --models and its four tiers', () => {
+  const r = spawnSync(process.execPath, [INSTALL, '--help'], { encoding: 'utf8' });
+  assert.match(r.stdout, /--models default\|sonnet\|opus\|fast/);
+});

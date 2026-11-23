@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
+import { answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -491,6 +491,15 @@ test('#428 full run: hybrid mode fails on a writer launched as an agent, a gate 
   }
   const noTexts = run({ launches: gates, waits: 0, skills: roleSkills(WRITERS) }, []);
   assert.match(noTexts.join('\n'), /no agent transcript was found/, 'the gates are agents, so the leak check needs their transcripts');
+});
+
+// #429: the installer's model tier for the run's team, for the sonnet-against-opus benchmark.
+test('#429 full run: --models passes a tier to the install, and an unknown tier is refused', () => {
+  assert.equal(args(['--out', 'x']).models, null, 'the installer\'s default unless told otherwise');
+  for (const tier of ['default', 'sonnet', 'opus', 'fast']) assert.equal(args(['--out', 'x', '--models', tier]).models, tier);
+  assert.throws(() => args(['--out', 'x', '--models', 'haiku']), /--models takes one of default, sonnet, opus, fast/);
+  assert.deepEqual(installArgs({ models: null }), []);
+  assert.deepEqual(installArgs({ models: 'sonnet' }), ['--models', 'sonnet']);
 });
 
 test('full run: without the option a run with no launch still fails as before (T019)', () => {

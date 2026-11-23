@@ -4,7 +4,7 @@
 // prompt change helped; this repeats it. It spends tokens, so like full-run it only runs by hand.
 //
 //   node tools/eval.mjs --out <dir> --arm baseline=ref:main --arm treatment=. [--case defect,defect-control]
-//                       [--runs 6] [--model sonnet] [--max-cost 6] [--login] [--skill-agents] [--claim]
+//                       [--runs 6] [--model sonnet] [--max-cost 6] [--login] [--skill-agents] [--claim] [--models tier]
 //
 // An arm is a label and the checkout whose agents, skills and hook get installed: a path, or ref:<gitref>
 // for a worktree of that ref under <out>/arms. Everything else is this checkout's, so only the team varies.
@@ -157,7 +157,7 @@ export function armArg(s) {
 }
 
 export function parseArgs(argv) {
-  const o = { arms: [], cases: ['defect', 'defect-control', 'pressure'], runs: 6, model: 'sonnet', maxCost: 6, login: false, skillAgents: false, claim: false };
+  const o = { arms: [], cases: ['defect', 'defect-control', 'pressure'], runs: 6, model: 'sonnet', maxCost: 6, login: false, skillAgents: false, claim: false, models: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--login') o.login = true; else if (k === '--skill-agents') o.skillAgents = true; else if (k === '--claim') o.claim = true;
@@ -167,10 +167,14 @@ export function parseArgs(argv) {
     else if (k === '--runs') o.runs = Number(argv[++i]);
     else if (k === '--model') o.model = argv[++i];
     else if (k === '--max-cost') o.maxCost = Number(argv[++i]);
+    else if (k === '--models') {
+      o.models = argv[++i];
+      if (!['default', 'sonnet', 'opus', 'fast'].includes(o.models)) throw new Error('--models takes one of default, sonnet, opus, fast');
+    }
     else throw new Error(`unknown argument ${k}`);
   }
   if (!o.out || !o.arms.length || !Number.isInteger(o.runs) || o.runs < 1 || !Number.isFinite(o.maxCost)) {
-    throw new Error('usage: node tools/eval.mjs --out <dir> --arm label=path|ref:<gitref> [--arm ...] [--case a,b] [--runs n] [--model m] [--max-cost usd] [--login] [--skill-agents] [--claim]');
+    throw new Error('usage: node tools/eval.mjs --out <dir> --arm label=path|ref:<gitref> [--arm ...] [--case a,b] [--runs n] [--model m] [--max-cost usd] [--login] [--skill-agents] [--claim] [--models tier]');
   }
   for (const c of o.cases) if (!CASES[c]) throw new Error(`unknown case ${c}; known: ${Object.keys(CASES).join(', ')}`);
   return o;
@@ -189,6 +193,16 @@ export function versionCommand(platform = process.platform) {
   return platform === 'win32' ? ['cmd', ['/d', '/s', '/c', 'claude --version'], { encoding: 'utf8' }] : ['claude', ['--version'], { encoding: 'utf8' }];
 }
 
+// One full run's arguments. #429: --models installs its team on that tier.
+export function fullRunArgs(o, { dir = '', c = '', armDir = '' } = {}) {
+  const a = [path.join(ROOT, 'tools', 'full-run.mjs'), '--out', dir, '--case', c, '--team-root', armDir, '--model', o.model ?? 'sonnet', '--max-cost', String(o.maxCost ?? 6)];
+  if (o.login) a.push('--login');
+  if (o.skillAgents) a.push('--skill-agents');
+  if (o.claim) a.push('--claim');
+  if (o.models) a.push('--models', o.models);
+  return a;
+}
+
 function main() {
   const o = parseArgs(process.argv.slice(2));
   fs.mkdirSync(o.out, { recursive: true });
@@ -204,11 +218,7 @@ function main() {
   }
   for (const c of o.cases) for (const arm of o.arms) for (let n = 1; n <= o.runs; n++) {
     const dir = path.join(o.out, arm.label, c, String(n));
-    const a = [path.join(ROOT, 'tools', 'full-run.mjs'), '--out', dir, '--case', c, '--team-root', arm.dir, '--model', o.model, '--max-cost', String(o.maxCost)];
-    if (o.login) a.push('--login');
-    if (o.skillAgents) a.push('--skill-agents');
-    if (o.claim) a.push('--claim');
-    const r = spawnSync(process.execPath, a, { encoding: 'utf8', timeout: 60 * 60_000, maxBuffer: 64 * 1024 * 1024 });
+    const r = spawnSync(process.execPath, fullRunArgs(o, { dir, c, armDir: arm.dir }), { encoding: 'utf8', timeout: 60 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     keepLog(dir, r);
     let report = null;
     try { report = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8')); } catch { /* no run.json: infrastructure or crash */ }
@@ -218,7 +228,7 @@ function main() {
     console.log(`${arm.label} ${c} #${n}: ${infra ? 'NOT SCORED (infrastructure or crash)' : `${s.right ? 'right' : 'WRONG'}: ${s.why}`} (full-run exit ${r.status})`);
     if (!infra) rows.push({ arm: arm.label, case: c, right: s.right, cost: report.cost, input: (report.usage?.main?.input ?? 0) + (report.usage?.agents ?? []).reduce((n, a) => n + a.input, 0) });
   }
-  const summary = { when: new Date().toISOString(), claude: version, model: o.model, runs: o.runs, skillAgents: o.skillAgents, claim: o.claim,
+  const summary = { when: new Date().toISOString(), claude: version, model: o.model, runs: o.runs, skillAgents: o.skillAgents, claim: o.claim, models: o.models,
     arms: o.arms.map(({ label, dir, commit }) => ({ label, dir, commit })), cases: o.cases, tally: tally(rows), rows };
   fs.writeFileSync(path.join(o.out, 'eval.json'), JSON.stringify(summary, null, 2));
   console.log(`\nClaude Code ${version}, model ${o.model}, ${o.runs} runs per cell\n${table(summary.tally, o.cases)}`);
