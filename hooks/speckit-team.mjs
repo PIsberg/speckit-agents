@@ -265,7 +265,49 @@ if (!specDir) notSpecKit();
 // silence. Then the repo is read without the global and system config, which git could not use
 // anyway: NUL on Windows, where git refuses Node's \\.\nul. A Spec Kit folder git still cannot read,
 // though a .git sits beside its .specify/, gets a visible no-decision instead of silence.
+// #433: the git spawn costs about 20 ms a hook call on Windows. When .git sits beside .specify/ and no other .git
+// lies between the working directory and it, the two directories are read from the file system: a .git directory,
+// or a .git file naming a linked worktree's or a submodule's git dir (whose commondir file names the shared one).
+// Anything else (no .git there, a nested repo, GIT_DIR, an unreadable file) asks git as before.
+function fsRepoDirs() {
+  if (typeof specDir !== 'string') return null;
+  try {
+    let d = fs.realpathSync.native(path.resolve(cwd));
+    while (d !== specDir) {
+      if (fs.existsSync(path.join(d, '.git'))) return null;
+      const up = path.dirname(d);
+      if (up === d) return null;
+      d = up;
+    }
+    const dotGit = path.join(specDir, '.git');
+    const st = fs.statSync(dotGit);
+    let gitDir = dotGit;
+    if (st.isFile()) {
+      const m = /^gitdir: (.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+      if (!m) return null;
+      gitDir = path.resolve(specDir, m[1].trim());
+    } else if (!st.isDirectory()) return null;
+    const named = path.join(gitDir, 'commondir');
+    const common = fs.existsSync(named) ? path.resolve(gitDir, fs.readFileSync(named, 'utf8').trim()) : gitDir;
+    // A HEAD git would refuse (#215's damaged repo) goes to git, which says so.
+    if (!/^(ref: refs\/\S+|[0-9a-f]{40}|[0-9a-f]{64})\s*$/.test(fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8'))) return null;
+    // #215: a global config that exists but cannot be read fails every git command on Windows; the later calls
+    // then need the same fallback repoDirs() sets after a failed rev-parse.
+    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+    const globals = process.env.GIT_CONFIG_GLOBAL ? [process.env.GIT_CONFIG_GLOBAL]
+      : [path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'git', 'config'), path.join(home, '.gitconfig')];
+    for (const f of globals) {
+      try { fs.readFileSync(f); } catch (e) {
+        if (e?.code !== 'ENOENT' && e?.code !== 'ENOTDIR') { process.env.GIT_CONFIG_GLOBAL = process.platform === 'win32' ? 'NUL' : os.devNull; process.env.GIT_CONFIG_NOSYSTEM = '1'; break; }
+      }
+    }
+    const slash = (p) => fs.realpathSync.native(p).split(path.sep).join('/');
+    return [slash(specDir), slash(common)];
+  } catch { return null; }
+}
 function repoDirs() {
+  const fast = fsRepoDirs();
+  if (fast) return fast;
   const args = ['-c', 'core.quotepath=off', 'rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir'];
   const once = () => {
     try { return { out: execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }) }; } catch (e) {

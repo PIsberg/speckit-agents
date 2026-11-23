@@ -96,6 +96,36 @@ test('the .git/ guard holds for other spellings and from a linked worktree', () 
   assert.equal(write(wt, ['scope', 'no-tests'], 'src/main/Other.java'), null, 'normal work in the worktree');
 });
 
+// #433: the hook spawned git rev-parse on every call (about 14 ms on Windows) to find the work tree and the git
+// dir every worktree shares. With .git beside .specify/ it reads them from the file system, so a scope decision
+// that needs no other git call is made with no git on PATH; before, the hook said it could not read the repo.
+test('#433: with .git beside .specify/ the hook finds the repo without spawning git, also from a linked worktree', () => {
+  const r = repo();
+  const wt = `${r.dir}-wt433`;
+  r.g('worktree', 'add', '-q', wt);
+  const noGit = { ...process.env, PATH: path.dirname(process.execPath) };
+  for (const dir of [r.dir, wt]) {
+    const out = spawnSync(process.execPath, [HOOK, 'scope', 'no-tests'], {
+      cwd: dir, env: noGit, encoding: 'utf8',
+      input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(dir, 'test', 'a.test.js') }, cwd: dir }),
+    });
+    const res = out.stdout.trim() ? JSON.parse(out.stdout) : null;
+    assert.ok(denied(res), `${dir}: ${out.stdout}${out.stderr}`);
+    assert.match(whyDenied(res), /may not change tests/);
+  }
+});
+
+test('#433 #215: with an unreadable global config, the git calls after the fast path still read the repo', () => {
+  const r = repo();
+  const env = unreadableGlobalConfig();
+  pass(r.dir);
+  runEnv(r.dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'c433' }, env);
+  r.write('src/test/java/SneakyTest.java', 'class SneakyTest {}\n');
+  const out = runEnv(r.dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'c433', agent_type: 'implementer' }, env);
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(out.reason, /SneakyTest\.java/);
+});
+
 // implementer's lane was "anything but tests", which included .specify/: pointing feature.json at
 // another audited feature reset its retry count, and test-paths decides what its lane is.
 test('implementer may not write the Spec Kit config under .specify/', () => {
