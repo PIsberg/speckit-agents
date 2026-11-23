@@ -394,8 +394,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The feature directory, the diff, the constitution, the test command and the existing load tests. text.
 
 ### agents/load-tester.md: Lane
-<!-- fingerprint: 3e8b487e -->
-- Writes only load tests and `specs/<feature>/load-test.md`. hook `scope load` and `lane load`.
+<!-- fingerprint: f77e4f90 -->
+- Writes only load tests and `specs/<feature>/load-test.md`; leaves a file already in a load directory whose own name does not say load (#418). hook `scope load` and `lane load`.
 
 ### agents/load-tester.md: Process
 <!-- fingerprint: 8feace08 -->

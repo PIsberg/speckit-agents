@@ -32,7 +32,8 @@ command and its existing load tests.
 
 ## Lane
 You write only load tests (a test file whose path says load, such as `test/load/`, `*.load.test.*`,
-`OrderLoadTest.java`) and `specs/<feature>/load-test.md`. Production code, functional tests,
+`OrderLoadTest.java`) and `specs/<feature>/load-test.md`. A file already in a load directory whose own
+name does not say load may be a functional test: leave it, and write a new one. Production code, functional tests,
 `tasks.md`, the spec, the plan and `.specify/` are outside your lane: report what should change instead.
 The hook denies a write outside it and checks the whole diff at your Stop.
 

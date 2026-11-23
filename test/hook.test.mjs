@@ -4468,6 +4468,41 @@ test('012 T001 FR-004 contract 3: lane load sends a write outside the lane back 
   assert.equal(stop('l3')?.decision, 'block', 'a functional test is outside the lane');
 });
 
+// #418: a test path counts as a load test by any segment named load, so a functional test in a load/ directory
+// (tests of a module named load) was in load-tester's lane. A file that was there before the run and says load
+// only through its directory is now out of it: the role writes a new load test, or one whose own name says load.
+test('#418: scope load denies an existing test file that says load only through its directory; new ones and load-named ones pass', () => {
+  const r = repo();
+  r.write('test/load/parse.test.mjs', 'functional\n');
+  r.write('test/load/orders.load.test.mjs', 'load\n');
+  r.write('src/test/java/OrderLoadTest.java', 'class OrderLoadTest {}\n');
+  commitAll(r, 'existing tests');
+  const out = write(r.dir, ['scope', 'load'], 'test/load/parse.test.mjs');
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(whyDenied(out), /test\/load\/parse\.test\.mjs[^]*was there before[^]*functional test/);
+  assert.ok(denied(bash(r.dir, ['scope', 'load'], 'echo x > test/load/parse.test.mjs')), 'through Bash too');
+  for (const f of ['test/load/new.test.mjs', 'test/load/orders.load.test.mjs', 'src/test/java/OrderLoadTest.java']) {
+    assert.equal(write(r.dir, ['scope', 'load'], f), null, f);
+  }
+});
+
+test('#418: lane load sends back a change to an existing test file that says load only through its directory', () => {
+  const r = repo();
+  r.write('test/load/parse.test.mjs', 'functional\n');
+  commitAll(r, 'existing tests');
+  pass(r.dir);
+  const start = (id) => run(r.dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: id });
+  const stop = (id) => run(r.dir, ['lane', 'load'], { hook_event_name: 'SubagentStop', agent_id: id, agent_type: 'load-tester' });
+  start('m1');
+  r.write('test/load/fresh.test.mjs', 'x\n');
+  assert.equal(stop('m1'), null, 'a new file in test/load/ is a load test');
+  start('m2');
+  r.write('test/load/parse.test.mjs', 'changed\n');
+  const out = stop('m2');
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(out.reason, /test\/load\/parse\.test\.mjs/);
+});
+
 // 012 T004 (FR-001, FR-002, FR-003, FR-017, SC-003, contract 1): the team.
 test('012 T004 FR-001 FR-003 contract 1: a Team line naming load-tester records it in pipeline order', () => {
   const { dir } = repo();

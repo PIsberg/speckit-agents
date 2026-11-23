@@ -512,6 +512,10 @@ function testsAt(rev) {
   return testsAtMemo.get(rev);
 }
 const isLoadTest = (rel) => isTest(rel) && LOAD_PATTERNS.some((re) => re.test(rel));
+// #418: a load test that says load only through a directory and is in commit `at` may be a functional test of a
+// module named load, so the lane leaves it alone; a new file there, or one whose own name says load, stays in.
+const oldDirLoad = (rel, at) => isLoadTest(rel) && !LOAD_PATTERNS.some((re) => re.test(rel.split('/').pop()))
+  && git(root, 'cat-file', '-e', `${at}:${rel}`) !== null;
 const inLane = (rule, rel) => (rule === 'load' ? !SPECKIT_CONFIG.test(rel) && (isLoadTest(rel) || LOAD_RECORD.test(rel)) : rule === 'tests' ? !SPECKIT_CONFIG.test(rel) && (isTest(rel) || TASKS_FILE.test(rel)) : !isTest(rel) && !SPECKIT_CONFIG.test(rel));
 // A prefix ending in / is a directory; anything else must match the whole path.
 const inPrefixes = (prefixes, rel) => prefixes.some((p) => rel === p || (p.endsWith('/') && rel.startsWith(p)));
@@ -807,7 +811,8 @@ function laneOutside(base, rule, prefixes, whoName) {
   // A diff against a commit git cannot find fails, and a failed diff would read as "nothing changed".
   if (git(root, 'cat-file', '-e', `${base.sha}^{commit}`) === null) return no(`its start commit ${base.sha.slice(0, 12)} is not in this repo.`);
   // `none`, a read-only role's (#412): every changed file is outside.
-  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : rule === 'none' ? false : inLane(rule, rel));
+  const fits = (rel) => (rule === 'only' ? inPrefixes(prefixes, rel) : rule === 'none' ? false
+    : inLane(rule, rel) && !(rule === 'load' && oldDirLoad(rel, base.sha)));
   return { outside: changedSince(base.sha).filter((rel) => !base.dirty.includes(rel) && !fits(rel)) };
 }
 
@@ -1225,6 +1230,11 @@ function laneProblem(actor, ruleArgs, abs, shown, viaBash) {
   if (rule === 'load' && !inLane('load', rel)) {
     return `${actor} (load-tester) writes only load tests and specs/<feature>/load-test.md; ${rel} is outside that lane. `
       + 'Production code, functional tests, tasks.md and the spec belong to other roles: report what should change instead.';
+  }
+  if (rule === 'load' && oldDirLoad(rel, 'HEAD')) {
+    return `${actor} (load-tester) may not change ${rel}: it was there before this run and says load only through its directory, `
+      + 'so it may be a functional test (FR-004, #418). Write a new load test, or one whose own name says load (`*.load.test.*`, `*LoadTest.*`), '
+      + 'and report what should change in this one instead.';
   }
   if (rule === 'no-tests' && SPECKIT_CONFIG.test(rel)) {
     return `${actor} may not write ${rel}: .specify/ holds Spec Kit's config, which picks the active feature and what counts as a test. `
