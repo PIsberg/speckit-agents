@@ -5022,3 +5022,26 @@ test('#431: --yes and --side-by-side lead like --security, and --team after them
   typedWith(dir, skillHook(), '--yes --yes --team skill-agents add');
   assert.ok(!fs.existsSync(teamFile(dir)) || teamRecord(dir).skillAgents !== true, 'a flag given twice ends the flags, as --security twice does');
 });
+
+// #447: the resumed session's answer was not in the transcript yet when its first launch's hook read it (CI, Windows and
+// macOS, under load). A launch in a later turn, a new prompt_id, follows a prompt of the user's, so it counts as the answer
+// whatever the transcript shows yet. The turn is the typed request's, or the first held launch's when the request had none.
+test('#447: a held launch in a later turn (another prompt_id) goes, before its transcript row is written', () => {
+  for (const [label, typedExtra] of [['typed with a prompt_id', { prompt_id: 'p1' }], ['typed without one', {}]]) {
+    const { dir, t, add } = choiceRepo();
+    typedTeam(dir, 'add sum()', { transcript_path: t, ...typedExtra });
+    add(...NOT_ANSWERS);
+    const held = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t, prompt_id: 'p1' });
+    assert.ok(denied(held), `${label}: held in the request's turn`);
+    assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t, prompt_id: 'p1' })), `${label}: still held in that turn`);
+    assert.ok(denied(agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t })), `${label}: no prompt_id proves nothing`);
+    const next = agentLaunch(dir, 'go\nTeam: implementer', { transcript_path: t, prompt_id: 'p2' });
+    assert.ok(!denied(next), `${label}: a later turn goes: ${JSON.stringify(next)}`);
+    assert.deepEqual(teamRecord(dir).roles, ['implementer'], label);
+  }
+  // The typed --team hold of #373 reads it the same way.
+  const b = choiceRepo();
+  typedTeam(b.dir, '--team spec-auditor,test-writer,implementer add sum()', { transcript_path: b.t, prompt_id: 'q1' });
+  assert.ok(denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q1' })));
+  assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q2' })));
+});

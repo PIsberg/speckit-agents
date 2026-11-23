@@ -473,6 +473,10 @@ first line without spec-auditor cannot switch the audit gate off for a request w
 typed, or `security-reviewer` from `--security`, goes. A session transcript Claude Code has not written yet
 holds no answer: the first launch can come before it is on disk, and the hold once read that as answered and
 let the team through ([#397](https://github.com/PIsberg/speckit-agents/issues/397), traced on CI's macOS runner).
+The other way round, an answer typed as the next prompt can reach the hook before its row is on disk: a
+launch in a later turn than the held request (another `prompt_id`, which only a prompt starts) counts as
+answered, whatever the transcript shows yet ([#447](https://github.com/PIsberg/speckit-agents/issues/447),
+seen as a CI flake on Windows and macOS).
 
 `/speckit-team --team noagents <request>` runs no agent at all. The session runs Spec Kit's own
 skills itself, `speckit-specify`, `speckit-plan`, `speckit-tasks` and `speckit-implement` in that
@@ -1789,7 +1793,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 286 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 287 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 167 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
