@@ -211,6 +211,8 @@ test('the next step follows the pipeline, and names the next task while building
   const all = parseTasks('- [x] T001 a')
   expect(next({ tasks: all })).toBe('spec-gatekeeper: check every requirement has a test')
   expect(next({ tasks: all }, ['spec-gatekeeper'])).toBe('waiting for spec-gatekeeper')
+  // #425: load-tester runs once every task is done, before spec-gatekeeper (skill step 5b).
+  expect(next({ tasks: all }, ['load-tester'])).toBe('waiting for load-tester')
   expect(next({ tasks: all, gate: 'REJECTED' })).toBe('route the REJECTED reasons, then re-run spec-gatekeeper')
   const reaudited = { verdict: 'PASS', fingerprint: 'fp', at: '2026-10-08T12:00:00.000Z' }
   expect(next({ tasks: all, verdict: reaudited, gate: 'APPROVED', gateAt: '2026-10-08T11:00:00.000Z' }))

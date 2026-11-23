@@ -26,7 +26,7 @@ export const roleColor = (role: string): string | undefined =>
 // Who works each phase: a running agent of the phase's role is its work under way.
 export const PHASE_ROLES: Record<SpeckitPhaseId, readonly string[]> = {
   spec: ['product-owner'], plan: ['architect'], tasks: ['architect'], audit: ['spec-auditor'],
-  build: ['test-writer', 'implementer'], verify: ['spec-gatekeeper'],
+  build: ['test-writer', 'implementer'], verify: ['load-tester', 'spec-gatekeeper'],
 }
 
 // The words each role's report ends on, per its agent file, by whether its work came out as it should.
