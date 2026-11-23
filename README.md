@@ -657,9 +657,11 @@ not measured yet. For each round:
    value an assertion compares with that the code already decides: a task asking for a number no
    implementation can meet is reported, before any implementer runs, not written as a red test.
 3. **Green.** implementer makes the round's tests pass, under the [retry limit](#the-retry-limit).
-   It runs the tests that cover its change; the full suite runs only in the last round, which the
-   skill names, and once more at spec-gatekeeper. In the 004 run every round ran it: 5 runs, about
-   14.5 of the 48 agent-minutes.
+   It runs the tests that cover its change; the full suite runs once per build: at spec-gatekeeper
+   when it is in the team, otherwise in the last round, which the skill names
+   ([#430](https://github.com/PIsberg/speckit-agents/issues/430)). In the 004 run every round ran it:
+   5 runs, about 14.5 of the 48 agent-minutes, and the last implementer's run and spec-gatekeeper's
+   were a minute apart on the same commit.
 
 The failure-reason check in step 2 is prose: the hooks cannot tell an assertion failure from a
 compile error in an arbitrary language, so the skill checks test-writer's pasted output.
@@ -725,7 +727,8 @@ two branches conflict when merged; after each implementer step the main session 
 removes each worktree and its branch, and only then ticks the tasks the reports name and commits.
 An implementer in a worktree runs its own tasks' tests and never the full suite, which cannot pass
 there: the other slices' code is still stubs. Its launch never carries `last round`, the words that
-ask for the suite, and the main session runs it after the last round's merge
+ask for the suite, and the main session runs it after the last round's merge, unless
+spec-gatekeeper is in the team and runs it next
 ([#309](https://github.com/PIsberg/speckit-agents/issues/309): in the run of 2026-11-11 both
 implementers ended `RESULT: RED` for each other's stubs, 2 of the 3 REDs that lock implementer out).
 The worktrees sit in the repository's `.claude/worktrees/`, so a `git add -A` before the removal
@@ -1724,13 +1727,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 719 tests:
+`npm test` runs 720 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 257 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 79 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 147 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 148 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
