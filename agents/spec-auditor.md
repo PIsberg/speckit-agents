@@ -11,7 +11,7 @@ skills:
   - speckit-analyze
 hooks:
   PreToolUse:
-    - matcher: ".*"
+    - matcher: "SubagentHandback"
       hooks:
         - type: command
           command: 'node "{{HOOK}}" verdict'
