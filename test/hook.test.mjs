@@ -4571,3 +4571,101 @@ test('012 T014 FR-013 contract 6: malformed --since values exit 1 with one refus
     assert.doesNotMatch(r.stdout + r.stderr, /\bat .*\.mjs:\d+/, 'no stack trace');
   }
 });
+
+// ---- clarifications --recommended: the spec stop's record, when every answer is the recommended one (#427) ----
+// Runs measured in docs/measurements.md launched product-owner 2 or 3 times: once for the spec and its
+// questions, again only to write answers that took every recommendation, then a second stop for the spec.
+// product-owner now writes the spec as if each recommendation were taken and lists the questions under
+// `## Open Questions`; this command records them and drops the section, with no launch.
+const QSPEC = (tail, head = []) => ['# Feature Specification: Sum', '', '**Feature Branch**: `001-demo`', '', ...head,
+  '## User Scenarios & Testing', '', '- Given [1, 2], sum gives 3.', '', '## Requirements', '', '- **FR-001**: `sum(list)` returns 0 for an empty list.', '', ...tail, ''].join('\n');
+const Q1 = ['### Q1: What does sum give for an empty list?', '', '- **A (recommended): 0.** The sum of nothing is zero.', '- **B: a RangeError.** Callers check first.'];
+const Q2 = ['', '### Q2: Are strings accepted?', '', '- **A:** yes, as numbers', '- **B (recommended):** no, a TypeError', '  Why: no caller passes strings.'];
+const clarify = (dir, ...a) => spawnSync('node', [HOOK, 'clarifications', ...a], { cwd: dir, encoding: 'utf8' });
+const questionsRepo = (spec) => decisionsRepo(PLAN([]), spec);
+
+test('#427: clarifications --recommended records each recommended answer under today\'s session and drops ## Open Questions', () => {
+  const dir = questionsRepo(QSPEC(['## Open Questions', '', ...Q1, ...Q2]));
+  const r = clarify(dir, '--recommended');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, new RegExp(`^speckit-team: clarifications: recorded Q1: A, Q2: B as recommended in ${FEAT}/spec\\.md$`, 'm'));
+  const spec = featFile(dir, 'spec.md');
+  assert.ok(!spec.includes('## Open Questions'), spec);
+  assert.ok(spec.includes(['## Clarifications', '', `### Session ${TODAY}`, '', '- Q: What does sum give for an empty list? → A: 0',
+    '- Q: Are strings accepted? → A: no, a TypeError', '', '## User Scenarios & Testing'].join('\n')), spec);
+  assert.ok(spec.endsWith('returns 0 for an empty list.\n'), 'the section and its blank lines are gone');
+});
+
+test('#427: clarifications --recommended adds to a ## Clarifications section that is already there', () => {
+  const earlier = ['## Clarifications', '', '### Session 2026-11-01', '', '- Q: Earlier? → A: yes', ''];
+  const dir = questionsRepo(QSPEC(['## Open Questions', '', ...Q1], earlier));
+  assert.equal(clarify(dir, '--recommended').status, 0);
+  const spec = featFile(dir, 'spec.md');
+  assert.ok(spec.includes(['- Q: Earlier? → A: yes', '', `### Session ${TODAY}`, '', '- Q: What does sum give for an empty list? → A: 0', '', '## User Scenarios'].join('\n')), spec);
+  assert.equal(spec.split('## Clarifications').length, 2, 'one section');
+  const today = ['## Clarifications', '', `### Session ${TODAY}`, '', '- Q: Earlier? → A: yes', ''];
+  const dir2 = questionsRepo(QSPEC(['## Open Questions', '', ...Q1], today));
+  assert.equal(clarify(dir2, '--recommended').status, 0);
+  const spec2 = featFile(dir2, 'spec.md');
+  assert.ok(spec2.includes(['- Q: Earlier? → A: yes', '- Q: What does sum give for an empty list? → A: 0', ''].join('\n')), spec2);
+  assert.equal(spec2.split('### Session').length, 2, "today's session is reused");
+});
+
+test('#427: clarifications --recommended changes nothing and names the problem when a question has no recommendation or a marker is left', () => {
+  const cases = [
+    [QSPEC(['## Open Questions', '', '### Q1: Which?', '', '- **A:** one', '- **B:** two']), /Q1: no option is marked \(recommended\)/],
+    [QSPEC(['## Open Questions', '', '### Q1: Which?', '', 'No options yet.']), /Q1: no option line found/],
+    [QSPEC(['## Open Questions', '', ...Q1]).replace('returns 0 for an empty list.', 'returns [NEEDS CLARIFICATION: what?] for an empty list.'), /\[NEEDS CLARIFICATION\] marker/],
+    [QSPEC([]), /spec\.md has no ## Open Questions section/],
+    [QSPEC(['## Open Questions', '', 'None.']), /lists no ### Q<n> question/],
+  ];
+  for (const [text, why] of cases) {
+    const dir = questionsRepo(text);
+    const r = clarify(dir, '--recommended');
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, why);
+    assert.match(r.stdout, /nothing was changed/);
+    assert.equal(featFile(dir, 'spec.md'), text, 'unchanged');
+  }
+  const args = clarify(questionsRepo(QSPEC(['## Open Questions', '', ...Q1])), 'Q1=B');
+  assert.equal(args.status, 1);
+  assert.match(args.stdout, /the only argument is --recommended/);
+  const noFeat = questionsRepo(QSPEC(['## Open Questions', '', ...Q1]));
+  fs.rmSync(path.join(noFeat, '.specify', 'feature.json'));
+  const r3 = clarify(noFeat, '--recommended');
+  assert.equal(r3.status, 1);
+  assert.match(r3.stdout, /no feature is active/);
+});
+
+test('#427: clarifications --recommended keeps a CRLF spec CRLF', () => {
+  const crlf = (t) => t.replace(/\n/g, '\r\n');
+  const dir = questionsRepo(crlf(QSPEC(['## Open Questions', '', ...Q1])));
+  assert.equal(clarify(dir, '--recommended').status, 0);
+  const spec = featFile(dir, 'spec.md');
+  assert.ok(spec.includes('## Clarifications\r\n') && !spec.includes('## Open Questions'), 'recorded');
+  assert.ok(!/[^\r]\n/.test(spec), 'no bare LF');
+});
+
+// The skill records the answers in the message that launches the architect. If the record fails there, the
+// launch in the same message would still run, and a plan of a spec nobody settled costs a round.
+test('#427: an architect or spec-auditor launch, agent or role skill, is refused while spec.md has open questions', () => {
+  const dir = questionsRepo(QSPEC(['## Open Questions', '', ...Q1, ...Q2]));
+  const launch = (role) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1', tool_input: { subagent_type: role, prompt: 'go' } });
+  for (const role of ['architect', 'spec-auditor']) {
+    const held = launch(role);
+    assert.ok(denied(held), `${role}: ${JSON.stringify(held)}`);
+    assert.match(whyDenied(held), /spec\.md still has open questions \(Q1, Q2\)/);
+    assert.match(whyDenied(held), /clarifications --recommended/);
+  }
+  assert.ok(!denied(launch('product-owner')), 'product-owner can still settle them');
+  assert.equal(clarify(dir, '--recommended').status, 0);
+  assert.ok(!denied(launch('architect')), 'recorded: the architect may run');
+
+  const r = repo();
+  skillAgentsTeam(r.dir);
+  r.write(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', ...Q1]));
+  const t = transcriptIn(r.dir, [userRow('typed')]);
+  const held = skillCall(r.dir, 'speckit-role-architect', { transcript_path: t });
+  assert.ok(denied(held), JSON.stringify(held));
+  assert.match(whyDenied(held), /spec\.md still has open questions \(Q1\)/);
+});

@@ -42,6 +42,9 @@
 //   decisions --recommended Not a hook: /speckit-team's plan stop runs it when every answer is the recommended option.
 //                           Records the answers in plan.md and applies the recommended `Spec:` lines to spec.md, or
 //                           changes nothing and exits 1. `gate` refuses a spec-auditor launch while a decision is open
+//   clarifications --recommended Not a hook: /speckit-team's spec stop runs it when every answer is the recommended one
+//                           (#427). Records spec.md's `## Open Questions` under `## Clarifications` and drops the section,
+//                           or changes nothing and exits 1. `gate` refuses an architect or spec-auditor launch while one is open
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -117,7 +120,7 @@ const starterText = (name) => `# ${name}: project instructions\n\n`
 const [mode, ...args] = process.argv.slice(2);
 // `project` and `check` are run by the skills from Bash, not by Claude Code: they answer on stdout with
 // exit 0 or 1, written synchronously, since a pipe on Windows drops what is still queued at process.exit.
-const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions' || mode === 'probe';
+const CLI = mode === 'project' || mode === 'check' || mode === 'audit' || mode === 'decisions' || mode === 'clarifications' || mode === 'probe';
 const projectSay = (text, code) => { fs.writeSync(1, `${text}\n`); process.exit(code); };
 const projectRefuse = (why) => projectSay(`speckit-team: ${mode}: ${why}`, 1);
 // Claude Code always sends a JSON object, so anything else is a wiring fault. Parsing must not throw:
@@ -1439,6 +1442,7 @@ if (mode === 'gate') {
     const role = str(input.tool_input?.subagent_type)?.toLowerCase();
     if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
+    if (role === 'architect' || role === 'spec-auditor') holdQuestions(feature());
     if (role === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
     // #331: every notice is collected and said once at the end, after the record is written.
@@ -1508,6 +1512,7 @@ if (mode === 'gate') {
       if (roleSkill === 'implementer' && feature()) retryLimit(feature());
       // #353: the audit's holds (open decisions, the two-FAIL limit of #242) on the role's call, as on the
       // agent's launch. After closeRole, which counts the FAIL it closes.
+      if (roleSkill === 'architect' || roleSkill === 'spec-auditor') holdQuestions(feature());
       if (roleSkill === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
       const start = startRecord();
       if (start) {
@@ -1665,6 +1670,105 @@ if (mode === 'decisions') {
   fs.writeFileSync(path.join(root, planRel), r.plan);
   projectSay(`speckit-team: decisions: recorded ${r.answers.map((a) => `${a.id}: ${a.letter}`).join(', ')} as recommended in ${planRel}; `
     + `${r.applied ? `${r.applied} Spec: line${r.applied === 1 ? '' : 's'} applied to ${specRel}` : 'no Spec: line to apply'}`, 0);
+}
+// `clarifications --recommended` (#427): the spec stop's record when every answer is the one product-owner
+// recommended. product-owner writes spec.md as if each recommendation were taken and lists the questions under
+// `## Open Questions`, `### Q<n>: <question>` with option lines as in plan.md's decisions. This adds
+// `- Q: <question> → A: <answer>` under `## Clarifications`, `### Session <today>` (made before the first
+// `##` section when missing), and drops `## Open Questions`. All or nothing, like `decisions`.
+// The IDs of the `### Q<n>` entries under spec.md's `## Open Questions`, in order; none when the section is absent.
+function openQuestions(specText) {
+  const lines = specText.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^## Open Questions\s*$/.test(l));
+  if (start < 0) return [];
+  const ids = [];
+  for (let i = start + 1; i < lines.length && !/^## /.test(lines[i]); i += 1) { const m = /^### (Q\d+)\b/.exec(lines[i]); if (m) ids.push(m[1]); }
+  return ids;
+}
+function recordClarifications(specText, specRel, day) {
+  const eol = specText.includes('\r\n') ? '\r\n' : '\n';
+  const spec = specText.split(eol);
+  const start = spec.findIndex((l) => /^## Open Questions\s*$/.test(l));
+  if (start < 0) return { problems: [`${specRel} has no ## Open Questions section`] };
+  let end = spec.findIndex((l, n) => n > start && /^## /.test(l));
+  if (end < 0) end = spec.length;
+  const heads = [];
+  for (let i = start + 1; i < end; i += 1) { const m = /^### (Q\d+):?\s*(.*?)\s*$/.exec(spec[i]); if (m) heads.push({ i, id: m[1], question: m[2] }); }
+  if (!heads.length) return { problems: [`the ## Open Questions section of ${specRel} lists no ### Q<n> question`] };
+  const problems = []; const answers = [];
+  heads.forEach((h, n) => {
+    const to = n + 1 < heads.length ? heads[n + 1].i : end;
+    const opts = [];
+    for (let i = h.i + 1; i < to; i += 1) {
+      const m = /^(?:- )?\*\*(?:Option )?([A-Z])(?![A-Za-z]| [a-z])(\s*\(recommended\))?:?\s*(.*?)\*\*:?\s*(.*?)\s*$/i.exec(spec[i]);
+      if (m) opts.push({ letter: m[1], rec: Boolean(m[2]), answer: (m[3] || m[4]).replace(/\.$/, '') });
+    }
+    const k = opts.findIndex((o) => o.rec);
+    if (k < 0) problems.push(opts.length ? `${h.id}: no option is marked (recommended)` : `${h.id}: no option line found (one starts "- **A (recommended):" or "- **B:")`);
+    else if (!h.question || !opts[k].answer) problems.push(`${h.id}: the question or its recommended answer is empty`);
+    else answers.push({ id: h.id, letter: opts[k].letter, line: `- Q: ${h.question} → A: ${opts[k].answer}` });
+  });
+  const rest = [...spec.slice(0, start), ...spec.slice(end)];
+  if (rest.some((l) => l.includes('[NEEDS CLARIFICATION'))) problems.push(`${specRel} still has a [NEEDS CLARIFICATION] marker, which no recommended answer settles`);
+  if (problems.length) return { problems };
+  while (rest.length && !rest.at(-1).trim()) rest.pop();
+  const out = [...rest, ''];
+  const section = (from) => { const i = out.findIndex((l, n) => n > from && /^## /.test(l)); return i < 0 ? out.length : i; };
+  let c = out.findIndex((l) => /^## Clarifications\s*$/.test(l));
+  if (c < 0) {
+    let at = out.findIndex((l) => /^## /.test(l));
+    if (at < 0) at = out.length - 1;
+    out.splice(at, 0, '## Clarifications', '', '');
+    c = at;
+  }
+  const cEnd = section(c);
+  const sess = out.findIndex((l, n) => n > c && n < cEnd && l.trim() === `### Session ${day}`);
+  const lines = answers.map((a) => a.line);
+  if (sess >= 0) {
+    let to = out.findIndex((l, n) => n > sess && /^#{2,3} /.test(l));
+    if (to < 0) to = out.length;
+    let last = to - 1;
+    while (last > sess && !out[last].trim()) last -= 1;
+    out.splice(last + 1, 0, ...(last === sess ? ['', ...lines] : lines));
+  } else {
+    let last = cEnd - 1;
+    while (last > c && !out[last].trim()) last -= 1;
+    out.splice(last + 1, 0, '', `### Session ${day}`, '', ...lines);
+  }
+  // One blank line before the section that follows.
+  const after = section(c);
+  let blank = after - 1;
+  while (blank > c && !out[blank].trim()) blank -= 1;
+  out.splice(blank + 1, after - blank - 1, ...(after < out.length ? [''] : []));
+  while (out.length > 1 && !out.at(-1).trim() && !out.at(-2).trim()) out.pop();
+  if (out.at(-1).trim()) out.push('');
+  return { problems, spec: out.join(eol), answers };
+}
+if (mode === 'clarifications') {
+  const feat = feature();
+  if (!feat || args.length !== 1 || args[0] !== '--recommended') projectRefuse(feat ? 'the only argument is --recommended' : 'no feature is active');
+  const specRel = `${feat}/spec.md`;
+  const specText = readOr(path.join(root, specRel), undefined);
+  if (specText === undefined) projectRefuse(`${specRel} cannot be read`);
+  const now = new Date();
+  const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const r = recordClarifications(specText, specRel, day);
+  if (r.problems.length) {
+    projectSay([...r.problems, 'nothing was changed; relaunch product-owner with the answers, as step 1 of the skill says'].map((p) => `speckit-team: clarifications: ${p}`).join('\n'), 1);
+  }
+  fs.writeFileSync(path.join(root, specRel), r.spec);
+  projectSay(`speckit-team: clarifications: recorded ${r.answers.map((a) => `${a.id}: ${a.letter}`).join(', ')} as recommended in ${specRel}`, 0);
+}
+// Called at a main-session launch of architect or spec-auditor: a plan or an audit of a spec whose questions
+// nobody answered would be redone once they are.
+function holdQuestions(feat) {
+  if (!feat) return;
+  const open = openQuestions(readOr(path.join(root, feat, 'spec.md'), ''));
+  if (open.length) {
+    deny(`speckit-team: ${feat}/spec.md still has open questions (${open.join(', ')}), so this launch would read a spec nobody settled. `
+      + `Settle them at the spec stop first: node "${process.argv[1]}" clarifications --recommended when every answer is the recommended one, `
+      + 'otherwise a product-owner revision with the answers. Then launch again.');
+  }
 }
 if (mode === 'audit') {
   const feat = feature();

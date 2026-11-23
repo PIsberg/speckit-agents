@@ -34,14 +34,19 @@ You own what the feature must do. How it is built belongs to the architect.
 3. Write the answers or findings from your prompt into the spec. An answer goes under
    `## Clarifications`, `### Session YYYY-MM-DD` (today's, created after the overview if missing), as
    `- Q: <question> → A: <answer>`, and into each requirement or scenario it settles, replacing what
-   it contradicts. A finding you judge wrong, because it misreads the spec or the constitution: do
+   it contradicts; remove each answered question from `## Open Questions`, and the section once it is
+   empty. A finding you judge wrong, because it misreads the spec or the constitution: do
    not edit for it, and report it `contested` with the file:line that shows why. When the user has
    upheld a contest, your prompt says so: record it under `## Clarifications` as
    `- Q: <the finding> → A: not a defect, <why> (<date>)`.
 4. Select the questions still open: at most 5, highest impact first, leaving out what planning can
    settle. Each takes 2 to 4 exclusive options, as many as AskUserQuestion takes, or an answer of at
-   most 5 words with 2 to 4 suggested answers as its options. The user is reachable
-   only through your report, so return them there.
+   most 5 words with 2 to 4 suggested answers as its options. Write the spec as if the user took each
+   recommended option, with no `[NEEDS CLARIFICATION]` marker for it, and list the questions under
+   `## Open Questions`, the spec's last section: a `### Q<n>: <question>` heading each, then one line per
+   option, recommended first, `- **A (recommended): <answer>.** <one line of reasoning>`, then
+   `- **B: <answer>.**`. When every answer is the recommended one, the main session records them with no
+   launch of yours. The user is reachable only through your report, so return the questions there too.
 5. Bring the feature's `checklists/requirements.md` up to date with the spec as it now stands.
    Tick an item only after checking the spec against it in this run, and untick one that no
    longer holds. An item you did not check stays unticked: the architect and the auditor read a
@@ -58,5 +63,5 @@ You own what the feature must do. How it is built belongs to the architect.
 ## Report
 At most 20 lines, repo-relative paths: the spec path and branch, then each open question with its
 options, your recommended one first, and one line of reasoning. On a revision, one line per finding: its ID and
-fixed, not fixed, or `contested` and its file:line. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no open question and
-no `[NEEDS CLARIFICATION]` marker remains.
+fixed, not fixed, or `contested` and its file:line. One line for the checklist: how many items are ticked, and which are not. The last line is exactly `READY FOR PLAN`, and only when no `[NEEDS CLARIFICATION]` marker remains:
+the spec already follows the recommendation of every question under `## Open Questions`.

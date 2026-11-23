@@ -1380,6 +1380,27 @@ test('#216: product-owner reports 2 to 4 options a question, recommended first; 
   assert.match(spec, /AskUserQuestion[^.]*product-owner's options[^.]*as (it )?listed/i, 'the skill relays the options the agent listed');
 });
 
+// #427: runs launched product-owner a second time only to write answers that took every recommendation, then
+// stopped twice (questions, then the spec). product-owner now writes the spec as if each recommendation were
+// taken and lists the questions under `## Open Questions`; the skill asks them at the spec stop and, when every
+// answer is the recommended one, records them with `clarifications --recommended` and launches no product-owner.
+test('#427: product-owner writes the recommended answers in and lists the questions; the skill records them with no launch', () => {
+  const po = installedAgent('product-owner');
+  assert.match(po, /as if the user took each recommended option/);
+  assert.match(po, /`## Open Questions`, the spec's last section/);
+  assert.match(po, /`### Q<n>: <question>`/);
+  assert.match(po, /`- \*\*A \(recommended\): <answer>\.\*\* <one line of reasoning>`/, 'the option form the hook parses');
+  assert.match(po, /remove each answered question from `## Open Questions`/, 'a revision leaves no answered question open');
+  const report = po.slice(po.indexOf('## Report'));
+  assert.match(report, /`READY FOR PLAN`, and only when no `\[NEEDS CLARIFICATION\]` marker remains/);
+  const spec = flat(skillSection(teamSkill(), '## 1. Spec: product-owner'));
+  assert.match(spec, /\*\*Stop:\*\* one stop for the questions and the spec/);
+  assert.match(spec, /every answer is the recommended one[^.]*launch no product-owner/);
+  assert.match(spec, /`node "[^"]+" clarifications --recommended`[^.]*chained with `&&` to the commit/);
+  assert.match(spec, /On exit 1 it changed nothing[^.]*relaunch product-owner with the answers/);
+  assert.match(spec, /Only an explicit approval of `spec\.md` ends the stop/, 'an answer about a later phase is not approval');
+});
+
 test('006 T008 FR-001 FR-005 FR-006: skill takes --team, names the six roles as the hook does, refuses before any launch', () => {
   const skill = teamSkill();
   assert.match(skill.split('\n').find((l) => l.startsWith('argument-hint:')), /--team/);
@@ -1642,12 +1663,13 @@ test('006 T016 FR-011: CLAUDE.md Rules name the Team: and Unbuilt: lines as held
   }
 });
 
-test('006 T016 D4 contract 8: README says four stops, and the list names the team question first', () => {
+// #427 merged the questions and the spec approval into one stop: three, from the four of 006 D4.
+test('006 T016 D4 contract 8: README says three stops, and the list names the team question first', () => {
   const readme = repoText('README.md');
   const a = flat(readme).match(/You decide at (\w+) stops/);
-  assert.ok(a && WORD_NUM[a[1]] === 4, `"You decide at ... stops": ${a && a[0]}`);
+  assert.ok(a && WORD_NUM[a[1]] === 3, `"You decide at ... stops": ${a && a[0]}`);
   const b = flat(readme).match(/It stops for you at (\w+) points/);
-  assert.ok(b && WORD_NUM[b[1]] === 4, `"It stops for you at ... points": ${b && b[0]}`);
+  assert.ok(b && WORD_NUM[b[1]] === 3, `"It stops for you at ... points": ${b && b[0]}`);
   const after = readme.slice(readme.indexOf('It stops for you at')).split('\n').slice(1);
   const items = [];
   let cur = null;
@@ -1657,7 +1679,8 @@ test('006 T016 D4 contract 8: README says four stops, and the list names the tea
     else if (items.length && !l.trim()) break;
     else if (items.length) break;
   }
-  assert.equal(items.length, 4, items.join(' / '));
+  assert.equal(items.length, 3, items.join(' / '));
+  assert.match(flat(items[1]), /questions and approve the spec, in one stop/, 'the second is the spec stop, questions included (#427)');
   assert.match(items[0], /team/i, 'the first item is the team question');
   assert.match(flat(items[0]), /--team/, 'skipped when --team names the team');
 });
@@ -1690,10 +1713,10 @@ test('006 T019 FR-010 US4-1: pipeline.tape answers the team question before the 
   assert.ok(teamWait >= 0 && firstEnter > teamWait, 'the Enter follows the wait for the team dialog');
 });
 
-test('006 T019 FR-010 US4-1: README "The pipeline" names the team question as the first of four stops', () => {
+test('006 T019 FR-010 US4-1: README "The pipeline" names the team question as the first of three stops', () => {
   const sec = flat(mdSection(repoText('README.md'), '### The pipeline'));
-  assert.ok(!sec.includes("the first of the pipeline's three stops"), 'the old three-stop wording is gone');
-  assert.match(sec, /team question[^.]*first of the pipeline's four stops/i, 'paragraph: team question is the first of four');
+  assert.ok(!sec.includes("the first of the pipeline's four stops"), 'the four-stop wording is gone (#427)');
+  assert.match(sec, /team question[^.]*first of the pipeline's three stops/i, 'paragraph: team question is the first of three');
   assert.match(sec, /product-owner's questions[^.]*second/i, "product-owner's questions are the second");
   const alt = sec.match(/!\[([^\]]*)\]\(docs\/media\/pipeline\.gif\)/);
   assert.ok(alt, 'pipeline.gif image');
