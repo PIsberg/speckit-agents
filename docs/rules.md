@@ -162,7 +162,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 <!-- fingerprint: dec7a9e5 -->
 - Only when `--load-test` or `--team` names it, once the last round is GREEN and before spec-gatekeeper, in the foreground. pinned; hook `gate` (denies a launch before the audit passed).
 - The report's last line is `PASS`, `FAIL` or `NOT MEASURED`; anything else is relaunched once, then handed to the user. hook `ends` (refuses once); pinned.
-- A `FAIL` stops for the user; on accept only `load-test.md` is committed and the load tests are stashed. pinned; a breach leaves a load test in the PR, unseen.
+- A `FAIL` stops for the user; on accept only `load-test.md` is committed and the load tests are stashed by name, so a tick or a file of the user's stays (#422). pinned, and the stash command is run in a scratch repo; a breach leaves a load test in the PR, unseen.
 
 ### skills/speckit-team/SKILL.md: 6. Verify: spec-gatekeeper
 <!-- fingerprint: c64bb015 -->
