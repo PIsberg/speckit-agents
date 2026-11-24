@@ -31,6 +31,8 @@
 //   /speckit-team --team <roles> <request>    only the roles you name, comma-separated, from product-owner,
 //                                             architect, spec-auditor, test-writer, implementer, load-tester,
 //                                             spec-gatekeeper, security-reviewer
+//   /speckit-team --team build <request>     test-writer, implementer, spec-gatekeeper; --team lite adds
+//                                             product-owner (#464)
 //   /speckit-team --team noagents <request>   no agents: the session runs Spec Kit's own commands itself
 //   /speckit-team --team skill-agents <request> every role runs as a skill in this session, not a subagent
 //                                             (the eight speckit-role-<role> skills, generated from agents/)

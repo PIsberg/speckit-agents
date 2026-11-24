@@ -5126,3 +5126,21 @@ test('#463: the launch prompt comes from the gate\'s record, claimed at Subagent
   run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im10', session_id: 's1' });
   assert.notEqual(run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im10', session_id: 's1', last_assistant_message: 'RESULT: GREEN' })?.decision, 'block');
 });
+
+// #464: `--team build` and `--team lite` are presets for role lists, read where the hook reads typed roles, so the
+// #373 hold keeps a launch from dropping one of their roles as it does for roles typed by name.
+test('#464: --team build and --team lite expand to their roles, and a launch that drops one is held', () => {
+  const build = choiceRepo();
+  typedTeam(build.dir, '--team Build add a flag', { transcript_path: build.t });
+  const dropped = agentLaunch(build.dir, 'go\nTeam: test-writer, implementer', { transcript_path: build.t });
+  assert.ok(denied(dropped), 'spec-gatekeeper dropped');
+  assert.match(reasonOf(dropped), /the user typed --team test-writer,implementer,spec-gatekeeper, and this Team: line drops spec-gatekeeper/);
+  assert.ok(!denied(agentLaunch(build.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: build.t })), 'the preset\'s roles go');
+  const lite = choiceRepo();
+  typedTeam(lite.dir, '--team lite add a flag', { transcript_path: lite.t });
+  assert.match(reasonOf(agentLaunch(lite.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: lite.t })), /drops product-owner/);
+  const sec = choiceRepo();
+  typedTeam(sec.dir, '--team build,security add', { transcript_path: sec.t });
+  // security-reviewer is not held, as for --security (#373); the preset's roles still are.
+  assert.match(reasonOf(agentLaunch(sec.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: sec.t })), /drops spec-gatekeeper/);
+});

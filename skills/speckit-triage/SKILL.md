@@ -21,7 +21,7 @@ Suggest `/speckit-team` when any of these holds:
   not protected, so a typo fix there is not a reason for `/speckit-team`;
 - it needs more than 30 production lines or more than 2 production files.
 
-Otherwise suggest `/speckit-patch`.
+Otherwise suggest `/speckit-patch`. Within `/speckit-team`, suggest `/speckit-team --team build` for a change that needs no spec questions or plan (a bug fix or a small addition over the fast track's budget), `/speckit-team --team lite` when it needs a spec but one slice will build it, and the full team otherwise.
 
 Output exactly one line: `Suggested: <command> <request> (<one-line reason>)`, for example
 `Suggested: /speckit-team <request> (adds a new installer flag, a public contract)`. If you cannot

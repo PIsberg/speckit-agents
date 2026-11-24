@@ -90,7 +90,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Say how to bring foreground launches back when the Agent tool has no `run_in_background`. text.
 
 ### skills/speckit-team/SKILL.md: Team
-<!-- fingerprint: 4925cc0b -->
+<!-- fingerprint: ba0bfd11 -->
+- `--team build` (test-writer, implementer, spec-gatekeeper) and `--team lite` (product-owner added) are presets that combine with role names (#464). hook `gate` expands them where it reads typed roles, so the #373 hold covers their roles; pinned.
 - How `--team`, `--security` and `--project` are read, and the refusals before any launch. pinned.
 - `noagents` is chosen only by typing it. hook `gate` (reads the typed command at `UserPromptExpansion`).
 - `skill-agents` is chosen only by typing it. hook `gate` (denies a role skill outside a typed `--team skill-agents`).
@@ -233,7 +234,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 ## skills/speckit-triage/SKILL.md
 
 ### skills/speckit-triage/SKILL.md: (opening)
-<!-- fingerprint: e35347c6 -->
+<!-- fingerprint: d08b8925 -->
+- Within `/speckit-team`, suggest `--team build` or `--team lite` by the change's needs (#464). pinned; advisory only, nothing enforces the suggestion.
 - Advisory: one `Suggested:` line, the four signals for `/speckit-team`, `--project` kept. pinned.
 - Launches nothing, changes no file. text.
 
