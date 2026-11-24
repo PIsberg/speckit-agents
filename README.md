@@ -179,7 +179,7 @@ The installer puts everything in your user-level Claude Code directory (`$CLAUDE
 | `--no-board` | remove the board mod, only if the installer installed it, and keep the team |
 | `--no-fork` | write `"CLAUDE_CODE_FORK_SUBAGENT": "0"` under `env` in your `settings.json`, so the team's agents run in the foreground in every project ([Foreground launches](#foreground-launches)); only where no value is set, and later reruns keep it |
 | `--fork` | remove what `--no-fork` wrote; a value you set yourself stays |
-| `--models TIER` | which model each agent runs on ([#429](https://github.com/PIsberg/speckit-agents/issues/429)): `default`, the `model:` lines as shipped (opus on architect and spec-auditor, sonnet on the rest); `sonnet` or `opus` on every agent; or `fast`, sonnet on every agent and haiku for implementer's stub passes and architect's `dictated:` revisions, which the `gate` hook sets on those Agent calls (a call that already names a model keeps it). Later reruns keep the tier; `--models default` goes back. Only the installed agents' `model:` line changes; the role skills of `--team skill-agents` and `--team hybrid` run on the session's model whatever the tier |
+| `--models TIER` | which model each agent runs on ([#429](https://github.com/PIsberg/speckit-agents/issues/429)): `default`, the `model:` lines as shipped (opus on architect and spec-auditor, sonnet on the rest); `sonnet` or `opus` on every agent; or `fast`, sonnet on every agent and haiku for implementer's stub passes and architect's `dictated:` revisions, which the `gate` hook sets on those Agent calls (a call that already names a model keeps it). Later reruns keep the tier; `--models default` goes back. Only the installed agents' `model:` line changes; the role skills of `--team skill-agents` and `--team hybrid` run on the session's model whatever the tier. One fixture run each on 2026-11-23: `default` $1.44, `sonnet` $0.92, `fast` $0.75, all passing ([measurements](docs/measurements.md#team-shapes-and-model-tiers-one-run-each-2026-11-23)); whether sonnet audits as well as opus on real defects is not measured |
 
 Any other argument is refused before anything is written, so a mistyped `--dryrun` stops with an
 error instead of installing for real.
@@ -610,8 +610,11 @@ after a turn that ended without a Stop.
 **What was verified how.** Covered by test only (`test/hook.test.mjs`, `test/install.test.mjs` and
 `test/full-run.test.mjs`, "#428"): the typed forms and refusals, the start message, the gate role skill
 denial, the team kept at a gate's launch and ended at a writer's, the writer role closed at a gate's
-launch, and the skill's text. Not measured yet: cost and time against the other two modes on the
-fixture, which `node tools/full-run.mjs --hybrid` runs ([Full run with real models](#full-run-with-real-models)).
+launch, and the skill's text. Measured once a shape on the fixture on 2026-11-23 (Claude Code 2.1.331): hybrid
+$0.84 and $0.93 in 250 and 321 s, against $1.44 in 390 s for agents and $0.61 in 177 s for skill-agents, every
+run passing `tools/full-run.mjs`'s checks
+([measurements](docs/measurements.md#team-shapes-and-model-tiers-one-run-each-2026-11-23)). One sample a
+shape, so no rate.
 
 #### Settling decisions
 
@@ -1021,6 +1024,16 @@ hook runs none of it. The skill shows the command, asks, and runs it exactly as 
 explicit yes, never `git stash`, `git reset --hard`, `git clean` or `git checkout .`, which would take
 your work too ([#213](https://github.com/PIsberg/speckit-agents/issues/213)). A test runs the command
 on a stopped run and checks that the tree is back at the start with your own changes kept.
+
+Undoing used to throw `patcher`'s diagnosis and code away when the change was simply too big for the fast
+track. So a run the end check does not accept also leaves `patcher`'s own changes as a patch,
+`<git dir>/speckit-team/patch-draft.patch` (the same files as the undo, yours never in it; new files and
+deletions included), named in the record's `draft` field (`null` for an accepted run or one that changed
+nothing) ([#462](https://github.com/PIsberg/speckit-agents/issues/462)). On `ESCALATE` with a draft, the
+skill asks: keep the draft and restore the tree (it runs the undo, switches back to where the run started,
+and tells you to type `/speckit-team <the change> (patcher's draft: <path>)`), keep the changes in the
+working tree, or undo. `git apply <path>` on the start commit puts the work back; a test checks that. The
+skill never starts `/speckit-team` itself.
 
 #### What is prompt text, and what was verified
 
@@ -1789,13 +1802,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 739 tests:
+`npm test` runs 771 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 288 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 82 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 168 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 84 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 169 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
@@ -2492,7 +2505,7 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
   gate and the retry limit at each Skill call, and the verdict records; not the report's last line or tool lists ([the table above](#running-the-roles-as-skills---team-skill-agents)).
 - **`--team hybrid` isolates only the gates.** The four writers share the session's context, model and
   tool list as in skill-agents; spec-auditor, spec-gatekeeper, security-reviewer and load-tester run as
-  agents. Its cost and time against the other modes are not measured yet (#428).
+  agents. One run a shape on the fixture put it between them in dollars (#428).
 - **Role skills are not denied outside a Spec Kit repo.** Inside one, the hook denies a
   `speckit-role-<role>` call outside a typed `/speckit-team --team skill-agents` request. In a repo
   without `.specify/` every hook mode exits with no output, as the constitution requires of the team

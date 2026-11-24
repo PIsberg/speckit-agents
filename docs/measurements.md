@@ -1389,6 +1389,39 @@ on that build.
 
 What it does not show. One fixture, one model, 5 runs a cell; the skill-agents mode only on load-quadratic.
 
+## Team shapes and model tiers, one run each (2026-11-23)
+
+For [#428](https://github.com/PIsberg/speckit-agents/issues/428) (`--team hybrid`) and
+[#429](https://github.com/PIsberg/speckit-agents/issues/429) (`install.mjs --models`). Claude Code 2.1.331,
+Windows 11, main session `sonnet`, `node tools/full-run.mjs --login` on the clean fixture (`sum()`), the
+personal team reinstalled from the chain's tip (PR #458's head, `6d5680b`, which also has #431's run without
+a team question), one run after the other. Dollars are `total_cost_usd` of the last turn; input is the main
+session's plus every agent's, from `tools/usage.mjs`; seconds are the whole run.
+
+| Run | Passed | Cost | Input | Main session | Seconds | Launches |
+|---|---|--:|--:|--:|--:|---|
+| agents, `--models default` (opus on architect and spec-auditor) | yes | $1.44 | 1.52M | 0.68M | 390 | 7 agents |
+| `--team skill-agents` | yes | $0.61 | 2.18M | 2.18M | 177 | 7 role skills |
+| `--team hybrid` | yes | $0.84 | 2.35M | 2.26M | 250 | 4 writer role skills, spec-auditor and spec-gatekeeper as agents |
+| `--team hybrid`, again | yes | $0.93 | 2.83M | 2.76M | 321 | the same |
+| agents, `--models sonnet` | yes | $0.92 | 1.56M | 0.86M | 302 | 9 agents (the sonnet architect planned two rounds) |
+| agents, `--models fast` | yes | $0.75 | 1.56M | 0.93M | 314 | 7 agents, the stub pass on `claude-haiku-5-5` |
+
+What it shows, one sample a row. Hybrid sat between the two modes it combines: 35% to 42% below agents and
+38% to 52% above skill-agents in dollars, and 250 and 321 s against skill-agents' 177 s and agents' 390 s;
+its gates ran as agents with their own context, which skill-agents' do not. Both hybrid runs launched
+spec-gatekeeper right after the implementer role's last tool call, with no report: the hook refused that launch
+once, as `gate` does for a role report without its word; in one run the session wrote the report and launched
+again, in the other it launched again without one, so the role counted as `RESULT: RED` in the retry record.
+The skill now says to write the report first (#428). `--models sonnet` cost 36% less than the shipped tier
+and passed the same checks; `--models fast` 48% less, its stub pass on haiku as the hook set it. Every run
+recorded spec-auditor's `PASS` through the narrowed `verdict` entry of #445, and test-writer in the default run
+ended `RED` with a requirement the stub already met noted, not `BLOCKED` (#321).
+
+What it does not show. One run a row on one small fixture, so no rate: the price differences above are within
+what two runs of one shape differ by (hybrid: $0.84 and $0.93). Whether sonnet audits as well as opus on a
+feature with real defects is not measured: the clean fixture has none to find. `--large-slices` was not run.
+
 ## The drift check's git calls (#342)
 
 Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`

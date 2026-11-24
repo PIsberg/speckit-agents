@@ -4953,7 +4953,7 @@ test('#428: a writer role report with no end word denies the gate launch once, t
     say(t, 'Worked on it.');
     const first = launchAs(dir, 'spec-gatekeeper', 'verify', { transcript_path: t });
     assert.ok(denied(first), `${role}: ${JSON.stringify(first)}`);
-    assert.match(reasonOf(first), new RegExp(`^The ${role} role's report has no final line that is exactly one of: .*End the report with that line, then make the launch again\\.$`), role);
+    assert.match(reasonOf(first), new RegExp(`^The ${role} role's report has no final line that is exactly one of: .*Write the report now as a message of its own whose last line is that word, then make the launch again\\.$`), role);
     assert.equal(roleRec(dir).role, role, `${role}: the role still acts`);
     const again = launchAs(dir, 'spec-gatekeeper', 'verify', { transcript_path: t });
     assert.ok(!denied(again), `${role}, again: ${JSON.stringify(again)}`);
