@@ -5178,3 +5178,40 @@ test('#465: the architect role is sent back once too, at its Stop or the next ro
   assert.equal(stop?.decision, 'block', JSON.stringify(stop));
   assert.match(stop.reason, /Plan check: tasks\.md leaves FR-002 of spec\.md with no test task/);
 });
+
+// #466: the agents that build or check (architect, test-writer, implementer, spec-gatekeeper, load-tester, patcher) start
+// with the repo's commands and CI steps, so none spends its first turns reading package.json and the workflows. A repo
+// with nothing to name gets no block; product-owner, spec-auditor and security-reviewer get none.
+const metaOf = (out) => out?.hookSpecificOutput?.additionalContext ?? '';
+function metaRepo() {
+  const r = repo();
+  r.write('package.json', JSON.stringify({ scripts: { test: 'node --test', lint: 'eslint .', start: 'node server.js', typecheck: 'tsc --noEmit' } }));
+  r.write('.github/workflows/ci.yml', 'jobs:\n  t:\n    steps:\n      - run: npm ci\n      - run: npm test\n      - uses: actions/checkout@v4\n');
+  return r;
+}
+test('#466: SubagentStart gives the building and checking agents the repo\'s commands and CI steps', () => {
+  const { dir } = metaRepo();
+  for (const type of ['architect', 'test-writer', 'implementer', 'spec-gatekeeper', 'load-tester', 'patcher']) {
+    const ctx = metaOf(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: type, agent_id: `m-${type}`, session_id: 's1' }));
+    assert.match(ctx, /^Repository commands \(speckit-team, read from package\.json and \.github\/workflows; use them instead of reading those files\):/m, type);
+    assert.match(ctx, /^- npm test: node --test$/m, type);
+    assert.match(ctx, /^- npm run lint: eslint \.$/m, type);
+    assert.match(ctx, /^- npm run typecheck: tsc --noEmit$/m, type);
+    assert.doesNotMatch(ctx, /server\.js/, `${type}: only test, lint, typecheck and build`);
+    assert.match(ctx, /^- CI runs: npm ci; npm test$/m, type);
+    assert.ok(ctx.length <= 800, `${type}: ${ctx.length} characters`);
+  }
+  for (const type of ['product-owner', 'spec-auditor', 'security-reviewer']) {
+    assert.equal(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: type, agent_id: `n-${type}`, session_id: 's1' }), null, type);
+  }
+});
+
+test('#466: nothing to name gives no block, a broken package.json is skipped, and a long command is cut', () => {
+  const { dir, write: w } = repo();
+  assert.equal(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'e1', session_id: 's1' }), null);
+  w('package.json', '{ not json');
+  assert.equal(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'e2', session_id: 's1' }), null);
+  w('package.json', JSON.stringify({ scripts: { test: 'x'.repeat(5000) } }));
+  const long = metaOf(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'e3', session_id: 's1' }));
+  assert.ok(long.length <= 800 && /- npm test: x+…$/m.test(long), long.slice(0, 200));
+});

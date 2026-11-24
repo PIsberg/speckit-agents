@@ -2228,6 +2228,32 @@ function pruneState(now = Date.now()) {
   try { fs.writeFileSync(stamp, new Date(now).toISOString()); } catch { /* pruned again on the next launch */ }
 }
 
+// #466: what the building and checking agents would otherwise read package.json and the workflows for: the test, lint,
+// typecheck and build scripts and the CI `run:` steps, each cut to a line, the whole under 800 characters. '' when the repo
+// names none. Read from files at each start, no git call.
+const META_AGENTS = ['architect', 'test-writer', 'implementer', 'spec-gatekeeper', 'load-tester', 'patcher'];
+function repoMeta() {
+  const cut = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+  const out = [];
+  let scripts = {};
+  try { const p = JSON.parse(readOr(path.join(root, 'package.json'), 'null')); if (p && typeof p.scripts === 'object' && p.scripts) scripts = p.scripts; } catch { /* unreadable: skipped */ }
+  for (const name of ['test', 'lint', 'typecheck', 'build']) {
+    if (typeof scripts[name] === 'string') out.push(`- ${name === 'test' ? 'npm test' : `npm run ${name}`}: ${cut(scripts[name].replace(/\s+/g, ' '), 120)}`);
+  }
+  const wf = path.join(root, '.github', 'workflows');
+  let runs = [];
+  try {
+    for (const f of fs.readdirSync(wf).filter((n) => /\.ya?ml$/.test(n)).sort()) {
+      runs.push(...[...readOr(path.join(wf, f), '').matchAll(/^\s*-?\s*run:\s*(\S.*)$/gm)].map((m) => m[1].replace(/^['"]|['"]$/g, '').trim()).filter((r) => r && r !== '|' && r !== '>'));
+    }
+  } catch { /* no workflows */ }
+  runs = [...new Set(runs)].slice(0, 6);
+  if (runs.length) out.push(`- CI runs: ${cut(runs.join('; '), 240)}`);
+  if (!out.length) return '';
+  const text = ['Repository commands (speckit-team, read from package.json and .github/workflows; use them instead of reading those files):', ...out].join('\n');
+  return cut(text, 800);
+}
+
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
@@ -2245,12 +2271,14 @@ if (mode === 'start') {
   }
   const id = str(input.session_id);
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
+  const meta = META_AGENTS.includes(type) ? repoMeta() : '';
+  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta].filter(Boolean).join('\n\n') } });
   const rec = readState(projectFile(id));
-  if (rec === undefined) process.exit(0);
+  if (rec === undefined) { if (meta) give(''); process.exit(0); }
   if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
   const r = renderProject(rec.name);
   if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });
-  emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: r.block } });
+  give(r.block);
 }
 
 if (mode === 'lane' && args[0] === 'role') {
