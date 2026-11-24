@@ -1260,6 +1260,49 @@ function lastGatekeeperWord(text) {
   return text.split('\n').map(lastWord).reverse().find((w) => w === 'APPROVED' || w === 'REJECTED') ?? null;
 }
 
+// #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
+// worktree launch, which tick nothing by rule, or when the agent's transcript cannot be read.
+// What the check needs of an implementer's launch prompt, never its text: its task IDs, and whether it is a stub pass or a
+// worktree launch.
+const launchOf = (prompt) => ({ ids: [...new Set(prompt.match(/\bT\d{3,}\b/g) ?? [])].sort(), stub: /^\s*stub\b/m.test(prompt), worktree: /\bworktree\b/.test(prompt) });
+// #463: the main session's implementer launches the gate let through, oldest first, until an implementer's SubagentStart
+// claims one: its transcript may not be on disk yet at its Stop (CI's macOS runner, as #397 found for the main session's).
+const launchesFile = (sid) => path.join(stateDir, 'launches', `${sid}.json`);
+const launchFile = (key) => path.join(stateDir, 'agents', `${key}.launch.json`);
+function recordLaunch(sid, prompt) {
+  const f = launchesFile(sid);
+  locked(f, () => {
+    const prev = readState(f);
+    const now = Date.now();
+    const kept = (Array.isArray(prev) ? prev : []).filter((l) => now - Date.parse(l?.at) < 30 * 60_000);
+    writeJsonAtomic(f, [...kept, { ...launchOf(prompt), at: new Date(now).toISOString() }]);
+  });
+}
+function claimLaunch(sid, key) {
+  const f = launchesFile(sid);
+  locked(f, () => {
+    const prev = readState(f);
+    if (!Array.isArray(prev) || !prev.length) return;
+    writeJson(launchFile(key), prev[0]);
+    writeJsonAtomic(f, prev.slice(1));
+  });
+}
+// #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
+// worktree launch, which tick nothing by rule, or when neither the claimed launch nor the agent's transcript says.
+function untickedOfPrompt(feat) {
+  let launch = agentKey ? readState(launchFile(agentKey)) : null;
+  if (!launch || !Array.isArray(launch.ids)) {
+    const first = lines(readOr(str(input.agent_transcript_path) ?? '', '')).map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .find((r) => r?.type === 'user');
+    const c = first?.message?.content;
+    const prompt = typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('\n') : '';
+    launch = prompt ? launchOf(prompt) : null;
+  }
+  if (!launch || launch.stub || launch.worktree) return [];
+  const tasks = readOr(path.join(root, feat, 'tasks.md'), '');
+  return launch.ids.filter((id) => /^T\d{3,}$/.test(id) && new RegExp(`^\\s*[-*]\\s+\\[ \\]\\s.*\\b${id}\\b`, 'm').test(tasks));
+}
+
 function lastAssistantText() {
   const last = str(input.last_assistant_message);
   if (last) return last;
@@ -1603,6 +1646,8 @@ if (mode === 'gate') {
     if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
     // #429: under `--models fast` a stub pass and a dictated revision go out on haiku. Only the model changes, and only
     // when the call names none.
+    // #463: the implementer launch this gate lets through, for its SubagentStart to claim.
+    if (role === 'implementer') { try { recordLaunch(id, input.tool_input.prompt); } catch { /* unrecorded: the transcript decides */ } }
     const quick = quickModel(role, input.tool_input);
     if (quick) emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...input.tool_input, model: quick } } });
     finish();
@@ -1991,6 +2036,18 @@ if (mode === 'result') {
     if (!viaHandback && !input.stop_hook_active) block(ask);
   }
   const result = found ? found[1].toUpperCase() : 'RED';
+  // #463: a GREEN while tasks its own prompt names are still unticked cost a gatekeeper REJECTED and a launch to tick
+  // them; sent back once per agent, naming them.
+  if (result === 'GREEN') {
+    const open = untickedOfPrompt(feat);
+    const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ticks-asked`);
+    if (open.length && asked && !fs.existsSync(asked)) {
+      const why = `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which your prompt names. Tick each task you finished (- [x]); `
+        + 'name any you did not finish and why. Then end with RESULT: GREEN again.';
+      if (viaHandback) { writeJson(asked, {}); deny(why); }
+      if (!input.stop_hook_active) { writeJson(asked, {}); block(why); }
+    }
+  }
   markReport(done, viaHandback, { result });
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
   const closed = auditSkipped() ? null : auditProblem();
@@ -2160,6 +2217,9 @@ function pruneState(now = Date.now()) {
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
+  // #463: an implementer claims the oldest launch the gate recorded for this session.
+  const sid = str(input.session_id);
+  if (type === 'implementer' && agentId && AGENT_ID.test(agentId) && sid && SESSION_ID.test(sid)) { try { claimLaunch(sid, agentKey); } catch { /* the transcript decides */ } }
   // #445: spec-auditor's audit starts with the agent, so its verdict PreToolUse entry runs only on SubagentHandback.
   if (type === 'spec-auditor' && agentId && AGENT_ID.test(agentId) && !fs.existsSync(auditStartFile(agentKey))) {
     const feat = feature();

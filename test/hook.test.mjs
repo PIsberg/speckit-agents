@@ -2581,7 +2581,7 @@ test('project start: with a record, SubagentStart gives the block as additionalC
     const out = startAs(dir, role, { agent_id: `a-${role}` });
     assert.deepEqual(out, { hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: blockOf(dir, 'billing') } }, role);
   }
-  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-product-owner.json', 'a-spec-auditor.audit-start.json', 'a-spec-auditor.json', 'a-spec-gatekeeper.json'], 'lane start records for the roles no gate starts: the two planning roles and the read-only ones (#412), and spec-auditor\'s audit start (#445)');
+  assert.deepEqual(fs.readdirSync(path.join(stateDir(dir), 'agents')).sort(), ['a-architect.json', 'a-implementer.launch.json', 'a-product-owner.json', 'a-spec-auditor.audit-start.json', 'a-spec-auditor.json', 'a-spec-gatekeeper.json'], 'lane start records for the roles no gate starts: the two planning roles and the read-only ones (#412), spec-auditor\'s audit start (#445) and the launch implementer claimed (#463)');
   assert.equal(startAs(dir, 'implementer', { session_id: 's2' }), null, "another session's record is not used");
 });
 
@@ -5071,4 +5071,58 @@ test('#447: a held launch in a later turn (another prompt_id) goes, before its t
   typedTeam(b.dir, '--team spec-auditor,test-writer,implementer add sum()', { transcript_path: b.t, prompt_id: 'q1' });
   assert.ok(denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q1' })));
   assert.ok(!denied(agentLaunch(b.dir, 'go\nTeam: test-writer, implementer', { transcript_path: b.t, prompt_id: 'q2' })));
+});
+
+// #463: in a live run spec-gatekeeper rejected a finished build only because two tasks the implementer had built were
+// still `- [ ]` in tasks.md, which cost an implementer launch to tick them and a second gatekeeper. A GREEN while a task
+// its own launch prompt named is unticked is sent back once, naming the tasks. A stub pass and a worktree launch tick
+// nothing by rule, so they are not checked.
+function agentTranscript(dir, prompt) {
+  const file = path.join(dir, '..', `agent-${path.basename(dir)}-${Math.random().toString(36).slice(2)}.jsonl`);
+  fs.writeFileSync(file, `${JSON.stringify({ type: 'user', message: { role: 'user', content: prompt } })}\n`);
+  return file;
+}
+const greenStop = (dir, transcript, extra = {}) => run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im1',
+  last_assistant_message: 'All tests pass.\nRESULT: GREEN', agent_transcript_path: transcript, ...extra });
+test('#463: a GREEN with a task of its prompt still unticked is sent back once, naming it', () => {
+  const { dir } = repo();
+  pass(dir);
+  const t = agentTranscript(dir, 'Round 1 implementation task IDs: T002\nTest-writer report: T001 red.');
+  const first = greenStop(dir, t);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^RESULT: GREEN, but tasks\.md still has T001, T002 unticked, which your prompt names\. Tick each task you finished/);
+  const again = greenStop(dir, t, { stop_hook_active: true, last_assistant_message: 'All tests pass, T001 is test-writer\'s.\nRESULT: GREEN' });
+  assert.notEqual(again?.decision, 'block', 'never twice');
+  assert.match(msg(again), /implementer reported GREEN/);
+});
+
+test('#463: no send-back when the prompt\'s tasks are ticked, for a stub pass or a worktree, or without a transcript', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [X] T002 implement\n');
+  assert.notEqual(greenStop(dir, agentTranscript(dir, 'T001 T002'))?.decision, 'block', 'all ticked');
+  const r2 = repo();
+  pass(r2.dir);
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'stub T002'), { last_assistant_message: 'RESULT: STUB' })?.decision, 'block', 'stub');
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'T002\nworktree'))?.decision, 'block', 'worktree');
+  assert.notEqual(greenStop(r2.dir, undefined)?.decision, 'block', 'no transcript');
+  assert.notEqual(greenStop(r2.dir, agentTranscript(r2.dir, 'T999 is not in tasks.md'))?.decision, 'block', 'an ID tasks.md lacks');
+  assert.notEqual(run(r2.dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im2', last_assistant_message: 'RESULT: RED', agent_transcript_path: agentTranscript(r2.dir, 'T002') })?.decision, 'block', 'a RED');
+});
+
+// #463 on CI's macOS runner: the implementer's transcript was not on disk yet at its Stop, so no prompt was read and the
+// GREEN went through (as #397 found for the main session's). The gate records each implementer launch it lets through,
+// and the implementer's SubagentStart claims it, so the check needs no transcript.
+test('#463: the launch prompt comes from the gate\'s record, claimed at SubagentStart, with no transcript', () => {
+  const { dir } = repo();
+  pass(dir);
+  assert.ok(!denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1',
+    tool_input: { subagent_type: 'implementer', prompt: 'T002 and T001: go', run_in_background: false } })));
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im9', session_id: 's1' });
+  const out = run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im9', session_id: 's1', last_assistant_message: 'RESULT: GREEN' });
+  assert.equal(out?.decision, 'block', JSON.stringify(out));
+  assert.match(out.reason, /tasks\.md still has T001, T002 unticked/);
+  // A second implementer starts with no launch left to claim: nothing to check, nothing borrowed.
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im10', session_id: 's1' });
+  assert.notEqual(run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im10', session_id: 's1', last_assistant_message: 'RESULT: GREEN' })?.decision, 'block');
 });
