@@ -340,7 +340,7 @@ inSpecKitRepo = true;
 // #336: `gate` closes a role only at a Skill call; it also runs on every tool call of test-writer and
 // implementer, which never need the module.
 const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse' && input.tool_name === 'Skill')
-  || (mode === 'lane' && args[0] === 'role')
+  || (mode === 'lane' && (args[0] === 'role' || input.agent_type === 'architect'))
   ? await import(new URL('./speckit-drift.mjs', import.meta.url).href).catch((e) => e) : null;
 // The active feature's drift: { problems }, or { failed } when the check could not run. Without `spec`, only the
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
@@ -348,6 +348,13 @@ function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
   try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
+// #465: the requirements of the feature's spec.md no test task of its tasks.md cites or excuses; [] when the check cannot run.
+function plannedOf(feat) {
+  try { return typeof driftModule?.planned === 'function' ? driftModule.planned(root, feat) : []; } catch { return []; }
+}
+const planRefusal = (ids) => `Plan check: tasks.md leaves ${ids.join(', ')} of spec.md with no test task. Cite each on a test task that names `
+  + 'its test file, or give the task that covers it "No test: <reason>" (a process or docs rule), then finish. '
+  + 'Found now, it costs one edit; at spec-gatekeeper it costs a new audit and a round (#465).';
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
   + 'task cites must be in one of its test files, and every FR of spec.md in a test line naming the feature\'s number, '
@@ -1145,6 +1152,11 @@ function closeRole(rec, at, gate = null) {
     }
   }
   if (rec.role === 'implementer') countResult(rec, unsaid ? 'RESULT: RED' : said);
+  // #465: the architect role, as the agent at its Stop.
+  if (rec.role === 'architect') {
+    const gaps = plannedOf(feature() ?? rec.feature);
+    if (gaps.length) refuseOnce(rec, at, 'plan', planRefusal(gaps));
+  }
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
   if (at === 'stop') {
     const word = handOnWord(rec);
@@ -2274,8 +2286,18 @@ if (mode === 'lane') {
         + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
     }
   }
+  // #465: the architect is sent back once while a requirement of spec.md has no test task, before the audit reads it.
+  const plannedFeat = input.agent_type === 'architect' ? feature() : null;
+  const gaps = plannedFeat ? plannedOf(plannedFeat) : [];
+  const planAsked = path.join(stateDir, 'agents', `${agentKey}.plan-asked`);
+  if (gaps.length && !fs.existsSync(planAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(planAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) block(planRefusal(gaps));
+  }
   fs.rmSync(f, { force: true });
   fs.rmSync(asked, { force: true });
+  fs.rmSync(planAsked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
 }

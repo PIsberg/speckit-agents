@@ -137,6 +137,21 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
   return { features, tasks, problems, unchecked };
 }
 
+// #465: the requirements a feature's spec.md defines that no test task of its tasks.md cites (a task that writes tests and
+// names a test file) and no task excuses with `No test: <reason>`, read from those two files alone, before any test exists.
+// Sorted IDs; none without spec.md or tasks.md.
+export function planned(repo, dir) {
+  const spec = readOr(path.join(repo, dir, 'spec.md'), null);
+  const tasks = readOr(path.join(repo, dir, 'tasks.md'), null);
+  if (spec === null || tasks === null) return [];
+  const defined = [...new Set(DEFINED.flatMap((re) => [...spec.matchAll(re)].map((m) => m[1])))];
+  const isTest = testPatterns(repo);
+  const all = tasksOf(tasks);
+  const excused = new Set(all.flatMap((t) => [...excusedBy(t.text)]));
+  const cited = new Set(all.filter((t) => writesTests(t.text) && (t.text.match(PATHS) ?? []).some(isTest)).flatMap((t) => t.text.match(IDS) ?? []));
+  return defined.filter((id) => !excused.has(id) && !cited.has(id)).sort();
+}
+
 // The paths of rels that some commit on any ref ever touched, or null outside a git repo. One `git log` for
 // all of them (#342; a call per path cost 150 to 190 ms each on Windows). --no-renames lists a renamed-away
 // path under its old name too; --relative keeps names relative to repo when it is a subdirectory.

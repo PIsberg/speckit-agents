@@ -5144,3 +5144,37 @@ test('#464: --team build and --team lite expand to their roles, and a launch tha
   // security-reviewer is not held, as for --security (#373); the preset's roles still are.
   assert.match(reasonOf(agentLaunch(sec.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: sec.t })), /drops spec-gatekeeper/);
 });
+
+// #465: a tasks.md that leaves a requirement of spec.md with no test task cost runs a gatekeeper REJECTED, a new audit
+// and more; the architect is sent back once at its Stop, agent or role.
+const PLAN_SPEC = '# Spec\n- **FR-001**: a.\n- **FR-002**: b.\n';
+test('#465: the architect\'s Stop sends back once a requirement no test task cites', () => {
+  const { dir, write: w } = repo();
+  w(`${FEAT}/spec.md`, PLAN_SPEC);
+  w(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-001 in `test/a.test.js`\n- [ ] T002 Implement FR-001 and FR-002 in `src/a.js`\n');
+  subagentStart(dir, 'ar1', 'architect');
+  const first = laneOnly(dir, 'ar1', ['specs/', 'CLAUDE.md']);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^Plan check: tasks\.md leaves FR-002 of spec\.md with no test task\./);
+  assert.notEqual(laneOnly(dir, 'ar1', ['specs/', 'CLAUDE.md'])?.decision, 'block', 'once');
+  const ok = repo();
+  ok.write(`${FEAT}/spec.md`, PLAN_SPEC);
+  ok.write(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-001 and FR-002 in `test/a.test.js`\n');
+  subagentStart(ok.dir, 'ar2', 'architect');
+  assert.notEqual(laneOnly(ok.dir, 'ar2', ['specs/', 'CLAUDE.md'])?.decision, 'block');
+  const po = repo();
+  po.write(`${FEAT}/spec.md`, PLAN_SPEC);
+  subagentStart(po.dir, 'po1', 'product-owner');
+  assert.notEqual(laneOnly(po.dir, 'po1', ['specs/', '.specify/feature.json'], 'product-owner')?.decision, 'block', 'product-owner is not checked');
+});
+
+test('#465: the architect role is sent back once too, at its Stop or the next role call', () => {
+  const { dir, write: w } = repo();
+  skillAgentsTeam(dir);
+  w(`${FEAT}/spec.md`, PLAN_SPEC);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-architect')));
+  w(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-001 in `test/a.test.js`\n');
+  const stop = stopRole(dir);
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  assert.match(stop.reason, /Plan check: tasks\.md leaves FR-002 of spec\.md with no test task/);
+});

@@ -299,3 +299,20 @@ test('drift (#235): a test file git ignores, or one under node_modules, holds no
   });
   assert.deepEqual(drift(dir, { feature: 'specs/001-sum', spec: true }).problems, ['specs/001-sum/spec.md FR-002: no test names it with 001 (put "001 FR-002" in a test\'s name or a comment, or give a task that cites it "No test: <reason>")']);
 });
+
+// #465: requirements spec.md defines that no test task cites (one that writes tests and names a test file) and no task
+// excuses, found from spec.md and tasks.md alone, before any test exists: the architect's Stop checks them.
+test('#465: planned() names a spec requirement no test task cites and none excuses', async () => {
+  const { planned } = await import('../hooks/speckit-drift.mjs');
+  const dir = repo('- [ ] T001 [US1] Tests for FR-001 in `test/sum.test.js`\n- [ ] T002 Implement sum in `src/math.js` (FR-001, FR-002)\n'
+    + '- [ ] T003 Docs for FR-004 in `README.md`. No test: prose\n- [ ] T004 Implement FR-005 in `src/b.js`\n',
+  { 'specs/001-sum/spec.md': '- **FR-001**: sums.\n- **FR-002**: empty gives 0.\n- **FR-004**: documented.\n- **FR-005**: fast.\n' });
+  assert.deepEqual(planned(dir, 'specs/001-sum'), ['FR-002', 'FR-005']);
+  const ok = repo('- [ ] T001 Tests for FR-001 in `test/sum.test.js`\n', { 'specs/001-sum/spec.md': '- **FR-001**: sums.\n' });
+  assert.deepEqual(planned(ok, 'specs/001-sum'), []);
+  assert.deepEqual(planned(repo('- [ ] T001 x\n'), 'specs/001-sum'), [], 'no spec.md: nothing');
+  const noTasks = fs.mkdtempSync(path.join(os.tmpdir(), 'skdrift-'));
+  fs.mkdirSync(path.join(noTasks, 'specs/001-sum'), { recursive: true });
+  fs.writeFileSync(path.join(noTasks, 'specs/001-sum/spec.md'), '- **FR-001**: x\n');
+  assert.deepEqual(planned(noTasks, 'specs/001-sum'), [], 'no tasks.md yet: nothing');
+});
