@@ -1542,6 +1542,19 @@ test('#463: an implementer GREEN with T001 of its prompt unticked is sent back o
   assert.match(shown(r.requests['e2e green T001'][1]), /tasks\.md still has T001 unticked, which your prompt names/, story(r));
 });
 
+// #466: SubagentStart's repository block reaches an implementer's first request, so it need not read package.json. With
+// the hook a no-op (SPECKIT_E2E_NO_HOOK=1) the block is not there.
+test('#466: an implementer starts with the repo\'s test command from package.json in its first request', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  s.write('package.json', JSON.stringify({ scripts: { test: 'node --test e2e-466' } }));
+  const r = await session(s, {
+    [MAIN]: [call('Agent', { description: 'implementer', subagent_type: 'implementer', prompt: 'e2e meta: go', run_in_background: false })],
+    'e2e meta': [say('RESULT: STUB')],
+  });
+  assert.match(shown(r.requests['e2e meta'][0]), /- npm test: node --test e2e-466/, story(r));
+});
+
 // Runs the queue `test` filled (top of the file), CONCURRENCY at a time.
 describe('end to end', { concurrency: CONCURRENCY }, () => {
   for (const [name, opts, fn] of queued) nodeTest(name, { ...opts, ...(opts.timeout && { timeout: scaled(opts.timeout) }) }, fn);
