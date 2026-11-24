@@ -760,11 +760,13 @@ function typedRoles(args) {
   if (words[0] !== '--team') return null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
-  return list.join('').split(',').map((w) => {
+  return list.join('').split(',').flatMap((w) => {
     const raw = w.toLowerCase();
-    return raw === 'security' ? 'security-reviewer' : raw;
+    return raw === 'security' ? ['security-reviewer'] : TEAM_PRESETS[raw] ?? [raw];
   }).filter(Boolean);
 }
+// #464: role-list presets of a typed --team; a name in the list, so they combine with roles (`--team build,security`).
+const TEAM_PRESETS = { build: ['test-writer', 'implementer', 'spec-gatekeeper'], lite: ['product-owner', 'test-writer', 'implementer', 'spec-gatekeeper'] };
 // The session's team record, { roles, noagents }, or null when missing or unreadable (the full gates
 // then apply). `noagents` comes only from a typed `/speckit-team --team noagents`.
 function teamOf() {

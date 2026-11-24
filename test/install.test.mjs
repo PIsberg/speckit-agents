@@ -1561,7 +1561,7 @@ test('006 T014 FR-010 US4-1 US4-2 contract 8: with no --team the skill asks one 
   assert.match(flatTeam, /before (any|the first) (launch|agent)|before anything is launched/i, 'asked before any launch');
   assert.match(flatTeam, /single[- ]select|one choice|pick one/i, 'single select');
   assert.match(flatTeam, /Full team \(Recommended\)/, 'full team is the recommended option');
-  const options = ['Full team', 'Build only', 'Implement only', 'Spec and build'].map((o) => flatTeam.indexOf(o));
+  const options = ['Full team', 'Build and verify', 'Implement only', 'Spec and build'].map((o) => flatTeam.indexOf(o));
   assert.ok(options.every((i) => i >= 0), 'all four options are listed');
   assert.deepEqual([...options].sort((a, b) => a - b), options, 'full team first, in contract order');
   assert.match(flatTeam, /Spec and build, no audit or verification[^.]*product-owner[^.]*architect[^.]*test-writer[^.]*implementer/i, 'fourth option carries its four roles');
@@ -2043,7 +2043,7 @@ test('#428: argument-hint and ## Team name --team hybrid; ## Hybrid makes the wr
 // #181 L2 and L3: what T006 and SC-002 promise of the skill text. Every /speckit-team run reads the skill, so
 // the mode's text is capped; the team question is the one of 1030987, the last main before feature 009.
 // #431: the options are the same; the question is asked only on `--team ?`.
-const TEAM_QUESTION_BEFORE_009 = '`--team ?` (the list is the one word `?`) asks instead, once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:\n1. Full team (Recommended): all six roles.\n2. Build only: test-writer, implementer.\n3. Implement only: implementer.\n4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.\n\n';
+const TEAM_QUESTION_BEFORE_009 = '`--team ?` (the list is the one word `?`) asks instead, once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:\n1. Full team (Recommended): all six roles.\n2. Build and verify: test-writer, implementer, spec-gatekeeper.\n3. Implement only: implementer.\n4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.\n\n';
 test('#181 009 T006 SC-002: the skill-agents text stays under 3,000 characters, the team question is unchanged, and a dirty tree is asked about', () => {
   const source = repoText('skills/speckit-team/SKILL.md').replace(/\r\n/g, '\n');
   const team = skillSection(source, '## Team');
@@ -2756,4 +2756,13 @@ test('#456: a broken committed load test decides the verdict, and a growth ceili
   // control and flipped to FAIL at a size the spec does not name.
   assert.match(proc, /Measure growth on a work count or on the ratio to a same-run control, never on raw time\./);
   assert.match(proc, /copy its `noisy:` lines under Warnings as they are, each line starting `noisy:`/);
+});
+
+// #464: the presets in ## Team, option 2 of the team question with verification, and triage suggesting them.
+test('#464: ## Team defines --team build and --team lite, and /speckit-triage suggests them', () => {
+  const team = flat(skillSection(teamSkill(), '## Team'));
+  assert.match(team, /`--team build` is test-writer, implementer and spec-gatekeeper; `--team lite` is product-owner, test-writer, implementer and spec-gatekeeper\. A preset combines with role names \(`--team build,security`\)/);
+  assert.match(team, /2\. Build and verify: test-writer, implementer, spec-gatekeeper\./);
+  const tri = fs.readFileSync(path.join(path.dirname(INSTALL), 'skills', 'speckit-triage', 'SKILL.md'), 'utf8').replace(/\r\n/g, '\n');
+  assert.match(flat(tri), /suggest `\/speckit-team --team build` for a change that needs no spec questions or plan \(a bug fix or a small addition over the fast track's budget\), `\/speckit-team --team lite` when it needs a spec but one slice/);
 });

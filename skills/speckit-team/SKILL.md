@@ -118,6 +118,7 @@ pipeline order, are `product-owner`, `architect`, `spec-auditor`, `test-writer`,
 The `security-reviewer` is opt-in: it is included when requested via `--security` or named in `--team`
 (`--team ...,security-reviewer` or alias `security`). The `load-tester` is opt-in too, never in the default team: it is included only when requested via `--load-test` or named in `--team` (no alias). All six core roles named is the full
 team, the same run as without `--team`.
+`--team build` is test-writer, implementer and spec-gatekeeper; `--team lite` is product-owner, test-writer, implementer and spec-gatekeeper. A preset combines with role names (`--team build,security`), and the `Team:` line names its roles.
 
 `--team noagents` (the list is the one word `noagents`, in any case) runs no agent at all: you run
 Spec Kit's own skills in this session by `## No agents`, which replaces steps 0b to 6. It is chosen
@@ -140,7 +141,7 @@ as `skill-agents` is: a free-text answer of `hybrid` is not that choice; say in 
 With no roles named (no `--team`), the full team runs: ask nothing, and the team notice below says so.
 `--team ?` (the list is the one word `?`) asks instead, once, before any launch, with one AskUserQuestion call, a single-select question. **Stop:** wait for the answer. The options:
 1. Full team (Recommended): all six roles.
-2. Build only: test-writer, implementer.
+2. Build and verify: test-writer, implementer, spec-gatekeeper.
 3. Implement only: implementer.
 4. Spec and build, no audit or verification: product-owner, architect, test-writer, implementer.
 

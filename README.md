@@ -447,9 +447,9 @@ launches each agent with the inputs it needs and relays the product owner's ques
 `/speckit-team [--team <role>[,<role>...]|?] [--security] [--load-test] [--yes] [--side-by-side] <request>`. `--team` counts only as the first word after the other flags; names are
 case-insensitive and order does not matter. Without it the full team runs and nothing is asked
 ([#431](https://github.com/PIsberg/speckit-agents/issues/431)). `--team ?` asks one question before any
-launch, a stop like the others: Full team (recommended), Build only (test-writer, implementer),
+launch, a stop like the others: Full team (recommended), Build and verify (test-writer, implementer, spec-gatekeeper),
 Implement only (implementer), or Spec and build with no audit or verification (product-owner,
-architect, test-writer, implementer). Its free-text answer is a role list. All six core roles is the full
+architect, test-writer, implementer). Its free-text answer is a role list. Two presets save typing the roles: `--team build` is test-writer, implementer and spec-gatekeeper, a test-first build of the request with verification and no spec or plan; `--team lite` adds product-owner, so a spec comes first and one round builds it. A preset combines with role names (`--team build,security`), and the typed-team hold below covers its roles ([#464](https://github.com/PIsberg/speckit-agents/issues/464)). `/speckit-triage` suggests one when it fits. All six core roles is the full
 team. The `security-reviewer` is opt-in, included via `--security` or named in `--team` (`security-reviewer` or alias `security`). The `load-tester` is opt-in too, included via `--load-test` or named in `--team` (no alias); it runs after the audit has passed and before spec-gatekeeper, and a `FAIL` stops the run for you to fix or accept; on accept only `specs/<feature>/load-test.md` is committed and the load tests are stashed by name, so nothing else uncommitted goes into the stash ([#422](https://github.com/PIsberg/speckit-agents/issues/422)). `patcher` is not a team role.
 Two typed forms run no agent: `--team noagents` (Spec Kit's own skills, below) and
 `--team skill-agents` (the team's roles as skills in your session, [below](#running-the-roles-as-skills---team-skill-agents)).
@@ -1802,13 +1802,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 775 tests:
+`npm test` runs 777 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 291 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 292 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 84 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 169 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 170 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
