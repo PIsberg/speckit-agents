@@ -705,3 +705,64 @@ test('012 T010 FR-002 SC-003: checkRun fails a run that launched load-tester or 
     costs: [0.5], maxCost: 6, marker: MARKER, markerSent: true, agentTexts: [], skillAgents: true });
   assert.deepEqual(clean, [], 'control: no load-tester, no failure');
 });
+
+// #488: tools/factory.mjs headless issue-to-PR batch orchestrator with triage routing and CI self-healing loop.
+test('#488: tools/factory.mjs triages issues into patch, build, lite or full track, and drives batch + CI self-healing', async () => {
+  const factory = await import('../tools/factory.mjs');
+  // 1. Triage routing
+  const typo = factory.triageIssue({ number: 10, title: 'Fix typo in README.md', body: 'Change Helo to Hello in README.md.' });
+  assert.equal(typo.track, 'patch');
+  assert.match(typo.command, /^\/speckit-patch /);
+
+  const prot = factory.triageIssue({ number: 11, title: 'Fix regex in hooks/speckit-team.mjs', body: 'One-line fix in hooks/speckit-team.mjs.' }, { project: 'core' });
+  assert.equal(prot.track, 'build');
+  assert.match(prot.command, /^\/speckit-team --project core --team build --yes /);
+
+  const lite = factory.triageIssue({ number: 12, title: 'Add --format flag to output', body: 'New CLI flag --format json|text in one slice.' });
+  assert.equal(lite.track, 'lite');
+  assert.match(lite.command, /^\/speckit-team --team lite --yes /);
+
+  const full = factory.triageIssue({ number: 13, title: '[P0] Multi-module architecture for distributed caching', body: 'Add public contract, schema migration and 4 modules.' });
+  assert.equal(full.track, 'full');
+  assert.match(full.command, /^\/speckit-team --yes /);
+
+  // 2. CI self-healing loop
+  const green = factory.ciHealPrompt([{ name: 'test (ubuntu-latest)', state: 'SUCCESS' }], '');
+  assert.equal(green.status, 'green');
+  assert.equal(green.prompt, null);
+
+  const red1 = factory.ciHealPrompt([{ name: 'test (windows-latest)', state: 'FAILURE' }], 'AssertionError: expected /a/b got \\a\\b', { round: 1, maxRounds: 2 });
+  assert.equal(red1.status, 'heal');
+  assert.match(red1.prompt, /test \(windows-latest\)/);
+  assert.match(red1.prompt, /AssertionError/);
+
+  const exhausted = factory.ciHealPrompt([{ name: 'test (windows-latest)', state: 'FAILURE' }], 'still failing', { round: 3, maxRounds: 2 });
+  assert.equal(exhausted.status, 'exhausted');
+  assert.equal(exhausted.prompt, null);
+
+  // 3. Batch execution with CI heal round
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'skfactory-'));
+  const prompts = [];
+  let ciCalls = 0;
+  const summary = factory.runBatch({
+    out,
+    issues: [{ number: 42, title: 'Fix typo in README.md', body: 'Simple typo.' }],
+    invoke: (prompt, session) => {
+      prompts.push({ prompt, session });
+      return { status: 0, stdout: JSON.stringify({ session_id: 's42', total_cost_usd: 0.08 * prompts.length, num_turns: 2, result: 'DONE' }), stderr: '' };
+    },
+    checkCi: () => {
+      ciCalls++;
+      return ciCalls === 1
+        ? { checks: [{ name: 'lint', state: 'FAILURE' }], logs: 'Missing semicolon' }
+        : { checks: [{ name: 'lint', state: 'SUCCESS' }], logs: '' };
+    },
+  });
+  assert.equal(summary.results.length, 1);
+  assert.equal(summary.results[0].number, 42);
+  assert.equal(summary.results[0].track, 'patch');
+  assert.equal(summary.results[0].ciStatus, 'green');
+  assert.equal(summary.results[0].ciHealRounds, 1);
+  assert.equal(prompts.length, 2, 'initial run + 1 CI self-heal turn');
+  assert.ok(fs.existsSync(path.join(out, 'factory.json')));
+});
