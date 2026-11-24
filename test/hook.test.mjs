@@ -5250,3 +5250,47 @@ test('#486: spec-gatekeeper APPROVED is refused when production code was committ
   fs.writeFileSync(path.join(stateDir(r.dir), 'team', 's486.json'), JSON.stringify({ session_id: 's486', roles: ['implementer', 'spec-gatekeeper'], at: new Date().toISOString() }));
   assert.ok(!denied(send('gk486b', { session_id: 's486' })), 'without test-writer in the team, APPROVED is allowed');
 });
+
+// #487: stateful phase checkpointing in `check team` and `--resume` leading flag support.
+test('#487: check team reports the active feature checkpoint across phases, and --resume leads --team arguments', () => {
+  const hook = skillHook();
+  const stamped = fs.readFileSync(hook, 'utf8').replace('speckit-agents: managed by install.mjs', 'speckit-agents: managed by install.mjs (speckit-agents 0.1.0, build 000000000000)');
+  fs.writeFileSync(hook, stamped);
+  const { dir, write: w } = repo();
+  const cfg = path.dirname( path.dirname(hook));
+  const check = () => spawnSync(process.execPath, [hook, 'check', 'team'], { cwd: dir, encoding: 'utf8', input: '', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+
+  // 1. spec, plan, tasks exist, no audit PASS yet -> checkpoint is audit
+  let out = check();
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(out.stdout, /^state: feature specs\/001-demo \(audit\)$/m);
+
+  // 2. open question in spec.md -> checkpoint is spec-questions
+  w(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', ...Q1]));
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(spec-questions: Q1\)$/m);
+
+  // 3. open decision in plan.md -> checkpoint is plan-decisions
+  w(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: works.\n');
+  w(`${FEAT}/plan.md`, '# Plan\n\n## Open Decisions\n\n### D1: Which?\n\n- **A (recommended): one**\n');
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(plan-decisions: D1\)$/m);
+
+  // 4. audit PASS with unticked tasks -> checkpoint is build with unticked IDs
+  w(`${FEAT}/plan.md`, '# Plan\n');
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [ ] T002 implement\n- [ ] T003 refactor\n');
+  pass(dir);
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(build: T002, T003\)$/m);
+
+  // 5. all tasks ticked, not yet verified -> checkpoint is verify
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [X] T002 implement\n- [x] T003 refactor\n');
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(verify\)$/m);
+
+  // 6. spec-gatekeeper APPROVED recorded -> checkpoint is approved
+  w('test/a.test.js', '// 001 FR-001\n');
+  run(dir, ['ends', '--record', 'APPROVED', 'REJECTED'], { hook_event_name: 'SubagentStop', agent_id: 'gk487', last_assistant_message: 'APPROVED' });
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(approved\)$/m);
+
+  // 7. --resume is accepted as a leading flag before --team
+  const a = choiceRepo();
+  typedTeam(a.dir, '--resume --team test-writer,implementer,spec-gatekeeper go', { transcript_path: a.t });
+  assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })), '--resume preserves typed --team hold');
+});

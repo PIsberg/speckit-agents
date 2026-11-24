@@ -761,8 +761,8 @@ function typedRoles(args) {
     } else if (words[0] === '--security' && !seen.has('--security')) {
       seen.add('--security');
       words = words.slice(1);
-    } else if (['--load-test', '--yes', '--side-by-side'].includes(words[0]) && !seen.has(words[0])) {
-      // #431: --yes and --side-by-side lead the arguments as --load-test does.
+    } else if (['--load-test', '--yes', '--side-by-side', '--resume'].includes(words[0]) && !seen.has(words[0])) {
+      // #431, #487: --yes, --side-by-side and --resume lead the arguments as --load-test does.
       seen.add(words[0]);
       words = words.slice(1);
     } else break;
@@ -1440,6 +1440,24 @@ function trusted(dir) {
   const accepted = new Set(Object.entries(projects).filter(([, v]) => v?.hasTrustDialogAccepted === true).map(([k]) => norm(k)));
   return { ok: accepted.has(norm(path.resolve(dir))), conf };
 }
+// #487: deterministic checkpoint state for an active feature, so a resumed or /clear-reset session can
+// fast-forward past completed phases whose audit fingerprint still holds.
+function featureCheckpoint(feat) {
+  const specText = readOr(path.join(root, feat, 'spec.md'), undefined);
+  if (specText === undefined) return 'spec';
+  const qs = openQuestions(specText);
+  if (qs.length || specText.includes('[NEEDS CLARIFICATION')) return `spec-questions${qs.length ? `: ${qs.join(', ')}` : ''}`;
+  const planText = readOr(path.join(root, feat, 'plan.md'), undefined);
+  const tasksText = readOr(path.join(root, feat, 'tasks.md'), undefined);
+  if (planText === undefined || tasksText === undefined) return 'plan';
+  const ds = openDecisions(planText);
+  if (ds.length) return `plan-decisions: ${ds.join(', ')}`;
+  if (auditProblem() !== null) return 'audit';
+  const open = [...tasksText.matchAll(/^\s*[-*]\s+\[ \]\s+(T\d+)\b/gm)].map((m) => m[1]);
+  if (open.length) return `build: ${open.join(', ')}`;
+  const e = readState(endsFile(feat));
+  return e?.word === 'APPROVED' ? 'approved' : 'verify';
+}
 // `check team`: what step 0 of /speckit-team asks of the repo, one `state:` line each, so the main session
 // needs no call of its own for them. In 3 of the 5 full runs of 2026-11-08 it spent a second response there.
 function repoState() {
@@ -1458,6 +1476,8 @@ function repoState() {
   else out.push('state: constitution holds rules');
   const branch = git(root, 'branch', '--show-current');
   out.push(branch ? `state: on branch ${branch}` : 'state: not on a branch');
+  const feat = feature();
+  if (feat) out.push(`state: feature ${feat} (${featureCheckpoint(feat)})`);
   return out;
 }
 if (mode === 'check') {
