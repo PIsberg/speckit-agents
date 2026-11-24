@@ -346,7 +346,9 @@ const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
 function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  const t = spec ? teamOf() : null;
+  const testFirst = spec && (!t || (t.roles.includes('test-writer') && t.roles.includes('implementer')));
+  try { const r = driftModule.drift(root, { feature: feat, spec, testFirst }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #465: the requirements of the feature's spec.md no test task of its tasks.md cites or excuses; [] when the check cannot run.
 function plannedOf(feat) {
@@ -475,9 +477,10 @@ const stateDir = path.join(commonDir, 'speckit-team');
 // keeps its own reset. A report with no tool call before it is told apart by markedReport() (#394).
 if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
   const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  if (input.tool_name === 'Bash') fs.rmSync(marker('untested.json'), { force: true });
   if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
     try {
-      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked', 'untested.json', 'untested-asked']) fs.rmSync(marker(m), { force: true });
     } catch (e) {
       addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
     }
@@ -1538,8 +1541,16 @@ function scopeCheck(sargs) {
   }
   if (viaBash) scopeBash = { command: file, actor, ruleArgs };
   else {
-    const why = laneProblem(actor, ruleArgs, path.resolve(cwd, file), file, false);
+    const abs = path.resolve(cwd, file);
+    const why = laneProblem(actor, ruleArgs, abs, file, false);
     if (why) deny(why);
+    // #486: an implementer Write/Edit to a production file marks it untested until a Bash test command runs.
+    if (agentKey && ruleArgs[0] === 'no-tests') {
+      const rel = repoRel(abs);
+      if (rel && !TASKS_FILE.test(rel) && !isDoc(rel) && !rel.startsWith('specs/')) {
+        try { writeJson(path.join(stateDir, 'agents', `${agentKey}.untested.json`), { file: rel, at: new Date().toISOString() }); } catch { /* non-blocking */ }
+      }
+    }
     process.exit(0);
   }
 }
@@ -2053,6 +2064,17 @@ if (mode === 'result') {
   // #463: a GREEN while tasks its own prompt names are still unticked cost a gatekeeper REJECTED and a launch to tick
   // them; sent back once per agent, naming them.
   if (result === 'GREEN') {
+    // #486: a GREEN while a production file was written via Write/Edit with no Bash run after it is sent back once.
+    const untestedPath = agentKey && path.join(stateDir, 'agents', `${agentKey}.untested.json`);
+    const untested = untestedPath ? readState(untestedPath) : null;
+    const untestedAsked = agentKey && path.join(stateDir, 'agents', `${agentKey}.untested-asked`);
+    if (untested?.file && untestedAsked && !fs.existsSync(untestedAsked)) {
+      const why = `RESULT: GREEN, but ${untested.file} was modified after your last Bash test run. Run the tests on the final code before reporting RESULT: GREEN.`;
+      writeJson(untestedAsked, {});
+      fs.rmSync(untestedPath, { force: true });
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+    }
     const open = untickedOfPrompt(feat);
     const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ticks-asked`);
     if (open.length && asked && !fs.existsSync(asked)) {
@@ -3427,13 +3449,28 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   // behaviour change from a typo, so a production change with no test file in the run is stopped, unless the
   // report says why it has none: a line `No test: <reason>`. A docs-only change has no production lines to check.
   const tests = testsAt(start.sha);
-  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !NO_TEST_LINE.test(reportText(viaHandback))
-    && !(!viaHandback && readState(handbackFile(key))?.noTest === true)) {
+  const repText = reportText(viaHandback);
+  const noTestExempt = NO_TEST_LINE.test(repText) || (!viaHandback && readState(handbackFile(key))?.noTest === true);
+  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !noTestExempt) {
     end('stopped', `fast track stopped: ${m.lines} changed production lines and no test file changed. A change in behaviour needs a regression test, shown failing. `
       + 'If the change has no behaviour (a typo, a comment, a config value), the report says so in a line `No test: <reason>`. '
       + 'Nothing was committed; the work is uncommitted in the working tree. Write the test or add that line, then run the change again.'
       + undoSentence(start.sha, m));
   }
+  // #486: a patcher run that edited files via Write/Edit and reports DONE without a Bash test run after the edit is sent back once.
+  const patchUntested = path.join(stateDir, 'patch', `${key}.untested.json`);
+  const patchAsked = path.join(stateDir, 'patch', `${key}.untested-asked`);
+  const repWord = lastWord(repText);
+  if (m.lines > 0 && !noTestExempt && repWord !== 'FAILED' && repWord !== 'ESCALATE') {
+    const u = readState(patchUntested);
+    if (u?.file && !fs.existsSync(patchAsked)) {
+      writeJson(patchAsked, {});
+      fs.rmSync(patchUntested, { force: true });
+      refuse(`Fast track: ${u.file} was modified after your last Bash test run. Run the tests on the final code before finishing.`);
+    }
+  }
+  fs.rmSync(patchUntested, { force: true });
+  fs.rmSync(patchAsked, { force: true });
   writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });
   end('accepted', `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.`);
 }
@@ -3554,6 +3591,9 @@ if (mode === 'patch') {
       deny(`Fast track: ${hit} had uncommitted changes when the run started. They are the developer's work, so the fast track leaves the file alone. `
         + 'If the change needs this file, report ESCALATE; the developer commits or stashes that work first, or uses /speckit-team.');
     }
+    if (!rel || !isDoc(rel)) {
+      try { writeJson(path.join(stateDir, 'patch', `${key}.untested.json`), { file: rel ?? str(given), at: new Date().toISOString() }); } catch { /* non-blocking */ }
+    }
   }
   if (input.tool_name === 'Bash') {
     const cmd = ti.command;
@@ -3567,6 +3607,7 @@ if (mode === 'patch') {
       deny(`Fast track: ${who} may not run ${t}: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. `
         + 'Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.');
     }
+    fs.rmSync(path.join(stateDir, 'patch', `${key}.untested.json`), { force: true });
   }
   let m;
   try { m = measure(start); } catch (e) {

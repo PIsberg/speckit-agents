@@ -1522,3 +1522,19 @@ test('#462: an accepted run, and one that changed nothing, leave no draft', () =
   noStop(stop(none.dir));
   assert.equal(undoRecord(none.dir).draft, null);
 });
+
+// #486: patcher end check refuses once when a file was modified via Write/Edit with no Bash test run after it (unless No test: or FAILED/ESCALATE).
+test('#486: patcher end check refuses once when a production file was edited via Write/Edit with no Bash run after it', () => {
+  const { dir } = fresh({ 'src/a.js': 'export const a = 1;\n', 'test/a.test.js': 'test("a", () => {});\n' });
+  begin(dir);
+  put(dir, 'src/a.js', 'export const a = 2;\n');
+  put(dir, 'test/a.test.js', 'test("a is 2", () => {});\n');
+  assert.ok(!denied(patchTool(dir, 'Edit', { file_path: path.join(dir, 'src/a.js'), old_string: 'a = 1', new_string: 'a = 2' })));
+  const first = run(dir, ['patch'], { hook_event_name: 'SubagentStop', agent_id: 'p1', agent_type: 'patcher', last_assistant_message: 'Fixed.\nDONE' });
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /modified after your last Bash test run|run the tests/i);
+  okBash(dir, 'run tests after edit');
+  const second = run(dir, ['patch'], { hook_event_name: 'SubagentStop', agent_id: 'p1', agent_type: 'patcher', last_assistant_message: 'Fixed.\nDONE' });
+  assert.notEqual(second?.decision, 'block', JSON.stringify(second));
+  assert.ok(fs.existsSync(path.join(stateDir(dir), 'patch-accepted.json')), 'accepted after Bash run');
+});

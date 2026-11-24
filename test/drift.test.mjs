@@ -316,3 +316,43 @@ test('#465: planned() names a spec requirement no test task cites and none excus
   fs.writeFileSync(path.join(noTasks, 'specs/001-sum/spec.md'), '- **FR-001**: x\n');
   assert.deepEqual(planned(noTasks, 'specs/001-sum'), [], 'no tasks.md yet: nothing');
 });
+
+// #486: Test-First commit causality in git history at spec-gatekeeper's APPROVED. When commits after the base commit
+// modify production files, a test-only commit must precede the first non-stub production commit.
+test('#486: drift with testFirst checks that a test-only commit precedes the first production commit', () => {
+  const mk = (commits) => {
+    const dir = repo(SUM_TASKS, { 'specs/001-sum/spec.md': '- **FR-001**: sums.\n- **FR-002**: empty.\n', 'src/math.js': 'export const add = (a, b) => a + b;\n' });
+    git(dir, 'init', '-q', '-b', 'main');
+    git(dir, 'add', '-A');
+    git(dir, 'commit', '-qm', 'base');
+    git(dir, 'checkout', '-q', '-b', '001-sum');
+    for (const [msg, files] of commits) {
+      for (const [rel, text] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+        fs.writeFileSync(path.join(dir, rel), text);
+      }
+      git(dir, 'add', '-A');
+      git(dir, 'commit', '-qm', msg);
+    }
+    return dir;
+  };
+  const TEST_BODY = "test('001 FR-001 adds', () => {});\n// 001 FR-002\n";
+  const STUB_BODY = "export const sum = () => { throw new Error('not implemented'); };\n";
+  const PROD_BODY = 'export const sum = (n) => n.reduce((a, b) => a + b, 0);\n';
+
+  const ok = mk([['test: failing tests', { 'test/sum.test.js': TEST_BODY }], ['feat: sum', { 'src/math.js': PROD_BODY }]]);
+  assert.deepEqual(drift(ok, { feature: 'specs/001-sum', spec: true, testFirst: true }).problems, [], 'test commit before production commit');
+
+  const withStub = mk([['stub: T002', { 'src/math.js': STUB_BODY }], ['test: failing tests', { 'test/sum.test.js': TEST_BODY }], ['feat: sum', { 'src/math.js': PROD_BODY }]]);
+  assert.deepEqual(drift(withStub, { feature: 'specs/001-sum', spec: true, testFirst: true }).problems, [], 'stub commit before test commit is allowed');
+
+  const codeFirst = mk([['feat: sum', { 'src/math.js': PROD_BODY }], ['test: after code', { 'test/sum.test.js': TEST_BODY }]]);
+  const p1 = drift(codeFirst, { feature: 'specs/001-sum', spec: true, testFirst: true }).problems;
+  assert.equal(p1.length, 1, JSON.stringify(p1));
+  assert.match(p1[0], /Test-first|committed before/i);
+
+  const bundled = mk([['feat and test together', { 'test/sum.test.js': TEST_BODY, 'src/math.js': PROD_BODY }]]);
+  const p2 = drift(bundled, { feature: 'specs/001-sum', spec: true, testFirst: true }).problems;
+  assert.equal(p2.length, 1, JSON.stringify(p2));
+  assert.match(p2[0], /Test-first|committed before|apart from/i);
+});

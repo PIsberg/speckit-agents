@@ -5215,3 +5215,38 @@ test('#466: nothing to name gives no block, a broken package.json is skipped, an
   const long = metaOf(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'e3', session_id: 's1' }));
   assert.ok(long.length <= 800 && /- npm test: x+…$/m.test(long), long.slice(0, 200));
 });
+
+// #486: deterministic Test-First commit causality at spec-gatekeeper APPROVED and post-edit Bash check for implementer GREEN.
+test('#486: implementer RESULT: GREEN is sent back once when a production file was written via Write/Edit with no Bash run after it', () => {
+  const { dir } = repo();
+  pass(dir);
+  assert.equal(write(dir, ['gate', 'retries', 'scope', 'no-tests'], 'src/main/App.java', { agent_id: 'im486', agent_type: 'implementer' }), null);
+  const first = run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im486', last_assistant_message: 'Built.\nRESULT: GREEN' });
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /modified after your last Bash test run|run the tests/i);
+  // Once Bash runs after the edit, RESULT: GREEN goes through.
+  assert.equal(write(dir, ['gate', 'retries', 'scope', 'no-tests'], 'src/main/App.java', { agent_id: 'im486b', agent_type: 'implementer' }), null);
+  assert.equal(run(dir, ['gate', 'retries', 'scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' }, agent_id: 'im486b', agent_type: 'implementer' }), null);
+  const afterBash = run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im486b', last_assistant_message: 'Built.\nRESULT: GREEN' });
+  assert.notEqual(afterBash?.decision, 'block', JSON.stringify(afterBash));
+  assert.match(msg(afterBash), /implementer reported GREEN/);
+});
+
+test('#486: spec-gatekeeper APPROVED is refused when production code was committed before or bundled with tests, unless test-writer is absent from Team:', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [X] T001 Test FR-001 in `test/a.test.mjs`\n- [X] T002 Implement FR-001 in `src/main/App.java`\n');
+  r.write('test/a.test.mjs', "test('001 FR-001 works', () => {});\n");
+  r.write('src/main/App.java', 'class App { int x = 1; }\n');
+  commitAll(r, 'feat and test together');
+  const send = (agent_id, extra = {}) => run(r.dir, ['ends', '--record', 'APPROVED', 'REJECTED'], {
+    hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'All good.\n\nAPPROVED' }, agent_id, ...extra,
+  });
+  const out = send('gk486');
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /Test-first|committed before|apart from/i);
+  // When test-writer is absent from Team:, test-first commit order is not required.
+  fs.mkdirSync(path.join(stateDir(r.dir), 'team'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(r.dir), 'team', 's486.json'), JSON.stringify({ session_id: 's486', roles: ['implementer', 'spec-gatekeeper'], at: new Date().toISOString() }));
+  assert.ok(!denied(send('gk486b', { session_id: 's486' })), 'without test-writer in the team, APPROVED is allowed');
+});
