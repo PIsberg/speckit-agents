@@ -289,6 +289,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Slices: one behaviour each, every task in one slice. pinned.
 - Every FR is cited by a test task or excused by `No test: <reason>` right after it, which excuses only that ID and those the reason names. hook `ends --record`: at spec-gatekeeper's APPROVED an FR in no test line naming the feature's number and not excused that way is refused (#235); a cited ID any task of the feature excuses is not asked of a test task's files (#299).
 - A test task cites only what a test can fail on; a rule of how the work is done gets its `No test:` on the task that carries it out, in the first `tasks.md`. pinned (#299); no hook: a process rule a test task cites unexcused is refused at spec-gatekeeper's APPROVED, which is late. Whether the architect follows it is unseen in a run.
+- Every requirement of spec.md is cited by a test task that names its test file, or excused by `No test: <reason>` on some task. hook `lane only` (architect's Stop) and `lane role` send the architect back once while one is not, naming it (#465); the cited-but-unexcused process rule above is still caught only at spec-gatekeeper.
 - Every test task names its test file and the IDs it covers. pinned; hook `ends --record` checks at spec-gatekeeper's APPROVED that the test files hold the IDs (#228).
 - Signatures for stubs; file and symbol for what a task uses. pinned.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
