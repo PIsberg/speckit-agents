@@ -472,8 +472,8 @@ if (mode === 'project') {
 }
 // State files are ours but can still be corrupt. `undefined` = missing, `null` = unreadable.
 function readState(f) {
-  let text;
-  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { return e?.code === 'ENOENT' ? undefined : null; }
+  const text = readOr(f, undefined);
+  if (text === undefined) return undefined;
   try { return JSON.parse(text); } catch { return null; }
 }
 
@@ -492,7 +492,7 @@ const stateDir = path.join(commonDir, 'speckit-team');
 // keeps its own reset. A report with no tool call before it is told apart by markedReport() (#394).
 if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
   const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
-  if (input.tool_name === 'Bash') fs.rmSync(marker('untested.json'), { force: true });
+  try { if (input.tool_name === 'Bash') fs.rmSync(marker('untested.json'), { force: true }); } catch { /* non-blocking */ }
   if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
     try {
       for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked', 'untested.json', 'untested-asked']) fs.rmSync(marker(m), { force: true });
