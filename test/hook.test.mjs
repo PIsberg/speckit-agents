@@ -5410,3 +5410,35 @@ test('#490: SubagentStart injects assigned tasks.md slice for test-writer and im
   assert.match(imCtx, /T002 Implement FR-001 and FR-002 in `src\/math\.js`/);
   assert.doesNotMatch(imCtx, /Cited requirements from specs\/001-demo\/spec\.md:/, 'implementer gets assigned tasks only, not cited FRs');
 });
+
+// #491: dry-run clarifications and decisions parsers at product-owner and architect Stop.
+test('#491: product-owner and architect Stop send back once when ## Open Questions or ## Open Decisions fail dry-run validation', () => {
+  // 1. product-owner agent Stop with malformed ## Open Questions (no recommended option)
+  const po = repo();
+  po.write(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', '### Q1: Which?', '', '- **A:** one', '- **B:** two']));
+  subagentStart(po.dir, 'po491', 'product-owner');
+  const poFirst = laneOnly(po.dir, 'po491', ['specs/', '.specify/feature.json'], 'product-owner');
+  assert.equal(poFirst?.decision, 'block', JSON.stringify(poFirst));
+  assert.match(poFirst.reason, /Q1: no option is marked \(recommended\)/);
+  assert.notEqual(laneOnly(po.dir, 'po491', ['specs/', '.specify/feature.json'], 'product-owner')?.decision, 'block', 'sent back once');
+
+  // 2. architect agent Stop with malformed ## Open Decisions (quote not in spec.md)
+  const ar = repo();
+  ar.write(`${FEAT}/spec.md`, SPEC);
+  ar.write(`${FEAT}/plan.md`, PLAN(['## Open Decisions', '', ...D1.map((l) => l.replace('its first character in upper case." becomes', 'not in spec." becomes'))]));
+  ar.write(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-003 and FR-004 in `test/a.test.js`\n');
+  subagentStart(ar.dir, 'ar491', 'architect');
+  const arFirst = laneOnly(ar.dir, 'ar491', ['specs/', 'CLAUDE.md'], 'architect');
+  assert.equal(arFirst?.decision, 'block', JSON.stringify(arFirst));
+  assert.match(arFirst.reason, /D1: the quoted text is not in specs\/001-demo\/spec\.md/);
+  assert.notEqual(laneOnly(ar.dir, 'ar491', ['specs/', 'CLAUDE.md'], 'architect')?.decision, 'block', 'sent back once');
+
+  // 3. product-owner role skill Stop with malformed ## Open Questions
+  const rolePo = repo();
+  skillAgentsTeam(rolePo.dir);
+  assert.ok(!decided(skillCall(rolePo.dir, 'speckit-role-product-owner')));
+  rolePo.write(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', '### Q1: Which?', '', '- **A:** one']));
+  const roleStop = stopRole(rolePo.dir);
+  assert.equal(roleStop?.decision, 'block', JSON.stringify(roleStop));
+  assert.match(roleStop.reason, /Q1: no option is marked \(recommended\)/);
+});

@@ -791,7 +791,7 @@ function teamOf() {
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
   return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true,
-    hybrid: r.skillAgents === true && r.hybrid === true };
+    hybrid: r.skillAgents === true && r.hybrid === true, security: r.security === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -1165,6 +1165,12 @@ function closeRole(rec, at, gate = null) {
   if (rec.role === 'architect') {
     const gaps = plannedOf(feature() ?? rec.feature);
     if (gaps.length) refuseOnce(rec, at, 'plan', planRefusal(gaps));
+    const dWhy = dryRunDecisions(feature() ?? rec.feature);
+    if (dWhy) refuseOnce(rec, at, 'decisions', dWhy);
+  }
+  if (rec.role === 'product-owner') {
+    const qWhy = dryRunClarifications(feature() ?? rec.feature);
+    if (qWhy) refuseOnce(rec, at, 'clarifications', qWhy);
   }
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
   if (at === 'stop') {
@@ -1625,7 +1631,7 @@ if (mode === 'gate') {
       const hybrid = typedMode === 'hybrid';
       const missing = missingRoleSkills(hybrid ? HYBRID_WRITERS : TEAM_ROLES);
       if (missing.length) block(`speckit-team: --team ${typedMode} needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
-      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, ...(hybrid ? { hybrid: true } : {}), at: new Date().toISOString() });
+      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, ...(hybrid ? { hybrid: true } : {}), ...(afterTeam.includes('--security') ? { security: true } : {}), at: new Date().toISOString() });
       emit({ systemMessage: (hybrid ? HYBRID_START : SKILL_AGENTS_START)(afterTeam.includes('--load-test')) });
     }
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
@@ -1994,11 +2000,33 @@ function holdQuestions(feat) {
       + 'otherwise a product-owner revision with the answers. Then launch again.');
   }
 }
-// #489: when security-reviewer is in the session's team, architect waits for security-reviewer (phase: spec) PASS on the current spec.md.
+// #491: zero-write dry-run checks for ## Open Questions and ## Open Decisions at product-owner and architect Stop.
+function dryRunClarifications(feat) {
+  if (!feat) return null;
+  const specRel = `${feat}/spec.md`;
+  const specText = readOr(path.join(root, specRel), '');
+  if (!specText) return null;
+  if (openQuestions(specText).length) {
+    const r = recordClarifications(specText, specRel, '2026-01-01');
+    if (r.problems.length) return `Open Questions check: ${r.problems.join('; ')}. Fix the formatting in ${specRel} so clarifications --recommended can record them.`;
+  } else if (specText.includes('[NEEDS CLARIFICATION')) {
+    return `Open Questions check: ${specRel} still has a [NEEDS CLARIFICATION] marker outside ## Open Questions. Put open questions under ## Open Questions as ### Q<n> with a (recommended) option.`;
+  }
+  return null;
+}
+function dryRunDecisions(feat) {
+  if (!feat) return null;
+  const planRel = `${feat}/plan.md`; const specRel = `${feat}/spec.md`;
+  const planText = readOr(path.join(root, planRel), ''); const specText = readOr(path.join(root, specRel), '');
+  if (!planText || !openDecisions(planText).length) return null;
+  const r = recordRecommended(planText, specText, planRel, specRel, '2026-01-01');
+  return r.problems.length ? `Open Decisions check: ${r.problems.join('; ')}. Fix the formatting in ${planRel} so decisions --recommended can record them.` : null;
+}
+// #489: when security-reviewer is in the session's team (not default skill-agents/hybrid unless --security was active), architect waits for security-reviewer (phase: spec) PASS on the current spec.md.
 function holdSecuritySpec(feat) {
   if (!feat) return;
   const t = teamOf();
-  if (!t || !t.roles.includes('security-reviewer')) return;
+  if (!t || !t.roles.includes('security-reviewer') || (t.skillAgents && !t.security)) return;
   const s = readState(securityFile(feat));
   if (!s || typeof s !== 'object' || s.verdict !== 'PASS') {
     deny(`speckit-team: security-reviewer is in this session's team and has not passed ${feat}/spec.md${s?.verdict ? ` (last verdict: ${s.verdict})` : ''}. `
@@ -2466,10 +2494,20 @@ if (mode === 'lane') {
     try { writeJson(planAsked, {}); first = true; } catch { /* the flag decides */ }
     if (first) block(planRefusal(gaps));
   }
+  // #491: dry-run clarifications and decisions parsers at product-owner and architect Stop.
+  const dryWhy = input.agent_type === 'product-owner' ? dryRunClarifications(feature())
+    : input.agent_type === 'architect' ? dryRunDecisions(feature()) : null;
+  const dryAsked = path.join(stateDir, 'agents', `${agentKey}.dry-asked`);
+  if (dryWhy && !fs.existsSync(dryAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(dryAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) block(dryWhy);
+  }
   fs.rmSync(f, { force: true });
   fs.rmSync(asked, { force: true });
   fs.rmSync(secretAsked, { force: true });
   fs.rmSync(planAsked, { force: true });
+  fs.rmSync(dryAsked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
 }
