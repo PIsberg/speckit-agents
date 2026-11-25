@@ -5141,7 +5141,6 @@ test('#464: --team build and --team lite expand to their roles, and a launch tha
   assert.match(reasonOf(agentLaunch(lite.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: lite.t })), /drops product-owner/);
   const sec = choiceRepo();
   typedTeam(sec.dir, '--team build,security add', { transcript_path: sec.t });
-  // security-reviewer is not held, as for --security (#373); the preset's roles still are.
   assert.match(reasonOf(agentLaunch(sec.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: sec.t })), /drops spec-gatekeeper/);
 });
 
@@ -5214,4 +5213,347 @@ test('#466: nothing to name gives no block, a broken package.json is skipped, an
   w('package.json', JSON.stringify({ scripts: { test: 'x'.repeat(5000) } }));
   const long = metaOf(run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'e3', session_id: 's1' }));
   assert.ok(long.length <= 800 && /- npm test: x+…$/m.test(long), long.slice(0, 200));
+});
+
+// #486: deterministic Test-First commit causality at spec-gatekeeper APPROVED and post-edit Bash check for implementer GREEN.
+test('#486: implementer RESULT: GREEN is sent back once when a production file was written via Write/Edit with no Bash run after it', () => {
+  const { dir } = repo();
+  pass(dir);
+  assert.equal(write(dir, ['gate', 'retries', 'scope', 'no-tests'], 'src/main/App.java', { agent_id: 'im486', agent_type: 'implementer' }), null);
+  const first = run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im486', last_assistant_message: 'Built.\nRESULT: GREEN' });
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /modified after your last Bash test run|run the tests/i);
+  // Once Bash runs after the edit, RESULT: GREEN goes through.
+  assert.equal(write(dir, ['gate', 'retries', 'scope', 'no-tests'], 'src/main/App.java', { agent_id: 'im486b', agent_type: 'implementer' }), null);
+  assert.equal(run(dir, ['gate', 'retries', 'scope', 'no-tests'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'npm test' }, agent_id: 'im486b', agent_type: 'implementer' }), null);
+  const afterBash = run(dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im486b', last_assistant_message: 'Built.\nRESULT: GREEN' });
+  assert.notEqual(afterBash?.decision, 'block', JSON.stringify(afterBash));
+  assert.match(msg(afterBash), /implementer reported GREEN/);
+});
+
+test('#486: spec-gatekeeper APPROVED is refused when production code was committed before or bundled with tests, unless test-writer is absent from Team:', () => {
+  const r = repo();
+  r.write(`${FEAT}/spec.md`, '# Spec\n\n- **FR-001**: must work.\n');
+  r.write(`${FEAT}/tasks.md`, '- [X] T001 Test FR-001 in `test/a.test.mjs`\n- [X] T002 Implement FR-001 in `src/main/App.java`\n');
+  r.write('test/a.test.mjs', "test('001 FR-001 works', () => {});\n");
+  r.write('src/main/App.java', 'class App { int x = 1; }\n');
+  commitAll(r, 'feat and test together');
+  const send = (agent_id, extra = {}) => run(r.dir, ['ends', '--record', 'APPROVED', 'REJECTED'], {
+    hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message: 'All good.\n\nAPPROVED' }, agent_id, ...extra,
+  });
+  const out = send('gk486');
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /Test-first|committed before|apart from/i);
+  // When test-writer is absent from Team:, test-first commit order is not required.
+  fs.mkdirSync(path.join(stateDir(r.dir), 'team'), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(r.dir), 'team', 's486.json'), JSON.stringify({ session_id: 's486', roles: ['implementer', 'spec-gatekeeper'], at: new Date().toISOString() }));
+  assert.ok(!denied(send('gk486b', { session_id: 's486' })), 'without test-writer in the team, APPROVED is allowed');
+});
+
+// #487: stateful phase checkpointing in `check team` and `--resume` leading flag support.
+test('#487: check team reports the active feature checkpoint across phases, and --resume leads --team arguments', () => {
+  const hook = skillHook();
+  const stamped = fs.readFileSync(hook, 'utf8').replace('speckit-agents: managed by install.mjs', 'speckit-agents: managed by install.mjs (speckit-agents 0.1.0, build 000000000000)');
+  fs.writeFileSync(hook, stamped);
+  const { dir, write: w } = repo();
+  const cfg = path.dirname( path.dirname(hook));
+  const check = () => spawnSync(process.execPath, [hook, 'check', 'team'], { cwd: dir, encoding: 'utf8', input: '', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+
+  // 1. spec, plan, tasks exist, no audit PASS yet -> checkpoint is audit
+  let out = check();
+  assert.equal(out.status, 0, out.stdout);
+  assert.match(out.stdout, /^state: feature specs\/001-demo \(audit\)$/m);
+
+  // 2. open question in spec.md -> checkpoint is spec-questions
+  w(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', ...Q1]));
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(spec-questions: Q1\)$/m);
+
+  // 3. open decision in plan.md -> checkpoint is plan-decisions
+  w(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: works.\n');
+  w(`${FEAT}/plan.md`, '# Plan\n\n## Open Decisions\n\n### D1: Which?\n\n- **A (recommended): one**\n');
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(plan-decisions: D1\)$/m);
+
+  // 4. audit PASS with unticked tasks -> checkpoint is build with unticked IDs
+  w(`${FEAT}/plan.md`, '# Plan\n');
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [ ] T002 implement\n- [ ] T003 refactor\n');
+  pass(dir);
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(build: T002, T003\)$/m);
+
+  // 5. all tasks ticked, not yet verified -> checkpoint is verify
+  w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [X] T002 implement\n- [x] T003 refactor\n');
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(verify\)$/m);
+
+  // 6. spec-gatekeeper APPROVED recorded -> checkpoint is approved
+  w('test/a.test.js', '// 001 FR-001\n');
+  run(dir, ['ends', '--record', 'APPROVED', 'REJECTED'], { hook_event_name: 'SubagentStop', agent_id: 'gk487', last_assistant_message: 'APPROVED' });
+  assert.match(check().stdout, /^state: feature specs\/001-demo \(approved\)$/m);
+
+  // 7. --resume is accepted as a leading flag before --team
+  const a = choiceRepo();
+  typedTeam(a.dir, '--resume --team test-writer,implementer,spec-gatekeeper go', { transcript_path: a.t });
+  assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })), '--resume preserves typed --team hold');
+});
+
+// #489: hold --security and --load-test in typedRoles, record their verdicts, and enforce secret scan at Stop.
+test('#489: typed --security and --load-test without --team are held in choice.typed, and dropping security-reviewer is denied', () => {
+  const sec = choiceRepo();
+  typedTeam(sec.dir, '--security add auth', { transcript_path: sec.t });
+  sec.add(...NOT_ANSWERS);
+  const droppedSec = agentLaunch(sec.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper', { transcript_path: sec.t });
+  assert.ok(denied(droppedSec), 'dropping security-reviewer when --security was typed is denied');
+  assert.match(reasonOf(droppedSec), /drops security-reviewer/);
+  assert.ok(!denied(agentLaunch(sec.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer', { transcript_path: sec.t })));
+
+  const lt = choiceRepo();
+  typedTeam(lt.dir, '--load-test add perf', { transcript_path: lt.t });
+  lt.add(...NOT_ANSWERS);
+  const droppedLt = agentLaunch(lt.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper', { transcript_path: lt.t });
+  assert.ok(denied(droppedLt), 'dropping load-tester when --load-test was typed is denied');
+  assert.match(reasonOf(droppedLt), /drops load-tester/);
+
+  const buildSec = choiceRepo();
+  typedTeam(buildSec.dir, '--team build,security add', { transcript_path: buildSec.t });
+  buildSec.add(...NOT_ANSWERS);
+  const droppedBuildSec = agentLaunch(buildSec.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: buildSec.t });
+  assert.ok(denied(droppedBuildSec), 'dropping security-reviewer from --team build,security is denied');
+  assert.match(reasonOf(droppedBuildSec), /drops security-reviewer/);
+});
+
+test('#489: security-reviewer and load-tester verdicts are recorded on disk, and architect waits for security-reviewer PASS when in team', () => {
+  const { dir } = repo();
+  // Launch product-owner with security-reviewer in team
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'product-owner', prompt: 'Team: product-owner, security-reviewer, architect, spec-auditor, test-writer, implementer, spec-gatekeeper\nspec it' },
+  })));
+  // Launching architect before security-reviewer passes spec review is denied
+  const earlyArch = run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  });
+  assert.ok(denied(earlyArch), 'architect denied before security-reviewer PASS');
+  assert.match(reasonOf(earlyArch), /security-reviewer/);
+
+  // security-reviewer ends with VERDICT: FAIL -> recorded, architect still denied
+  run(dir, ['ends', 'VERDICT: PASS', 'VERDICT: FAIL'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sr1', agent_type: 'security-reviewer', session_id: 's489',
+    last_assistant_message: 'C1: missing auth.\n\nVERDICT: FAIL',
+  });
+  const secFile = path.join(stateDir(dir), 'security', '001-demo.json');
+  assert.equal(JSON.parse(fs.readFileSync(secFile, 'utf8')).verdict, 'FAIL');
+  assert.ok(denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  })), 'architect still denied after security-reviewer FAIL');
+
+  // security-reviewer ends with VERDICT: PASS -> recorded, architect allowed
+  run(dir, ['ends', 'VERDICT: PASS', 'VERDICT: FAIL'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sr2', agent_type: 'security-reviewer', session_id: 's489',
+    last_assistant_message: 'No high findings.\n\nVERDICT: PASS',
+  });
+  assert.equal(JSON.parse(fs.readFileSync(secFile, 'utf8')).verdict, 'PASS');
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  })), 'architect allowed after security-reviewer PASS');
+
+  // load-tester verdict is recorded under load/
+  run(dir, ['ends', 'PASS', 'FAIL', 'NOT MEASURED'], {
+    hook_event_name: 'SubagentStop', agent_id: 'lt1', agent_type: 'load-tester', session_id: 's489',
+    last_assistant_message: 'All within ceiling.\n\nPASS',
+  });
+  const loadFile = path.join(stateDir(dir), 'load', '001-demo.json');
+  assert.equal(JSON.parse(fs.readFileSync(loadFile, 'utf8')).word, 'PASS');
+});
+
+test('#489: lane Stop blocks accidental secret/credential patterns or .env files in changed files', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'im_sec' });
+  const tok = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+  w('src/main/Config.java', `class Config { String t = "${tok}"; }\n`);
+  const stop = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'im_sec', agent_type: 'implementer' });
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  assert.match(stop.reason, /secret|credential|src\/main\/Config\.java/i);
+});
+
+// #490: inject assigned tasks.md slice and cited spec.md FR definitions at SubagentStart for test-writer and implementer.
+test('#490: SubagentStart injects assigned tasks.md slice for test-writer and implementer, and cited FR lines for test-writer', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  w(`${FEAT}/spec.md`, '# Spec\n\n- **FR-001**: `add(a, b)` returns the sum.\n- **FR-002**: `sub(a, b)` returns the difference.\n- **FR-003**: `mul(a, b)` returns the product.\n');
+  w(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-001 and FR-002 in `test/math.test.js`\n  Verify sum and difference\n- [ ] T002 Implement FR-001 and FR-002 in `src/math.js`\n- [ ] T003 Tests for FR-003 in `test/mul.test.js`\n');
+
+  // Launch test-writer for T001
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's490',
+    tool_input: { subagent_type: 'test-writer', prompt: 'Round 1: T001', run_in_background: false },
+  })));
+  const twStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'test-writer', agent_id: 'tw490', session_id: 's490' });
+  const twCtx = metaOf(twStart);
+  assert.match(twCtx, /Assigned tasks from specs\/001-demo\/tasks\.md \(do not re-read tasks\.md for them\):/);
+  assert.match(twCtx, /T001 Tests for FR-001 and FR-002 in `test\/math\.test\.js`\n {2}Verify sum and difference/);
+  assert.doesNotMatch(twCtx, /T003 Tests for FR-003/);
+  assert.match(twCtx, /Cited requirements from specs\/001-demo\/spec\.md:/);
+  assert.match(twCtx, /FR-001.*returns the sum/);
+  assert.match(twCtx, /FR-002.*returns the difference/);
+  assert.doesNotMatch(twCtx, /FR-003/);
+
+  // Launch implementer for T002
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's490',
+    tool_input: { subagent_type: 'implementer', prompt: 'Round 1: T002', run_in_background: false },
+  })));
+  const imStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im490', session_id: 's490' });
+  const imCtx = metaOf(imStart);
+  assert.match(imCtx, /Assigned tasks from specs\/001-demo\/tasks\.md \(do not re-read tasks\.md for them\):/);
+  assert.match(imCtx, /T002 Implement FR-001 and FR-002 in `src\/math\.js`/);
+  assert.doesNotMatch(imCtx, /Cited requirements from specs\/001-demo\/spec\.md:/, 'implementer gets assigned tasks only, not cited FRs');
+});
+
+// #491: dry-run clarifications and decisions parsers at product-owner and architect Stop.
+test('#491: product-owner and architect Stop send back once when ## Open Questions or ## Open Decisions fail dry-run validation', () => {
+  // 1. product-owner agent Stop with malformed ## Open Questions (no recommended option)
+  const po = repo();
+  po.write(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', '### Q1: Which?', '', '- **A:** one', '- **B:** two']));
+  subagentStart(po.dir, 'po491', 'product-owner');
+  const poFirst = laneOnly(po.dir, 'po491', ['specs/', '.specify/feature.json'], 'product-owner');
+  assert.equal(poFirst?.decision, 'block', JSON.stringify(poFirst));
+  assert.match(poFirst.reason, /Q1: no option is marked \(recommended\)/);
+  assert.notEqual(laneOnly(po.dir, 'po491', ['specs/', '.specify/feature.json'], 'product-owner')?.decision, 'block', 'sent back once');
+
+  // 2. architect agent Stop with malformed ## Open Decisions (quote not in spec.md)
+  const ar = repo();
+  ar.write(`${FEAT}/spec.md`, SPEC);
+  ar.write(`${FEAT}/plan.md`, PLAN(['## Open Decisions', '', ...D1.map((l) => l.replace('its first character in upper case." becomes', 'not in spec." becomes'))]));
+  ar.write(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-003 and FR-004 in `test/a.test.js`\n');
+  subagentStart(ar.dir, 'ar491', 'architect');
+  const arFirst = laneOnly(ar.dir, 'ar491', ['specs/', 'CLAUDE.md'], 'architect');
+  assert.equal(arFirst?.decision, 'block', JSON.stringify(arFirst));
+  assert.match(arFirst.reason, /D1: the quoted text is not in specs\/001-demo\/spec\.md/);
+  assert.notEqual(laneOnly(ar.dir, 'ar491', ['specs/', 'CLAUDE.md'], 'architect')?.decision, 'block', 'sent back once');
+
+  // 3. product-owner role skill Stop with malformed ## Open Questions
+  const rolePo = repo();
+  skillAgentsTeam(rolePo.dir);
+  assert.ok(!decided(skillCall(rolePo.dir, 'speckit-role-product-owner')));
+  rolePo.write(`${FEAT}/spec.md`, QSPEC(['## Open Questions', '', '### Q1: Which?', '', '- **A:** one']));
+  const roleStop = stopRole(rolePo.dir);
+  assert.equal(roleStop?.decision, 'block', JSON.stringify(roleStop));
+  assert.match(roleStop.reason, /Q1: no option is marked \(recommended\)/);
+});
+
+// #492: zero-copy agent-to-agent report handoff via SubagentStart.
+test('#492: accepted reports are persisted under reports/<role>.json and automatically injected at downstream SubagentStart', () => {
+  const { dir, write: w } = repo();
+  w(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: works.\n');
+  w(`${FEAT}/tasks.md`, '- [x] T001 Test FR-001 in `test/a.test.js`\n- [x] T002 Implement FR-001 in `src/a.js`\n');
+  w('test/a.test.js', '// 001 FR-001\n');
+
+  // 1. spec-auditor reports VERDICT: FAIL -> persisted in reports/spec-auditor.json and injected into architect SubagentStart
+  run(dir, ['verdict'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sa492', agent_type: 'spec-auditor', session_id: 's492',
+    last_assistant_message: 'C1: plan.md contradicts FR-001.\n\nVERDICT: FAIL',
+  });
+  const audRep = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'reports', 'spec-auditor.json'), 'utf8'));
+  assert.equal(audRep.word, 'FAIL');
+  assert.match(audRep.text, /C1: plan\.md contradicts FR-001/);
+
+  const arStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'architect', agent_id: 'ar492', session_id: 's492' });
+  assert.match(metaOf(arStart), /Upstream spec-auditor report \(FAIL\):[\s\S]*C1: plan\.md contradicts FR-001/);
+
+  // 2. After spec-auditor PASS, test-writer reports RED -> persisted and injected into implementer SubagentStart (non-stub)
+  pass(dir);
+  run(dir, ['ends', 'RED', 'BLOCKED', 'FIXED'], {
+    hook_event_name: 'SubagentStop', agent_id: 'tw492', agent_type: 'test-writer', session_id: 's492',
+    last_assistant_message: 'test/a.test.js:12 AssertionError: expected 1 to equal 2\n\nRED',
+  });
+  const twRep = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'reports', 'test-writer.json'), 'utf8'));
+  assert.equal(twRep.word, 'RED');
+
+  // Stub implementer launch does NOT receive test-writer report
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's492',
+    tool_input: { subagent_type: 'implementer', prompt: 'stub T002', run_in_background: false },
+  });
+  const stubStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im492_stub', session_id: 's492' });
+  assert.doesNotMatch(metaOf(stubStart), /Upstream test-writer report/);
+
+  // Normal implementer launch receives test-writer report
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's492',
+    tool_input: { subagent_type: 'implementer', prompt: 'Round 1: T002', run_in_background: false },
+  });
+  const imStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im492', session_id: 's492' });
+  assert.match(metaOf(imStart), /Upstream test-writer report \(RED\):[\s\S]*AssertionError: expected 1 to equal 2/);
+});
+
+// #493: enforce scoped test execution in worktree implementers and surface single-file test runner in repoMeta.
+test('#493: worktree implementers are denied bare full-suite test commands and allowed scoped test commands; repoMeta surfaces Single test file', () => {
+  const { dir } = metaRepo();
+  pass(dir);
+  // 1. repoMeta includes - Single test file: line
+  const startOut = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im493_meta', session_id: 's493' });
+  assert.match(metaOf(startOut), /^- Single test file: node --test <path>/m);
+
+  // 2. Worktree implementer launch claimed at SubagentStart
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's493',
+    tool_input: { subagent_type: 'implementer', prompt: 'Slice A: T002 in worktree', run_in_background: false },
+  });
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im493_wt', session_id: 's493' });
+
+  // Bare unfiltered full-suite commands are denied in worktree implementer
+  for (const cmd of ['npm test', 'npm run test', 'pnpm test', 'yarn test', 'bun test', 'pytest', 'cargo test', 'node --test']) {
+    const out = run(dir, ['gate', 'retries', 'scope', 'no-tests'], {
+      hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
+      agent_id: 'im493_wt', agent_type: 'implementer', session_id: 's493',
+    });
+    assert.ok(denied(out), `expected deny for "${cmd}" in worktree implementer`);
+    assert.match(whyDenied(out), /worktree|test file/i, cmd);
+  }
+
+  // Scoped test file commands are allowed in worktree implementer
+  for (const cmd of ['node --test test/a.test.js', 'npm test -- test/a.test.js', 'pytest tests/test_a.py', 'cargo test slice_a']) {
+    const out = run(dir, ['gate', 'retries', 'scope', 'no-tests'], {
+      hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
+      agent_id: 'im493_wt', agent_type: 'implementer', session_id: 's493',
+    });
+    assert.ok(!denied(out), `expected allow for "${cmd}": ${whyDenied(out)}`);
+  }
+});
+
+// #494: emit privacy-safe JSONL activity and guardrail telemetry stream (.git/speckit-team/activity.jsonl).
+test('#494: hook emits privacy-safe v:1 JSONL telemetry to .git/speckit-team/activity.jsonl on start, deny, block, and record', () => {
+  const { dir } = repo();
+  const actFile = path.join(stateDir(dir), 'activity.jsonl');
+
+  // 1. SubagentStart emits start decision
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'architect', agent_id: 'ar494', session_id: 's494' });
+  // 2. Scope denial emits deny decision with repo-relative target and no file content
+  write(dir, ['scope', 'no-tests'], 'test/secret.test.js', { agent_id: 'im494', agent_type: 'implementer', session_id: 's494' });
+  // 3. Verdict emits record decision
+  run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'sa494', agent_type: 'spec-auditor', session_id: 's494', last_assistant_message: 'PRIVATE_REPORT_BODY\n\nVERDICT: PASS' });
+
+  assert.ok(fs.existsSync(actFile), 'activity.jsonl was created');
+  const raw = fs.readFileSync(actFile, 'utf8');
+  assert.ok(!raw.includes('PRIVATE_REPORT_BODY'), 'activity.jsonl never records report or prompt body text');
+  const rows = raw.trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(rows.length >= 3, `expected >= 3 rows, got ${rows.length}`);
+  for (const r of rows) {
+    assert.equal(r.v, 1);
+    assert.equal(typeof r.ms, 'number');
+    assert.equal(r.feature, FEAT);
+  }
+  const startRow = rows.find((r) => r.mode === 'start');
+  assert.equal(startRow?.decision, 'start');
+  assert.equal(startRow?.role, 'architect');
+
+  const denyRow = rows.find((r) => r.decision === 'deny');
+  assert.equal(denyRow?.mode, 'scope');
+  assert.equal(denyRow?.tool, 'Write');
+  assert.equal(denyRow?.target, 'test/secret.test.js');
+
+  const recRow = rows.find((r) => r.mode === 'verdict');
+  assert.equal(recRow?.decision, 'record');
 });

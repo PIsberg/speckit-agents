@@ -92,7 +92,7 @@ export function skills(rows) {
 
 const sum = (list, k) => list.reduce((s, x) => s + x[k], 0);
 
-export function summarise(file) {
+export function summarise(file, { repo = null } = {}) {
   const rows = readRows(file);
   const resp = responses(rows);
   // A response that followed a background launch receipt and called no tool only waited.
@@ -139,14 +139,29 @@ export function summarise(file) {
     const t = (models[x.model] ??= { inputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 });
     t.inputTokens += x.uncached; t.cacheReadInputTokens += x.cacheRead; t.cacheCreationInputTokens += x.cacheWrite;
   }
-  return { main, agents, models, warnings };
+
+  // #494: correlate guardrail telemetry from .git/speckit-team/activity.jsonl when repo is provided.
+  let guardrails = null;
+  if (repo) {
+    const actFile = path.join(repo, '.git', 'speckit-team', 'activity.jsonl');
+    if (fs.existsSync(actFile)) {
+      const actRows = readRows(actFile).filter((r) => r?.v === 1);
+      const msList = actRows.map((r) => Number(r.ms) || 0).sort((a, b) => a - b);
+      const medianMs = msList.length ? msList[Math.floor(msList.length / 2)] : 0;
+      const p95Ms = msList.length ? msList[Math.min(msList.length - 1, Math.floor(msList.length * 0.95))] : 0;
+      const denials = actRows.filter((r) => r.decision === 'deny');
+      const blocks = actRows.filter((r) => r.decision === 'block');
+      guardrails = { calls: actRows.length, medianMs, p95Ms, denials, blocks };
+    }
+  }
+  return { main, agents, models, warnings, ...(guardrails ? { guardrails } : {}) };
 }
 
 const k = (n) => `${Math.round(n / 1e3)}k`;
 const M = (n) => `${(n / 1e6).toFixed(2)}M`;
 const pct = (a, b) => (b ? `${Math.round((100 * a) / b)}%` : '0%');
 
-export function format({ main, agents, models, warnings = [] }) {
+export function format({ main, agents, models, warnings = [], guardrails = null }) {
   const bg = main.launches.filter((l) => l.background).length;
   const out = [
     `main session: ${main.responses} responses, input ${M(main.input)} (cache read ${M(main.cacheRead)}, cache write ${M(main.cacheWrite)}), first ${k(main.first)}, peak ${k(main.peak)}, ${main.models.join(', ')}`,
@@ -168,6 +183,12 @@ export function format({ main, agents, models, warnings = [] }) {
     const total = t.inputTokens + t.cacheReadInputTokens + t.cacheCreationInputTokens;
     out.push(`  ${model}: uncached ${t.inputTokens}, cache read ${t.cacheReadInputTokens}, cache write ${t.cacheCreationInputTokens} (cache hit rate ${pct(t.cacheReadInputTokens, total)})`);
   }
+  if (guardrails) {
+    out.push(`guardrails: ${guardrails.calls} calls (median ${guardrails.medianMs} ms, p95 ${guardrails.p95Ms} ms), ${guardrails.denials.length} denials, ${guardrails.blocks.length} blocks`);
+    for (const e of [...guardrails.denials, ...guardrails.blocks]) {
+      out.push(`  ${(e.role ?? 'main').padEnd(16)} ${e.decision.padEnd(6)} ${e.rule ?? e.mode ?? ''}${e.target ? ` (${e.target})` : ''}`);
+    }
+  }
   if (warnings.length) {
     out.push('agents that lost their cached prefix on a relaunch:');
     for (const w of warnings) out.push(`  ${w}`);
@@ -176,10 +197,15 @@ export function format({ main, agents, models, warnings = [] }) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const file = process.argv[2];
+  const args = process.argv.slice(2);
+  let file = null; let repo = null;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--repo') repo = args[++i];
+    else if (!file) file = args[i];
+  }
   if (!file || !fs.existsSync(file)) {
-    console.error('usage: node tools/usage.mjs <session>.jsonl');
+    console.error('usage: node tools/usage.mjs <session>.jsonl [--repo <dir>]');
     process.exit(2);
   }
-  console.log(format(summarise(file)));
+  console.log(format(summarise(file, { repo })));
 }

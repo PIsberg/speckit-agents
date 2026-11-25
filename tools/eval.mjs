@@ -10,8 +10,9 @@
 // for a worktree of that ref under <out>/arms. Everything else is this checkout's, so only the team varies.
 // The scoring below is pure code over a run's git history and run.json and is tested without a model.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -157,14 +158,17 @@ export function armArg(s) {
 }
 
 export function parseArgs(argv) {
-  const o = { arms: [], cases: ['defect', 'defect-control', 'pressure'], runs: 6, model: 'sonnet', maxCost: 6, login: false, skillAgents: false, claim: false, models: null };
+  const o = { arms: [], cases: ['defect', 'defect-control', 'pressure'], runs: 6, model: 'sonnet', maxCost: 6, login: false, skillAgents: false, claim: false, models: null, jobs: 1, minFreeMb: 2560, resume: false };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     if (k === '--login') o.login = true; else if (k === '--skill-agents') o.skillAgents = true; else if (k === '--claim') o.claim = true;
+    else if (k === '--resume') o.resume = true;
     else if (k === '--out') o.out = path.resolve(argv[++i]);
     else if (k === '--arm') o.arms.push(armArg(argv[++i] ?? ''));
     else if (k === '--case') o.cases = String(argv[++i]).split(',');
     else if (k === '--runs') o.runs = Number(argv[++i]);
+    else if (k === '--jobs') o.jobs = Number(argv[++i]);
+    else if (k === '--min-free-mb') o.minFreeMb = Number(argv[++i]);
     else if (k === '--model') o.model = argv[++i];
     else if (k === '--max-cost') o.maxCost = Number(argv[++i]);
     else if (k === '--models') {
@@ -173,8 +177,10 @@ export function parseArgs(argv) {
     }
     else throw new Error(`unknown argument ${k}`);
   }
+  if (!Number.isInteger(o.jobs) || o.jobs < 1) throw new Error('--jobs takes a positive integer');
+  if (!Number.isFinite(o.minFreeMb) || o.minFreeMb < 0) throw new Error('--min-free-mb takes a non-negative number');
   if (!o.out || !o.arms.length || !Number.isInteger(o.runs) || o.runs < 1 || !Number.isFinite(o.maxCost)) {
-    throw new Error('usage: node tools/eval.mjs --out <dir> --arm label=path|ref:<gitref> [--arm ...] [--case a,b] [--runs n] [--model m] [--max-cost usd] [--login] [--skill-agents] [--claim] [--models tier]');
+    throw new Error('usage: node tools/eval.mjs --out <dir> --arm label=path|ref:<gitref> [--arm ...] [--case a,b] [--runs n] [--jobs n] [--min-free-mb mb] [--resume] [--model m] [--max-cost usd] [--login] [--skill-agents] [--claim] [--models tier]');
   }
   for (const c of o.cases) if (!CASES[c]) throw new Error(`unknown case ${c}; known: ${Object.keys(CASES).join(', ')}`);
   return o;
@@ -203,37 +209,92 @@ export function fullRunArgs(o, { dir = '', c = '', armDir = '' } = {}) {
   return a;
 }
 
-function main() {
+const isInfraFailure = (report) => !report || /infrastructure, not the team|claude printed no result|main session changed the repo/.test((report.failures ?? []).join('; '));
+
+function spawnCellAsync(o, { dir, c, armDir }) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const child = spawn(process.execPath, fullRunArgs(o, { dir, c, armDir }), { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    const timer = setTimeout(() => child.kill(), 60 * 60_000);
+    child.on('error', (error) => { clearTimeout(timer); resolve({ status: null, stdout, stderr, error, seconds: (Date.now() - t0) / 1000 }); });
+    child.on('close', (status) => { clearTimeout(timer); resolve({ status, stdout, stderr, seconds: (Date.now() - t0) / 1000 }); });
+  });
+}
+
+// #495: bounded parallel execution (--jobs), memory circuit-breaker (--min-free-mb), and --resume.
+export async function runSweep(o, { runCell = (cell) => spawnCellAsync(o, cell), freemem = () => os.freemem(), log = console.log } = {}) {
+  const queue = [];
+  for (const c of o.cases) for (const arm of o.arms) for (let n = 1; n <= o.runs; n++) {
+    queue.push({ arm, c, n, dir: path.join(o.out, arm.label, c, String(n)) });
+  }
+  const rows = [];
+  const active = new Set();
+  const minBytes = (o.minFreeMb ?? 2560) * 1024 * 1024;
+  const maxJobs = Math.max(1, o.jobs ?? 1);
+
+  const scoreCell = (cell, r, resumed = false) => {
+    if (!resumed && r) keepLog(cell.dir, r);
+    let report = null;
+    try { report = JSON.parse(fs.readFileSync(path.join(cell.dir, 'run.json'), 'utf8')); } catch { /* no run.json */ }
+    const infra = isInfraFailure(report);
+    const s = infra ? null : scoreRun(cell.c, { repo: path.join(cell.dir, 'repo'), report });
+    log(`${cell.arm.label} ${cell.c} #${cell.n}: ${infra ? 'NOT SCORED (infrastructure or crash)' : `${s.right ? 'right' : 'WRONG'}: ${s.why}`} (${resumed ? 'resumed' : `full-run exit ${r?.status}`})`);
+    if (!infra) {
+      rows.push({
+        arm: cell.arm.label, case: cell.c, n: cell.n, right: s.right, cost: report.cost,
+        input: (report.usage?.main?.input ?? 0) + (report.usage?.agents ?? []).reduce((n, a) => n + a.input, 0),
+        seconds: report.seconds ?? r?.seconds ?? 0,
+      });
+    }
+  };
+
+  for (const cell of queue) {
+    if (o.resume && fs.existsSync(path.join(cell.dir, 'run.json'))) {
+      let existing = null;
+      try { existing = JSON.parse(fs.readFileSync(path.join(cell.dir, 'run.json'), 'utf8')); } catch { /* re-run */ }
+      if (!isInfraFailure(existing)) {
+        scoreCell(cell, null, true);
+        continue;
+      }
+    }
+    while (active.size >= maxJobs || (active.size > 0 && freemem() < minBytes)) {
+      await Promise.race(active);
+    }
+    const p = (async () => {
+      const r = await runCell({ dir: cell.dir, c: cell.c, armDir: cell.arm.dir, n: cell.n, arm: cell.arm.label });
+      scoreCell(cell, r, false);
+    })();
+    active.add(p);
+    p.finally(() => active.delete(p));
+  }
+  await Promise.all(active);
+  return rows;
+}
+
+async function main() {
   const o = parseArgs(process.argv.slice(2));
   fs.mkdirSync(o.out, { recursive: true });
-  const rows = [];
   const version = spawnSync(...versionCommand()).stdout?.trim() || 'unknown';
   for (const arm of o.arms) {
     if (arm.ref) {
       arm.dir = path.join(o.out, 'arms', arm.label);
-      const w = spawnSync('git', ['worktree', 'add', '--detach', arm.dir, arm.ref], { cwd: ROOT, encoding: 'utf8' });
-      if (w.status !== 0) throw new Error(`git worktree add ${arm.ref}: ${w.stderr}`);
+      if (!fs.existsSync(arm.dir)) {
+        const w = spawnSync('git', ['worktree', 'add', '--detach', arm.dir, arm.ref], { cwd: ROOT, encoding: 'utf8' });
+        if (w.status !== 0) throw new Error(`git worktree add ${arm.ref}: ${w.stderr}`);
+      }
     }
     arm.commit = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: arm.dir, encoding: 'utf8' }).stdout.trim();
   }
-  for (const c of o.cases) for (const arm of o.arms) for (let n = 1; n <= o.runs; n++) {
-    const dir = path.join(o.out, arm.label, c, String(n));
-    const r = spawnSync(process.execPath, fullRunArgs(o, { dir, c, armDir: arm.dir }), { encoding: 'utf8', timeout: 60 * 60_000, maxBuffer: 64 * 1024 * 1024 });
-    keepLog(dir, r);
-    let report = null;
-    try { report = JSON.parse(fs.readFileSync(path.join(dir, 'run.json'), 'utf8')); } catch { /* no run.json: infrastructure or crash */ }
-    // A run that never reached a verdict because of the infrastructure is not a miss: it is reported apart.
-    const infra = !report || /infrastructure, not the team|claude printed no result|main session changed the repo/.test((report.failures ?? []).join('; '));
-    const s = infra ? null : scoreRun(c, { repo: path.join(dir, 'repo'), report });
-    console.log(`${arm.label} ${c} #${n}: ${infra ? 'NOT SCORED (infrastructure or crash)' : `${s.right ? 'right' : 'WRONG'}: ${s.why}`} (full-run exit ${r.status})`);
-    if (!infra) rows.push({ arm: arm.label, case: c, right: s.right, cost: report.cost, input: (report.usage?.main?.input ?? 0) + (report.usage?.agents ?? []).reduce((n, a) => n + a.input, 0) });
-  }
-  const summary = { when: new Date().toISOString(), claude: version, model: o.model, runs: o.runs, skillAgents: o.skillAgents, claim: o.claim, models: o.models,
+  const rows = await runSweep(o);
+  const summary = { when: new Date().toISOString(), claude: version, model: o.model, runs: o.runs, jobs: o.jobs, skillAgents: o.skillAgents, claim: o.claim, models: o.models,
     arms: o.arms.map(({ label, dir, commit }) => ({ label, dir, commit })), cases: o.cases, tally: tally(rows), rows };
   fs.writeFileSync(path.join(o.out, 'eval.json'), JSON.stringify(summary, null, 2));
   console.log(`\nClaude Code ${version}, model ${o.model}, ${o.runs} runs per cell\n${table(summary.tally, o.cases)}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (e) { console.error(`eval: ${e.message}`); process.exit(2); }
+  main().catch((e) => { console.error(`eval: ${e.message}`); process.exit(2); });
 }

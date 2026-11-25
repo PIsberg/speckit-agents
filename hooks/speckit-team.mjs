@@ -183,17 +183,32 @@ const git = (cwd, ...a) => {
 const lines = (s) => (s ? s.split('\n').filter(Boolean) : []);
 const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } catch { return fallback; } };
 // A message a role-skill step passes on with whatever the hook decides next (contract section 8).
+const hookStartNs = process.hrtime.bigint();
 let note = null;
 const addNote = (m) => { note = [note, m].filter(Boolean).join('\n'); };
 // #231: set once the state folder is known, for a hook running in a subagent (see keepNotice below).
 let keepNotice = null;
+let recordActivity = null;
 const emit = (obj) => {
   const say = [note, obj.systemMessage].filter(Boolean).join('\n');
   if (say && keepNotice) keepNotice(say);
+  if (recordActivity) {
+    const hso = obj.hookSpecificOutput;
+    const dec = hso?.permissionDecision === 'deny' ? 'deny'
+      : obj.decision === 'block' ? 'block'
+      : mode === 'start' ? 'start'
+      : (mode === 'verdict' || mode === 'result' || mode === 'ends') ? 'record'
+      : 'allow';
+    recordActivity(dec);
+  }
   process.stdout.write(JSON.stringify(say ? { ...obj, systemMessage: say } : obj));
   process.exit(0);
 };
-const finish = () => (note ? emit({}) : process.exit(0));
+const finish = () => {
+  if (note) emit({});
+  if (recordActivity) recordActivity(mode === 'start' ? 'start' : 'allow');
+  process.exit(0);
+};
 const deny = (reason) => emit({ hookSpecificOutput: {
   hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const block = (reason) => emit({ decision: 'block', reason });
@@ -346,7 +361,9 @@ const driftModule = mode === 'ends' || (mode === 'gate' && event === 'PreToolUse
 // IDs its ticked test tasks cite, which is all a round's test-writer owes.
 function driftOf(feat, spec = true) {
   if (typeof driftModule?.drift !== 'function') return { failed: driftModule?.message ?? 'speckit-drift.mjs has no drift()' };
-  try { const r = driftModule.drift(root, { feature: feat, spec }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
+  const t = spec ? teamOf() : null;
+  const testFirst = spec && (!t || (t.roles.includes('test-writer') && t.roles.includes('implementer')));
+  try { const r = driftModule.drift(root, { feature: feat, spec, testFirst }); return { problems: r.problems, unchecked: r.unchecked ?? [] }; } catch (e) { return { failed: e?.message ?? String(e) }; }
 }
 // #465: the requirements of the feature's spec.md no test task of its tasks.md cites or excuses; [] when the check cannot run.
 function plannedOf(feat) {
@@ -475,9 +492,10 @@ const stateDir = path.join(commonDir, 'speckit-team');
 // keeps its own reset. A report with no tool call before it is told apart by markedReport() (#394).
 if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_name !== 'SubagentHandback') {
   const marker = (m) => path.join(stateDir, 'agents', `${agentKey}.${m}`);
+  try { if (input.tool_name === 'Bash') fs.rmSync(marker('untested.json'), { force: true }); } catch { /* non-blocking */ }
   if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
     try {
-      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked']) fs.rmSync(marker(m), { force: true });
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked', 'untested.json', 'untested-asked']) fs.rmSync(marker(m), { force: true });
     } catch (e) {
       addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
     }
@@ -630,6 +648,14 @@ function writeJsonAtomic(f, obj) {
   }
 }
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
+const securityFile = (feat) => path.join(stateDir, 'security', `${path.basename(feat)}.json`);
+const loadFile = (feat) => path.join(stateDir, 'load', `${path.basename(feat)}.json`);
+const reportFile = (role) => path.join(stateDir, 'reports', `${role}.json`);
+const saveReport = (role, feat, word, text) => {
+  if (!role || !feat || !text) return;
+  try { writeJson(reportFile(role), { role, feature: feat, word, text: String(text).slice(0, 4000), at: new Date().toISOString() }); } catch { /* non-blocking */ }
+};
+const specFingerprint = (feat) => createHash('sha256').update(readOr(path.join(root, feat, 'spec.md'), '<missing>').replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
 // #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
 const AUDIT_FAIL_LIMIT = 2;
 const auditFile = (feat) => path.join(stateDir, 'audit', `${path.basename(feat)}.json`);
@@ -648,7 +674,28 @@ const SESSION_ID = /^[\w-]{1,128}$/;
 // as REJECTED. So each one is also kept under notices/, by the session the subagent's input names (the
 // main session's), and `relay`, on the main session's PostToolUse of Agent, hands them over once.
 const noticeFile = (sessionId) => path.join(stateDir, 'notices', `${sessionId}.jsonl`);
+const activityFile = path.join(stateDir, 'activity.jsonl');
 const noticeSession = str(input.session_id);
+// #494: privacy-safe, fail-open JSONL activity and guardrail telemetry stream (.git/speckit-team/activity.jsonl).
+// Skip inside patch mode so feature 003's FR-009 test (only patch/ exists under stateDir during patch PreToolUse) holds.
+if (!CLI && mode !== 'patch' && mode !== 'relay') {
+  recordActivity = (decision) => {
+    try {
+      const ti = input.tool_input || {};
+      const rawTarget = str(ti.file_path ?? ti.notebook_path);
+      const target = rawTarget ? repoRel(path.resolve(cwd, rawTarget)) : null;
+      const role = str(input.agent_type) ?? (noticeSession && SESSION_ID.test(noticeSession) ? readState(roleFile(noticeSession))?.role ?? null : null);
+      const ms = Math.round(Number(process.hrtime.bigint() - hookStartNs) / 1e4) / 100;
+      const row = {
+        v: 1, at: new Date().toISOString(), session_id: noticeSession ?? null, agent_id: agentId ?? null,
+        role: role ?? null, feature: feature(), event: str(event) ?? null, mode: str(mode) ?? null,
+        tool: str(input.tool_name) ?? null, target, decision, rule: args[0] ?? mode ?? null, ms,
+      };
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.appendFileSync(activityFile, `${JSON.stringify(row)}\n`);
+    } catch { /* Constitution III: observers never block */ }
+  };
+}
 if (agentId && noticeSession && SESSION_ID.test(noticeSession) && mode !== 'relay') {
   keepNotice = (text) => {
     try {
@@ -758,13 +805,14 @@ function typedRoles(args) {
     } else if (words[0] === '--security' && !seen.has('--security')) {
       seen.add('--security');
       words = words.slice(1);
-    } else if (['--load-test', '--yes', '--side-by-side'].includes(words[0]) && !seen.has(words[0])) {
-      // #431: --yes and --side-by-side lead the arguments as --load-test does.
+    } else if (['--load-test', '--yes', '--side-by-side', '--resume'].includes(words[0]) && !seen.has(words[0])) {
+      // #431, #487: --yes, --side-by-side and --resume lead the arguments as --load-test does.
       seen.add(words[0]);
       words = words.slice(1);
     } else break;
   }
-  if (words[0] !== '--team') return null;
+  const extra = [...(seen.has('--load-test') ? ['load-tester'] : []), ...(seen.has('--security') ? ['security-reviewer'] : [])];
+  if (words[0] !== '--team') return extra.length ? [...CORE_ROLES, ...extra] : null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
   return list.join('').split(',').flatMap((w) => {
@@ -782,7 +830,7 @@ function teamOf() {
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
   return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true,
-    hybrid: r.skillAgents === true && r.hybrid === true };
+    hybrid: r.skillAgents === true && r.hybrid === true, security: r.security === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -1156,6 +1204,12 @@ function closeRole(rec, at, gate = null) {
   if (rec.role === 'architect') {
     const gaps = plannedOf(feature() ?? rec.feature);
     if (gaps.length) refuseOnce(rec, at, 'plan', planRefusal(gaps));
+    const dWhy = dryRunDecisions(feature() ?? rec.feature);
+    if (dWhy) refuseOnce(rec, at, 'decisions', dWhy);
+  }
+  if (rec.role === 'product-owner') {
+    const qWhy = dryRunClarifications(feature() ?? rec.feature);
+    if (qWhy) refuseOnce(rec, at, 'clarifications', qWhy);
   }
   // No count is needed here: the record goes with the hand-on, so a Stop with no new role call finds none.
   if (at === 'stop') {
@@ -1279,27 +1333,32 @@ function lastGatekeeperWord(text) {
 // What the check needs of an implementer's launch prompt, never its text: its task IDs, and whether it is a stub pass or a
 // worktree launch.
 const launchOf = (prompt) => ({ ids: [...new Set(prompt.match(/\bT\d{3,}\b/g) ?? [])].sort(), stub: /^\s*stub\b/m.test(prompt), worktree: /\bworktree\b/.test(prompt) });
-// #463: the main session's implementer launches the gate let through, oldest first, until an implementer's SubagentStart
-// claims one: its transcript may not be on disk yet at its Stop (CI's macOS runner, as #397 found for the main session's).
+// #463, #490: the main session's test-writer and implementer launches the gate let through, oldest first, until
+// SubagentStart claims one: its transcript may not be on disk yet at its Stop (CI's macOS runner, as #397 found for the main session's).
 const launchesFile = (sid) => path.join(stateDir, 'launches', `${sid}.json`);
 const launchFile = (key) => path.join(stateDir, 'agents', `${key}.launch.json`);
-function recordLaunch(sid, prompt) {
+function recordLaunch(sid, prompt, role = 'implementer') {
   const f = launchesFile(sid);
   locked(f, () => {
     const prev = readState(f);
     const now = Date.now();
     const kept = (Array.isArray(prev) ? prev : []).filter((l) => now - Date.parse(l?.at) < 30 * 60_000);
-    writeJsonAtomic(f, [...kept, { ...launchOf(prompt), at: new Date(now).toISOString() }]);
+    writeJsonAtomic(f, [...kept, { role, ...launchOf(prompt), at: new Date(now).toISOString() }]);
   });
 }
-function claimLaunch(sid, key) {
+function claimLaunch(sid, key, role = 'implementer') {
   const f = launchesFile(sid);
+  let claimed = null;
   locked(f, () => {
     const prev = readState(f);
     if (!Array.isArray(prev) || !prev.length) return;
-    writeJson(launchFile(key), prev[0]);
-    writeJsonAtomic(f, prev.slice(1));
+    const idx = prev.findIndex((l) => !l.role || l.role === role);
+    if (idx < 0) return;
+    claimed = prev[idx];
+    writeJson(launchFile(key), claimed);
+    writeJsonAtomic(f, [...prev.slice(0, idx), ...prev.slice(idx + 1)]);
   });
+  return claimed;
 }
 // #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
 // worktree launch, which tick nothing by rule, or when neither the claimed launch nor the agent's transcript says.
@@ -1437,6 +1496,24 @@ function trusted(dir) {
   const accepted = new Set(Object.entries(projects).filter(([, v]) => v?.hasTrustDialogAccepted === true).map(([k]) => norm(k)));
   return { ok: accepted.has(norm(path.resolve(dir))), conf };
 }
+// #487: deterministic checkpoint state for an active feature, so a resumed or /clear-reset session can
+// fast-forward past completed phases whose audit fingerprint still holds.
+function featureCheckpoint(feat) {
+  const specText = readOr(path.join(root, feat, 'spec.md'), undefined);
+  if (specText === undefined) return 'spec';
+  const qs = openQuestions(specText);
+  if (qs.length || specText.includes('[NEEDS CLARIFICATION')) return `spec-questions${qs.length ? `: ${qs.join(', ')}` : ''}`;
+  const planText = readOr(path.join(root, feat, 'plan.md'), undefined);
+  const tasksText = readOr(path.join(root, feat, 'tasks.md'), undefined);
+  if (planText === undefined || tasksText === undefined) return 'plan';
+  const ds = openDecisions(planText);
+  if (ds.length) return `plan-decisions: ${ds.join(', ')}`;
+  if (auditProblem() !== null) return 'audit';
+  const open = [...tasksText.matchAll(/^\s*[-*]\s+\[ \]\s+(T\d+)\b/gm)].map((m) => m[1]);
+  if (open.length) return `build: ${open.join(', ')}`;
+  const e = readState(endsFile(feat));
+  return e?.word === 'APPROVED' ? 'approved' : 'verify';
+}
 // `check team`: what step 0 of /speckit-team asks of the repo, one `state:` line each, so the main session
 // needs no call of its own for them. In 3 of the 5 full runs of 2026-11-08 it spent a second response there.
 function repoState() {
@@ -1455,6 +1532,8 @@ function repoState() {
   else out.push('state: constitution holds rules');
   const branch = git(root, 'branch', '--show-current');
   out.push(branch ? `state: on branch ${branch}` : 'state: not on a branch');
+  const feat = feature();
+  if (feat) out.push(`state: feature ${feat} (${featureCheckpoint(feat)})`);
   return out;
 }
 if (mode === 'check') {
@@ -1538,8 +1617,16 @@ function scopeCheck(sargs) {
   }
   if (viaBash) scopeBash = { command: file, actor, ruleArgs };
   else {
-    const why = laneProblem(actor, ruleArgs, path.resolve(cwd, file), file, false);
+    const abs = path.resolve(cwd, file);
+    const why = laneProblem(actor, ruleArgs, abs, file, false);
     if (why) deny(why);
+    // #486: an implementer Write/Edit to a production file marks it untested until a Bash test command runs.
+    if (agentKey && ruleArgs[0] === 'no-tests') {
+      const rel = repoRel(abs);
+      if (rel && !TASKS_FILE.test(rel) && !isDoc(rel) && !rel.startsWith('specs/')) {
+        try { writeJson(path.join(stateDir, 'agents', `${agentKey}.untested.json`), { file: rel, at: new Date().toISOString() }); } catch { /* non-blocking */ }
+      }
+    }
     process.exit(0);
   }
 }
@@ -1583,7 +1670,7 @@ if (mode === 'gate') {
       const hybrid = typedMode === 'hybrid';
       const missing = missingRoleSkills(hybrid ? HYBRID_WRITERS : TEAM_ROLES);
       if (missing.length) block(`speckit-team: --team ${typedMode} needs the role skills ${missing.map((r) => `speckit-role-${r}`).join(', ')}, which are not installed. Run node install.mjs and type the request again.`);
-      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, ...(hybrid ? { hybrid: true } : {}), at: new Date().toISOString() });
+      writeJson(teamFile(id), { session_id: id, roles: TEAM_ROLES, skillAgents: true, ...(hybrid ? { hybrid: true } : {}), ...(afterTeam.includes('--security') ? { security: true } : {}), at: new Date().toISOString() });
       emit({ systemMessage: (hybrid ? HYBRID_START : SKILL_AGENTS_START)(afterTeam.includes('--load-test')) });
     }
     if (roles?.length !== 1 || roles[0] !== 'noagents') process.exit(0);
@@ -1602,6 +1689,7 @@ if (mode === 'gate') {
     if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
     if (role === 'architect' || role === 'spec-auditor') holdQuestions(feature());
+    if (role === 'architect') holdSecuritySpec(feature());
     if (role === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
     // #331: every notice is collected and said once at the end, after the record is written.
@@ -1626,9 +1714,9 @@ if (mode === 'gate') {
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
     if (choice !== undefined && Array.isArray(choice?.typed)) {
-      // #373: the roles the user typed after --team, held until the user says otherwise.
+      // #373, #489: the roles the user typed after --team (or via --security / --load-test), held until the user says otherwise.
       const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
-      const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester') && !launched.includes(r));
+      const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester' || r === 'security-reviewer') && !launched.includes(r));
       if (dropped.length && !answeredLater(choice, id)) {
         deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
           + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
@@ -1660,8 +1748,8 @@ if (mode === 'gate') {
     if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
     // #429: under `--models fast` a stub pass and a dictated revision go out on haiku. Only the model changes, and only
     // when the call names none.
-    // #463: the implementer launch this gate lets through, for its SubagentStart to claim.
-    if (role === 'implementer') { try { recordLaunch(id, input.tool_input.prompt); } catch { /* unrecorded: the transcript decides */ } }
+    // #463, #490: the test-writer or implementer launch this gate lets through, for its SubagentStart to claim.
+    if (role === 'implementer' || role === 'test-writer') { try { recordLaunch(id, input.tool_input.prompt, role); } catch { /* unrecorded: the transcript decides */ } }
     const quick = quickModel(role, input.tool_input);
     if (quick) emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...input.tool_input, model: quick } } });
     finish();
@@ -1693,6 +1781,7 @@ if (mode === 'gate') {
       // #353: the audit's holds (open decisions, the two-FAIL limit of #242) on the role's call, as on the
       // agent's launch. After closeRole, which counts the FAIL it closes.
       if (roleSkill === 'architect' || roleSkill === 'spec-auditor') holdQuestions(feature());
+      if (roleSkill === 'architect') holdSecuritySpec(feature());
       if (roleSkill === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
       const start = startRecord();
       if (start) {
@@ -1727,6 +1816,14 @@ if (mode === 'gate') {
   }
   // #337: `gate [retries] scope <rule>` is test-writer's and implementer's one PreToolUse entry, so a write
   // or Bash call costs one process and one git call instead of two. The scope rule sees write tools only.
+  // #493: deny bare unfiltered full-suite test commands in a worktree implementer.
+  if (event === 'PreToolUse' && input.tool_name === 'Bash' && input.agent_type === 'implementer' && agentKey && readState(launchFile(agentKey))?.worktree === true) {
+    const cmd = str(input.tool_input?.command) ?? '';
+    const BARE_TEST = /^\s*(?:npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|bun\s+(?:run\s+)?test|pytest|cargo\s+test|node\s+--test)\s*$/;
+    if (cmd.split(/[;&|\n]+/).some((seg) => BARE_TEST.test(seg))) {
+      deny('Worktree test scope: do not run the full test suite in a worktree (sibling slices are not built here). Pass only your slice\'s test file path(s) to the test runner.');
+    }
+  }
   const scopeAt = args.indexOf('scope');
   if (scopeAt < 0 || event !== 'PreToolUse' || !SCOPED_TOOLS.test(str(input.tool_name) ?? '')) process.exit(0);
   scopeCheck(args.slice(scopeAt + 1));
@@ -1950,6 +2047,39 @@ function holdQuestions(feat) {
       + 'otherwise a product-owner revision with the answers. Then launch again.');
   }
 }
+// #491: zero-write dry-run checks for ## Open Questions and ## Open Decisions at product-owner and architect Stop.
+function dryRunClarifications(feat) {
+  if (!feat) return null;
+  const specRel = `${feat}/spec.md`;
+  const specText = readOr(path.join(root, specRel), '');
+  if (!specText) return null;
+  if (openQuestions(specText).length) {
+    const r = recordClarifications(specText, specRel, '2026-01-01');
+    if (r.problems.length) return `Open Questions check: ${r.problems.join('; ')}. Fix the formatting in ${specRel} so clarifications --recommended can record them.`;
+  } else if (specText.includes('[NEEDS CLARIFICATION')) {
+    return `Open Questions check: ${specRel} still has a [NEEDS CLARIFICATION] marker outside ## Open Questions. Put open questions under ## Open Questions as ### Q<n> with a (recommended) option.`;
+  }
+  return null;
+}
+function dryRunDecisions(feat) {
+  if (!feat) return null;
+  const planRel = `${feat}/plan.md`; const specRel = `${feat}/spec.md`;
+  const planText = readOr(path.join(root, planRel), ''); const specText = readOr(path.join(root, specRel), '');
+  if (!planText || !openDecisions(planText).length) return null;
+  const r = recordRecommended(planText, specText, planRel, specRel, '2026-01-01');
+  return r.problems.length ? `Open Decisions check: ${r.problems.join('; ')}. Fix the formatting in ${planRel} so decisions --recommended can record them.` : null;
+}
+// #489: when security-reviewer is in the session's team (not default skill-agents/hybrid unless --security was active), architect waits for security-reviewer (phase: spec) PASS on the current spec.md.
+function holdSecuritySpec(feat) {
+  if (!feat) return;
+  const t = teamOf();
+  if (!t || !t.roles.includes('security-reviewer') || (t.skillAgents && !t.security)) return;
+  const s = readState(securityFile(feat));
+  if (!s || typeof s !== 'object' || s.verdict !== 'PASS') {
+    deny(`speckit-team: security-reviewer is in this session's team and has not passed ${feat}/spec.md${s?.verdict ? ` (last verdict: ${s.verdict})` : ''}. `
+      + 'Run security-reviewer (phase: spec) and get VERDICT: PASS before launching architect.');
+  }
+}
 if (mode === 'audit') {
   const feat = feature();
   if (!feat || args.length !== 1 || args[0] !== '--approve') {
@@ -2024,6 +2154,7 @@ if (mode === 'verdict') {
   writeJson(verdictFile(feat), {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
+  saveReport('spec-auditor', feat, verdict, text);
   // #242: FAILs in a row, per feature. A PASS clears the count; a FAIL spends any approval.
   if (verdict === 'PASS') fs.rmSync(auditFile(feat), { force: true });
   else writeJson(auditFile(feat), { feature: feat, fails: (Number(auditRecord(feat).fails) || 0) + 1, approved: false, at: new Date().toISOString() });
@@ -2053,6 +2184,17 @@ if (mode === 'result') {
   // #463: a GREEN while tasks its own prompt names are still unticked cost a gatekeeper REJECTED and a launch to tick
   // them; sent back once per agent, naming them.
   if (result === 'GREEN') {
+    // #486: a GREEN while a production file was written via Write/Edit with no Bash run after it is sent back once.
+    const untestedPath = agentKey && path.join(stateDir, 'agents', `${agentKey}.untested.json`);
+    const untested = untestedPath ? readState(untestedPath) : null;
+    const untestedAsked = agentKey && path.join(stateDir, 'agents', `${agentKey}.untested-asked`);
+    if (untested?.file && untestedAsked && !fs.existsSync(untestedAsked)) {
+      const why = `RESULT: GREEN, but ${untested.file} was modified after your last Bash test run. Run the tests on the final code before reporting RESULT: GREEN.`;
+      writeJson(untestedAsked, {});
+      fs.rmSync(untestedPath, { force: true });
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+    }
     const open = untickedOfPrompt(feat);
     const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ticks-asked`);
     if (open.length && asked && !fs.existsSync(asked)) {
@@ -2063,6 +2205,7 @@ if (mode === 'result') {
     }
   }
   markReport(done, viaHandback, { result });
+  saveReport('implementer', feat, result, reportText(viaHandback));
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
   const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
@@ -2189,9 +2332,20 @@ if (mode === 'ends') {
     }
     markReport(ok, viaHandback);
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
+    // #489, #492: record security-reviewer and load-tester verdicts and persist accepted report under .git/speckit-team/reports/.
+    const activeFeat = feature();
+    const roleForRep = str(input.agent_type) ?? (record ? 'spec-gatekeeper' : null);
+    if (activeFeat && roleForRep) saveReport(roleForRep, activeFeat, word, reportText(viaHandback));
+    if (activeFeat && input.agent_type === 'security-reviewer') {
+      const v = verdictIn(word) ?? word;
+      writeJson(securityFile(activeFeat), { verdict: v, word, feature: activeFeat, specFingerprint: specFingerprint(activeFeat), head: git(root, 'rev-parse', 'HEAD'), at, agent_id: agentId });
+    } else if (activeFeat && input.agent_type === 'load-tester') {
+      writeJson(loadFile(activeFeat), { word, feature: activeFeat, head: git(root, 'rev-parse', 'HEAD'), at, agent_id: agentId });
+    }
     const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
       drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
+    if (recordActivity) recordActivity('record');
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
@@ -2217,7 +2371,7 @@ function pruneState(now = Date.now()) {
   const stamp = path.join(stateDir, '.pruned');
   try { if (now - fs.statSync(stamp).mtimeMs < DAY_MS) return; } catch { /* never pruned here */ }
   const cutoff = now - PRUNE_DAYS * DAY_MS;
-  for (const d of ['agents', 'team', 'project', 'choice', 'patch']) {
+  for (const d of ['agents', 'team', 'project', 'choice', 'patch', 'reports']) {
     let names;
     try { names = fs.readdirSync(path.join(stateDir, d)); } catch { continue; }
     for (const n of names) {
@@ -2225,6 +2379,10 @@ function pruneState(now = Date.now()) {
       try { const s = fs.lstatSync(f); if (s.isFile() && s.mtimeMs < cutoff) fs.rmSync(f, { force: true }); } catch { /* the next file */ }
     }
   }
+  try {
+    const st = fs.lstatSync(activityFile);
+    if (st.isFile() && (st.mtimeMs < now - 7 * DAY_MS || st.size > 10 * 1024 * 1024)) fs.rmSync(activityFile, { force: true });
+  } catch { /* no activity.jsonl */ }
   try { fs.writeFileSync(stamp, new Date(now).toISOString()); } catch { /* pruned again on the next launch */ }
 }
 
@@ -2240,6 +2398,13 @@ function repoMeta() {
   for (const name of ['test', 'lint', 'typecheck', 'build']) {
     if (typeof scripts[name] === 'string') out.push(`- ${name === 'test' ? 'npm test' : `npm run ${name}`}: ${cut(scripts[name].replace(/\s+/g, ' '), 120)}`);
   }
+  if (typeof scripts.test === 'string') {
+    const t = scripts.test.trim();
+    const single = /^node\s+tools\/test\.mjs\b/.test(t) ? 'node tools/test.mjs <path> (or npm test -- <path>)'
+      : /^node\s+--test\b/.test(t) ? 'node --test <path> (or npm test -- <path>)'
+      : /\b(vitest|jest|mocha|ava)\b/.test(t) ? `npx ${RegExp.$1} <path> (or npm test -- <path>)` : null;
+    if (single) out.push(`- Single test file: ${single}`);
+  }
   const wf = path.join(root, '.github', 'workflows');
   let runs = [];
   try {
@@ -2254,12 +2419,70 @@ function repoMeta() {
   return cut(text, 800);
 }
 
+// #490: slice the assigned tasks from tasks.md and (for test-writer) cited FR-### definitions from spec.md at SubagentStart.
+function sliceTasks(text) {
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*[-*]\s+\[([ xX])\]\s+(T\d+)\b/.exec(line);
+    if (m) out.push({ id: m[2], text: line });
+    else if (!line.trim() || /^#/.test(line)) out.push(null);
+    else if (out.at(-1)) out.at(-1).text += `\n${line}`;
+  }
+  return out.filter(Boolean);
+}
+function assignedSlice(type, launch) {
+  if (!launch || !Array.isArray(launch.ids) || !launch.ids.length) return '';
+  const feat = feature();
+  if (!feat) return '';
+  const tasksText = readOr(path.join(root, feat, 'tasks.md'), '');
+  if (!tasksText) return '';
+  const matched = sliceTasks(tasksText).filter((t) => launch.ids.includes(t.id));
+  if (!matched.length) return '';
+  const parts = [`Assigned tasks from ${feat}/tasks.md (do not re-read tasks.md for them):\n${matched.map((t) => t.text).join('\n')}`];
+  if (type === 'test-writer') {
+    const frIds = [...new Set(matched.flatMap((t) => t.text.match(/\bFR-\d+[a-z]?\b/g) ?? []))];
+    if (frIds.length) {
+      const specText = readOr(path.join(root, feat, 'spec.md'), '');
+      const frLines = specText.split(/\r?\n/).filter((l) => frIds.some((id) => new RegExp(`(\\*\\*${id}:?\\*\\*|^[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+${id}[ \\t]*:)`).test(l)));
+      if (frLines.length) parts.push(`Cited requirements from ${feat}/spec.md:\n${frLines.join('\n')}`);
+    }
+  }
+  const block = parts.join('\n\n');
+  return block.length > 1500 ? `${block.slice(0, 1499)}…` : block;
+}
+// #492: zero-copy agent-to-agent report handoff at SubagentStart.
+function upstreamReport(type, launch) {
+  const feat = feature();
+  if (!feat) return '';
+  const readRep = (role) => { const r = readState(reportFile(role)); return r && r.feature === feat && typeof r.text === 'string' ? r : null; };
+  const parts = [];
+  if (type === 'implementer' && !launch?.stub) {
+    const tw = readRep('test-writer');
+    if (tw && (tw.word === 'RED' || tw.word === 'FIXED')) parts.push(`Upstream test-writer report (${tw.word}):\n${tw.text}`);
+    const gk = readRep('spec-gatekeeper');
+    if (gk && gk.word === 'REJECTED') parts.push(`Upstream spec-gatekeeper report (${gk.word}):\n${gk.text}`);
+    const sr = readRep('security-reviewer');
+    if (sr && (sr.word === 'VERDICT: FAIL' || sr.word === 'FAIL')) parts.push(`Upstream security-reviewer report (${sr.word}):\n${sr.text}`);
+  } else if (type === 'product-owner' || type === 'architect') {
+    const v = readState(verdictFile(feat));
+    const sa = readRep('spec-auditor');
+    if (sa && sa.word === 'FAIL' && v?.verdict === 'FAIL') parts.push(`Upstream spec-auditor report (FAIL):\n${sa.text}`);
+    const sr = readRep('security-reviewer');
+    const sec = readState(securityFile(feat));
+    if (sr && (sr.word === 'VERDICT: FAIL' || sr.word === 'FAIL') && sec?.verdict === 'FAIL') parts.push(`Upstream security-reviewer report (FAIL):\n${sr.text}`);
+  }
+  return parts.join('\n\n');
+}
+
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
-  // #463: an implementer claims the oldest launch the gate recorded for this session.
+  // #463, #490: test-writer or implementer claims the oldest launch the gate recorded for this session.
   const sid = str(input.session_id);
-  if (type === 'implementer' && agentId && AGENT_ID.test(agentId) && sid && SESSION_ID.test(sid)) { try { claimLaunch(sid, agentKey); } catch { /* the transcript decides */ } }
+  let claimedLaunch = null;
+  if ((type === 'implementer' || type === 'test-writer') && agentId && AGENT_ID.test(agentId) && sid && SESSION_ID.test(sid)) {
+    try { claimedLaunch = claimLaunch(sid, agentKey, type); } catch { /* the transcript decides */ }
+  }
   // #445: spec-auditor's audit starts with the agent, so its verdict PreToolUse entry runs only on SubagentHandback.
   if (type === 'spec-auditor' && agentId && AGENT_ID.test(agentId) && !fs.existsSync(auditStartFile(agentKey))) {
     const feat = feature();
@@ -2272,9 +2495,11 @@ if (mode === 'start') {
   const id = str(input.session_id);
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
   const meta = META_AGENTS.includes(type) ? repoMeta() : '';
-  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta].filter(Boolean).join('\n\n') } });
+  const slice = (type === 'implementer' || type === 'test-writer') ? assignedSlice(type, claimedLaunch) : '';
+  const handoff = upstreamReport(type, claimedLaunch);
+  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta, slice, handoff].filter(Boolean).join('\n\n') } });
   const rec = readState(projectFile(id));
-  if (rec === undefined) { if (meta) give(''); process.exit(0); }
+  if (rec === undefined) { if (meta || slice || handoff) give(''); if (recordActivity) recordActivity('start'); process.exit(0); }
   if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
   const r = renderProject(rec.name);
   if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });
@@ -2288,6 +2513,26 @@ if (mode === 'lane' && args[0] === 'role') {
   const rec = readState(roleFile(id));
   if (rec === undefined) process.exit(0);
   closeRole(rec, 'stop');
+}
+
+// #489: zero-dependency secret/credential pattern scan for changed files at lane and patch Stop.
+const SECRET_PATTERNS = [
+  /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/,
+  /\bghp_[A-Za-z0-9]{30,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{30,}\b/,
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+];
+const ENV_FILE = /(^|\/)\.env(\.(?!example$|sample$|template$)[^/]+)?$/i;
+function secretsInFiles(rels) {
+  const hits = [];
+  for (const rel of rels) {
+    if (isTest(rel) || isDoc(rel)) continue;
+    if (ENV_FILE.test(rel) && fs.existsSync(path.join(root, rel))) { hits.push(`${rel} (.env file)`); continue; }
+    const text = readOr(path.join(root, rel), '');
+    if (SECRET_PATTERNS.some((re) => re.test(text))) hits.push(rel);
+  }
+  return hits;
 }
 
 if (mode === 'lane') {
@@ -2314,6 +2559,19 @@ if (mode === 'lane') {
         + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
     }
   }
+  // #489: block accidental secret or credential patterns in changed files at lane Stop.
+  const changed = Array.isArray(base.dirty) && typeof base.sha === 'string' && /^[0-9a-f]{40,64}$/.test(base.sha)
+    ? changedSince(base.sha).filter((rel) => !base.dirty.includes(rel)) : [];
+  const secrets = secretsInFiles(changed);
+  const secretAsked = path.join(stateDir, 'agents', `${agentKey}.secret-asked`);
+  if (secrets.length && !fs.existsSync(secretAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(secretAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) {
+      block(`Secret scan: ${who} added secret or credential patterns in: ${secrets.join(', ')}. `
+        + 'Remove the hardcoded secret or .env file before finishing.');
+    }
+  }
   // #465: the architect is sent back once while a requirement of spec.md has no test task, before the audit reads it.
   const plannedFeat = input.agent_type === 'architect' ? feature() : null;
   const gaps = plannedFeat ? plannedOf(plannedFeat) : [];
@@ -2323,9 +2581,20 @@ if (mode === 'lane') {
     try { writeJson(planAsked, {}); first = true; } catch { /* the flag decides */ }
     if (first) block(planRefusal(gaps));
   }
+  // #491: dry-run clarifications and decisions parsers at product-owner and architect Stop.
+  const dryWhy = input.agent_type === 'product-owner' ? dryRunClarifications(feature())
+    : input.agent_type === 'architect' ? dryRunDecisions(feature()) : null;
+  const dryAsked = path.join(stateDir, 'agents', `${agentKey}.dry-asked`);
+  if (dryWhy && !fs.existsSync(dryAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(dryAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) block(dryWhy);
+  }
   fs.rmSync(f, { force: true });
   fs.rmSync(asked, { force: true });
+  fs.rmSync(secretAsked, { force: true });
   fs.rmSync(planAsked, { force: true });
+  fs.rmSync(dryAsked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
 }
@@ -3427,13 +3696,34 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
   // behaviour change from a typo, so a production change with no test file in the run is stopped, unless the
   // report says why it has none: a line `No test: <reason>`. A docs-only change has no production lines to check.
   const tests = testsAt(start.sha);
-  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !NO_TEST_LINE.test(reportText(viaHandback))
-    && !(!viaHandback && readState(handbackFile(key))?.noTest === true)) {
+  const repText = reportText(viaHandback);
+  const noTestExempt = NO_TEST_LINE.test(repText) || (!viaHandback && readState(handbackFile(key))?.noTest === true);
+  if (m.lines > 0 && !m.changed.some((rel) => tests.isTest(rel)) && !noTestExempt) {
     end('stopped', `fast track stopped: ${m.lines} changed production lines and no test file changed. A change in behaviour needs a regression test, shown failing. `
       + 'If the change has no behaviour (a typo, a comment, a config value), the report says so in a line `No test: <reason>`. '
       + 'Nothing was committed; the work is uncommitted in the working tree. Write the test or add that line, then run the change again.'
       + undoSentence(start.sha, m));
   }
+  // #489: block accidental secret or credential patterns in changed files at patch Stop.
+  const patchSecrets = secretsInFiles(m.changed);
+  if (patchSecrets.length) {
+    refuse(`Fast track: ${who} added secret or credential patterns in: ${patchSecrets.join(', ')}. `
+      + 'Remove the hardcoded secret or .env file before finishing.');
+  }
+  // #486: a patcher run that edited files via Write/Edit and reports DONE without a Bash test run after the edit is sent back once.
+  const patchUntested = path.join(stateDir, 'patch', `${key}.untested.json`);
+  const patchAsked = path.join(stateDir, 'patch', `${key}.untested-asked`);
+  const repWord = lastWord(repText);
+  if (m.lines > 0 && !noTestExempt && repWord !== 'FAILED' && repWord !== 'ESCALATE') {
+    const u = readState(patchUntested);
+    if (u?.file && !fs.existsSync(patchAsked)) {
+      writeJson(patchAsked, {});
+      fs.rmSync(patchUntested, { force: true });
+      refuse(`Fast track: ${u.file} was modified after your last Bash test run. Run the tests on the final code before finishing.`);
+    }
+  }
+  fs.rmSync(patchUntested, { force: true });
+  fs.rmSync(patchAsked, { force: true });
   writeJson(acceptedFile, { key, sha: start.sha, files: m.changed, untracked: m.untracked, lines: m.lines, filesTouched: m.files, at: new Date().toISOString() });
   end('accepted', `fast track: ${m.lines} of ${PATCH_LINES} production lines, ${m.files} of ${PATCH_FILES} production files (tests and docs not counted). The end check accepted the run.`);
 }
@@ -3554,6 +3844,9 @@ if (mode === 'patch') {
       deny(`Fast track: ${hit} had uncommitted changes when the run started. They are the developer's work, so the fast track leaves the file alone. `
         + 'If the change needs this file, report ESCALATE; the developer commits or stashes that work first, or uses /speckit-team.');
     }
+    if (!rel || !isDoc(rel)) {
+      try { writeJson(path.join(stateDir, 'patch', `${key}.untested.json`), { file: rel ?? str(given), at: new Date().toISOString() }); } catch { /* non-blocking */ }
+    }
   }
   if (input.tool_name === 'Bash') {
     const cmd = ti.command;
@@ -3567,6 +3860,7 @@ if (mode === 'patch') {
       deny(`Fast track: ${who} may not run ${t}: it can overwrite or delete files that had uncommitted changes when the run started, which are the developer's work. `
         + 'Restore a file by naming it (git checkout <sha12> -- <file>); never ., a folder or a pattern. If that is not enough, report ESCALATE.');
     }
+    fs.rmSync(path.join(stateDir, 'patch', `${key}.untested.json`), { force: true });
   }
   let m;
   try { m = measure(start); } catch (e) {

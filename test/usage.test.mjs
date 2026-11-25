@@ -185,3 +185,28 @@ test('usage summary holds the same Skill list as main.skills (SC-001)', () => {
   ].map((l) => JSON.stringify(l)).join('\n'));
   assert.deepEqual(summarise(file).main.skills, ['speckit-role-product-owner', 'speckit-role-architect']);
 });
+
+// #494: correlate guardrail telemetry from .git/speckit-team/activity.jsonl in tools/usage.mjs (--repo <dir>).
+test('#494: usage correlates guardrail telemetry from activity.jsonl when --repo is passed', () => {
+  const tFile = transcript();
+  const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'skusage-repo-'));
+  const stDir = path.join(repoDir, '.git', 'speckit-team');
+  fs.mkdirSync(stDir, { recursive: true });
+  const events = [
+    { v: 1, at: '2026-11-24T10:00:00Z', session_id: 's1', agent_id: 'a1', role: 'product-owner', feature: 'specs/001-demo', event: 'SubagentStart', mode: 'start', tool: null, target: null, decision: 'start', rule: 'start', ms: 12 },
+    { v: 1, at: '2026-11-24T10:01:00Z', session_id: 's1', agent_id: 'a2', role: 'implementer', feature: 'specs/001-demo', event: 'PreToolUse', mode: 'scope', tool: 'Write', target: 'test/a.test.js', decision: 'deny', rule: 'no-tests', ms: 18 },
+    { v: 1, at: '2026-11-24T10:02:00Z', session_id: 's1', agent_id: 'a2', role: 'implementer', feature: 'specs/001-demo', event: 'SubagentStop', mode: 'result', tool: null, target: null, decision: 'block', rule: 'result', ms: 25 },
+  ];
+  fs.writeFileSync(path.join(stDir, 'activity.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+
+  const sum = summarise(tFile, { repo: repoDir });
+  assert.equal(sum.guardrails.calls, 3);
+  assert.equal(sum.guardrails.denials.length, 1);
+  assert.equal(sum.guardrails.blocks.length, 1);
+
+  const out = spawnSync(process.execPath, [TOOL, tFile, '--repo', repoDir], { encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /guardrails: 3 calls/);
+  assert.match(out.stdout, /implementer.*deny.*no-tests/);
+  assert.match(out.stdout, /implementer.*block.*result/);
+});

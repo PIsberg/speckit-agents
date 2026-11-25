@@ -71,7 +71,7 @@ function tasksOf(text) {
 
 // Every feature under specs/, or with `feature` (a repo-relative directory such as specs/001-sum) that one
 // feature alone, wherever it is; then specs/ need not exist, and a feature without tasks.md checks nothing.
-export function drift(repo, { feature: only = null, spec = false } = {}) {
+export function drift(repo, { feature: only = null, spec = false, testFirst = false } = {}) {
   const specs = path.join(repo, 'specs');
   const hasSpecs = fs.existsSync(specs);
   if (!only && !hasSpecs) throw new Error(`no specs/ in ${repo}`);
@@ -134,7 +134,36 @@ export function drift(repo, { feature: only = null, spec = false } = {}) {
       if (s.unchecked) unchecked.push(s.unchecked);
     }
   }
+  if (testFirst) problems.push(...commitOrder(repo, dirs[0] ?? 'specs', isTest));
   return { features, tasks, problems, unchecked };
+}
+
+// #486: Constitutional Principle I (Test-First) in git history: when commits after the base commit modify production
+// files, a test-only commit must precede the first non-stub production commit.
+const NON_PROD = /^(\.specify|specs|\.claude|\.github)\/|\.(md|mdx|markdown|rst|adoc|asciidoc)$|^docs\/.*\.txt$|(?:^|\/)(README|CHANGELOG|CHANGES|HISTORY|NEWS|LICENSE|NOTICE|AUTHORS|CONTRIBUTING|COPYING)\.txt$|^\.(gitattributes|gitignore|pre-commit-config\.yaml|gitlab-ci\.yml)$/i;
+function stubCommit(repo, hash, prodFiles) {
+  const r = spawnSync('git', ['show', '--format=', '-U0', hash, '--', ...prodFiles], { cwd: repo, encoding: 'utf8' });
+  if (r.status !== 0) return false;
+  const added = (r.stdout ?? '').split(/\r?\n/).filter((l) => l.startsWith('+') && !l.startsWith('+++')).map((l) => l.slice(1).trim());
+  const code = added.map((l) => l.replace(/\s(\/\/|#).*$/, '').trim()).filter((l) => l && !/^(\/\/|\/\*|\*|#)/.test(l));
+  const signal = (l) => /not implemented/i.test(l);
+  return code.some(signal) && code.every((l) => signal(l) || /\{$/.test(l) || /^[{}()[\];,]+$/.test(l));
+}
+function commitOrder(repo, label, isTest) {
+  if (spawnSync('git', ['rev-parse', '--git-dir'], { cwd: repo }).status !== 0) return [];
+  const r = spawnSync('git', ['log', '--reverse', '--name-only', '--format=@@%H%n%s'], { cwd: repo, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) return [];
+  const isProd = (f) => !isTest(f) && !NON_PROD.test(f);
+  const commits = (r.stdout ?? '').split('@@').filter(Boolean).slice(1).map((c) => {
+    const [hash, subject, ...files] = c.split(/\r?\n/).filter(Boolean);
+    const stub = /^stub:/i.test(subject ?? '') && files.some(isProd) && stubCommit(repo, hash, files.filter(isProd));
+    return stub ? files.filter((f) => !isProd(f)) : files;
+  });
+  const prod = commits.findIndex((fs_) => fs_.some(isProd));
+  if (prod < 0) return [];
+  const test = commits.findIndex((fs_) => fs_.some(isTest) && !fs_.some(isProd));
+  if (test >= 0 && test < prod) return [];
+  return [`${label}: Test-first check: ${test < 0 ? 'production code was committed without a test commit apart from it' : 'production code was committed before the first test commit'} (constitution I: commit failing tests before production code)`];
 }
 
 // #465: the requirements a feature's spec.md defines that no test task of its tasks.md cites (a task that writes tests and
