@@ -5392,7 +5392,7 @@ test('#490: SubagentStart injects assigned tasks.md slice for test-writer and im
   const twStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'test-writer', agent_id: 'tw490', session_id: 's490' });
   const twCtx = metaOf(twStart);
   assert.match(twCtx, /Assigned tasks from specs\/001-demo\/tasks\.md \(do not re-read tasks\.md for them\):/);
-  assert.match(twCtx, /T001 Tests for FR-001 and FR-002 in `test\/math\.test\.js`\n  Verify sum and difference/);
+  assert.match(twCtx, /T001 Tests for FR-001 and FR-002 in `test\/math\.test\.js`\n {2}Verify sum and difference/);
   assert.doesNotMatch(twCtx, /T003 Tests for FR-003/);
   assert.match(twCtx, /Cited requirements from specs\/001-demo\/spec\.md:/);
   assert.match(twCtx, /FR-001.*returns the sum/);
