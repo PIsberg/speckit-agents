@@ -5376,3 +5376,37 @@ test('#489: lane Stop blocks accidental secret/credential patterns or .env files
   assert.equal(stop?.decision, 'block', JSON.stringify(stop));
   assert.match(stop.reason, /secret|credential|src\/main\/Config\.java/i);
 });
+
+// #490: inject assigned tasks.md slice and cited spec.md FR definitions at SubagentStart for test-writer and implementer.
+test('#490: SubagentStart injects assigned tasks.md slice for test-writer and implementer, and cited FR lines for test-writer', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  w(`${FEAT}/spec.md`, '# Spec\n\n- **FR-001**: `add(a, b)` returns the sum.\n- **FR-002**: `sub(a, b)` returns the difference.\n- **FR-003**: `mul(a, b)` returns the product.\n');
+  w(`${FEAT}/tasks.md`, '- [ ] T001 Tests for FR-001 and FR-002 in `test/math.test.js`\n  Verify sum and difference\n- [ ] T002 Implement FR-001 and FR-002 in `src/math.js`\n- [ ] T003 Tests for FR-003 in `test/mul.test.js`\n');
+
+  // Launch test-writer for T001
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's490',
+    tool_input: { subagent_type: 'test-writer', prompt: 'Round 1: T001', run_in_background: false },
+  })));
+  const twStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'test-writer', agent_id: 'tw490', session_id: 's490' });
+  const twCtx = metaOf(twStart);
+  assert.match(twCtx, /Assigned tasks from specs\/001-demo\/tasks\.md \(do not re-read tasks\.md for them\):/);
+  assert.match(twCtx, /T001 Tests for FR-001 and FR-002 in `test\/math\.test\.js`\n  Verify sum and difference/);
+  assert.doesNotMatch(twCtx, /T003 Tests for FR-003/);
+  assert.match(twCtx, /Cited requirements from specs\/001-demo\/spec\.md:/);
+  assert.match(twCtx, /FR-001.*returns the sum/);
+  assert.match(twCtx, /FR-002.*returns the difference/);
+  assert.doesNotMatch(twCtx, /FR-003/);
+
+  // Launch implementer for T002
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's490',
+    tool_input: { subagent_type: 'implementer', prompt: 'Round 1: T002', run_in_background: false },
+  })));
+  const imStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im490', session_id: 's490' });
+  const imCtx = metaOf(imStart);
+  assert.match(imCtx, /Assigned tasks from specs\/001-demo\/tasks\.md \(do not re-read tasks\.md for them\):/);
+  assert.match(imCtx, /T002 Implement FR-001 and FR-002 in `src\/math\.js`/);
+  assert.doesNotMatch(imCtx, /Cited requirements from specs\/001-demo\/spec\.md:/, 'implementer gets assigned tasks only, not cited FRs');
+});

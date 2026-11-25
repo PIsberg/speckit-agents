@@ -1288,27 +1288,32 @@ function lastGatekeeperWord(text) {
 // What the check needs of an implementer's launch prompt, never its text: its task IDs, and whether it is a stub pass or a
 // worktree launch.
 const launchOf = (prompt) => ({ ids: [...new Set(prompt.match(/\bT\d{3,}\b/g) ?? [])].sort(), stub: /^\s*stub\b/m.test(prompt), worktree: /\bworktree\b/.test(prompt) });
-// #463: the main session's implementer launches the gate let through, oldest first, until an implementer's SubagentStart
-// claims one: its transcript may not be on disk yet at its Stop (CI's macOS runner, as #397 found for the main session's).
+// #463, #490: the main session's test-writer and implementer launches the gate let through, oldest first, until
+// SubagentStart claims one: its transcript may not be on disk yet at its Stop (CI's macOS runner, as #397 found for the main session's).
 const launchesFile = (sid) => path.join(stateDir, 'launches', `${sid}.json`);
 const launchFile = (key) => path.join(stateDir, 'agents', `${key}.launch.json`);
-function recordLaunch(sid, prompt) {
+function recordLaunch(sid, prompt, role = 'implementer') {
   const f = launchesFile(sid);
   locked(f, () => {
     const prev = readState(f);
     const now = Date.now();
     const kept = (Array.isArray(prev) ? prev : []).filter((l) => now - Date.parse(l?.at) < 30 * 60_000);
-    writeJsonAtomic(f, [...kept, { ...launchOf(prompt), at: new Date(now).toISOString() }]);
+    writeJsonAtomic(f, [...kept, { role, ...launchOf(prompt), at: new Date(now).toISOString() }]);
   });
 }
-function claimLaunch(sid, key) {
+function claimLaunch(sid, key, role = 'implementer') {
   const f = launchesFile(sid);
+  let claimed = null;
   locked(f, () => {
     const prev = readState(f);
     if (!Array.isArray(prev) || !prev.length) return;
-    writeJson(launchFile(key), prev[0]);
-    writeJsonAtomic(f, prev.slice(1));
+    const idx = prev.findIndex((l) => !l.role || l.role === role);
+    if (idx < 0) return;
+    claimed = prev[idx];
+    writeJson(launchFile(key), claimed);
+    writeJsonAtomic(f, [...prev.slice(0, idx), ...prev.slice(idx + 1)]);
   });
+  return claimed;
 }
 // #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
 // worktree launch, which tick nothing by rule, or when neither the claimed launch nor the agent's transcript says.
@@ -1698,8 +1703,8 @@ if (mode === 'gate') {
     if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");
     // #429: under `--models fast` a stub pass and a dictated revision go out on haiku. Only the model changes, and only
     // when the call names none.
-    // #463: the implementer launch this gate lets through, for its SubagentStart to claim.
-    if (role === 'implementer') { try { recordLaunch(id, input.tool_input.prompt); } catch { /* unrecorded: the transcript decides */ } }
+    // #463, #490: the test-writer or implementer launch this gate lets through, for its SubagentStart to claim.
+    if (role === 'implementer' || role === 'test-writer') { try { recordLaunch(id, input.tool_input.prompt, role); } catch { /* unrecorded: the transcript decides */ } }
     const quick = quickModel(role, input.tool_input);
     if (quick) emit({ hookSpecificOutput: { hookEventName: 'PreToolUse', updatedInput: { ...input.tool_input, model: quick } } });
     finish();
@@ -2323,12 +2328,47 @@ function repoMeta() {
   return cut(text, 800);
 }
 
+// #490: slice the assigned tasks from tasks.md and (for test-writer) cited FR-### definitions from spec.md at SubagentStart.
+function sliceTasks(text) {
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*[-*]\s+\[([ xX])\]\s+(T\d+)\b/.exec(line);
+    if (m) out.push({ id: m[2], text: line });
+    else if (!line.trim() || /^#/.test(line)) out.push(null);
+    else if (out.at(-1)) out.at(-1).text += `\n${line}`;
+  }
+  return out.filter(Boolean);
+}
+function assignedSlice(type, launch) {
+  if (!launch || !Array.isArray(launch.ids) || !launch.ids.length) return '';
+  const feat = feature();
+  if (!feat) return '';
+  const tasksText = readOr(path.join(root, feat, 'tasks.md'), '');
+  if (!tasksText) return '';
+  const matched = sliceTasks(tasksText).filter((t) => launch.ids.includes(t.id));
+  if (!matched.length) return '';
+  const parts = [`Assigned tasks from ${feat}/tasks.md (do not re-read tasks.md for them):\n${matched.map((t) => t.text).join('\n')}`];
+  if (type === 'test-writer') {
+    const frIds = [...new Set(matched.flatMap((t) => t.text.match(/\bFR-\d+[a-z]?\b/g) ?? []))];
+    if (frIds.length) {
+      const specText = readOr(path.join(root, feat, 'spec.md'), '');
+      const frLines = specText.split(/\r?\n/).filter((l) => frIds.some((id) => new RegExp(`(\\*\\*${id}:?\\*\\*|^[ \\t]*(?:[-*+]|\\d+[.)])[ \\t]+${id}[ \\t]*:)`).test(l)));
+      if (frLines.length) parts.push(`Cited requirements from ${feat}/spec.md:\n${frLines.join('\n')}`);
+    }
+  }
+  const block = parts.join('\n\n');
+  return block.length > 1500 ? `${block.slice(0, 1499)}…` : block;
+}
+
 if (mode === 'start') {
   pruneState();
   const type = str(input.agent_type);
-  // #463: an implementer claims the oldest launch the gate recorded for this session.
+  // #463, #490: test-writer or implementer claims the oldest launch the gate recorded for this session.
   const sid = str(input.session_id);
-  if (type === 'implementer' && agentId && AGENT_ID.test(agentId) && sid && SESSION_ID.test(sid)) { try { claimLaunch(sid, agentKey); } catch { /* the transcript decides */ } }
+  let claimedLaunch = null;
+  if ((type === 'implementer' || type === 'test-writer') && agentId && AGENT_ID.test(agentId) && sid && SESSION_ID.test(sid)) {
+    try { claimedLaunch = claimLaunch(sid, agentKey, type); } catch { /* the transcript decides */ }
+  }
   // #445: spec-auditor's audit starts with the agent, so its verdict PreToolUse entry runs only on SubagentHandback.
   if (type === 'spec-auditor' && agentId && AGENT_ID.test(agentId) && !fs.existsSync(auditStartFile(agentKey))) {
     const feat = feature();
@@ -2341,9 +2381,10 @@ if (mode === 'start') {
   const id = str(input.session_id);
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
   const meta = META_AGENTS.includes(type) ? repoMeta() : '';
-  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta].filter(Boolean).join('\n\n') } });
+  const slice = (type === 'implementer' || type === 'test-writer') ? assignedSlice(type, claimedLaunch) : '';
+  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta, slice].filter(Boolean).join('\n\n') } });
   const rec = readState(projectFile(id));
-  if (rec === undefined) { if (meta) give(''); process.exit(0); }
+  if (rec === undefined) { if (meta || slice) give(''); process.exit(0); }
   if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
   const r = renderProject(rec.name);
   if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });
