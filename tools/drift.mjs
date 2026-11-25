@@ -13,10 +13,19 @@ import { drift } from '../hooks/speckit-drift.mjs';
 export { drift };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const argv = process.argv.slice(2);
+  let spec = false; let feature = null; let repoArg = '.';
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--spec') spec = true;
+    else if (argv[i] === '--feature') feature = argv[++i] ?? null;
+    else repoArg = argv[i];
+  }
   let r;
-  try { r = drift(path.resolve(process.argv[2] ?? '.')); } catch (e) { console.error(`drift: ${e.message}`); process.exit(2); }
+  try { r = drift(path.resolve(repoArg), { feature, spec }); } catch (e) { console.error(`drift: ${e.message}`); process.exit(2); }
   for (const p of r.problems) console.log(p);
+  for (const u of r.unchecked ?? []) console.log(u);
   const n = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
-  console.log(`${n(r.tasks, 'test task')} in ${n(r.features, 'feature')} checked, ${r.problems.length ? n(r.problems.length, 'problem') : 'no drift'}`);
-  process.exit(r.problems.length ? 1 : 0);
+  const total = r.problems.length + (r.unchecked?.length ?? 0);
+  console.log(`${n(r.tasks, 'test task')} in ${n(r.features, 'feature')} checked, ${total ? n(total, 'problem') : 'no drift'}`);
+  process.exit(total ? 1 : 0);
 }

@@ -356,3 +356,36 @@ test('#486: drift with testFirst checks that a test-only commit precedes the fir
   assert.equal(p2.length, 1, JSON.stringify(p2));
   assert.match(p2[0], /Test-first|committed before|apart from/i);
 });
+
+// #496: tools/drift.mjs CLI accepts --spec and --feature <dir>, reports r.unchecked, and full-run.yml passes --allow-scripts=@anthropic-ai/claude-code.
+test('#496: tools/drift.mjs CLI accepts --spec and --feature flags and reports r.unchecked warnings; full-run.yml passes --allow-scripts', () => {
+  const dir = repo('- [X] T001 Test FR-001 in `test/sum.test.js`\n', {
+    'specs/001-sum/spec.md': '- **FR-001**: adds.\n- **FR-002**: empty.\n',
+    'specs/002-other/tasks.md': '- [X] T001 Test FR-009 in `test/missing.test.js`\n',
+    'test/sum.test.js': "test('001 FR-001 adds', () => {});\n",
+  });
+  const cli = (...a) => spawnSync(process.execPath, [TOOL, ...a], { encoding: 'utf8' });
+
+  // 1. --feature scopes CLI check to specs/001-sum (ignoring specs/002-other's missing test file)
+  const scoped = cli('--feature', 'specs/001-sum', dir);
+  assert.equal(scoped.status, 0, scoped.stdout + scoped.stderr);
+  assert.match(scoped.stdout, /1 test task in 1 feature checked, no drift/);
+
+  // 2. --spec + --feature catches spec-level missing FR-002
+  const specCheck = cli('--spec', '--feature', 'specs/001-sum', dir);
+  assert.equal(specCheck.status, 1, specCheck.stdout + specCheck.stderr);
+  assert.match(specCheck.stdout, /specs\/001-sum\/spec\.md FR-002: no test names it with 001/);
+
+  // 3. r.unchecked is printed and exits 1 when --spec is passed on a spec whose FR format DEFINED cannot parse
+  const uncheckedDir = repo('- [X] T001 implement\n', {
+    'specs/001-sum/spec.md': '# Spec\n\n| ID | Req |\n|---|---|\n| FR-001 | adds |\n',
+    'test/sum.test.js': '// none\n',
+  });
+  const unch = cli('--spec', uncheckedDir);
+  assert.equal(unch.status, 1, unch.stdout + unch.stderr);
+  assert.match(unch.stdout, /names FR-001 but defines none/);
+
+  // 4. .github/workflows/full-run.yml includes --allow-scripts=@anthropic-ai/claude-code
+  const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'full-run.yml'), 'utf8');
+  assert.match(wf, /npm install -g --allow-scripts=@anthropic-ai\/claude-code /);
+});
