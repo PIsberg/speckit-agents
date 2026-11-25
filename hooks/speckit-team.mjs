@@ -183,17 +183,32 @@ const git = (cwd, ...a) => {
 const lines = (s) => (s ? s.split('\n').filter(Boolean) : []);
 const readOr = (f, fallback) => { try { return fs.readFileSync(f, 'utf8'); } catch { return fallback; } };
 // A message a role-skill step passes on with whatever the hook decides next (contract section 8).
+const hookStartNs = process.hrtime.bigint();
 let note = null;
 const addNote = (m) => { note = [note, m].filter(Boolean).join('\n'); };
 // #231: set once the state folder is known, for a hook running in a subagent (see keepNotice below).
 let keepNotice = null;
+let recordActivity = null;
 const emit = (obj) => {
   const say = [note, obj.systemMessage].filter(Boolean).join('\n');
   if (say && keepNotice) keepNotice(say);
+  if (recordActivity) {
+    const hso = obj.hookSpecificOutput;
+    const dec = hso?.permissionDecision === 'deny' ? 'deny'
+      : obj.decision === 'block' ? 'block'
+      : mode === 'start' ? 'start'
+      : (mode === 'verdict' || mode === 'result' || mode === 'ends') ? 'record'
+      : 'allow';
+    recordActivity(dec);
+  }
   process.stdout.write(JSON.stringify(say ? { ...obj, systemMessage: say } : obj));
   process.exit(0);
 };
-const finish = () => (note ? emit({}) : process.exit(0));
+const finish = () => {
+  if (note) emit({});
+  if (recordActivity) recordActivity(mode === 'start' ? 'start' : 'allow');
+  process.exit(0);
+};
 const deny = (reason) => emit({ hookSpecificOutput: {
   hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const block = (reason) => emit({ decision: 'block', reason });
@@ -659,7 +674,28 @@ const SESSION_ID = /^[\w-]{1,128}$/;
 // as REJECTED. So each one is also kept under notices/, by the session the subagent's input names (the
 // main session's), and `relay`, on the main session's PostToolUse of Agent, hands them over once.
 const noticeFile = (sessionId) => path.join(stateDir, 'notices', `${sessionId}.jsonl`);
+const activityFile = path.join(stateDir, 'activity.jsonl');
 const noticeSession = str(input.session_id);
+// #494: privacy-safe, fail-open JSONL activity and guardrail telemetry stream (.git/speckit-team/activity.jsonl).
+// Skip inside patch mode so feature 003's FR-009 test (only patch/ exists under stateDir during patch PreToolUse) holds.
+if (!CLI && mode !== 'patch' && mode !== 'relay') {
+  recordActivity = (decision) => {
+    try {
+      const ti = input.tool_input || {};
+      const rawTarget = str(ti.file_path ?? ti.notebook_path);
+      const target = rawTarget ? repoRel(path.resolve(cwd, rawTarget)) : null;
+      const role = str(input.agent_type) ?? (noticeSession && SESSION_ID.test(noticeSession) ? readState(roleFile(noticeSession))?.role ?? null : null);
+      const ms = Math.round(Number(process.hrtime.bigint() - hookStartNs) / 1e4) / 100;
+      const row = {
+        v: 1, at: new Date().toISOString(), session_id: noticeSession ?? null, agent_id: agentId ?? null,
+        role: role ?? null, feature: feature(), event: str(event) ?? null, mode: str(mode) ?? null,
+        tool: str(input.tool_name) ?? null, target, decision, rule: args[0] ?? mode ?? null, ms,
+      };
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.appendFileSync(activityFile, `${JSON.stringify(row)}\n`);
+    } catch { /* Constitution III: observers never block */ }
+  };
+}
 if (agentId && noticeSession && SESSION_ID.test(noticeSession) && mode !== 'relay') {
   keepNotice = (text) => {
     try {
@@ -2311,6 +2347,7 @@ if (mode === 'ends') {
     const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
       drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
+    if (recordActivity) recordActivity('record');
     process.exit(0);
   }
   const ask = `Your report must end with a final line that is exactly one of: ${words.join(', ')}. `
@@ -2344,6 +2381,10 @@ function pruneState(now = Date.now()) {
       try { const s = fs.lstatSync(f); if (s.isFile() && s.mtimeMs < cutoff) fs.rmSync(f, { force: true }); } catch { /* the next file */ }
     }
   }
+  try {
+    const st = fs.lstatSync(activityFile);
+    if (st.isFile() && (st.mtimeMs < now - 7 * DAY_MS || st.size > 10 * 1024 * 1024)) fs.rmSync(activityFile, { force: true });
+  } catch { /* no activity.jsonl */ }
   try { fs.writeFileSync(stamp, new Date(now).toISOString()); } catch { /* pruned again on the next launch */ }
 }
 
@@ -2460,7 +2501,7 @@ if (mode === 'start') {
   const handoff = upstreamReport(type, claimedLaunch);
   const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta, slice, handoff].filter(Boolean).join('\n\n') } });
   const rec = readState(projectFile(id));
-  if (rec === undefined) { if (meta || slice || handoff) give(''); process.exit(0); }
+  if (rec === undefined) { if (meta || slice || handoff) give(''); if (recordActivity) recordActivity('start'); process.exit(0); }
   if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
   const r = renderProject(rec.name);
   if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });

@@ -5522,3 +5522,38 @@ test('#493: worktree implementers are denied bare full-suite test commands and a
     assert.ok(!denied(out), `expected allow for "${cmd}": ${whyDenied(out)}`);
   }
 });
+
+// #494: emit privacy-safe JSONL activity and guardrail telemetry stream (.git/speckit-team/activity.jsonl).
+test('#494: hook emits privacy-safe v:1 JSONL telemetry to .git/speckit-team/activity.jsonl on start, deny, block, and record', () => {
+  const { dir } = repo();
+  const actFile = path.join(stateDir(dir), 'activity.jsonl');
+
+  // 1. SubagentStart emits start decision
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'architect', agent_id: 'ar494', session_id: 's494' });
+  // 2. Scope denial emits deny decision with repo-relative target and no file content
+  write(dir, ['scope', 'no-tests'], 'test/secret.test.js', { agent_id: 'im494', agent_type: 'implementer', session_id: 's494' });
+  // 3. Verdict emits record decision
+  run(dir, ['verdict'], { hook_event_name: 'SubagentStop', agent_id: 'sa494', agent_type: 'spec-auditor', session_id: 's494', last_assistant_message: 'PRIVATE_REPORT_BODY\n\nVERDICT: PASS' });
+
+  assert.ok(fs.existsSync(actFile), 'activity.jsonl was created');
+  const raw = fs.readFileSync(actFile, 'utf8');
+  assert.ok(!raw.includes('PRIVATE_REPORT_BODY'), 'activity.jsonl never records report or prompt body text');
+  const rows = raw.trim().split('\n').map((l) => JSON.parse(l));
+  assert.ok(rows.length >= 3, `expected >= 3 rows, got ${rows.length}`);
+  for (const r of rows) {
+    assert.equal(r.v, 1);
+    assert.equal(typeof r.ms, 'number');
+    assert.equal(r.feature, FEAT);
+  }
+  const startRow = rows.find((r) => r.mode === 'start');
+  assert.equal(startRow?.decision, 'start');
+  assert.equal(startRow?.role, 'architect');
+
+  const denyRow = rows.find((r) => r.decision === 'deny');
+  assert.equal(denyRow?.mode, 'scope');
+  assert.equal(denyRow?.tool, 'Write');
+  assert.equal(denyRow?.target, 'test/secret.test.js');
+
+  const recRow = rows.find((r) => r.mode === 'verdict');
+  assert.equal(recRow?.decision, 'record');
+});
