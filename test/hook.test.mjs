@@ -5141,7 +5141,6 @@ test('#464: --team build and --team lite expand to their roles, and a launch tha
   assert.match(reasonOf(agentLaunch(lite.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: lite.t })), /drops product-owner/);
   const sec = choiceRepo();
   typedTeam(sec.dir, '--team build,security add', { transcript_path: sec.t });
-  // security-reviewer is not held, as for --security (#373); the preset's roles still are.
   assert.match(reasonOf(agentLaunch(sec.dir, 'go\nTeam: test-writer, implementer, security-reviewer', { transcript_path: sec.t })), /drops spec-gatekeeper/);
 });
 
@@ -5293,4 +5292,87 @@ test('#487: check team reports the active feature checkpoint across phases, and 
   const a = choiceRepo();
   typedTeam(a.dir, '--resume --team test-writer,implementer,spec-gatekeeper go', { transcript_path: a.t });
   assert.ok(denied(agentLaunch(a.dir, 'go\nTeam: implementer', { transcript_path: a.t })), '--resume preserves typed --team hold');
+});
+
+// #489: hold --security and --load-test in typedRoles, record their verdicts, and enforce secret scan at Stop.
+test('#489: typed --security and --load-test without --team are held in choice.typed, and dropping security-reviewer is denied', () => {
+  const sec = choiceRepo();
+  typedTeam(sec.dir, '--security add auth', { transcript_path: sec.t });
+  sec.add(...NOT_ANSWERS);
+  const droppedSec = agentLaunch(sec.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper', { transcript_path: sec.t });
+  assert.ok(denied(droppedSec), 'dropping security-reviewer when --security was typed is denied');
+  assert.match(reasonOf(droppedSec), /drops security-reviewer/);
+  assert.ok(!denied(agentLaunch(sec.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer', { transcript_path: sec.t })));
+
+  const lt = choiceRepo();
+  typedTeam(lt.dir, '--load-test add perf', { transcript_path: lt.t });
+  lt.add(...NOT_ANSWERS);
+  const droppedLt = agentLaunch(lt.dir, 'go\nTeam: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper', { transcript_path: lt.t });
+  assert.ok(denied(droppedLt), 'dropping load-tester when --load-test was typed is denied');
+  assert.match(reasonOf(droppedLt), /drops load-tester/);
+
+  const buildSec = choiceRepo();
+  typedTeam(buildSec.dir, '--team build,security add', { transcript_path: buildSec.t });
+  buildSec.add(...NOT_ANSWERS);
+  const droppedBuildSec = agentLaunch(buildSec.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper', { transcript_path: buildSec.t });
+  assert.ok(denied(droppedBuildSec), 'dropping security-reviewer from --team build,security is denied');
+  assert.match(reasonOf(droppedBuildSec), /drops security-reviewer/);
+});
+
+test('#489: security-reviewer and load-tester verdicts are recorded on disk, and architect waits for security-reviewer PASS when in team', () => {
+  const { dir } = repo();
+  // Launch product-owner with security-reviewer in team
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'product-owner', prompt: 'Team: product-owner, security-reviewer, architect, spec-auditor, test-writer, implementer, spec-gatekeeper\nspec it' },
+  })));
+  // Launching architect before security-reviewer passes spec review is denied
+  const earlyArch = run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  });
+  assert.ok(denied(earlyArch), 'architect denied before security-reviewer PASS');
+  assert.match(reasonOf(earlyArch), /security-reviewer/);
+
+  // security-reviewer ends with VERDICT: FAIL -> recorded, architect still denied
+  run(dir, ['ends', 'VERDICT: PASS', 'VERDICT: FAIL'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sr1', agent_type: 'security-reviewer', session_id: 's489',
+    last_assistant_message: 'C1: missing auth.\n\nVERDICT: FAIL',
+  });
+  const secFile = path.join(stateDir(dir), 'security', '001-demo.json');
+  assert.equal(JSON.parse(fs.readFileSync(secFile, 'utf8')).verdict, 'FAIL');
+  assert.ok(denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  })), 'architect still denied after security-reviewer FAIL');
+
+  // security-reviewer ends with VERDICT: PASS -> recorded, architect allowed
+  run(dir, ['ends', 'VERDICT: PASS', 'VERDICT: FAIL'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sr2', agent_type: 'security-reviewer', session_id: 's489',
+    last_assistant_message: 'No high findings.\n\nVERDICT: PASS',
+  });
+  assert.equal(JSON.parse(fs.readFileSync(secFile, 'utf8')).verdict, 'PASS');
+  assert.ok(!denied(run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's489',
+    tool_input: { subagent_type: 'architect', prompt: 'plan it' },
+  })), 'architect allowed after security-reviewer PASS');
+
+  // load-tester verdict is recorded under load/
+  run(dir, ['ends', 'PASS', 'FAIL', 'NOT MEASURED'], {
+    hook_event_name: 'SubagentStop', agent_id: 'lt1', agent_type: 'load-tester', session_id: 's489',
+    last_assistant_message: 'All within ceiling.\n\nPASS',
+  });
+  const loadFile = path.join(stateDir(dir), 'load', '001-demo.json');
+  assert.equal(JSON.parse(fs.readFileSync(loadFile, 'utf8')).word, 'PASS');
+});
+
+test('#489: lane Stop blocks accidental secret/credential patterns or .env files in changed files', () => {
+  const { dir, write: w } = repo();
+  pass(dir);
+  run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'im_sec' });
+  const tok = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+  w('src/main/Config.java', `class Config { String t = "${tok}"; }\n`);
+  const stop = run(dir, ['lane', 'no-tests'], { hook_event_name: 'SubagentStop', agent_id: 'im_sec', agent_type: 'implementer' });
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  assert.match(stop.reason, /secret|credential|src\/main\/Config\.java/i);
 });

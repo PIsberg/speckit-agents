@@ -633,6 +633,9 @@ function writeJsonAtomic(f, obj) {
   }
 }
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
+const securityFile = (feat) => path.join(stateDir, 'security', `${path.basename(feat)}.json`);
+const loadFile = (feat) => path.join(stateDir, 'load', `${path.basename(feat)}.json`);
+const specFingerprint = (feat) => createHash('sha256').update(readOr(path.join(root, feat, 'spec.md'), '<missing>').replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
 // #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
 const AUDIT_FAIL_LIMIT = 2;
 const auditFile = (feat) => path.join(stateDir, 'audit', `${path.basename(feat)}.json`);
@@ -767,13 +770,16 @@ function typedRoles(args) {
       words = words.slice(1);
     } else break;
   }
-  if (words[0] !== '--team') return null;
+  const extra = [...(seen.has('--load-test') ? ['load-tester'] : []), ...(seen.has('--security') ? ['security-reviewer'] : [])];
+  if (words[0] !== '--team') return extra.length ? [...CORE_ROLES, ...extra] : null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
-  return list.join('').split(',').flatMap((w) => {
+  const parsed = list.join('').split(',').flatMap((w) => {
     const raw = w.toLowerCase();
     return raw === 'security' ? ['security-reviewer'] : TEAM_PRESETS[raw] ?? [raw];
   }).filter(Boolean);
+  if (parsed.length === 1 && ['noagents', 'skill-agents', 'hybrid', '?'].includes(parsed[0])) return parsed;
+  return [...new Set([...parsed, ...extra])];
 }
 // #464: role-list presets of a typed --team; a name in the list, so they combine with roles (`--team build,security`).
 const TEAM_PRESETS = { build: ['test-writer', 'implementer', 'spec-gatekeeper'], lite: ['product-owner', 'test-writer', 'implementer', 'spec-gatekeeper'] };
@@ -1633,6 +1639,7 @@ if (mode === 'gate') {
     if (agentId || !id || !SESSION_ID.test(id) || typeof input.tool_input?.prompt !== 'string') process.exit(0);
     if (!TEAM_ROLES.includes(role) && role !== 'patcher') process.exit(0);
     if (role === 'architect' || role === 'spec-auditor') holdQuestions(feature());
+    if (role === 'architect') holdSecuritySpec(feature());
     if (role === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
     // The project for the agents this launch starts (feature 007): set from the Project line, or removed.
     // #331: every notice is collected and said once at the end, after the record is written.
@@ -1657,9 +1664,9 @@ if (mode === 'gate') {
     // #366: a team smaller than the full one, in a request typed without --team, goes only after the user's answer.
     const choice = readState(choiceFile(id));
     if (choice !== undefined && Array.isArray(choice?.typed)) {
-      // #373: the roles the user typed after --team, held until the user says otherwise.
+      // #373, #489: the roles the user typed after --team (or via --security / --load-test), held until the user says otherwise.
       const launched = team && !('bad' in team) ? team.roles : CORE_ROLES;
-      const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester') && !launched.includes(r));
+      const dropped = choice.typed.filter((r) => (CORE_ROLES.includes(r) || r === 'load-tester' || r === 'security-reviewer') && !launched.includes(r));
       if (dropped.length && !answeredLater(choice, id)) {
         deny(`speckit-team: the user typed --team ${choice.typed.join(',')}, and this Team: line drops ${dropped.join(', ')}. `
           + 'Launch with the roles the user typed, in pipeline order; to run fewer, ask the user first and launch only after the answer.');
@@ -1724,6 +1731,7 @@ if (mode === 'gate') {
       // #353: the audit's holds (open decisions, the two-FAIL limit of #242) on the role's call, as on the
       // agent's launch. After closeRole, which counts the FAIL it closes.
       if (roleSkill === 'architect' || roleSkill === 'spec-auditor') holdQuestions(feature());
+      if (roleSkill === 'architect') holdSecuritySpec(feature());
       if (roleSkill === 'spec-auditor') holdAudit(feature(), str(input.tool_use_id));
       const start = startRecord();
       if (start) {
@@ -1981,6 +1989,17 @@ function holdQuestions(feat) {
       + 'otherwise a product-owner revision with the answers. Then launch again.');
   }
 }
+// #489: when security-reviewer is in the session's team, architect waits for security-reviewer (phase: spec) PASS on the current spec.md.
+function holdSecuritySpec(feat) {
+  if (!feat) return;
+  const t = teamOf();
+  if (!t || !t.roles.includes('security-reviewer')) return;
+  const s = readState(securityFile(feat));
+  if (!s || typeof s !== 'object' || s.verdict !== 'PASS') {
+    deny(`speckit-team: security-reviewer is in this session's team and has not passed ${feat}/spec.md${s?.verdict ? ` (last verdict: ${s.verdict})` : ''}. `
+      + 'Run security-reviewer (phase: spec) and get VERDICT: PASS before launching architect.');
+  }
+}
 if (mode === 'audit') {
   const feat = feature();
   if (!feat || args.length !== 1 || args[0] !== '--approve') {
@@ -2231,6 +2250,14 @@ if (mode === 'ends') {
     }
     markReport(ok, viaHandback);
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
+    // #489: record security-reviewer and load-tester verdicts under .git/speckit-team/.
+    const activeFeat = feature();
+    if (activeFeat && input.agent_type === 'security-reviewer') {
+      const v = verdictIn(word) ?? word;
+      writeJson(securityFile(activeFeat), { verdict: v, word, feature: activeFeat, specFingerprint: specFingerprint(activeFeat), head: git(root, 'rev-parse', 'HEAD'), at, agent_id: agentId });
+    } else if (activeFeat && input.agent_type === 'load-tester') {
+      writeJson(loadFile(activeFeat), { word, feature: activeFeat, head: git(root, 'rev-parse', 'HEAD'), at, agent_id: agentId });
+    }
     const notes = [drifted?.failed ? driftUnchecked(gk, drifted.failed) : null,
       drifted?.unchecked?.length ? specUnread(gk, drifted.unchecked) : null, faultNote, citedNote].filter(Boolean);
     if (notes.length) emit({ systemMessage: notes.join('\n') });
@@ -2332,6 +2359,26 @@ if (mode === 'lane' && args[0] === 'role') {
   closeRole(rec, 'stop');
 }
 
+// #489: zero-dependency secret/credential pattern scan for changed files at lane and patch Stop.
+const SECRET_PATTERNS = [
+  /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/,
+  /\bghp_[A-Za-z0-9]{30,}\b/,
+  /\bgithub_pat_[A-Za-z0-9_]{30,}\b/,
+  /\bsk-ant-[A-Za-z0-9_-]{20,}\b/,
+  /\bAKIA[0-9A-Z]{16}\b/,
+];
+const ENV_FILE = /(^|\/)\.env(\.(?!example$|sample$|template$)[^/]+)?$/i;
+function secretsInFiles(rels) {
+  const hits = [];
+  for (const rel of rels) {
+    if (isTest(rel) || isDoc(rel)) continue;
+    if (ENV_FILE.test(rel) && fs.existsSync(path.join(root, rel))) { hits.push(`${rel} (.env file)`); continue; }
+    const text = readOr(path.join(root, rel), '');
+    if (SECRET_PATTERNS.some((re) => re.test(text))) hits.push(rel);
+  }
+  return hits;
+}
+
 if (mode === 'lane') {
   // `only <prefix>...` holds product-owner and architect to the prefixes of their scope rule.
   const [rule, ...prefixes] = args;
@@ -2356,6 +2403,19 @@ if (mode === 'lane') {
         + `Restore them (git checkout ${base.sha.slice(0, 12)} -- <file>, or delete new files), then finish.`);
     }
   }
+  // #489: block accidental secret or credential patterns in changed files at lane Stop.
+  const changed = Array.isArray(base.dirty) && typeof base.sha === 'string' && /^[0-9a-f]{40,64}$/.test(base.sha)
+    ? changedSince(base.sha).filter((rel) => !base.dirty.includes(rel)) : [];
+  const secrets = secretsInFiles(changed);
+  const secretAsked = path.join(stateDir, 'agents', `${agentKey}.secret-asked`);
+  if (secrets.length && !fs.existsSync(secretAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(secretAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) {
+      block(`Secret scan: ${who} added secret or credential patterns in: ${secrets.join(', ')}. `
+        + 'Remove the hardcoded secret or .env file before finishing.');
+    }
+  }
   // #465: the architect is sent back once while a requirement of spec.md has no test task, before the audit reads it.
   const plannedFeat = input.agent_type === 'architect' ? feature() : null;
   const gaps = plannedFeat ? plannedOf(plannedFeat) : [];
@@ -2367,6 +2427,7 @@ if (mode === 'lane') {
   }
   fs.rmSync(f, { force: true });
   fs.rmSync(asked, { force: true });
+  fs.rmSync(secretAsked, { force: true });
   fs.rmSync(planAsked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);
@@ -3476,6 +3537,12 @@ function endCheck(start, viaHandback, key, acceptedFile, undoFile) {
       + 'If the change has no behaviour (a typo, a comment, a config value), the report says so in a line `No test: <reason>`. '
       + 'Nothing was committed; the work is uncommitted in the working tree. Write the test or add that line, then run the change again.'
       + undoSentence(start.sha, m));
+  }
+  // #489: block accidental secret or credential patterns in changed files at patch Stop.
+  const patchSecrets = secretsInFiles(m.changed);
+  if (patchSecrets.length) {
+    refuse(`Fast track: ${who} added secret or credential patterns in: ${patchSecrets.join(', ')}. `
+      + 'Remove the hardcoded secret or .env file before finishing.');
   }
   // #486: a patcher run that edited files via Write/Edit and reports DONE without a Bash test run after the edit is sent back once.
   const patchUntested = path.join(stateDir, 'patch', `${key}.untested.json`);
