@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CASES, LOAD_WORDS, armArg, parseArgs, fullRunArgs, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand } from '../tools/eval.mjs';
+import { CASES, LOAD_WORDS, armArg, parseArgs, fullRunArgs, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand, runSweep } from '../tools/eval.mjs';
 import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
 import * as fullRun from '../tools/full-run.mjs'; // loadRequest is read from the namespace: 012 T023 adds it
 import { drift } from '../hooks/speckit-drift.mjs';
@@ -441,4 +441,54 @@ test('#429 eval: --models is passed to every full run, and an unknown tier is re
   assert.throws(() => parseArgs(['--out', 'x', '--arm', 'a=.', '--models', 'haiku']), /--models takes one of default, sonnet, opus, fast/);
   assert.deepEqual(fullRunArgs({ models: 'sonnet' }).slice(-2), ['--models', 'sonnet']);
   assert.ok(!fullRunArgs({ models: null }).includes('--models'));
+});
+
+// #495: bounded parallel execution (--jobs), memory circuit-breaker (--min-free-mb), and --resume in tools/eval.mjs.
+test('#495 eval: parseArgs parses --jobs, --min-free-mb, --resume, and runSweep honors concurrency, memory breaker, and --resume', async () => {
+  const def = parseArgs(['--out', 'x', '--arm', 'a=.']);
+  assert.equal(def.jobs, 1);
+  assert.equal(def.minFreeMb, 2560);
+  assert.equal(def.resume, false);
+
+  const custom = parseArgs(['--out', 'x', '--arm', 'a=.', '--jobs', '3', '--min-free-mb', '1024', '--resume']);
+  assert.equal(custom.jobs, 3);
+  assert.equal(custom.minFreeMb, 1024);
+  assert.equal(custom.resume, true);
+  assert.throws(() => parseArgs(['--out', 'x', '--arm', 'a=.', '--jobs', '0']), /--jobs/);
+
+  // Test runSweep with --resume and bounded concurrency + memory circuit breaker
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'skeval-495-'));
+  // Pre-seed run #1 for arm 'base' case 'defect' so --resume skips spawning it
+  const seededDir = path.join(out, 'base', 'defect', '1');
+  fs.mkdirSync(seededDir, { recursive: true });
+  fs.writeFileSync(path.join(seededDir, 'run.json'), JSON.stringify({
+    cost: 0.4, gate: { word: 'REJECTED' }, failures: [], usage: { main: { input: 50000 }, agents: [] },
+  }));
+
+  let active = 0; let maxActive = 0; const spawned = [];
+  let freeBytes = 500 * 1024 * 1024; // start below 1024 MB threshold when active > 0
+  const rows = await runSweep({
+    out, arms: [{ label: 'base', dir: ROOT }], cases: ['defect'], runs: 3, jobs: 2, minFreeMb: 1024, resume: true,
+  }, {
+    freemem: () => freeBytes,
+    runCell: async ({ dir, n }) => {
+      spawned.push(n);
+      active++;
+      if (active > maxActive) maxActive = active;
+      await new Promise((r) => setTimeout(r, 40));
+      // Once the first active job finishes, free memory rises above threshold
+      freeBytes = 4096 * 1024 * 1024;
+      active--;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'run.json'), JSON.stringify({
+        cost: 0.5, gate: { word: 'REJECTED' }, failures: [], usage: { main: { input: 60000 }, agents: [] },
+      }));
+      return { status: 0, stdout: 'ok', stderr: '' };
+    },
+  });
+
+  assert.deepEqual(spawned, [2, 3], 'run #1 was resumed from existing run.json without re-invoking runCell');
+  assert.equal(maxActive, 1, 'memory circuit breaker held back second concurrent job while freeBytes < minFreeMb');
+  assert.equal(rows.length, 3);
+  assert.equal(rows.filter((r) => r.right).length, 3);
 });
