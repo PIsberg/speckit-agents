@@ -1782,6 +1782,14 @@ if (mode === 'gate') {
   }
   // #337: `gate [retries] scope <rule>` is test-writer's and implementer's one PreToolUse entry, so a write
   // or Bash call costs one process and one git call instead of two. The scope rule sees write tools only.
+  // #493: deny bare unfiltered full-suite test commands in a worktree implementer.
+  if (event === 'PreToolUse' && input.tool_name === 'Bash' && input.agent_type === 'implementer' && agentKey && readState(launchFile(agentKey))?.worktree === true) {
+    const cmd = str(input.tool_input?.command) ?? '';
+    const BARE_TEST = /^\s*(?:npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|bun\s+(?:run\s+)?test|pytest|cargo\s+test|node\s+--test)\s*$/;
+    if (cmd.split(/[;&|\n]+/).some((seg) => BARE_TEST.test(seg))) {
+      deny('Worktree test scope: do not run the full test suite in a worktree (sibling slices are not built here). Pass only your slice\'s test file path(s) to the test runner.');
+    }
+  }
   const scopeAt = args.indexOf('scope');
   if (scopeAt < 0 || event !== 'PreToolUse' || !SCOPED_TOOLS.test(str(input.tool_name) ?? '')) process.exit(0);
   scopeCheck(args.slice(scopeAt + 1));
@@ -2350,6 +2358,13 @@ function repoMeta() {
   try { const p = JSON.parse(readOr(path.join(root, 'package.json'), 'null')); if (p && typeof p.scripts === 'object' && p.scripts) scripts = p.scripts; } catch { /* unreadable: skipped */ }
   for (const name of ['test', 'lint', 'typecheck', 'build']) {
     if (typeof scripts[name] === 'string') out.push(`- ${name === 'test' ? 'npm test' : `npm run ${name}`}: ${cut(scripts[name].replace(/\s+/g, ' '), 120)}`);
+  }
+  if (typeof scripts.test === 'string') {
+    const t = scripts.test.trim();
+    const single = /^node\s+tools\/test\.mjs\b/.test(t) ? 'node tools/test.mjs <path> (or npm test -- <path>)'
+      : /^node\s+--test\b/.test(t) ? 'node --test <path> (or npm test -- <path>)'
+      : /\b(vitest|jest|mocha|ava)\b/.test(t) ? `npx ${RegExp.$1} <path> (or npm test -- <path>)` : null;
+    if (single) out.push(`- Single test file: ${single}`);
   }
   const wf = path.join(root, '.github', 'workflows');
   let runs = [];

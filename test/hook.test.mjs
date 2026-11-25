@@ -5487,3 +5487,38 @@ test('#492: accepted reports are persisted under reports/<role>.json and automat
   const imStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im492', session_id: 's492' });
   assert.match(metaOf(imStart), /Upstream test-writer report \(RED\):[\s\S]*AssertionError: expected 1 to equal 2/);
 });
+
+// #493: enforce scoped test execution in worktree implementers and surface single-file test runner in repoMeta.
+test('#493: worktree implementers are denied bare full-suite test commands and allowed scoped test commands; repoMeta surfaces Single test file', () => {
+  const { dir } = metaRepo();
+  pass(dir);
+  // 1. repoMeta includes - Single test file: line
+  const startOut = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im493_meta', session_id: 's493' });
+  assert.match(metaOf(startOut), /^- Single test file: node --test <path>/m);
+
+  // 2. Worktree implementer launch claimed at SubagentStart
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's493',
+    tool_input: { subagent_type: 'implementer', prompt: 'Slice A: T002 in worktree', run_in_background: false },
+  });
+  run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im493_wt', session_id: 's493' });
+
+  // Bare unfiltered full-suite commands are denied in worktree implementer
+  for (const cmd of ['npm test', 'npm run test', 'pnpm test', 'yarn test', 'bun test', 'pytest', 'cargo test', 'node --test']) {
+    const out = run(dir, ['gate', 'retries', 'scope', 'no-tests'], {
+      hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
+      agent_id: 'im493_wt', agent_type: 'implementer', session_id: 's493',
+    });
+    assert.ok(denied(out), `expected deny for "${cmd}" in worktree implementer`);
+    assert.match(whyDenied(out), /worktree|test file/i, cmd);
+  }
+
+  // Scoped test file commands are allowed in worktree implementer
+  for (const cmd of ['node --test test/a.test.js', 'npm test -- test/a.test.js', 'pytest tests/test_a.py', 'cargo test slice_a']) {
+    const out = run(dir, ['gate', 'retries', 'scope', 'no-tests'], {
+      hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: cmd },
+      agent_id: 'im493_wt', agent_type: 'implementer', session_id: 's493',
+    });
+    assert.ok(!denied(out), `expected allow for "${cmd}": ${whyDenied(out)}`);
+  }
+});
