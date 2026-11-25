@@ -472,8 +472,8 @@ if (mode === 'project') {
 }
 // State files are ours but can still be corrupt. `undefined` = missing, `null` = unreadable.
 function readState(f) {
-  const text = readOr(f, undefined);
-  if (text === undefined) return undefined;
+  let text;
+  try { text = fs.readFileSync(f, 'utf8'); } catch (e) { return e?.code === 'ENOENT' ? undefined : null; }
   try { return JSON.parse(text); } catch { return null; }
 }
 
@@ -815,12 +815,10 @@ function typedRoles(args) {
   if (words[0] !== '--team') return extra.length ? [...CORE_ROLES, ...extra] : null;
   const list = [];
   for (const w of words.slice(1)) { list.push(w); if (!w.endsWith(',')) break; }
-  const parsed = list.join('').split(',').flatMap((w) => {
+  return list.join('').split(',').flatMap((w) => {
     const raw = w.toLowerCase();
     return raw === 'security' ? ['security-reviewer'] : TEAM_PRESETS[raw] ?? [raw];
   }).filter(Boolean);
-  if (parsed.length === 1 && ['noagents', 'skill-agents', 'hybrid', '?'].includes(parsed[0])) return parsed;
-  return [...new Set([...parsed, ...extra])];
 }
 // #464: role-list presets of a typed --team; a name in the list, so they combine with roles (`--team build,security`).
 const TEAM_PRESETS = { build: ['test-writer', 'implementer', 'spec-gatekeeper'], lite: ['product-owner', 'test-writer', 'implementer', 'spec-gatekeeper'] };
