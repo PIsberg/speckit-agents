@@ -5442,3 +5442,48 @@ test('#491: product-owner and architect Stop send back once when ## Open Questio
   assert.equal(roleStop?.decision, 'block', JSON.stringify(roleStop));
   assert.match(roleStop.reason, /Q1: no option is marked \(recommended\)/);
 });
+
+// #492: zero-copy agent-to-agent report handoff via SubagentStart.
+test('#492: accepted reports are persisted under reports/<role>.json and automatically injected at downstream SubagentStart', () => {
+  const { dir, write: w } = repo();
+  w(`${FEAT}/spec.md`, '# Spec\n- **FR-001**: works.\n');
+  w(`${FEAT}/tasks.md`, '- [x] T001 Test FR-001 in `test/a.test.js`\n- [x] T002 Implement FR-001 in `src/a.js`\n');
+  w('test/a.test.js', '// 001 FR-001\n');
+
+  // 1. spec-auditor reports VERDICT: FAIL -> persisted in reports/spec-auditor.json and injected into architect SubagentStart
+  run(dir, ['verdict'], {
+    hook_event_name: 'SubagentStop', agent_id: 'sa492', agent_type: 'spec-auditor', session_id: 's492',
+    last_assistant_message: 'C1: plan.md contradicts FR-001.\n\nVERDICT: FAIL',
+  });
+  const audRep = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'reports', 'spec-auditor.json'), 'utf8'));
+  assert.equal(audRep.word, 'FAIL');
+  assert.match(audRep.text, /C1: plan\.md contradicts FR-001/);
+
+  const arStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'architect', agent_id: 'ar492', session_id: 's492' });
+  assert.match(metaOf(arStart), /Upstream spec-auditor report \(FAIL\):[\s\S]*C1: plan\.md contradicts FR-001/);
+
+  // 2. After spec-auditor PASS, test-writer reports RED -> persisted and injected into implementer SubagentStart (non-stub)
+  pass(dir);
+  run(dir, ['ends', 'RED', 'BLOCKED', 'FIXED'], {
+    hook_event_name: 'SubagentStop', agent_id: 'tw492', agent_type: 'test-writer', session_id: 's492',
+    last_assistant_message: 'test/a.test.js:12 AssertionError: expected 1 to equal 2\n\nRED',
+  });
+  const twRep = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'reports', 'test-writer.json'), 'utf8'));
+  assert.equal(twRep.word, 'RED');
+
+  // Stub implementer launch does NOT receive test-writer report
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's492',
+    tool_input: { subagent_type: 'implementer', prompt: 'stub T002', run_in_background: false },
+  });
+  const stubStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im492_stub', session_id: 's492' });
+  assert.doesNotMatch(metaOf(stubStart), /Upstream test-writer report/);
+
+  // Normal implementer launch receives test-writer report
+  run(dir, ['gate'], {
+    hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's492',
+    tool_input: { subagent_type: 'implementer', prompt: 'Round 1: T002', run_in_background: false },
+  });
+  const imStart = run(dir, ['start'], { hook_event_name: 'SubagentStart', agent_type: 'implementer', agent_id: 'im492', session_id: 's492' });
+  assert.match(metaOf(imStart), /Upstream test-writer report \(RED\):[\s\S]*AssertionError: expected 1 to equal 2/);
+});

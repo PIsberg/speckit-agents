@@ -635,6 +635,11 @@ function writeJsonAtomic(f, obj) {
 const endsFile = (feat) => path.join(stateDir, 'ends', `${path.basename(feat)}.json`);
 const securityFile = (feat) => path.join(stateDir, 'security', `${path.basename(feat)}.json`);
 const loadFile = (feat) => path.join(stateDir, 'load', `${path.basename(feat)}.json`);
+const reportFile = (role) => path.join(stateDir, 'reports', `${role}.json`);
+const saveReport = (role, feat, word, text) => {
+  if (!role || !feat || !text) return;
+  try { writeJson(reportFile(role), { role, feature: feat, word, text: String(text).slice(0, 4000), at: new Date().toISOString() }); } catch { /* non-blocking */ }
+};
 const specFingerprint = (feat) => createHash('sha256').update(readOr(path.join(root, feat, 'spec.md'), '<missing>').replace(/\r\n/g, '\n')).digest('hex').slice(0, 16);
 // #242: spec-auditor FAILs in a row, per feature (see holdAudit). Defined here, above the gate mode that calls it.
 const AUDIT_FAIL_LIMIT = 2;
@@ -2107,6 +2112,7 @@ if (mode === 'verdict') {
   writeJson(verdictFile(feat), {
     verdict, feature: feat, fingerprint: fingerprint(feat), at: new Date().toISOString(), agent_id: agentId,
   });
+  saveReport('spec-auditor', feat, verdict, text);
   // #242: FAILs in a row, per feature. A PASS clears the count; a FAIL spends any approval.
   if (verdict === 'PASS') fs.rmSync(auditFile(feat), { force: true });
   else writeJson(auditFile(feat), { feature: feat, fails: (Number(auditRecord(feat).fails) || 0) + 1, approved: false, at: new Date().toISOString() });
@@ -2157,6 +2163,7 @@ if (mode === 'result') {
     }
   }
   markReport(done, viaHandback, { result });
+  saveReport('implementer', feat, result, reportText(viaHandback));
   // An implementer the audit gate stopped never got to work: its RED is not an attempt.
   const closed = auditSkipped() ? null : auditProblem();
   if (closed) emit({ systemMessage: `implementer reported ${result} while the gate was closed (${closed}); not counted.` });
@@ -2283,8 +2290,10 @@ if (mode === 'ends') {
     }
     markReport(ok, viaHandback);
     if (feat) writeJson(endsFile(feat), { word, feature: feat, at, agent_id: agentId });
-    // #489: record security-reviewer and load-tester verdicts under .git/speckit-team/.
+    // #489, #492: record security-reviewer and load-tester verdicts and persist accepted report under .git/speckit-team/reports/.
     const activeFeat = feature();
+    const roleForRep = str(input.agent_type) ?? (record ? 'spec-gatekeeper' : null);
+    if (activeFeat && roleForRep) saveReport(roleForRep, activeFeat, word, reportText(viaHandback));
     if (activeFeat && input.agent_type === 'security-reviewer') {
       const v = verdictIn(word) ?? word;
       writeJson(securityFile(activeFeat), { verdict: v, word, feature: activeFeat, specFingerprint: specFingerprint(activeFeat), head: git(root, 'rev-parse', 'HEAD'), at, agent_id: agentId });
@@ -2319,7 +2328,7 @@ function pruneState(now = Date.now()) {
   const stamp = path.join(stateDir, '.pruned');
   try { if (now - fs.statSync(stamp).mtimeMs < DAY_MS) return; } catch { /* never pruned here */ }
   const cutoff = now - PRUNE_DAYS * DAY_MS;
-  for (const d of ['agents', 'team', 'project', 'choice', 'patch']) {
+  for (const d of ['agents', 'team', 'project', 'choice', 'patch', 'reports']) {
     let names;
     try { names = fs.readdirSync(path.join(stateDir, d)); } catch { continue; }
     for (const n of names) {
@@ -2387,6 +2396,29 @@ function assignedSlice(type, launch) {
   const block = parts.join('\n\n');
   return block.length > 1500 ? `${block.slice(0, 1499)}…` : block;
 }
+// #492: zero-copy agent-to-agent report handoff at SubagentStart.
+function upstreamReport(type, launch) {
+  const feat = feature();
+  if (!feat) return '';
+  const readRep = (role) => { const r = readState(reportFile(role)); return r && r.feature === feat && typeof r.text === 'string' ? r : null; };
+  const parts = [];
+  if (type === 'implementer' && !launch?.stub) {
+    const tw = readRep('test-writer');
+    if (tw && (tw.word === 'RED' || tw.word === 'FIXED')) parts.push(`Upstream test-writer report (${tw.word}):\n${tw.text}`);
+    const gk = readRep('spec-gatekeeper');
+    if (gk && gk.word === 'REJECTED') parts.push(`Upstream spec-gatekeeper report (${gk.word}):\n${gk.text}`);
+    const sr = readRep('security-reviewer');
+    if (sr && (sr.word === 'VERDICT: FAIL' || sr.word === 'FAIL')) parts.push(`Upstream security-reviewer report (${sr.word}):\n${sr.text}`);
+  } else if (type === 'product-owner' || type === 'architect') {
+    const v = readState(verdictFile(feat));
+    const sa = readRep('spec-auditor');
+    if (sa && sa.word === 'FAIL' && v?.verdict === 'FAIL') parts.push(`Upstream spec-auditor report (FAIL):\n${sa.text}`);
+    const sr = readRep('security-reviewer');
+    const sec = readState(securityFile(feat));
+    if (sr && (sr.word === 'VERDICT: FAIL' || sr.word === 'FAIL') && sec?.verdict === 'FAIL') parts.push(`Upstream security-reviewer report (FAIL):\n${sr.text}`);
+  }
+  return parts.join('\n\n');
+}
 
 if (mode === 'start') {
   pruneState();
@@ -2410,9 +2442,10 @@ if (mode === 'start') {
   if (!type || !id || !SESSION_ID.test(id)) process.exit(0);
   const meta = META_AGENTS.includes(type) ? repoMeta() : '';
   const slice = (type === 'implementer' || type === 'test-writer') ? assignedSlice(type, claimedLaunch) : '';
-  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta, slice].filter(Boolean).join('\n\n') } });
+  const handoff = upstreamReport(type, claimedLaunch);
+  const give = (block) => emit({ hookSpecificOutput: { hookEventName: 'SubagentStart', additionalContext: [block, meta, slice, handoff].filter(Boolean).join('\n\n') } });
   const rec = readState(projectFile(id));
-  if (rec === undefined) { if (meta || slice) give(''); process.exit(0); }
+  if (rec === undefined) { if (meta || slice || handoff) give(''); process.exit(0); }
   if (!rec || typeof rec !== 'object') emit({ systemMessage: `speckit-team: the project record ${projectFile(id)} is unreadable; ${type} starts without project context.` });
   const r = renderProject(rec.name);
   if (r.refused) emit({ systemMessage: `speckit-team: project ${rec.name} could not be given to ${type} (${r.refused}); it starts without project context.` });
