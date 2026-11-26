@@ -429,6 +429,29 @@ about 0.2M tokens carried, of that run's 2.41M, mostly cache reads at a tenth of
 shows the first requests no longer carry the skills (`test/e2e.test.mjs`). No real run has shown a
 model following the read, or the saving.
 
+## Spec Kit's setup calls in agent transcripts (#461)
+
+Counted 2026-11-26 in every subagent transcript on the owner's machine from runs between 2026-10-27
+and 2026-11-23 whose agent was product-owner, architect or spec-auditor. A setup call is a tool call
+whose input names `check-prerequisites`, `setup-plan`, `setup-tasks`, `create-new-feature`,
+`extensions.yml` or `init-options.json`; a setup-only response is one whose every tool call is one.
+
+| Agent | Launches | Responses with a tool call | Setup calls | Setup-only responses |
+|---|--:|--:|--:|--:|
+| spec-auditor | 98 | 694 | 200 | 129 |
+| architect | 102 | 960 | 153 | 125 |
+| product-owner | 102 | 520 | 135 | 129 |
+
+What it led to: spec-auditor takes the feature's directory from `.specify/feature.json` instead of
+speckit-analyze's prerequisite script, and reads the `before_analyze` and `after_analyze` hooks once,
+with its first reads; it edits nothing, so a mandatory hook is reported as not run. That is aimed at
+about one of its 1.3 setup-only responses a launch. architect's and product-owner's setup calls stay:
+`setup-plan`, `setup-tasks` and `create-new-feature` lay down the plan, the tasks and the feature
+branch, and their extension hooks commit, so replacing them is a copy of Spec Kit to keep in step
+with it (#461 keeps that open).
+
+What it does not show: the saving. No run has used the new rule; responses are counted, not tokens.
+
 ## The skill's conditional sections
 
 Whether to move the sections of `skills/speckit-team/SKILL.md` that only some runs need into a

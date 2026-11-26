@@ -400,6 +400,19 @@ test('#405: installed spec-auditor leaves speckit-analyze\'s next steps, offers 
   assert.match(report, /main session decides what runs next/i, 'and says why: the main session runs the pipeline');
 });
 
+// #461: speckit-analyze, which spec-auditor preloads, opens with a prerequisite script that only finds the feature
+// directory and checks that spec.md, plan.md and tasks.md exist, and checks .specify/extensions.yml once before
+// and once after the analysis. In 98 spec-auditor transcripts of the 2026-11 runs on this machine, 129 of 694
+// responses did nothing else, about 1.3 a launch. feature.json already names the directory, and the auditor
+// edits nothing (no Skill tool as an agent, lane none as a role skill), so one read of the hooks says all it can act on.
+test('#461: installed spec-auditor takes the feature from feature.json and reads the analyze hooks once', () => {
+  const auditor = installedAgent('spec-auditor');
+  const work = auditor.slice(auditor.indexOf('## Process'), auditor.indexOf('## Verdict'));
+  assert.match(work, /from `\.specify\/feature\.json` instead of running the prerequisite script/, 'no prerequisite script');
+  assert.match(work, /`before_analyze` and `after_analyze` entries of `\.specify\/extensions\.yml` once, in the same Bash call as your first reads/, 'the hooks read once, with the first reads');
+  assert.match(work, /mandatory one \(`optional: false`\)[^.]*not run/, 'a mandatory hook is reported, not dropped');
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
