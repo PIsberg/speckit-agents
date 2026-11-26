@@ -1038,7 +1038,11 @@ nothing) ([#462](https://github.com/PIsberg/speckit-agents/issues/462)). On `ESC
 skill asks: keep the draft and restore the tree (it runs the undo, switches back to where the run started,
 and tells you to type `/speckit-team <the change> (patcher's draft: <path>)`), keep the changes in the
 working tree, or undo. `git apply <path>` on the start commit puts the work back; a test checks that. The
-skill never starts `/speckit-team` itself.
+skill never starts `/speckit-team` itself. In the `/speckit-team` run that follows, product-owner and architect
+get a `Draft: <path>` line to read for the diagnosis, implementer may start from the draft's production
+hunks once the round's tests are red, and test-writer never gets it, so the tests still come from the spec
+([#476](https://github.com/PIsberg/speckit-agents/issues/476)). Whether that saves work is not measured
+([#502](https://github.com/PIsberg/speckit-agents/issues/502)).
 
 #### What is prompt text, and what was verified
 
@@ -1807,13 +1811,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 805 tests:
+`npm test` runs 806 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 309 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 85 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 172 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 173 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 11 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
