@@ -1199,6 +1199,11 @@ function closeRole(rec, at, gate = null) {
       addNote(citedStands('the test-writer role', word, cited.problems));
     }
   }
+  // #479: the role's GREEN while a task its call's args named is unticked, as the agent's at `result` (#463).
+  if (rec.role === 'implementer' && said === 'RESULT: GREEN') {
+    const open = untickedOf(feature() ?? rec.feature, rec.launch);
+    if (open.length) refuseOnce(rec, at, 'ticks', untickedWhy(open, "your Skill call's args name"));
+  }
   if (rec.role === 'implementer') countResult(rec, unsaid ? 'RESULT: RED' : said);
   // #465: the architect role, as the agent at its Stop.
   if (rec.role === 'architect') {
@@ -1363,6 +1368,17 @@ function claimLaunch(sid, key, role = 'implementer') {
 // #463: the task IDs of an implementer's launch prompt still unticked in the feature's tasks.md; none for a stub pass or a
 // worktree launch, which tick nothing by rule, or when neither the claimed launch nor the agent's transcript says.
 function untickedOfPrompt(feat) {
+  return untickedOf(feat, launchOfAgent());
+}
+// #479: the same for any launch record ({ ids, stub, worktree }), the agent's or the implementer role's.
+function untickedOf(feat, launch) {
+  if (!feat || !launch || !Array.isArray(launch.ids) || launch.stub || launch.worktree) return [];
+  const tasks = readOr(path.join(root, feat, 'tasks.md'), '');
+  return launch.ids.filter((id) => /^T\d{3,}$/.test(id) && new RegExp(`^\\s*[-*]\\s+\\[ \\]\\s.*\\b${id}\\b`, 'm').test(tasks));
+}
+const untickedWhy = (open, named) => `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which ${named}. Tick each task you finished (- [x]); `
+  + 'name any you did not finish and why. Then end with RESULT: GREEN again.';
+function launchOfAgent() {
   let launch = agentKey ? readState(launchFile(agentKey)) : null;
   if (!launch || !Array.isArray(launch.ids)) {
     const first = lines(readOr(str(input.agent_transcript_path) ?? '', '')).map((l) => { try { return JSON.parse(l); } catch { return null; } })
@@ -1371,9 +1387,7 @@ function untickedOfPrompt(feat) {
     const prompt = typeof c === 'string' ? c : Array.isArray(c) ? c.map((p) => (typeof p?.text === 'string' ? p.text : '')).join('\n') : '';
     launch = prompt ? launchOf(prompt) : null;
   }
-  if (!launch || launch.stub || launch.worktree) return [];
-  const tasks = readOr(path.join(root, feat, 'tasks.md'), '');
-  return launch.ids.filter((id) => /^T\d{3,}$/.test(id) && new RegExp(`^\\s*[-*]\\s+\\[ \\]\\s.*\\b${id}\\b`, 'm').test(tasks));
+  return launch;
 }
 
 function lastAssistantText() {
@@ -1796,6 +1810,8 @@ if (mode === 'gate') {
         writeJson(roleFile(id), {
           session_id: id, role: roleSkill, ...start, transcript: transcript ?? null, offset, prompt_id: str(input.prompt_id),
           feature: feat, fingerprint: roleSkill === 'spec-auditor' && feat ? fingerprint(feat) : null, at: new Date().toISOString(),
+          // #479: what the unticked-task check needs of the call's args, never their text.
+          launch: roleSkill === 'implementer' ? launchOf(str(input.tool_input?.args) ?? '') : null,
         });
       }
       finish();
@@ -2198,8 +2214,7 @@ if (mode === 'result') {
     const open = untickedOfPrompt(feat);
     const asked = agentKey && path.join(stateDir, 'agents', `${agentKey}.ticks-asked`);
     if (open.length && asked && !fs.existsSync(asked)) {
-      const why = `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which your prompt names. Tick each task you finished (- [x]); `
-        + 'name any you did not finish and why. Then end with RESULT: GREEN again.';
+      const why = untickedWhy(open, 'your prompt names');
       if (viaHandback) { writeJson(asked, {}); deny(why); }
       if (!input.stop_hook_active) { writeJson(asked, {}); block(why); }
     }

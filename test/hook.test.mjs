@@ -5110,6 +5110,45 @@ test('#463: no send-back when the prompt\'s tasks are ticked, for a stub pass or
   assert.notEqual(run(r2.dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im2', last_assistant_message: 'RESULT: RED', agent_transcript_path: agentTranscript(r2.dir, 'T002') })?.decision, 'block', 'a RED');
 });
 
+// #479: the #463 check for the implementer role of --team skill-agents and --team hybrid. Its "launch prompt" is the
+// Skill call's `args`, so the role record keeps what the check needs of them (the task IDs, stub, worktree), never
+// their text. The GREEN is sent back once at the role's Stop, or denied once at the call that closes it.
+test('#479: the implementer role\'s GREEN with a task its args name unticked is sent back once, at Stop or the next call', () => {
+  const words = 'Built it.\nRESULT: GREEN';
+  for (const where of ['stop', 'skill']) {
+    const { dir } = repo();
+    skillAgentsTeam(dir);
+    pass(dir);
+    const t = transcriptIn(dir, [userRow('typed')]);
+    assert.ok(!decided(callWithArgs(dir, 'speckit-role-implementer', t, 'Round 1 implementation task IDs: T002')), `${where}: its call`);
+    assert.deepEqual(roleRec(dir).launch, { ids: ['T002'], stub: false, worktree: false }, 'the IDs and flags, not the text');
+    say(t, words);
+    const close = () => (where === 'stop' ? stopRole(dir, { last_assistant_message: words })
+      : callWithArgs(dir, 'speckit-role-spec-gatekeeper', t, 'RESULT: GREEN\n<inputs>'));
+    const first = close();
+    assert.ok(where === 'stop' ? first?.decision === 'block' : denied(first), `${where}: ${JSON.stringify(first)}`);
+    assert.match(reasonOf(first), /^RESULT: GREEN, but tasks\.md still has T002 unticked, which your Skill call's args name\. Tick each task you finished/, where);
+    const again = close();
+    assert.doesNotMatch(reasonOf(again), /unticked/, `${where}: never twice`);
+    if (where === 'skill') assert.ok(!denied(again), JSON.stringify(again));
+  }
+});
+
+test('#479: no send-back for the implementer role when its tasks are ticked, for a stub pass or a worktree, or on RED', () => {
+  const cases = [['T001 T002', 'RESULT: GREEN', true], ['stub T002', 'RESULT: STUB', false], ['T002\nworktree', 'RESULT: GREEN', false],
+    ['T002', 'RESULT: RED', false], ['T999 is not in tasks.md', 'RESULT: GREEN', false]];
+  for (const [args, word, ticked] of cases) {
+    const { dir, write: w } = repo();
+    skillAgentsTeam(dir);
+    pass(dir);
+    if (ticked) w(`${FEAT}/tasks.md`, '- [x] T001 write test\n- [X] T002 implement\n');
+    const t = transcriptIn(dir, [userRow('typed')]);
+    assert.ok(!decided(callWithArgs(dir, 'speckit-role-implementer', t, args)), `${args}: its call`);
+    say(t, `Done.\n${word}`);
+    assert.doesNotMatch(reasonOf(stopRole(dir, { last_assistant_message: `Done.\n${word}` })), /unticked/, args);
+  }
+});
+
 // #463 on CI's macOS runner: the implementer's transcript was not on disk yet at its Stop, so no prompt was read and the
 // GREEN went through (as #397 found for the main session's). The gate records each implementer launch it lets through,
 // and the implementer's SubagentStart claims it, so the check needs no transcript.
