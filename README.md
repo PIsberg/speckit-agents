@@ -48,8 +48,8 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
   ([The audit gate](#the-audit-gate))
-- **Test-first, one round at a time.** Stubs, then tests shown failing on an assertion, then the
-  code that turns them green. ([Building in slices](#building-in-slices))
+- **Test-first, one round at a time.** Stubs where a test cannot run without them, then tests shown
+  failing on an assertion, then the code that turns them green. ([Building in slices](#building-in-slices))
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
   ([The retry limit](#the-retry-limit))
@@ -693,8 +693,8 @@ holds the skill, both owners and both reviewers to the same words.
 
 After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. A round is at most 4 slices in task order, and gets one stub pass, one test-writer and
-one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
+those slices. A round is at most 4 slices in task order, and gets at most one stub pass, one test-writer
+and one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
 together share a round, since each extra round costs a test-writer and an implementer more. The
 architect never makes a slice of an implementation that leaves out what a later task adds just so
 that task's test fails against it: in the full runs of 2026-10-24 and 2026-10-25 `sum()` without its
@@ -708,12 +708,17 @@ implementation task, each starting from nothing (11k to 14k tokens, see
 slow next to plain prompting. The round size is a prompt rule; how much it saves in a full run is
 not measured yet. For each round:
 
-1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
-   signatures the task lists, with bodies that only signal "not implemented", and reports
-   `RESULT: STUB`. This is what lets the next step fail cleanly.
-2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion
-   or on the stub's not-implemented signal. A test that fails because it does not parse, an
-   import is missing or a name is undefined proves nothing about the behaviour, so test-writer
+1. **Stubs.** If the tests will call a new function or type in a file that exists, or code they
+   must compile or type-check against, implementer first creates the signatures the task lists,
+   with bodies that only signal "not implemented", and reports `RESULT: STUB`. This is what lets
+   the next step fail cleanly. A new file the tests import gets no stub: a test failing because
+   that file is not written yet is already red (the hook takes a missing production file as a valid
+   RED, #245), and the pass it saves is an implementer launch and a main-session response per round
+   ([#460](https://github.com/PIsberg/speckit-agents/issues/460)). How often a real run skips it is
+   not measured yet. The architect's `Round` line names the tasks that need one.
+2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion,
+   on the stub's not-implemented signal or on a new file not written yet. A test that fails because
+   it does not parse, a test-side import is missing or a name is undefined proves nothing about the behaviour, so test-writer
    fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
    test-writer also runs the type check CI runs over tests, and works out on the current code any
    value an assertion compares with that the code already decides: a task asking for a number no

@@ -244,6 +244,30 @@ test('installed speckit-team skill builds up to 4 slices per round, across phase
   assert.match(section, /Never hand the whole feature to one test-writer or one implementer/);
 });
 
+// #460: a stub pass is a whole implementer launch (11k to 14k tokens before it reads a file) plus a
+// main-session response, and in every round that adds code it ran before the tests. Where the tests import
+// a new file that does not exist yet, the stub adds nothing the hook does not already accept: a missing
+// production file is a valid RED (#245, held in test/hook.test.mjs). It still pays where a missing symbol
+// stops the test from running at all: a new function in a file that exists (ESM's "does not provide an
+// export named" is a SyntaxError the hook sends back), or code the tests must compile or type-check against.
+test('a stub pass runs only for a new symbol in an existing file or code the tests compile against (#460)', () => {
+  const architect = installedAgent('architect');
+  const report = architect.slice(architect.indexOf('## Report'));
+  assert.match(report, /`stub` only for[^.]*new function or type in a file that exists[^.]*compile or type-check/i, 'the architect writes stub only where it pays');
+  assert.match(report, /new file[^.]*needs no stub/i, 'and not for a new file');
+  const build = flat(skillSection(teamSkill(), '## 4-5.'));
+  assert.match(build, /at most one stub pass, one test-writer and one implementer per round/i);
+  assert.match(build, /\*\*Stubs\*\* \(implementer, only for the round's `stub` IDs/, 'the skill stubs what the Round line names');
+  assert.match(build, /on a file a task of the round creates being missing/, 'a missing new file is red');
+  assert.match(build, /a missing test-side import or module/, 'a missing helper is still broken');
+  const writer = installedAgent('test-writer');
+  const work = writer.slice(writer.indexOf('## Process'), writer.indexOf('## Lane'));
+  assert.match(work, /A function or type missing from a production file that exists is a missing stub: report it/);
+  assert.match(work, /new production file a task of the round creates[^.]*is red/i, 'a missing new file is red for test-writer too');
+  assert.match(work, /compile or type-check[^.]*missing stub/i, 'unless the tests must compile against it');
+  assert.doesNotMatch(work, /A production file, function or type that does not exist yet is a missing stub/, 'the old rule is gone');
+});
+
 // #299: in the full runs of 2026-11-08 and 2026-11-11 the architect's test tasks cited a process rule
 // ("tests are written first") as covered by their test file. No test can hold one, so the gate rejected,
 // the excuse was dictated into tasks.md afterwards, and that edit voided the audit: one architect, one
@@ -1522,7 +1546,7 @@ test('006 T010 FR-007 contract 5 (implementer row): without implementer a missin
   assert.match(build, /missing production symbol or module[^.]*(red|lists)/i);
   assert.match(build, /syntax error[^.]*(sent|send)[^.]*back|still sends? back a syntax error/i);
   assert.match(build, /no stub (step|pass)|runs no stub|stub step[^.]*(skipped|not run)/i);
-  assert.match(build, /A syntax error, a missing import or module, an undefined name or a compile error is a broken test/, 'the existing rule still stands for the full team');
+  assert.match(build, /A syntax error, a missing test-side import or module, an undefined name or a compile error is a broken test/, 'the existing rule still stands for the full team');
 });
 
 test('006 T012 FR-012 contract 4: test-writer and implementer read a brief in place of task IDs and tick nothing', () => {

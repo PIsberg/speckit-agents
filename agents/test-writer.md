@@ -53,7 +53,9 @@ file, and reading that file back costs it twice: narrow the command instead.
    - A parse or compile error, a missing import or module, an undefined name or a crash in setup
      proves nothing about the behaviour: fix the test and run it again. So does a type error: if
      CI type-checks tests (`CLAUDE.md` or the CI workflow says so), run that type check on yours.
-   - A production file, function or type that does not exist yet is a missing stub: report it.
+   - A function or type missing from a production file that exists is a missing stub: report it.
+     Code the tests must compile or type-check against is a missing stub too. A new production file
+     a task of the round creates, not written yet, is red: list the test as failing on its absence.
      Creating it, or working around it, belongs to implementer. With a `Team:` line lacking
      `implementer`, no stub pass follows: list a test failing on a missing production symbol or
      module in your report as red, and end `RED` instead of `BLOCKED` for it.
