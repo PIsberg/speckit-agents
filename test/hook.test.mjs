@@ -1972,6 +1972,33 @@ test('#506: with no feature directory spec-gatekeeper\'s word is recorded under 
   assert.doesNotMatch(msg(report(onMain.dir, 'RESULT: RED', 'i1', { session_id: 's1' })), /RED for/, 'nor is a RED counted on main');
 });
 
+// #527: recording pipeline.gif on 2026-11-27, Haiku's main session launched security-reviewer in a request typed with no
+// --security, and nothing refused it. security-reviewer and load-tester are opt-in: a launch of one goes only when the
+// request's team has it (typed --security, --load-test or --team naming it, so on its Team: lines) or the launch's own
+// Team: line names it. A session no /speckit-team request recorded is not judged.
+test('#527: a security-reviewer or load-tester launch outside the request\'s team is refused, naming how to ask for it', () => {
+  const launch = (dir, type, prompt, extra = {}) => run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Agent', session_id: 's1',
+    transcript_path: extra.t, prompt_id: extra.p, tool_input: { subagent_type: type, prompt } });
+  const plain = choiceRepo();
+  typedTeam(plain.dir, 'add sum()', { transcript_path: plain.t, prompt_id: 'q1' });
+  assert.ok(!denied(launch(plain.dir, 'product-owner', 'Idea: add sum()', { t: plain.t, p: 'q1' })), 'the full team, no Team: line');
+  for (const [role, flag] of [['security-reviewer', '--security'], ['load-tester', '--load-test']]) {
+    const out = launch(plain.dir, role, 'phase: spec\nspecs/001-demo', { t: plain.t, p: 'q1' });
+    assert.ok(denied(out), `${role}: ${JSON.stringify(out)}`);
+    assert.match(out.hookSpecificOutput.permissionDecisionReason, new RegExp(`${role} is not in this request's team: it runs only with ${flag}`));
+  }
+  const asked = choiceRepo();
+  const line = 'Team: product-owner, architect, spec-auditor, test-writer, implementer, spec-gatekeeper, security-reviewer';
+  typedTeam(asked.dir, '--security add sum()', { transcript_path: asked.t, prompt_id: 'q1' });
+  assert.ok(!denied(launch(asked.dir, 'product-owner', `${line}\nIdea: add sum()`, { t: asked.t, p: 'q1' })));
+  assert.ok(!denied(launch(asked.dir, 'security-reviewer', `${line}\nphase: spec\nspecs/001-demo`, { t: asked.t, p: 'q1' })), 'typed --security');
+  assert.ok(!denied(launch(asked.dir, 'security-reviewer', 'phase: result\nspecs/001-demo', { t: asked.t, p: 'q1' })), 'the request\'s team has it');
+  const { dir } = repo();
+  assert.ok(!denied(launch(dir, 'security-reviewer', 'review specs/001-demo')), 'no /speckit-team request: an @-mention of the agent goes');
+  assert.ok(!denied(launch(dir, 'product-owner', 'Idea: x')), 'a launch with no request records a team');
+  assert.ok(!denied(launch(dir, 'security-reviewer', 'review specs/001-demo')), 'and that team, from no typed request, judges nothing');
+});
+
 const noTeamFiles = (dir) => !fs.existsSync(path.join(stateDir(dir), 'team')) || fs.readdirSync(path.join(stateDir(dir), 'team')).length === 0;
 const subTool = (dir, args = ['gate'], extra = {}) => run(dir, args, {
   hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'sub1', session_id: 's1', ...extra,
