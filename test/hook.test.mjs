@@ -394,7 +394,9 @@ test('#508: a read-only role may write under a folder a plain $(mktemp) made, no
     // The second review: mktemp redefined (a function, an alias, PATH, hash) or TMPDIR named through an expansion.
     'mktemp() { echo src; }; T=$(mktemp -d); cp a $T/x', 'function mktemp { echo src; }; T=$(mktemp -d); cp a $T/x',
     'alias mktemp="echo src"; T=$(mktemp -d); cp a $T/x', 'PATH=./bin:$PATH; T=$(mktemp -d); cp a $T/x', 'hash -p ./bin/mk mktemp; T=$(mktemp -d); cp a $T/x',
-    'x=TMP; export ${x}DIR=src; T=$(mktemp -d); cp a $T/x', 'x=TMP; env ${x}DIR=src sh -c "cp a $(mktemp -d)/x"']) {
+    'x=TMP; export ${x}DIR=src; T=$(mktemp -d); cp a $T/x', 'x=TMP; env ${x}DIR=src sh -c "cp a $(mktemp -d)/x"',
+    // The third review: zsh's path array, bash's command hash table, and let, getopts and select setting names.
+    'path=(./bin $path); T=$(mktemp -d); cp a $T/x', 'BASH_CMDS[mktemp]=./bin/mk; T=$(mktemp -d); cp a $T/x', 'let x=1; T=$(mktemp -d); cp a $T/x']) {
     assert.ok(denied(gk(command)), command);
   }
   assert.ok(denied(gk('T=$(mktemp -d); cp package.json src/main/App.java')), 'a write into the repo is still a write');

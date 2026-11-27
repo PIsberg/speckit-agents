@@ -2881,7 +2881,9 @@ function mktempPath(inner) {
 // #508: text that may change what a later mktemp prints, in a way this reading does not follow: TMPDIR set by name, read,
 // printf -v, eval, a sourced file, declare, export, local or env; mktemp redefined by a function, an alias, hash, enable,
 // PATH or BASH_ENV. Any of them makes that mktemp a value only the run can tell (fail closed).
-const MAY_SET_TMPDIR = /TMPDIR|PATH|BASH_ENV|\b(eval|source|read|mapfile|readarray|declare|typeset|export|local|readonly|env|alias|hash|enable|function)\b|\bprintf\s+-v|\w\s*\(\s*\)|(^|[;&|(\n]\s*)\.\s/;
+// Not a complete list, nor meant to be: scope none is not airtight (an interpreter's writes pass, README, Known limits); it
+// catches a role's mistaken write, and this keeps a plain mktemp from being one.
+const MAY_SET_TMPDIR = /tmpdir|path|bash_env|bash_cmds|\b(eval|source|read|mapfile|readarray|declare|typeset|export|local|readonly|env|alias|hash|enable|function|let|getopts|select)\b|\bprintf\s+-v|\w\s*\(\s*\)|\w\[[^\]]*\]\+?=|(^|[;&|(\n]\s*)\.\s/i;
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
 // `withWrites` (#209, #210, for scope on Bash) also reads what the command writes: each simple command
 // carries its redirection targets as `writes`, a here-document's body is text unless a shell reads it,
