@@ -319,8 +319,8 @@ of its brief, and the hand-over lists the tests the request named as not written
 A slice is one implementation task (or a few that change the same behaviour) plus the test tasks
 that cover it, as the architect wrote them. A round is at most 4 slices, in task order: phases of
 `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices together share a round, and a
-longer phase is split into rounds. Build one round at a time, with one stub pass, one test-writer
-and one implementer per round, and finish it before starting the next. Every launch starts from
+longer phase is split into rounds. Build one round at a time, with at most one stub pass, one
+test-writer and one implementer per round, and finish it before starting the next. Every launch starts from
 nothing (11k to 14k tokens before it reads a file) and reads the code again. Never hand the whole feature to one
 test-writer or one implementer.
 
@@ -329,15 +329,15 @@ launch the first round's first agent in the response that reads the audit's PASS
 only when no report gave them.
 
 For each round:
-1. **Stubs** (implementer, only if the round's tests will call a file, function or type that does
-   not exist yet): launch with `stub` and the round's task IDs. It creates the signatures the
-   architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
+1. **Stubs** (implementer, only for the round's `stub` IDs: a new function or type in a file that
+   exists, or code the tests must compile against): launch with `stub` and those IDs. It creates the
+   signatures the architect listed, with bodies that only signal "not implemented", and reports `RESULT: STUB`.
 2. **Red** (test-writer, the round's test task IDs): check the report before moving on. It ends
    `RED` or `BLOCKED`, and on `RED` the round's test tasks are ticked; on `BLOCKED`, act on the
    entries it lists. A test-writer sent only to correct an existing test ends `FIXED`. Every
-   test must fail on an assertion or on the stub's not-implemented signal. A syntax error, a
-   missing import or module, an undefined name or a compile error is a broken test, not a red
-   one: send it back. If test-writer reports a missing production symbol, run step 1 for it. When
+   test must fail on an assertion, on the stub's not-implemented signal, or on a file a task of the
+   round creates being missing. A syntax error, a missing test-side import or module, an undefined
+   name or a compile error is a broken test, not a red one: send it back. If test-writer reports a missing production symbol, run step 1 for it. When
    implementer is absent there is no stub step: a failure on a missing production symbol or module
    that test-writer lists is red, and the skill still sends back a syntax error or a missing
    test-side name. If

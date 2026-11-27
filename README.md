@@ -48,8 +48,8 @@ idea ─► product-owner ─► architect ─► spec-auditor ─► per round:
 - **No code before the audit.** A PASS is tied to a SHA-256 fingerprint of the constitution,
   spec, plan and tasks, and any edit to them other than ticking a task voids it.
   ([The audit gate](#the-audit-gate))
-- **Test-first, one round at a time.** Stubs, then tests shown failing on an assertion, then the
-  code that turns them green. ([Building in slices](#building-in-slices))
+- **Test-first, one round at a time.** Stubs where a test cannot run without them, then tests shown
+  failing on an assertion, then the code that turns them green. ([Building in slices](#building-in-slices))
 - **A retry limit.** After 3 `RESULT: RED` reports in a row, implementer is denied every tool but
   reporting back, and the way forward is a revised plan and a new audit.
   ([The retry limit](#the-retry-limit))
@@ -693,8 +693,8 @@ holds the skill, both owners and both reviewers to the same words.
 
 After the audit it builds the feature in rounds, never in one shot. A slice is one small
 implementation task plus the test tasks that cover it, and the architect writes `tasks.md` in
-those slices. A round is at most 4 slices in task order, and gets one stub pass, one test-writer and
-one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
+those slices. A round is at most 4 slices in task order, and gets at most one stub pass, one test-writer
+and one implementer; phases of `tasks.md` (Setup, Foundational, one user story) that fit in 4 slices
 together share a round, since each extra round costs a test-writer and an implementer more. The
 architect never makes a slice of an implementation that leaves out what a later task adds just so
 that task's test fails against it: in the full runs of 2026-10-24 and 2026-10-25 `sum()` without its
@@ -708,12 +708,17 @@ implementation task, each starting from nothing (11k to 14k tokens, see
 slow next to plain prompting. The round size is a prompt rule; how much it saves in a full run is
 not measured yet. For each round:
 
-1. **Stubs.** If the tests will call code that does not exist yet, implementer first creates the
-   signatures the task lists, with bodies that only signal "not implemented", and reports
-   `RESULT: STUB`. This is what lets the next step fail cleanly.
-2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion
-   or on the stub's not-implemented signal. A test that fails because it does not parse, an
-   import is missing or a name is undefined proves nothing about the behaviour, so test-writer
+1. **Stubs.** If the tests will call a new function or type in a file that exists, or code they
+   must compile or type-check against, implementer first creates the signatures the task lists,
+   with bodies that only signal "not implemented", and reports `RESULT: STUB`. This is what lets
+   the next step fail cleanly. A new file the tests import gets no stub: a test failing because
+   that file is not written yet is already red (the hook takes a missing production file as a valid
+   RED, #245), and the pass it saves is an implementer launch and a main-session response per round
+   ([#460](https://github.com/PIsberg/speckit-agents/issues/460)). How often a real run skips it is
+   not measured yet. The architect's `Round` line names the tasks that need one.
+2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion,
+   on the stub's not-implemented signal or on a new file not written yet. A test that fails because
+   it does not parse, a test-side import is missing or a name is undefined proves nothing about the behaviour, so test-writer
    fixes it (at most 3 rounds per test) and the skill sends back any that still fail that way.
    test-writer also runs the type check CI runs over tests, and works out on the current code any
    value an assertion compares with that the code already decides: a task asking for a number no
@@ -1802,25 +1807,25 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 783 tests:
+`npm test` runs 801 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 296 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
-| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 84 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 170 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 307 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 85 | the same for the fast track's `patch` mode |
+| [`test/install.test.mjs`](test/install.test.mjs) | 171 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
-| [`test/usage.test.mjs`](test/usage.test.mjs) | 10 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
+| [`test/usage.test.mjs`](test/usage.test.mjs) | 11 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
 | [`test/media.test.mjs`](test/media.test.mjs) | 10 | `docs/media/leaks.mjs`, the user-name check a recording passes before `record.mjs` copies it into `docs/media/`, on vhs's text and the OCR of every frame (with stand-ins for ffmpeg and tesseract), and the temp folder the recorded session gets |
 | [`test/e2e.test.mjs`](test/e2e.test.mjs) | 73 | the real Claude Code against a fake Anthropic API, with no model and with a scripted one ([End-to-end tests](#end-to-end-tests)) |
 | [`test/docs.test.mjs`](test/docs.test.mjs) | 1 | every relative link in `README.md`, `CLAUDE.md` and `docs/`: the file exists, and so does the heading an anchor names |
-| [`test/drift.test.mjs`](test/drift.test.mjs) | 21 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
+| [`test/drift.test.mjs`](test/drift.test.mjs) | 23 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 9 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 5 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs), and how its width probe treats a probe that shows nothing typed, with a fake vhs (#408) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 35 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 36 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs, a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
-| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 39 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--skill-agents` and `--hybrid` (#428), `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
+| [`test/full-run.test.mjs`](test/full-run.test.mjs) | 40 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--skill-agents` and `--hybrid` (#428), `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
 | [`test/rules.test.mjs`](test/rules.test.mjs) | 2 | [docs/rules.md](docs/rules.md) against the skills and agents: an entry with the current fingerprint and a tag for every section, and a new, changed or dropped section named on a copy ([#232](https://github.com/PIsberg/speckit-agents/issues/232)) |
 | [`test/changelog.test.mjs`](test/changelog.test.mjs) | 2 | `tools/changelog.mjs` on a scratch repo (merges left out, newest first by day, subjects whole, the same text twice), and the committed `docs/CHANGELOG.md` against its own header |

@@ -161,11 +161,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: 0fe72712 -->
+<!-- fingerprint: 9df44c07 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
-- Stubs only when the tests will call something missing. text.
+- Stubs only for the round's `stub` IDs: a new function or type in a file that exists, or code the tests compile or type-check against; a test failing on a new file not written yet is red (#460). pinned; hook `ends`: a missing production file is a valid RED (#245). Unmeasured: how many stub passes a real run skips.
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
 - Side-by-side slices, only with `--side-by-side`, in worktrees, merged in task order. pinned.
@@ -307,8 +307,8 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Write and Edit, not Bash. hook `scope only` reads Bash too (#209).
 
 ### agents/architect.md: Report
-<!-- fingerprint: d18f2849 -->
-- At most 15 lines; one `Round <n>:` line per round. pinned; no `ends` hook.
+<!-- fingerprint: b87bde4d -->
+- At most 15 lines; one `Round <n>:` line per round, `stub` only for a new symbol in an existing file or code the tests compile against (#460). pinned; no `ends` hook.
 
 ## agents/spec-auditor.md
 
@@ -347,13 +347,14 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Only the named tasks, the cited lines and the contracts; a brief in place of tasks ticks nothing. pinned (brief), text, unseen (cost).
 
 ### agents/test-writer.md: Process
-<!-- fingerprint: 6b838db1 -->
+<!-- fingerprint: 0d767831 -->
 - The repo's framework and style. text.
 - The FR or scenario ID in each test's name or a comment, after the feature's number (`001 FR-002`). hook `ends`: test-writer's RED or FIXED is sent back once while a ticked test task cites an ID none of its test files holds (#315; the skill-agents role at its Stop or the next role call, #316). hook `ends --record`: at spec-gatekeeper's APPROVED the drift check refuses a cited ID no test file holds (#228), and an FR of `spec.md` in no test line naming the feature's number (#235).
 - On a kept test, the ID as a comment; a kept test is not a new test. pinned (#254).
 - A requirement the stub already meets (an export, a signature) gets no test of its own: its ID goes as a comment on the tests that call the symbol, and it is not reported as already passing. pinned (#321); unseen (cost). Shown in 1 run with real models (2026-11-11).
 - Red for the right reason, not a syntax error or a name error. hook `ends RED BLOCKED FIXED`: a RED whose output is one is sent back once, then kept in `ends/red-faults.json` (#240). A missing module counts only when the path the error names is a test file under the repo's test patterns (a helper, a fixture; #245): Node ESM's absolute path, a relative one resolved against CJS's Require stack or with its leading `./` and `../` dropped, or a Python module. A missing production file, a package or a path outside the repo is still a valid RED, and a relative helper path that names no test folder (`./helper.mjs`) is not caught.
 - Run the type check when CI type-checks tests; report a task number no code can meet. pinned.
+- A missing function or type in a production file that exists, or code the tests compile or type-check against, is a missing stub; a new file a task of the round creates is red on its absence (#460). pinned; hook `ends`: a missing production file is not sent back (#245).
 - Without implementer, a missing production symbol is red. pinned.
 - Stop after 3 rounds on one test. text.
 - A Bash `timeout` that covers the run. pinned.
