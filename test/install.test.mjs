@@ -268,6 +268,15 @@ test('a stub pass runs only for a new symbol in an existing file or code the tes
   assert.doesNotMatch(work, /A production file, function or type that does not exist yet is a missing stub/, 'the old rule is gone');
 });
 
+// #505: with #460 a new file gets no stub, and in both --large-slices runs of 2026-11-27 the architect then created
+// each new module with its first functions in round 1 and stubbed the rest into it in rounds 2 and 3: 3 rounds and
+// 8 build launches, where the runs of 2026-11-20 (a stub for the whole new file) had 1 round and 3 or 4 launches.
+test("#505: all of a new file's functions go in the round that creates it", () => {
+  const architect = installedAgent('architect');
+  const shape = flat(architect.slice(architect.indexOf('3. Shape `tasks.md`'), architect.indexOf('## Report')));
+  assert.match(shape, /a new file needs none, so all its functions go in the round that creates it/);
+});
+
 // #476: after an ESCALATE, /speckit-patch keeps patcher's work as .git/speckit-team/patch-draft.patch and tells the user to
 // type `/speckit-team <change> (patcher's draft: <path>)` (#462). The skill now says who gets that path: product-owner
 // and architect read it for the diagnosis, implementer may start from its production hunks once the round is red, and

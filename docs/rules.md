@@ -281,7 +281,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Other features' artifacts are not inputs. text, unseen (cost).
 
 ### agents/architect.md: Process
-<!-- fingerprint: c21917d8 -->
+<!-- fingerprint: d348aafe -->
 - Stop on a `[NEEDS CLARIFICATION]` marker. text.
 - A first plan reads speckit-plan and speckit-tasks, a revision leaves them unread. pinned; e2e that nothing is preloaded (#257); no hook.
 - Minimal design; recovery machinery only where an FR or rule demands it. text; spec-auditor checks.
@@ -293,6 +293,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Every requirement of spec.md is cited by a test task that names its test file, or excused by `No test: <reason>` on some task. hook `lane only` (architect's Stop) and `lane role` send the architect back once while one is not, naming it (#465); the cited-but-unexcused process rule above is still caught only at spec-gatekeeper.
 - Every test task names its test file and the IDs it covers. pinned; hook `ends --record` checks at spec-gatekeeper's APPROVED that the test files hold the IDs (#228).
 - Signatures for stubs; file and symbol for what a task uses. pinned.
+- A new file needs no stub, so all its functions go in the round that creates it (#505). pinned; no hook: a later round stubbing into it shows only as more rounds.
 - `[P]` only on disjoint files. text; a merge conflict shows a breach.
 - Check every constitution MUST rule before reporting. text; spec-auditor checks (CRITICAL).
 - `## Open Decisions` with options, consequences and `Spec:` lines, each on one line, that quote the line they replace; plan and tasks as recommended; each option a list item `- **A (recommended): <option>**`, then `- **B: <option>**`. pinned (#310); script `decisions` refuses a `Spec:` line in another form and changes nothing when it finds no option line. Seen 2026-11-11: three runs, three option forms, before the rule.
