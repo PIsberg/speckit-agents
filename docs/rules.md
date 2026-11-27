@@ -162,10 +162,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: 48825e0e -->
+<!-- fingerprint: c88bfb3b -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
+- Without architect, the stub pass first when the request names a new function or type in a file that exists, else only after test-writer reports one missing, then test-writer again on the stubs (#512). pinned. Seen 2026-11-27: `--team lite` relaunched test-writer after the stub, `--team build` did not (1 run each).
 - Stubs only for the round's `stub` IDs: a new function or type in a file that exists, or code the tests compile or type-check against; a test failing on a new file not written yet is red (#460). pinned; hook `ends`: a missing production file is a valid RED (#245). Unmeasured: how many stub passes a real run skips.
 - Send back a test that fails for the wrong reason. text, unseen (#240).
 - After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the hook counts under the run's branch (#506), and only on main or master the skill counts (pinned).
