@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TEAM_PRESETS, teamStops, answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
+import { TEAM_PRESETS, dropDuplicateGates, teamStops, answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -825,4 +825,22 @@ test('#480 full run: a team without product-owner and architect has no stop, so 
   assert.match(rejected[0], /spec-gatekeeper's last report ends REJECTED, not APPROVED/);
   assert.ok(failures(s, [0.5], 6, { team: 'build', markerSent: false }).some((f) => /APPROVED is not recorded/.test(f)), 'no record and no report is still a failure');
   assert.ok(failures(s, [0.5], 6, { team: 'lite', gateSeen: 'APPROVED' }).some((f) => /APPROVED is not recorded/.test(f)), 'a team with a feature directory still needs the record');
+});
+
+test('#507 full run: under --login the project copy drops the settings hooks the personal install already registers', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skdup-'));
+  const gate = (hook, mode = 'gate') => ({ type: 'command', command: `node "${hook}/speckit-team.mjs" ${mode}`, timeout: 15 });
+  const personal = path.join(dir, 'personal.json');
+  const project = path.join(dir, 'project.json');
+  fs.writeFileSync(personal, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Skill|Agent', hooks: [gate('/home/u/.claude/hooks')] }] } }));
+  fs.writeFileSync(project, JSON.stringify({ permissions: { allow: ['Bash(x)'] }, hooks: {
+    PreToolUse: [{ matcher: 'Skill|Agent', hooks: [gate('/r/.claude/hooks')] }, { matcher: 'Bash', hooks: [{ type: 'command', command: 'mine.sh' }] }],
+    SubagentStart: [{ matcher: 'architect', hooks: [gate('/r/.claude/hooks', 'start')] }] } }));
+  assert.equal(dropDuplicateGates(project, personal), 2);
+  const left = JSON.parse(fs.readFileSync(project, 'utf8'));
+  assert.deepEqual(left, { permissions: { allow: ['Bash(x)'] }, hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine.sh' }] }] } }, 'only the team\'s gates go; the rest stays');
+  fs.writeFileSync(personal, JSON.stringify({}));
+  fs.writeFileSync(project, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Skill|Agent', hooks: [gate('/r/.claude/hooks')] }] } }));
+  assert.equal(dropDuplicateGates(project, personal), 0, 'without a personal install the project copy keeps its gates');
+  assert.equal(dropDuplicateGates(project, path.join(dir, 'missing.json')), 0);
 });

@@ -654,6 +654,20 @@ const missing = [['git', 'required by every hook'], ['claude', 'Claude Code itse
   .filter(([cmd]) => !have(cmd));
 for (const [cmd, why] of missing) console.log(`WARNING: \`${cmd}\` not found on PATH (${why}).`);
 
+// #507: a project install beside a personal one: both settings.json files register the gates, so in that project
+// every settings hook runs twice and SubagentStart's block reaches each agent twice.
+const personalDir = path.resolve(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'));
+const samePath = (a, b) => (process.platform === 'win32' ? a.toLowerCase() === b.toLowerCase() : a === b);
+if (!samePath(personalDir, claudeDir)) {
+  const personalSettings = path.join(personalDir, 'settings.json');
+  let other = null;
+  try { other = JSON.parse(fs.readFileSync(personalSettings, 'utf8')); } catch { /* none */ }
+  if (Object.values(other?.hooks ?? {}).some((list) => Array.isArray(list) && list.some(isGate))) {
+    console.log(`NOTE: ${personalSettings} also registers the team's hooks, so in a project with this install each settings hook runs twice (#507). `
+      + `Keep one: node install.mjs --uninstall --claude-dir ${claudeDir}, or uninstall the personal one.`);
+  }
+}
+
 if (boardResult.error) {
   console.error(`\nERROR: the team is installed, the board mod is not ${noBoard ? 'removed' : 'installed'}:\n${boardResult.error}`);
   console.error(noBoard ? `Rerun with --no-board, or ${boardByHand}.` : 'Rerun the installer once that is fixed; it remembers the board.');
