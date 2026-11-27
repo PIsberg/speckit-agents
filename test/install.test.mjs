@@ -1560,6 +1560,7 @@ test('006 T010 FR-007 D7: with no active feature the skill counts implementer RE
   assert.match(build, /3 (implementer )?(`?RESULT: RED`?|REDs?) in a row/);
   assert.match(build, /(hand|give)s? the (failing )?output to the user/i);
   assert.match(build, /After 3 REDs in a row the hook blocks implementer/, 'the existing sentence still stands');
+  assert.match(build, /counts under the run's branch \(#506\); only on main or master it counts nothing/, 'the hook counts a run with no feature by its branch');
 });
 
 test('006 T010 FR-008 SC-005: the final report lists roles that ran, skipped rows, unticked tasks and the D7 count', () => {

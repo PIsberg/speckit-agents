@@ -356,8 +356,8 @@ For each round:
    relaunch it with the failing output. After 3 REDs in a row the hook blocks implementer: do not
    retry, and never delete the retry record yourself.
    With no active feature (no `.specify/feature.json`, or one naming no directory) the hook counts
-   nothing, so count yourself: after 3 implementer `RESULT: RED` in a row, relaunch none and hand
-   the failing output to the user.
+   under the run's branch (#506); only on main or master it counts nothing, so count yourself there:
+   after 3 implementer `RESULT: RED` in a row, relaunch none and hand the failing output to the user.
    Either send the failing task and its output to the architect to rethink (a new audit then
    resets the count), or hand the decision to the user.
 
@@ -414,5 +414,5 @@ If security-reviewer is in the team: after spec-gatekeeper verification (or afte
 ## 7. Hand over
 Open the PR per the git rules in CLAUDE.md (do not merge), and watch CI until it is green.
 Report the active project (when one was active), the roles that ran with each one's verdict (including security-reviewer and load-tester when opted in; load-tester not asked for gets no skipped row), a row for each other absent role as skipped, the stash of an accepted load-test FAIL (the load tests it holds and how to restore them), the
-unticked tasks and anything still open. In a run with implementer and no active feature, say the
-retry limit was the skill's count, not the hook's.
+unticked tasks and anything still open. In a run with implementer, no active feature and on main or
+master, say the retry limit was the skill's count, not the hook's.

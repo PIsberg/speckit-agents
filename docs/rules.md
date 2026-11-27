@@ -162,13 +162,13 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: 9df44c07 -->
+<!-- fingerprint: 48825e0e -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
 - Stubs only for the round's `stub` IDs: a new function or type in a file that exists, or code the tests compile or type-check against; a test failing on a new file not written yet is red (#460). pinned; hook `ends`: a missing production file is a valid RED (#245). Unmeasured: how many stub passes a real run skips.
 - Send back a test that fails for the wrong reason. text, unseen (#240).
-- After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the skill counts (pinned).
+- After 3 REDs in a row, no relaunch. hook `gate retries`, `result`; without an active feature the hook counts under the run's branch (#506), and only on main or master the skill counts (pinned).
 - Side-by-side slices, only with `--side-by-side`, in worktrees, merged in task order. pinned.
 - One full suite run per build: with spec-gatekeeper in the team, no implementer gets `last round` and spec-gatekeeper's gates are the run (#430). pinned. Unmeasured: a regression the last implementer would have caught now costs a REJECTED and a relaunch.
 - The full suite of a side-by-side round: the main session runs it after the last round's merge unless spec-gatekeeper runs it next, and a failure goes to one implementer without a worktree; a worktree launch never carries `last round`. pinned (#309). Seen 2026-11-11: told only in their own body not to run the suite, both implementers ran it and ended RED; with `last round` left out of the launch, both ended GREEN and the main session ran the suite after the merge, 12 of 12 (1 run).
@@ -187,7 +187,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - security-reviewer on the result, then spec-gatekeeper again after its fix. pinned.
 
 ### skills/speckit-team/SKILL.md: 7. Hand over
-<!-- fingerprint: c5cd1219 -->
+<!-- fingerprint: 43f14c48 -->
 - Open the PR, do not merge, watch CI. text.
 - Report the roles, skipped rows, unticked tasks and the retry count's source. pinned.
 

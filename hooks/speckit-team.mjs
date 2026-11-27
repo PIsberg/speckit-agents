@@ -628,6 +628,15 @@ function fingerprint(feat) {
   }
   return h.digest('hex').slice(0, 16);
 }
+// #506: a run with no feature directory (a team without product-owner, such as --team build) keeps its retry count
+// and the gatekeeper's word under the branch the skill switched to, so neither guardrail is silently off. Never on
+// main or master, nor a detached HEAD: those are no run of their own. One git call, only when there is no feature.
+function branchKey() {
+  const b = git(root, 'symbolic-ref', '--quiet', '--short', 'HEAD');
+  if (!b || b === 'main' || b === 'master') return null;
+  return `no-feature/${b.replace(/[^A-Za-z0-9._-]+/g, '-')}`;
+}
+const runFeature = () => feature() ?? branchKey();
 const verdictFile = (feat) => path.join(stateDir, 'verdicts', `${path.basename(feat)}.json`);
 const baseFile = (id) => path.join(stateDir, 'agents', `${id}.json`);
 const retryFile = (feat) => path.join(stateDir, 'retries', `${path.basename(feat)}.json`);
@@ -1848,7 +1857,7 @@ if (mode === 'gate') {
     if (typed) block(reason);
     deny(reason);
   }
-  const feat = feature();
+  const feat = runFeature();
   if (args[0] === 'retries' && feat) retryLimit(feat);
   if (agentId && !fs.existsSync(baseFile(agentKey))) {
     const start = startRecord();
@@ -2207,7 +2216,7 @@ if (mode === 'verdict') {
 if (mode === 'result') {
   const viaHandback = event === 'PreToolUse';
   if (viaHandback && input.tool_name !== 'SubagentHandback') process.exit(0);
-  const feat = feature();
+  const feat = runFeature();
   if (!feat) process.exit(0);
   // The Stop that follows a counted handback is the same attempt, not a second one.
   const done = agentKey && path.join(stateDir, 'agents', `${agentKey}.result`);
@@ -2354,11 +2363,12 @@ if (mode === 'ends') {
     // Kept on disk next to the audit verdict, so a view of the pipeline (the board mod) reads the
     // gatekeeper's word from the same place whether or not it saw the agent stop. Only on --record:
     // test-writer's RED after a REJECTED would otherwise read as the gatekeeper's word.
-    const feat = record && feature();
+    const feat = record && runFeature();
     const at = new Date().toISOString();
     // #228: APPROVED is refused, at every hand-back and once at Stop, while the drift check finds a cited
     // requirement no test holds. REJECTED always goes through, so the agent is never gagged.
-    const drifted = feat && word === 'APPROVED' ? driftOf(feat) : null;
+    // A branch key has no tasks.md for the drift check to read (#506).
+    const drifted = feat && feature() && word === 'APPROVED' ? driftOf(feat) : null;
     // --record is spec-gatekeeper's, whatever agent_type says.
     const gk = str(input.agent_type) ?? 'spec-gatekeeper';
     if (drifted?.problems?.length) {

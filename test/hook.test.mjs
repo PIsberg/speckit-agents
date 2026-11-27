@@ -1903,6 +1903,43 @@ const agentLaunch = (dir, prompt, extra = {}) => run(dir, ['gate'], {
 });
 const teamFile = (dir, id = 's1') => path.join(stateDir(dir), 'team', `${id}.json`);
 const teamRecord = (dir, id = 's1') => JSON.parse(fs.readFileSync(teamFile(dir, id), 'utf8'));
+// #506: --team build (test-writer, implementer, spec-gatekeeper) has no product-owner, so no feature directory, and
+// `result` and `ends` exited before counting a RED or recording the gatekeeper's word: the retry limit was off and
+// nothing said so. A run with no feature keeps both under the branch the skill switched to; main and master never.
+function noFeatureRepo(branch = 'team/add-sum') {
+  const r = repo();
+  fs.rmSync(path.join(r.dir, '.specify', 'feature.json'));
+  fs.rmSync(path.join(r.dir, 'specs'), { recursive: true, force: true });
+  commitAll(r, 'no feature');
+  r.g('branch', '-M', 'main');
+  if (branch) r.g('switch', '-q', '-c', branch);
+  agentLaunch(r.dir, 'go\nTeam: test-writer, implementer, spec-gatekeeper');
+  return r;
+}
+test('#506: with no feature directory, implementer REDs count under the run\'s branch and the retry limit holds', () => {
+  const { dir } = noFeatureRepo();
+  const red = (id) => report(dir, 'RESULT: RED', id, { session_id: 's1' });
+  assert.match(msg(red('i1')), /RED for no-feature\/team-add-sum \(1 of 3/);
+  red('i2');
+  assert.match(msg(red('i3')), /3 of 3/);
+  assert.ok(fs.existsSync(path.join(stateDir(dir), 'retries', 'team-add-sum.json')));
+  const out = run(dir, ['gate', 'retries'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'next', session_id: 's1' });
+  assert.ok(denied(out), JSON.stringify(out));
+  assert.match(out.hookSpecificOutput.permissionDecisionReason, /3 times in a row.*no architect in this run's team, so the user decides/s);
+});
+
+test('#506: with no feature directory spec-gatekeeper\'s word is recorded under the branch; on main nothing is', () => {
+  const { dir } = noFeatureRepo();
+  const ends = ['ends', '--record', 'APPROVED', 'REJECTED'];
+  run(dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk1', session_id: 's1', last_assistant_message: 'Checked against the brief.\nAPPROVED' });
+  const rec = JSON.parse(fs.readFileSync(path.join(stateDir(dir), 'ends', 'team-add-sum.json'), 'utf8'));
+  assert.deepEqual([rec.word, rec.feature], ['APPROVED', 'no-feature/team-add-sum'], 'no drift check: there is no tasks.md to check');
+  const onMain = noFeatureRepo(null);
+  run(onMain.dir, ends, { hook_event_name: 'SubagentStop', agent_id: 'gk1', session_id: 's1', last_assistant_message: 'APPROVED' });
+  assert.ok(!fs.existsSync(path.join(stateDir(onMain.dir), 'ends')) || fs.readdirSync(path.join(stateDir(onMain.dir), 'ends')).length === 0, 'main is no run of its own');
+  assert.doesNotMatch(msg(report(onMain.dir, 'RESULT: RED', 'i1', { session_id: 's1' })), /RED for/, 'nor is a RED counted on main');
+});
+
 const noTeamFiles = (dir) => !fs.existsSync(path.join(stateDir(dir), 'team')) || fs.readdirSync(path.join(stateDir(dir), 'team')).length === 0;
 const subTool = (dir, args = ['gate'], extra = {}) => run(dir, args, {
   hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: {}, agent_id: 'sub1', session_id: 's1', ...extra,
