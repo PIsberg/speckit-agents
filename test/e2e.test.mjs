@@ -1542,6 +1542,20 @@ test('#463: an implementer GREEN with T001 of its prompt unticked is sent back o
   assert.match(shown(r.requests['e2e green T001'][1]), /tasks\.md still has T001 unticked, which your prompt names/, story(r));
 });
 
+// #479: the same check when the implementer reports through SubagentHandback (auto mode), where Claude Code may give
+// no agent_transcript_path: the launch the gate recorded and SubagentStart claimed carries the task IDs. With the hook a
+// no-op (SPECKIT_E2E_NO_HOOK=1) the handback goes through.
+test('#479: an implementer GREEN through SubagentHandback with T001 of its prompt unticked is refused once, naming it', { skip: noClaude, timeout: 120_000 }, async () => {
+  const s = setup();
+  recordPass(s);
+  const r = await session(s, {
+    [MAIN]: [call('Agent', { description: 'implementer', subagent_type: 'implementer', prompt: 'e2e handback T001: go', run_in_background: false })],
+    'e2e handback T001': [call('SubagentHandback', { message: 'Built it.\nRESULT: GREEN' }), call('SubagentHandback', { message: 'T001 is done.\nRESULT: GREEN' })],
+  }, { permissionMode: 'auto' });
+  assert.ok(r.requests['e2e handback T001'].length >= 2, `the handback was answered:\n${story(r)}`);
+  assert.match(lastResult(r.requests['e2e handback T001'][1]), /tasks\.md still has T001 unticked, which your prompt names/, story(r));
+});
+
 // #466: SubagentStart's repository block reaches an implementer's first request, so it need not read package.json. With
 // the hook a no-op (SPECKIT_E2E_NO_HOOK=1) the block is not there.
 test('#466: an implementer starts with the repo\'s test command from package.json in its first request', { skip: noClaude, timeout: 120_000 }, async () => {
