@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TEAM_PRESETS, answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
+import { TEAM_PRESETS, teamStops, answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -809,4 +809,20 @@ test('#480 full run: the --team presets are the hook\'s TEAM_PRESETS (twins)', (
   const hook = fs.readFileSync(path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'utf8');
   const literal = hook.match(/const TEAM_PRESETS = (\{[^\n]*\});/)[1];
   assert.deepEqual(Function(`return ${literal}`)(), TEAM_PRESETS);
+});
+
+test('#480 full run: a team without product-owner and architect has no stop, so it is one turn judged on spec-gatekeeper\'s report', () => {
+  assert.equal(teamStops('build'), false, 'test-writer, implementer and spec-gatekeeper: no spec stop and no plan stop');
+  assert.equal(teamStops('lite'), true, 'product-owner stops at the spec');
+  assert.equal(teamStops(null), true, 'the full team');
+  assert.equal(teamStops('architect,test-writer,implementer'), true, 'architect stops at the plan');
+  // Without product-owner there is no feature directory, so the hook keeps no end record: the word is the report's.
+  const agents = (...types) => types.map((type) => ({ type, background: false }));
+  const s = state({ verdict: null, tasks: null, word: null, launches: agents('test-writer', 'implementer', 'spec-gatekeeper') });
+  assert.deepEqual(failures(s, [0.5], 6, { team: 'build', markerSent: false, gateSeen: 'APPROVED' }), []);
+  const rejected = failures(s, [0.5], 6, { team: 'build', markerSent: false, gateSeen: 'REJECTED' });
+  assert.equal(rejected.length, 1, JSON.stringify(rejected));
+  assert.match(rejected[0], /spec-gatekeeper's last report ends REJECTED, not APPROVED/);
+  assert.ok(failures(s, [0.5], 6, { team: 'build', markerSent: false }).some((f) => /APPROVED is not recorded/.test(f)), 'no record and no report is still a failure');
+  assert.ok(failures(s, [0.5], 6, { team: 'lite', gateSeen: 'APPROVED' }).some((f) => /APPROVED is not recorded/.test(f)), 'a team with a feature directory still needs the record');
 });

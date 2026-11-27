@@ -127,6 +127,7 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
     const tasks = path.join(repo, 'specs', '001-sum', 'tasks.md');
     fs.writeFileSync(tasks, fs.readFileSync(tasks, 'utf8').replace(/- \[X\]/g, '- [ ]'));
     if (name === 'audit-defect') fs.cpSync(path.join(FIXTURE, 'audit', 'defect', 'specs'), path.join(repo, 'specs'), { recursive: true });
+    if (name === 'audit-subtle') fs.cpSync(path.join(FIXTURE, 'audit', 'subtle', 'specs'), path.join(repo, 'specs'), { recursive: true });
     fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'spec, plan and tasks for sum()');
@@ -175,10 +176,12 @@ const verdictsOf = (repo) => { const d = path.join(repo, '.git', 'speckit-team',
 // held by test/full-run.test.mjs.
 const TEAM_ROLE_NAMES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer'];
 export const TEAM_PRESETS = { build: ['test-writer', 'implementer', 'spec-gatekeeper'], lite: ['product-owner', 'test-writer', 'implementer', 'spec-gatekeeper'] };
+// #480: a team without product-owner and architect has neither the spec stop nor the plan stop: one turn.
+export const teamStops = (team) => !team || teamRoles(team).some((r) => ['product-owner', 'architect'].includes(r));
 export const teamRoles = (team) => [...new Set(String(team).split(',').map((r) => r.trim().toLowerCase()).filter(Boolean)
   .flatMap((r) => (r === 'security' ? ['security-reviewer'] : TEAM_PRESETS[r] ?? [r])))];
 
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false, hybrid = false, team = null }) {
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false, hybrid = false, team = null, gateSeen = null }) {
   const out = [];
   // #480: a --team run is judged on the steps of the roles it has; the full team on all of them.
   const roles = team ? teamRoles(team) : null;
@@ -189,7 +192,11 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   const verdicts = records('verdicts');
   if (has('spec-auditor') && !verdicts.some((v) => v.verdict === 'PASS')) out.push(`no audit PASS recorded in .git/speckit-team/verdicts/ (found: ${verdicts.map((v) => v.verdict).join(', ') || 'none'})`);
   const ends = records('ends');
-  if (has('spec-gatekeeper') && !ends.some((e) => e.word === 'APPROVED')) out.push(`spec-gatekeeper's APPROVED is not recorded in .git/speckit-team/ends/ (found: ${ends.map((e) => e.word).join(', ') || 'none'})`);
+  // Without product-owner there is no feature directory, so the hook keeps no end record (#480): the word is
+  // the last line of spec-gatekeeper's report.
+  if (has('spec-gatekeeper') && !ends.some((e) => e.word === 'APPROVED') && !has('product-owner') && gateSeen) {
+    if (gateSeen !== 'APPROVED') out.push(`spec-gatekeeper's last report ends ${gateSeen}, not APPROVED`);
+  } else if (has('spec-gatekeeper') && !ends.some((e) => e.word === 'APPROVED')) out.push(`spec-gatekeeper's APPROVED is not recorded in .git/speckit-team/ends/ (found: ${ends.map((e) => e.word).join(', ') || 'none'})`);
   const feature = ends[0]?.feature ?? verdicts[0]?.feature;
   const tasks = feature && path.join(repo, feature, 'tasks.md');
   if (!has('architect')) { /* no architect, no tasks.md: one round on the request */ } else if (!tasks || !fs.existsSync(tasks)) out.push(`no tasks.md for the feature (${feature ?? 'no feature recorded'})`);
@@ -254,7 +261,7 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   }
   if (usage?.main?.waits) out.push(`${usage.main.waits} main-session response(s) only waited for a background agent`);
   // A check that saw no agent, or a marker that was never sent, proves nothing.
-  if (!markerSent) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run');
+  if (!markerSent) { if (!roles || teamStops(team)) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run'); }
   else if (!skillAgents && !agentTexts?.length) out.push('no agent transcript was found in the session\'s subagents/ folder: the leak check saw nothing');
   else {
     const leaked = agentTexts.filter((a) => a.text.includes(marker)).map((a) => a.file);
@@ -624,7 +631,7 @@ function main() {
   const busy = o.case === 'load-noisy' ? Array.from({ length: Math.max(1, Math.round(0.3 * os.cpus().length)) },
     () => spawn(process.execPath, ['-e', 'for (;;);'], { stdio: 'ignore' })) : [];
   const { turns, session, stopped } = runTurns({
-    maxTurns: gate || load || oneTurn ? 1 : o.maxTurns,
+    maxTurns: gate || load || oneTurn || !teamStops(o.team) ? 1 : o.maxTurns,
     promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team, sideBySide: o.sideBySide })) : answer(marker, { sideBySide: o.sideBySide, team: o.team })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
@@ -649,7 +656,8 @@ function main() {
     : audit ? { ...auditWord({ verdicts: verdictsOf(repo), text: turns.at(-1)?.result }), report: transcript ? gateReport({ transcript, skillAgents: o.skillAgents, role: 'spec-auditor' }) : null }
     : { ...gateWord({ ends, text: turns.at(-1)?.result }), report: report0 };
   const failures = gate || load || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team,
+    gateSeen: o.team && report0 ? gateWord({ text: report0 }).word : null });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
     if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
