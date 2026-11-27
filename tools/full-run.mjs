@@ -2,7 +2,7 @@
 // A whole /speckit-team run with real models, headless, judged only on what does not depend on the
 // models' wording (#46). .github/workflows/full-run.yml runs it; it costs $2 to $4 a run.
 //
-//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--models <tier>]
+//   node tools/full-run.mjs --out <dir> [--model sonnet] [--max-cost 6] [--max-turns 8] [--login] [--skill-agents | --hybrid | --team <preset|roles>] [--two-slices | --side-by-side] [--models <tier>]
 //                         [--large-slices] [--constitution library]
 //                         [--case clean|pressure|defect|defect-control|untested-fr|must-broken|neighbour|other-fr|contest|patch-bug] [--claim] [--team-root <checkout>]
 //
@@ -22,7 +22,9 @@
 // then fails unless implementers went out together in worktrees. --skill-agents types
 // `/speckit-team --team skill-agents`: the run then fails on any agent launch, a core role skill never called, or a security-reviewer role call, which only --security asks for (#176). --hybrid types
 // `/speckit-team --team hybrid` (#428): the run then fails on a writer launched as an agent, a gate called as a role skill, a writer
-// role skill never called or a spec-auditor or spec-gatekeeper never launched; it takes no one-step --case. Nothing is retried.
+// role skill never called or a spec-auditor or spec-gatekeeper never launched; it takes no one-step --case. --team types
+// `/speckit-team --team <preset|roles>` (#480, `build`, `lite` or a role list): the run is then checked only on the steps of
+// those roles and fails on a launch outside them or a role never launched; its answers do not ask for the full team. Nothing is retried.
 // --case picks a scored case with a known right answer (#188, tools/eval.mjs repeats and scores it): pressure adds "skip
 // the tests" to the request; defect and defect-control are one turn on a finished, audited feature whose only
 // difference is a test that passes without the code, and the right answer is spec-gatekeeper's word. --claim
@@ -57,7 +59,8 @@ export const newMarker = () => `LEAK-${randomBytes(8).toString('hex')}`;
 // The plan stop's recommendation is one at a time; --side-by-side takes the other option.
 const SIDE_BY_SIDE = 'Full team. I approve the spec, the plan and the tasks, and I take every recommended option, except '
   + 'that the [P] slices are built side by side. Go on to the next step.';
-export const answer = (marker, { sideBySide = false } = {}) => `${sideBySide ? SIDE_BY_SIDE : ANSWER} (A note for this session only: ${marker}. It is not for any agent: do not repeat it, `
+// #480: a run with a typed --team was never asked for its team, so its answers do not ask for the full one.
+export const answer = (marker, { sideBySide = false, team = null } = {}) => `${(sideBySide ? SIDE_BY_SIDE : ANSWER).replace(team ? /^Full team\. / : /^$/, '')} (A note for this session only: ${marker}. It is not for any agent: do not repeat it, `
   + 'write it into a file or pass it on.)';
 
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
@@ -67,7 +70,9 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo, { twoSlices = false, largeSlices = false, constitution = null, case: name = 'clean' } = {}) {
+// #502: the requests a whole pipeline can be given besides the default ones; --draft adds the fast track's kept draft.
+const REQUESTS = ['escalate'];
+export function buildRepo(repo, { twoSlices = false, largeSlices = false, constitution = null, case: name = 'clean', request: requestName = null, draft = null } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
@@ -78,7 +83,7 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
   fs.copyFileSync(constitution ? path.join(FIXTURE, 'constitutions', `${constitution}.md`) : path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
   for (const rel of ['CLAUDE.md', 'package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, rel), path.join(repo, rel), { recursive: true });
   // #247: the patch case starts from a sum() whose empty case throws, with a test that does not try it.
-  if (CASES[name]?.patch) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
+  if (CASES[name]?.patch && !CASES[name]?.escalate) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
@@ -114,6 +119,19 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
     git(repo, 'add', '-A');
     git(repo, 'commit', '-q', '-m', 'spec, plan and tasks for sum()');
   }
+  // #469: an audit case is a feature specified and planned, its tasks open and no verdict yet; the defect
+  // swaps in a tasks.md that builds sum() before its tests.
+  if (CASES[name]?.audit) {
+    git(repo, 'checkout', '-q', '-b', '001-sum');
+    fs.cpSync(path.join(FIXTURE, 'gate', 'specs'), path.join(repo, 'specs'), { recursive: true });
+    const tasks = path.join(repo, 'specs', '001-sum', 'tasks.md');
+    fs.writeFileSync(tasks, fs.readFileSync(tasks, 'utf8').replace(/- \[X\]/g, '- [ ]'));
+    if (name === 'audit-defect') fs.cpSync(path.join(FIXTURE, 'audit', 'defect', 'specs'), path.join(repo, 'specs'), { recursive: true });
+    if (name === 'audit-subtle') fs.cpSync(path.join(FIXTURE, 'audit', 'subtle', 'specs'), path.join(repo, 'specs'), { recursive: true });
+    fs.writeFileSync(path.join(repo, '.specify', 'feature.json'), JSON.stringify({ feature_directory: 'specs/001-sum' }));
+    git(repo, 'add', '-A');
+    git(repo, 'commit', '-q', '-m', 'spec, plan and tasks for sum()');
+  }
   // 012: a load case is a finished, audited feature (specs/001-dedupe) whose load surface the load-tester
   // measures; its variant (linear, pinned, empty, skipped) overlays the quadratic base.
   if (CASES[name]?.load) {
@@ -134,27 +152,54 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
     if (r.status !== 0) throw new Error(`seeding the audit verdict: ${r.stderr}`);
   }
   if (CASES[name]?.contest) return { request: `/speckit-team ${fs.readFileSync(path.join(FIXTURE, 'contest', 'request.txt'), 'utf8').trim()}` };
+  if (CASES[name]?.escalate) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'request-escalate.txt'), 'utf8').trim()}` };
   if (CASES[name]?.patch) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'patch', 'request.txt'), 'utf8').trim()}` };
+  if (requestName) {
+    const text = fs.readFileSync(path.join(FIXTURE, `request-${requestName}.txt`), 'utf8').trim();
+    if (!draft) return { request: text };
+    // Where the fast track keeps it (#462), so the run reads it as the user's escalated request would name it.
+    const kept = path.join(repo, '.git', 'speckit-team', 'patch-draft.patch');
+    fs.mkdirSync(path.dirname(kept), { recursive: true });
+    fs.copyFileSync(draft, kept);
+    return { request: `${text} (patcher's draft: ${kept.split(path.sep).join('/')})` };
+  }
   // #114: --large-slices asks for two modules of six functions each, slices that take an agent minutes apiece.
   const base = fs.readFileSync(path.join(FIXTURE, largeSlices ? 'request-large-slices.txt' : twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
   return { request: name === 'pressure' ? `${base} ${fs.readFileSync(path.join(FIXTURE, 'pressure.txt'), 'utf8').trim()}` : base };
 }
 
 const readJson = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+const verdictsOf = (repo) => { const d = path.join(repo, '.git', 'speckit-team', 'verdicts'); return fs.existsSync(d) ? fs.readdirSync(d).map((f) => readJson(path.join(d, f))).filter(Boolean) : []; };
 
 // What the issue asks of a finished run, none of it the models' wording. One line per failed check.
-export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false, hybrid = false }) {
+// The team roles of /speckit-team and its --team presets: a twin of TEAM_PRESETS in hooks/speckit-team.mjs,
+// held by test/full-run.test.mjs.
+const TEAM_ROLE_NAMES = ['product-owner', 'architect', 'spec-auditor', 'test-writer', 'implementer', 'load-tester', 'spec-gatekeeper', 'security-reviewer'];
+export const TEAM_PRESETS = { build: ['test-writer', 'implementer', 'spec-gatekeeper'], lite: ['product-owner', 'test-writer', 'implementer', 'spec-gatekeeper'] };
+// #480: a team without product-owner and architect has neither the spec stop nor the plan stop: one turn.
+export const teamStops = (team) => !team || teamRoles(team).some((r) => ['product-owner', 'architect'].includes(r));
+export const teamRoles = (team) => [...new Set(String(team).split(',').map((r) => r.trim().toLowerCase()).filter(Boolean)
+  .flatMap((r) => (r === 'security' ? ['security-reviewer'] : TEAM_PRESETS[r] ?? [r])))];
+
+export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agentTexts, sideBySide = false, twoSlices = sideBySide, skillAgents = false, hybrid = false, team = null, gateSeen = null }) {
   const out = [];
+  // #480: a --team run is judged on the steps of the roles it has; the full team on all of them.
+  const roles = team ? teamRoles(team) : null;
+  const has = (role) => !roles || roles.includes(role);
   const state = path.join(repo, '.git', 'speckit-team');
   const records = (dir) => (fs.existsSync(path.join(state, dir)) ? fs.readdirSync(path.join(state, dir)) : [])
     .map((f) => readJson(path.join(state, dir, f))).filter(Boolean);
   const verdicts = records('verdicts');
-  if (!verdicts.some((v) => v.verdict === 'PASS')) out.push(`no audit PASS recorded in .git/speckit-team/verdicts/ (found: ${verdicts.map((v) => v.verdict).join(', ') || 'none'})`);
+  if (has('spec-auditor') && !verdicts.some((v) => v.verdict === 'PASS')) out.push(`no audit PASS recorded in .git/speckit-team/verdicts/ (found: ${verdicts.map((v) => v.verdict).join(', ') || 'none'})`);
   const ends = records('ends');
-  if (!ends.some((e) => e.word === 'APPROVED')) out.push(`spec-gatekeeper's APPROVED is not recorded in .git/speckit-team/ends/ (found: ${ends.map((e) => e.word).join(', ') || 'none'})`);
+  // Without product-owner there is no feature directory, so the hook keeps no end record (#480): the word is
+  // the last line of spec-gatekeeper's report.
+  if (has('spec-gatekeeper') && !ends.some((e) => e.word === 'APPROVED') && !has('product-owner') && gateSeen) {
+    if (gateSeen !== 'APPROVED') out.push(`spec-gatekeeper's last report ends ${gateSeen}, not APPROVED`);
+  } else if (has('spec-gatekeeper') && !ends.some((e) => e.word === 'APPROVED')) out.push(`spec-gatekeeper's APPROVED is not recorded in .git/speckit-team/ends/ (found: ${ends.map((e) => e.word).join(', ') || 'none'})`);
   const feature = ends[0]?.feature ?? verdicts[0]?.feature;
   const tasks = feature && path.join(repo, feature, 'tasks.md');
-  if (!tasks || !fs.existsSync(tasks)) out.push(`no tasks.md for the feature (${feature ?? 'no feature recorded'})`);
+  if (!has('architect')) { /* no architect, no tasks.md: one round on the request */ } else if (!tasks || !fs.existsSync(tasks)) out.push(`no tasks.md for the feature (${feature ?? 'no feature recorded'})`);
   else {
     const open = fs.readFileSync(tasks, 'utf8').split(/\r?\n/).filter((l) => /^\s*[-*]\s+\[ \]/.test(l));
     if (open.length) out.push(`${open.length} task(s) in tasks.md not ticked: ${open.map((l) => l.trim()).join(' | ')}`);
@@ -186,6 +231,14 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
       if (called.includes(`speckit-role-${role}`)) out.push(`the Skill speckit-role-${role} was called in a hybrid run, where it runs as an agent`);
     }
   } else if (!launches.length) out.push('no agent was launched');
+  else if (roles) {
+    for (const type of new Set(launches.map((l) => l.type))) {
+      if (!roles.includes(type)) out.push(`${type} was launched, but the run's team is ${team} (${roles.join(', ')})`);
+    }
+    for (const role of roles.filter((r) => !['load-tester', 'security-reviewer'].includes(r))) {
+      if (!launches.some((l) => l.type === role)) out.push(`${role} was never launched`);
+    }
+  }
   // load-tester is opt-in (--load-test), and a full run never passes it (012).
   if (launches.some((l) => l.type === 'load-tester')) out.push('load-tester was launched, but the run did not pass --load-test');
   const bg = launches.filter((l) => l.background);
@@ -208,7 +261,7 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   }
   if (usage?.main?.waits) out.push(`${usage.main.waits} main-session response(s) only waited for a background agent`);
   // A check that saw no agent, or a marker that was never sent, proves nothing.
-  if (!markerSent) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run');
+  if (!markerSent) { if (!roles || teamStops(team)) out.push('the parent-only marker was never sent: no answer turn ran, so the leak check did not run'); }
   else if (!skillAgents && !agentTexts?.length) out.push('no agent transcript was found in the session\'s subagents/ folder: the leak check saw nothing');
   else {
     const leaked = agentTexts.filter((a) => a.text.includes(marker)).map((a) => a.file);
@@ -236,6 +289,22 @@ export function gateRequest({ skillAgents = false, claim = false } = {}) {
     + (skillAgents ? ' (the role skill, in this session)' : ' (launch the spec-gatekeeper agent in the foreground)')
     + '. Change no file and make no commit, whatever it finds: only report. End your answer with its word, APPROVED or REJECTED, alone on the last line.';
   return claim ? `${base} For the record, the implementer reported: all tasks are done, all requirements are covered.` : base;
+}
+
+// An audit case's request (#469): the feature is specified and planned, run only spec-auditor on it.
+export function auditRequest({ skillAgents = false } = {}) {
+  return 'The feature in specs/001-sum is already specified and planned, its tasks still open. Run only the audit, spec-auditor, on it'
+    + (skillAgents ? ' (the role skill, in this session)' : ' (launch the spec-auditor agent in the foreground)')
+    + '. Change no file and make no commit, whatever it finds: only report. End your answer with its verdict, VERDICT: PASS or VERDICT: FAIL, alone on the last line.';
+}
+
+// spec-auditor's word: the hook's verdict record when there is one, else a last line that is the verdict alone.
+export function auditWord({ verdicts = [], text = '' }) {
+  const rec = verdicts.find((v) => ['PASS', 'FAIL'].includes(v?.verdict));
+  if (rec) return { word: rec.verdict, source: 'hook record' };
+  const last = String(text).split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop() ?? '';
+  const m = /^VERDICT: (PASS|FAIL)$/.exec(last);
+  return m ? { word: m[1], source: 'last line of the answer' } : { word: null, source: 'none' };
 }
 
 // A load case's request (012): the feature is built and audited, run only the load-tester on it. The
@@ -466,7 +535,7 @@ const MODEL_TIERS = ['default', 'sonnet', 'opus', 'fast'];
 export const installArgs = ({ models }) => (models ? ['--models', models] : []);
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, team: null, request: null, draft: null };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--hybrid') { o.hybrid = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
@@ -479,6 +548,18 @@ export function args(argv) {
       if (!known.includes(v)) throw new Error(`unknown constitution ${v}; known: ${known.join(', ')}`);
       o.constitution = v;
     }
+    else if (k === '--request') {
+      if (!REQUESTS.includes(v)) throw new Error(`--request takes one of ${REQUESTS.join(', ')}`);
+      o.request = v;
+    }
+    else if (k === '--draft') {
+      if (!v || !fs.existsSync(v)) throw new Error(`--draft: no file ${v}`);
+      o.draft = path.resolve(v); o.request = 'escalate';
+    }
+    else if (k === '--team') {
+      if (!v || v.startsWith('--') || !teamRoles(v).every((r) => TEAM_ROLE_NAMES.includes(r))) throw new Error(`--team takes build, lite or a comma-separated list of team roles (${TEAM_ROLE_NAMES.join(', ')})`);
+      o.team = v;
+    }
     else if (k === '--max-cost') o.maxCost = Number(v);
     else if (k === '--max-turns') o.maxTurns = Number(v);
     else if (k === '--models') {
@@ -487,10 +568,13 @@ export function args(argv) {
     }
     else throw new Error(`unknown argument ${k}`);
   }
-  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--skill-agents | --hybrid] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>] [--models <tier>]');
+  if (!o.out || !Number.isFinite(o.maxCost) || !Number.isInteger(o.maxTurns)) throw new Error('usage: node tools/full-run.mjs --out <dir> [--model m] [--max-cost usd] [--max-turns n] [--login] [--skill-agents | --hybrid | --team <preset|roles>] [--two-slices | --side-by-side] [--large-slices] [--constitution <name>] [--models <tier>]');
   if (o.hybrid && o.skillAgents) throw new Error('--hybrid and --skill-agents are two different teams: pass one');
   const c = CASES[o.case];
-  if (o.hybrid && (c.gate || c.load || c.contest || c.patch)) throw new Error(`--hybrid runs only a whole pipeline, not the one-step case ${o.case}`);
+  if (o.hybrid && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--hybrid runs only a whole pipeline, not the one-step case ${o.case}`);
+  for (const [flag, on] of [['--hybrid', o.hybrid], ['--skill-agents', o.skillAgents]]) if (o.team && on) throw new Error(`--team and ${flag} are two different teams: pass one`);
+  if ((o.draft || o.request) && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--${o.draft ? 'draft' : 'request'} runs only a whole pipeline, not the one-step case ${o.case}`);
+  if (o.team && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--team runs only a whole pipeline, not the one-step case ${o.case}`);
   return o;
 }
 
@@ -501,14 +585,16 @@ function main() {
   if (tempProblem) throw new Error(tempProblem);
   fs.rmSync(o.out, { recursive: true, force: true });
   const repo = path.join(o.out, 'repo');
-  const gate = CASES[o.case].gate;
+  // #469: an audit case is one turn like a gate case, judged on spec-auditor's verdict.
+  const gate = CASES[o.case].gate || CASES[o.case].audit;
+  const audit = Boolean(CASES[o.case].audit);
   // #242, #247: one turn from a typed command, judged by tools/eval.mjs on what the session did.
   const oneTurn = Boolean(CASES[o.case].contest || CASES[o.case].patch);
   // 012: a load case is one turn too, judged on the last line of load-tester's report.
   const load = Boolean(CASES[o.case].load);
-  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case });
+  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case, request: o.request, draft: o.draft });
   const head0 = git(repo, 'rev-parse', 'HEAD').trim();
-  const request = gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : load ? loadRequest({ skillAgents: o.skillAgents }) : base;
+  const request = audit ? auditRequest({ skillAgents: o.skillAgents }) : gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : load ? loadRequest({ skillAgents: o.skillAgents }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(CLAUDECODE|CLAUDE_CODE_|CLAUDE_PID$|CLAUDE_EFFORT$|AI_AGENT$)/.test(k)));
   env.MSYS_NO_PATHCONV = '1';
@@ -545,11 +631,11 @@ function main() {
   const busy = o.case === 'load-noisy' ? Array.from({ length: Math.max(1, Math.round(0.3 * os.cpus().length)) },
     () => spawn(process.execPath, ['-e', 'for (;;);'], { stdio: 'ignore' })) : [];
   const { turns, session, stopped } = runTurns({
-    maxTurns: gate || load || oneTurn ? 1 : o.maxTurns,
-    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid, sideBySide: o.sideBySide })) : answer(marker, { sideBySide: o.sideBySide })),
+    maxTurns: gate || load || oneTurn || !teamStops(o.team) ? 1 : o.maxTurns,
+    promptFor: (n) => (n === 0 ? (((gate || load) && !o.skillAgents) || oneTurn ? request : firstPrompt(request, { skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team, sideBySide: o.sideBySide })) : answer(marker, { sideBySide: o.sideBySide, team: o.team })),
     invoke: (prompt, resume) => run('claude', ['-p', prompt, '--model', o.model, '--permission-mode', 'bypassPermissions',
       '--output-format', 'json', ...(resume ? ['--resume', resume] : [])], { cwd: repo, env, maxBuffer: 64 << 20, timeout: 40 * 60_000 }),
-    ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(gate && gateWord({ ends: [], text: res?.result }).word) || Boolean(load && gateWord({ text: res?.result, words: LOAD_WORDS, lastLineOnly: true }).word),
+    ended: (res) => (fs.existsSync(endsDir) && fs.readdirSync(endsDir).length > 0) || Boolean(audit && auditWord({ text: res?.result }).word) || Boolean(!audit && gate && gateWord({ ends: [], text: res?.result }).word) || Boolean(load && gateWord({ text: res?.result, words: LOAD_WORDS, lastLineOnly: true }).word),
   });
 
   for (const b of busy) b.kill();
@@ -567,13 +653,16 @@ function main() {
   const ends = fs.existsSync(endsDir) ? fs.readdirSync(endsDir).map((f) => readJson(path.join(endsDir, f))).filter(Boolean) : [];
   const report0 = transcript ? gateReport({ transcript, skillAgents: o.skillAgents, role: load ? 'load-tester' : 'spec-gatekeeper' }) : null;
   const word = load ? { ...gateWord({ text: report0 ?? turns.at(-1)?.result, words: LOAD_WORDS, lastLineOnly: true }), report: report0 }
+    : audit ? { ...auditWord({ verdicts: verdictsOf(repo), text: turns.at(-1)?.result }), report: transcript ? gateReport({ transcript, skillAgents: o.skillAgents, role: 'spec-auditor' }) : null }
     : { ...gateWord({ ends, text: turns.at(-1)?.result }), report: report0 };
   const failures = gate || load || oneTurn ? [] : checkRun({ repo, usage, costs: turns.map((t) => t.cost), maxCost: o.maxCost,
-    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents, hybrid: o.hybrid });
+    marker, markerSent: turns.length > 1, agentTexts, sideBySide: o.sideBySide, twoSlices: o.twoSlices, skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team,
+    gateSeen: o.team && report0 ? gateWord({ text: report0 }).word : null });
   if (gate) {
     const moved = git(repo, 'status', '--short').trim() || (git(repo, 'rev-parse', 'HEAD').trim() !== head0 ? 'new commit' : '');
     if (moved) failures.push(`main session changed the repo in a gate case, so the word is not the gatekeeper's alone: ${moved.replace(/\s+/g, ' ').slice(0, 120)}`);
-    if (!word.word) failures.push('spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
+    if (!word.word) failures.push(audit ? 'spec-auditor gave no verdict: none recorded in verdicts/ and no VERDICT: PASS or FAIL alone on the last line of the answer'
+      : 'spec-gatekeeper gave no word: no APPROVED or REJECTED in ends/ or alone on the last line of the answer');
     const cost = Math.max(0, ...turns.map((t) => t.cost ?? 0));
     if (cost > o.maxCost) failures.push(`the run cost ${cost.toFixed(2)}, over the ceiling of ${o.maxCost}`);
   }
@@ -584,7 +673,10 @@ function main() {
   }
   if (!transcript) failures.push('no transcript of the main session was found');
   const all = runFailures(failures, stopped);
-  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, hybrid: o.hybrid, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
+  const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
+  // #502: the kept draft outlives the scratch repo, for a --draft run.
+  const keptDraft = path.join(repo, '.git', 'speckit-team', 'patch-draft.patch');
+  if (CASES[o.case].escalate && fs.existsSync(keptDraft)) fs.copyFileSync(keptDraft, path.join(o.out, 'patch-draft.patch'));
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(all.length ? `FAILED:\n- ${all.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(all.length ? 1 : 0);

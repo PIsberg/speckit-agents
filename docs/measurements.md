@@ -1460,6 +1460,99 @@ What it does not show. One run a row on one small fixture, so no rate: the price
 what two runs of one shape differ by (hybrid: $0.84 and $0.93). Whether sonnet audits as well as opus on a
 feature with real defects is not measured: the clean fixture has none to find. `--large-slices` was not run.
 
+## The paid runs of 2026-11-27
+
+From main at 5dca467 (PRs #499 to #504 merged), Claude Code 2.1.332, Windows 11, main session `sonnet`,
+`--login` on the owner's plan, `--out` under `~/live/1127`. The `--team`, audit and draft runs came from
+the branch of the PR that adds those options to `tools/full-run.mjs` and `tools/eval.mjs`, whose team
+files are main's. Dollars are `total_cost_usd` of the last turn; input is `tools/usage.mjs`'s, main session
+and agents; seconds are the whole `full-run.mjs` process. Some runs overlapped on the machine (noted), so
+their seconds are not comparable with the others. About $23 in all, 37 runs.
+
+### Team presets against the full team (#480)
+
+| Run | Passed | Cost | Seconds | Input (main + agents) | Launches | Main responses |
+|---|---|--:|--:|--:|--:|--:|
+| full team | yes | $1.61 | 469 | 0.76M + 1.14M | 7 | 12 |
+| `--team lite` | yes | $0.90 | 312 | 0.69M + 0.72M | 6 | 11 |
+| `--team build` | the build yes, the harness no (below) | $0.57 at turn 1 | 221 at turn 1 | 1.75M + 0.31M | 6 | 26 |
+| `--team build`, again | yes | $0.48 | 146 | 0.60M + 0.23M | 4 | 10 |
+
+What it shows, one or two runs a row. On the fixture's one-function request `--team build` cost 30% to 35% of the
+full team and took 31% to 47% of its time; `--team lite` 56% of the cost and 67% of the time. The issue's
+"10 to 15 minutes to 2 to 3" is not this fixture's scale: the full team took under 8 minutes. The first build
+run finished in turn 1, but the hook keeps no end record without a feature directory, so the harness answered
+7 empty turns and failed it; the harness now runs such a team as one turn judged on spec-gatekeeper's report,
+and the rerun passed. That run also showed the hook's retry count off in the preset (#506). Its extra
+spec-gatekeeper and implementer were a CRLF rewrite on Windows (#509). `--team lite`'s brief round launched
+test-writer twice around the stub pass, `--team build`'s once (#512).
+
+### Stub passes after #460 (#498)
+
+The default run's one stub (`stub: T001`) is #460's own case: `sum()` lands in `src/math.js`, which exists.
+The `--large-slices` run ($2.84, 866 s, overlapping the audit evals) planned 3 rounds: round 1 created
+`src/stats.js` and `src/text.js` with no stub, and test-writer ended `RED` on them, not `BLOCKED`; rounds 2
+and 3 stubbed functions into the files round 1 made. So 1 stub pass of 3 was skipped, as the rule says. But
+the 3 one-at-a-time `--large-slices` runs of 2026-11-20 each had 1 round with 3 or 4 build launches, and
+this one had 8 and about 303 s of build agent time against 140 to 148 s; whether #460 caused the split is #505.
+
+### spec-auditor on opus and on sonnet (#469)
+
+`node tools/eval.mjs --arm tip=. --case <cases> --runs 4 --jobs 2 --login --models default|sonnet`, the three
+audit cases this PR adds; the agents' transcripts confirm `claude-opus-5-5` and `claude-sonnet-5-5`.
+
+| Case | Right answer | opus (`--models default`) | sonnet (`--models sonnet`) |
+|---|---|---|---|
+| `audit-defect`: tasks build `sum()` before its tests (constitution I) | `FAIL` | 4/4, $0.99 | 4/4, $0.79 |
+| `audit-control`: the same in test-first order | `PASS` | 4/4, $0.98 | 4/4, $0.75 |
+| `audit-subtle`: `sum()` the default export of a new `src/sum.js` (constitution III) | `FAIL` | 4/4, $1.13 | 4/4, $0.82 |
+
+What it shows. Both tiers 12 of 12; sonnet 24% cheaper ($2.36 against $3.10). Every defect was a CRITICAL
+constitution finding in every run, so these cases do not separate the tiers; a defect neither tier always
+finds would. The architect half, `--large-slices --models sonnet` once: passed, $2.25, 879 s, 11 launches, 3
+rounds, against the default tier's $2.84, 866 s, 12 launches, 3 rounds; both architects planned round 1 with
+no stub (#505). The shipped tier stays as it is: models are the user's choice (`install.mjs --models`).
+
+### Hybrid's report-before-gate sentence (#470)
+
+Three `--hybrid` runs, all passed: $0.97, $1.01, $1.06; 267, 279, 280 s; 35 to 36 main responses.
+Runs 1 and 2 launched spec-gatekeeper once, after the implementer role's report. Run 3 was refused twice: a
+gatekeeper launch with no report (the case #467 aimed at) and a test-writer role call whose `args` began with
+the audit's `VERDICT: PASS` after a stub. No retry record either time, so no false `RED`. The reportless
+launch went from 2 of 2 runs (2026-11-23) to 1 of 3; the rest is #510.
+
+### patcher's draft after an ESCALATE (#502)
+
+`--case patch-escalate` ($0.25): patcher wrote 32 production lines of `mean()`, `median()` and `mode()`, the
+hook stopped it over 30, and the end record kept the draft. Then the same request through `/speckit-team`, the
+two runs side by side on the machine:
+
+| Run | Passed | Cost | Seconds | Input (main + agents) | Launches | Main responses |
+|---|---|--:|--:|--:|--:|--:|
+| `--draft` | yes | $2.27 | 715 | 0.72M + 1.47M | 7 | 11 |
+| `--request escalate`, no draft | yes | $2.86 | 867 | 1.38M + 1.97M | 12 | 20 |
+
+The rule held: product-owner, architect and the green implementer got the `Draft:` line, test-writer did not,
+and the tests were committed red before the code. The gap is mostly the control's first audit `FAIL` (a spec
+line the plan's decision had moved on), a product-owner fix and a second audit, and one round's test bug that
+test-writer fixed after an implementer `RED`. One pair, so whether the draft prevented those is not shown.
+
+### Repo commands at SubagentStart (#484) and the split record-and-launch (#477)
+
+The same count as #484's baseline comment, over this day's 7 agent-mode and hybrid runs: spec-gatekeeper read
+`package.json` in 8 of 8 launches and `.github/workflows` in 7 of 8 (93 of 93 before #466), 15 responses
+whose every call names them; architect 4 of 4, implementer 2 of 12, test-writer 2 of 7. The reads did not
+stop, but they ride in the gatekeeper's first call beside `spec.md` and the diff, so they cost almost no
+response of their own; the gatekeeper reads `package.json` to check constitution II. Each agent also got the
+block twice, from the personal and the run's install (#507).
+
+The sonnet `--large-slices` run also showed an implementer sent back for tasks it had ticked `[X]`: the
+unticked-task check of #463 matched a later unticked line that names the task ("T011 ... T002"), and its
+message spells the tick `- [x]`, so two agents lowercased ticks in commits of their own (#513).
+
+Over the 102 kept full runs, `clarifications --recommended` or `decisions --recommended` ran 6 times: 4 in the
+response that launched the next role, 2 in the response before it, one main-session response each.
+
 ## The drift check's git calls (#342)
 
 Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`

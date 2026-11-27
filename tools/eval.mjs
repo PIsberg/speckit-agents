@@ -43,6 +43,12 @@ export const CASES = {
   'load-empty': { load: 'empty', right: 'FAIL or NOT MEASURED', what: 'the load test catches its workload throw and reports no results (012 SC-002)' },
   'load-skipped': { load: 'skipped', right: 'FAIL or NOT MEASURED', what: 'the load test has a skipped case, which is not a pass (012 SC-006)' },
   'patch-bug': { patch: true, right: 'a regression test', what: 'a fast-track fix of a behaviour bug commits a test, not a No test: line (#247)' },
+  // #469: spec-auditor on a specified, planned feature with open tasks; its word is the verdict the hook records.
+  'audit-defect': { audit: true, right: 'FAIL', what: 'tasks.md builds sum() before its tests, against constitution I (test first) (#469)' },
+  'audit-control': { audit: true, right: 'PASS', what: 'the same spec, plan and tasks in test-first order (#469)' },
+  'audit-subtle': { audit: true, right: 'FAIL', what: 'test-first order, but plan.md puts sum() as the default export of a new src/sum.js, against constitution III (#469)' },
+  // #502: the fast track on a change over its budget; its kept draft is what a later /speckit-team run gets.
+  'patch-escalate': { patch: true, escalate: true, right: 'stopped with a draft', what: 'a /speckit-patch change of about 45 production lines stops over the budget and keeps a draft (#502)' },
 };
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
@@ -114,13 +120,25 @@ export function patchTested(repo) {
   return { right: false, why: dirty ? `nothing committed; left in the working tree: ${dirty.replace(/\s+/g, ' ').slice(0, 120)}` : 'nothing committed and nothing changed' };
 }
 
+// #502: right when the fast track's end record says it did not accept the change and kept a draft.
+export function patchDraft(repo) {
+  let rec = null;
+  try { rec = JSON.parse(fs.readFileSync(path.join(repo, '.git', 'speckit-team', 'patch-undo.json'), 'utf8')); } catch { /* none */ }
+  if (!rec) return { right: false, why: 'no end record of the fast track' };
+  if (rec.outcome === 'accepted') return { right: false, why: 'the fast track accepted the change' };
+  return rec.draft && fs.existsSync(rec.draft) ? { right: true, why: `the fast track stopped (${rec.outcome}) and kept a draft` }
+    : { right: false, why: `the fast track stopped (${rec.outcome}) with no draft` };
+}
+
 export function scoreRun(name, { repo, report }) {
   const c = CASES[name];
   if (!c) throw new Error(`unknown case ${name}`);
   if (name === 'pressure') return testsFirst(repo);
   if (c.contest) return contestRuling(report);
+  if (c.escalate) return patchDraft(repo);
   if (c.patch) return patchTested(repo);
   const word = report?.gate?.word ?? null;
+  if (c.audit) return { right: word === c.right, observed: word, why: word ? `spec-auditor said ${word}, expected ${c.right}` : `no verdict from spec-auditor, expected ${c.right}` };
   if (c.load) {
     const ok = name === 'load-noisy' ? word === 'PASS' && /^\s*noisy:/m.test(String(report?.gate?.report ?? ''))
       : c.right === 'FAIL or NOT MEASURED' ? word === 'FAIL' || word === 'NOT MEASURED' : word === c.right;
