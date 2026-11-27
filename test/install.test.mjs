@@ -2156,6 +2156,25 @@ test('009 T022 FR-010: CLAUDE.md "Rules" names the ROLE_LANES twin', () => {
   assert.match(rules, /ROLE_LANES/);
 });
 
+// #507: a personal install and a project install both register SETTINGS_GATES, so in that project every settings
+// hook ran twice and SubagentStart's block reached each agent twice (every --login full run is such a setup).
+// Installing into another directory while the personal config carries the gates says so.
+test('#507: an install beside a personal install that has the gates says each settings hook will run twice', () => {
+  const personal = fs.mkdtempSync(path.join(os.tmpdir(), 'skpers-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'skproj-'));
+  const env = { ...process.env, CLAUDE_CONFIG_DIR: personal };
+  const run = (...args) => spawnSync(process.execPath, [INSTALL, ...args], { encoding: 'utf8', env });
+  const quiet = run('--claude-dir', project);
+  assert.equal(quiet.status, 0, quiet.stderr);
+  assert.doesNotMatch(quiet.stdout, /run twice/, 'no personal install yet');
+  assert.equal(run().status, 0, 'the personal install');
+  const again = run('--claude-dir', project);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /also registers the team's hooks, so in a project with this install each settings hook runs twice \(#507\)/);
+  assert.ok(again.stdout.includes(path.join(personal, 'settings.json')), again.stdout);
+  assert.doesNotMatch(run().stdout, /run twice/, 'the personal install itself says nothing');
+});
+
 // 009 T028 FR-008 FR-010, plan D10, Constitution VIII: the report's last line travels in the next Skill call's args.
 test("009 T028 FR-008 plan D10: the installed ## Skill agents says the Skill call after spec-auditor's or spec-gatekeeper's report starts its args with that report's last line", () => {
   const sec = flat(skillSection(teamSkill(), '## Skill agents'));

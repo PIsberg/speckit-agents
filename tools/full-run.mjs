@@ -45,6 +45,25 @@ const FIXTURE = path.join(ROOT, 'test', 'fixtures', 'full-run');
 const GATE_VARIANTS = ['defect', 'untested', 'must-broken', 'neighbour', 'other-fr'];
 const LOAD_VARIANTS = ['linear', 'pinned', 'empty', 'skipped'];
 const SWAPS_CODE =['neighbour', 'other-fr'];
+// #507: under --login the personal install's settings.json already registers the team's gates, and the run's
+// project copy registers them again, so every settings hook ran twice. The project copy's gates go; the rest stays.
+export function dropDuplicateGates(projectFile, personalFile) {
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return null; } };
+  const isGate = (g) => (g?.hooks ?? []).some((h) => String(h?.command ?? '').includes('speckit-team.mjs'));
+  const personal = read(personalFile);
+  const project = read(projectFile);
+  if (!project?.hooks || !Object.values(personal?.hooks ?? {}).some((l) => Array.isArray(l) && l.some(isGate))) return 0;
+  let dropped = 0;
+  for (const [event, list] of Object.entries(project.hooks)) {
+    const kept = (Array.isArray(list) ? list : []).filter((g) => !isGate(g));
+    dropped += (Array.isArray(list) ? list.length : 0) - kept.length;
+    if (kept.length) project.hooks[event] = kept; else delete project.hooks[event];
+  }
+  if (!Object.keys(project.hooks).length) delete project.hooks;
+  fs.writeFileSync(projectFile, `${JSON.stringify(project, null, 2)}\n`);
+  return dropped;
+}
+
 // Spec Kit's own files, as `specify init --integration claude` laid them in this checkout, so CI
 // needs no specify CLI. Not the constitution or the active feature: those are the fixture's.
 const SPEC_KIT = ['.specify/templates', '.specify/scripts', '.specify/extensions', '.specify/extensions.yml',
@@ -611,6 +630,7 @@ function main() {
     throw new Error(`--login: your personal ${shadow.join(', ')} in ${path.join(cfg, 'skills')} differ from the run's copy and would be `
       + `used instead of it (#175). Reinstall the team from ${o.teamRoot} (node install.mjs) or move them aside, then run again.`);
   }
+  if (o.login) dropDuplicateGates(path.join(repo, '.claude', 'settings.json'), path.join(cfg, 'settings.json'));
   // The team's files in the repo are the run's tools, not the feature's: keep them out of its commits.
   if (o.login) {
     fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), ['agents/', 'hooks/', 'settings.json', 'settings.json.*',
