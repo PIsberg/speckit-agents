@@ -1814,11 +1814,11 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 820 tests:
+`npm test` runs 822 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
-| [`test/hook.test.mjs`](test/hook.test.mjs) | 312 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
+| [`test/hook.test.mjs`](test/hook.test.mjs) | 314 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 85 | the same for the fast track's `patch` mode |
 | [`test/install.test.mjs`](test/install.test.mjs) | 174 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
@@ -2188,8 +2188,8 @@ list) for a whole pipeline, answers without asking for the full team, and checks
 steps of those roles: no audit `PASS` is owed without spec-auditor, no `tasks.md` without architect, no
 `APPROVED` without spec-gatekeeper, and a launch outside the team or a team role never launched fails it
 ([#480](https://github.com/PIsberg/speckit-agents/issues/480)). A team with neither product-owner nor architect has no stop, so it is
-one turn; with no feature directory the hook keeps no end record, so its `APPROVED` is the last line of
-spec-gatekeeper's report. `--request escalate` sends `patch-escalate`'s change to a whole
+one turn, and its `APPROVED` is the last line of spec-gatekeeper's report (the run was built before #506 recorded
+the word under the branch). `--request escalate` sends `patch-escalate`'s change to a whole
 pipeline, and `--draft <file>` does the same with a kept draft laid at `.git/speckit-team/patch-draft.patch`
 and named in the request as `(patcher's draft: <path>)`, the form `/speckit-patch` prints (#502). `--models <tier>` installs the run's team on an [installer tier](#installer-options), and
 `tools/eval.mjs --models` passes it to each of its runs (#429).
@@ -2570,10 +2570,13 @@ In an interactive session, Claude Code may prompt to confirm running the hook to
 - **`--team noagents` checks nothing the agents' hooks check.** No lane, scope, retry or report
   hook runs, since they belong to the agents; the session follows Spec Kit's own commands, and the
   only stop on a failing build is the skill's 3 failed runs in a row.
-- **Without an active feature the retry limit is the skill's.** With implementer chosen and no
-  `.specify/feature.json` naming a feature directory, no hook counts; the skill stops relaunching
-  implementer after 3 `RESULT: RED` in a row and hands you the failing output. Nothing enforces it:
-  a main session that ignores the skill can relaunch past 3. The start notice and the final report say so.
+- **Without an active feature the retry limit is kept under the branch.** With implementer chosen and
+  no `.specify/feature.json` naming a feature directory (`--team build`, or any team without
+  product-owner), the hook counts `RESULT: RED` and records spec-gatekeeper's word under the run's branch
+  (`.git/speckit-team/retries/<branch>.json`, `ends/<branch>.json`), and the limit holds as with a feature
+  ([#506](https://github.com/PIsberg/speckit-agents/issues/506)). On main or master nothing is counted: the
+  skill stops relaunching implementer after 3 `RESULT: RED` in a row, nothing enforces it, and the final
+  report says so. The skill switches off main before the first launch, so a team run reaches that only by hand.
 - **Inline tests can't be told apart.** Tests that live inside production files (Rust
   `#[cfg(test)]`) can't be identified by path.
 - **Read-only isn't airtight.** spec-auditor, spec-gatekeeper and security-reviewer have no Write
