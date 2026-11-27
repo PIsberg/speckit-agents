@@ -317,7 +317,7 @@ while building never call for a re-audit.
 Skip a step whose role is absent from the team, and never launch anyone for the tasks of an absent
 role. Without architect there is no `tasks.md`: run one round on a brief, the request text or, with
 product-owner, the approved `spec.md`. One test-writer then one implementer get the brief in their
-prompt in place of task IDs and tick nothing; implementer gets `last round` unless spec-gatekeeper is in the team. A stub pass runs first
+prompt in place of task IDs and tick nothing; with product-owner's `spec.md` as the brief, test-writer covers every FR of it, a docs or process one too (a test that reads the file the FR names): without `tasks.md` no `No test:` can excuse one, and spec-gatekeeper and the hook refuse an FR no test names; implementer gets `last round` unless spec-gatekeeper is in the team. A stub pass runs first
 when the request names a new function or type in a file that exists (#460's case), and otherwise only
 when test-writer reports a missing production symbol; after one test-writer reported, test-writer runs again on the stubs to see its tests fail. Without test-writer, nobody writes tests: never
 ask implementer for a test file, since its lane check makes it delete one at its Stop; leave them out
