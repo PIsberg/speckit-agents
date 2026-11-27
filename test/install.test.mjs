@@ -2164,6 +2164,16 @@ test("009 T028 FR-008 plan D10: the installed ## Skill agents says the Skill cal
   assert.match(sec, /starts? its `?args`? with .{0,60}last line/i, 'args starts with the report last line');
 });
 
+// #510: the hook reads every role's word from the next Skill call's args (END_WORDS: test-writer's RED, the implementer's
+// RESULT:), but the skill named only the two gates', so in a hybrid run the call after the implementer role's stub started
+// with the audit's VERDICT: PASS and was refused.
+test("#510: the Skill call after any role's report starts its args with that role's own last line", () => {
+  const sec = flat(skillSection(teamSkill(), '## Skill agents'));
+  assert.match(sec, /after any role's report, the next Skill call starts its `args` with that report's last line/);
+  assert.match(sec, /`RESULT: STUB`/, "the implementer role's word is one of them");
+  assert.match(sec, /never an earlier role's/, "not the audit's VERDICT after a later role reported");
+});
+
 test('009 T028 FR-008 FR-010 plan D10: README skill-agents section says the verdict and word are also read from the args line and the Stop last message', () => {
   const readme = repoText('README.md');
   const m = readme.match(/^(#{2,5}) [^\n]*skill-agents[^\n]*$/m);
