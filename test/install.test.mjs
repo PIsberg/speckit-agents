@@ -268,6 +268,21 @@ test('a stub pass runs only for a new symbol in an existing file or code the tes
   assert.doesNotMatch(work, /A production file, function or type that does not exist yet is a missing stub/, 'the old rule is gone');
 });
 
+// #476: after an ESCALATE, /speckit-patch keeps patcher's work as .git/speckit-team/patch-draft.patch and tells the user to
+// type `/speckit-team <change> (patcher's draft: <path>)` (#462). The skill now says who gets that path: product-owner
+// and architect read it for the diagnosis, implementer may start from its production hunks once the round is red, and
+// test-writer never sees it, so the tests still come from the spec and fail before any code exists.
+test("#476: the skill hands patcher's draft to product-owner, architect and implementer, never to test-writer", () => {
+  const handoffs = flat(skillSection(teamSkill(), '## Handoffs'));
+  const rule = /When the request ends with `\(patcher's draft: <path>\)`[^]*?test-writer[^.]*\./.exec(handoffs)?.[0] ?? '';
+  assert.ok(rule, 'the rule names the request form /speckit-patch tells the user to type');
+  assert.match(rule, /product-owner and architect[^.]*`Draft: <path>`[^.]*diagnosis[^.]*never apply/i, 'read for the diagnosis, not applied');
+  assert.match(rule, /implementer[^.]*after test-writer's `RED`[^.]*production hunks/i, 'implementer starts from it only after RED');
+  assert.match(rule, /never to test-writer/i, 'test-writer writes from the spec');
+  const patch = fs.readFileSync(path.join(path.dirname(INSTALL), 'skills', 'speckit-patch', 'SKILL.md'), 'utf8');
+  assert.ok(patch.includes("(patcher's draft: <draft>)"), 'the form /speckit-patch prints');
+});
+
 // #299: in the full runs of 2026-11-08 and 2026-11-11 the architect's test tasks cited a process rule
 // ("tests are written first") as covered by their test file. No test can hold one, so the gate rejected,
 // the excuse was dictated into tasks.md afterwards, and that edit voided the audit: one architect, one

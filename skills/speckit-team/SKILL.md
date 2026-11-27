@@ -58,6 +58,12 @@ and answers, or another agent's full report.
   when no round follows and spec-gatekeeper is not in the team (step 4-5). For a stub pass, `stub` and the task IDs.
 - spec-gatekeeper: the feature directory and, when tasks are unbuilt (step 6), the `Unbuilt:` line.
 
+When the request ends with `(patcher's draft: <path>)`, the diff `/speckit-patch` kept after an
+ESCALATE: product-owner and architect get a `Draft: <path>` line on a first pass, to read for the
+diagnosis and the files it touches and never apply; implementer gets the same line with each round's
+task IDs, after test-writer's `RED`, and may start from the draft's production hunks, still owning
+the tests' pass; never to test-writer, whose tests come from the spec and fail before any code.
+
 In a run whose team is not the full team, every launch prompt carries one `Team:` line with the
 chosen roles in pipeline order, lower case, separated by a comma and a space, for example:
 

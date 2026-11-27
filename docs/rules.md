@@ -60,7 +60,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The main session orchestrates and does not do the agents' work. text.
 
 ### skills/speckit-team/SKILL.md: Handoffs
-<!-- fingerprint: 2014d498 -->
+<!-- fingerprint: db2d0944 -->
 - Launch every agent in the foreground; without a `run_in_background` parameter, end the turn and wait. pinned (`test/e2e.test.mjs` pins the parameter's behaviour); a breach costs tokens.
 - A fresh agent for every phase and fix round, never SendMessage. text, unseen (cost); a resumed agent's later reports are still checked and counted: hook `result` and `ends` close its last report at its next tool call (#370), and judge every hand-back, and a Stop that is not the counted one, as a new report (#394).
 - Do not ask an agent for more than its Report allows; one line before and after each launch. pinned.
@@ -69,6 +69,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - test-writer ticks its own tasks. text.
 - implementer: `last round` when no round follows and spec-gatekeeper is not in the team (#430); `stub` for a stub pass. pinned.
 - spec-gatekeeper: the `Unbuilt:` line. pinned.
+- patcher's draft after an ESCALATE: a `Draft:` line to product-owner and architect to read, to implementer after `RED` to start from, never to test-writer (#476). pinned; unseen: nothing checks that a test-writer prompt lacks it, and no run has used a draft.
 - The `Team:` line, exact and in pipeline order. hook `gate` (records it at the launch and opens the audit gate by it), pinned.
 - The `Project:` line. hook `start` (injects the block), pinned.
 - Never paste the project block. text.
