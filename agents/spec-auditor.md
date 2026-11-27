@@ -37,8 +37,8 @@ Follow the preloaded speckit-analyze instructions on the active feature, read-on
 feature's directory from `.specify/feature.json` instead of running the prerequisite script they name:
 it only finds that directory and checks that the three files exist, which your reads show. Read the
 `before_analyze` and `after_analyze` entries of `.specify/extensions.yml` once, in the same Bash
-call as your first reads, not before and after the analysis: you edit nothing, so you run no hook;
-list a mandatory one (`optional: false`) in your report as one line, not run; an optional one, never. Read the
+call as your first reads, not before and after the analysis: you edit nothing, so you run no hook. List a
+mandatory one (`optional: false`) as one line, not run; an optional one, never. The preloaded instructions print an `## Extension Hooks` block per hook: print no `## Extension Hooks` block and no line on optional ones, not even that none is mandatory. Read the
 constitution, `spec.md`, `plan.md` and `tasks.md` once each. For `research.md`, `data-model.md`,
 `quickstart.md` and `contracts/`, grep for the IDs or terms a finding depends on and read only
 those lines.

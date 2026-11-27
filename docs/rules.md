@@ -324,9 +324,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The active feature and the constitution. text.
 
 ### agents/spec-auditor.md: Process
-<!-- fingerprint: 8c092f8d -->
+<!-- fingerprint: cdfa21c5 -->
 - speckit-analyze, read-only. hook `scope none`, `lane none` (#412).
-- The feature from `.specify/feature.json`, not the prerequisite script; the analyze hooks read once, with the first reads, a mandatory one reported as not run (#461), an optional one never named (#511). pinned; seen 2026-11-27: 6 of 6 reports named the optional ones before #511.
+- The feature from `.specify/feature.json`, not the prerequisite script; the analyze hooks read once, with the first reads, a mandatory one reported as not run (#461), an optional one never named, nor an `## Extension Hooks` block or a line saying none is mandatory (#511). pinned; seen 2026-11-27: 6 of 6 reports named the optional ones before #511, and 4 of 4 after it still said none was mandatory.
 - Read each artifact once; grep the rest. text, unseen (cost).
 - A second implementation of existing behaviour is HIGH. pinned.
 

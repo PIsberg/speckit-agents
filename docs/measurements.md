@@ -1553,6 +1553,35 @@ message spells the tick `- [x]`, so two agents lowercased ticks in commits of th
 Over the 102 kept full runs, `clarifications --recommended` or `decisions --recommended` ran 6 times: 4 in the
 response that launched the next role, 2 in the response before it, one main-session response each.
 
+## The second paid batch of 2026-11-27
+
+From #523's head (451b119: main after PRs #514 to #522, plus #512's change), the personal team reinstalled from it,
+Claude Code 2.1.332, Windows 11, `--login`. The five short runs ran side by side; the three `--large-slices` runs one at a
+time, alone on the machine. About $13.50 in all, 12 runs (8 full runs and 4 audit runs).
+
+| Run | Passed | Cost | Seconds | Launches | What it settles |
+|---|---|--:|--:|--:|---|
+| default team | yes | $1.50 | 592 | 7 | #507: 7 SubagentStart events for 7 launches (14 before) |
+| `--team build` | yes | $0.53 | 318 | 4 | #506: the word in `ends/<branch>.json`; #512: the stub first |
+| `--team lite` | yes | $1.02 | 556 | 8 | #512: the stub first; a REJECTED on a docs FR, #524 |
+| `--hybrid` | yes | $1.55 | 636 | 3 agents | #510: a stub pass, no refusal |
+| `--hybrid` | yes | $1.04 | 484 | 2 agents | #510: a stub pass, no refusal |
+| `--large-slices` | yes | $2.14 | 655 | 2 build | #505: 1 round, no stub, 107 s of build agent time |
+| `--large-slices` | yes | $2.63 | 795 | 2 build | #505: 1 round, no stub, 166 s |
+| `--large-slices` | yes | $2.11 | 589 | 2 build | #505: 1 round, no stub, 105 s |
+
+What it shows. #505's rule held in 3 of 3: one round with every function of a new module in it, 2 build launches and 105 to
+166 s of build agent time, against 3 rounds, 8 launches and about 303 s in both runs before it, and 1 round, 3 or 4 launches
+and 140 to 148 s on 2026-11-20 (a stub for the whole new file then; none now). No implementer was sent back for ticked
+tasks (#513) and no tick was lowercased. Hooks fired once per event (#507). Both hybrid runs had a stub pass and no refusal,
+so #518's every-role rule held where #510 saw it fail; the reportless gate launch did not occur either (1 of 3 before, 0 of 2).
+
+Not settled. #511: after #522 all 4 spec-auditor reports still wrote a hooks line ("None is mandatory, so none was run or
+listed"), since the preloaded speckit-analyze prints an `## Extension Hooks` block per hook. With the rule naming that block,
+`tools/eval.mjs --case audit-control,audit-defect --runs 2` ($1.02, 4 of 4 right) left 1 of 4 reports with one such line
+("Mandatory hooks: none."). #509 and #508 need an implementer's text-mode rewrite or a gatekeeper's temp folder, which no run
+produced. The short runs overlapped, so their seconds are not comparable with the earlier batch's.
+
 ## The drift check's git calls (#342)
 
 Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`
