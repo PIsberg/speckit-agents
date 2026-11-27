@@ -390,7 +390,11 @@ test('#508: a read-only role may write under a folder a plain $(mktemp) made, no
     // than one plain mktemp prints something else; and TMPDIR set by read, printf -v, eval or a sourced file.
     'T=$(mktemp src.XXXXXX); cp a $T', 'T=$(mktemp gk.XXXXXX); cp a $T', 'cp a $(mktemp -d && cd src && pwd)/x', 'T=$(mktemp XXX|cat); cp a $T/x',
     'cp a "$(mktemp -d; pwd)"/x', 'read TMPDIR <<< src; T=$(mktemp -d); cp a $T/x', 'x=TMP; printf -v ${x}DIR src; T=$(mktemp -d); cp a $T/x',
-    'eval "TMP""DIR=src"; T=$(mktemp -d); cp a $T/x', 'source env.sh; T=$(mktemp -d); cp a $T/x', '. ./env.sh && T=$(mktemp -d) && cp a $T/x']) {
+    'eval "TMP""DIR=src"; T=$(mktemp -d); cp a $T/x', 'source env.sh; T=$(mktemp -d); cp a $T/x', '. ./env.sh && T=$(mktemp -d) && cp a $T/x',
+    // The second review: mktemp redefined (a function, an alias, PATH, hash) or TMPDIR named through an expansion.
+    'mktemp() { echo src; }; T=$(mktemp -d); cp a $T/x', 'function mktemp { echo src; }; T=$(mktemp -d); cp a $T/x',
+    'alias mktemp="echo src"; T=$(mktemp -d); cp a $T/x', 'PATH=./bin:$PATH; T=$(mktemp -d); cp a $T/x', 'hash -p ./bin/mk mktemp; T=$(mktemp -d); cp a $T/x',
+    'x=TMP; export ${x}DIR=src; T=$(mktemp -d); cp a $T/x', 'x=TMP; env ${x}DIR=src sh -c "cp a $(mktemp -d)/x"']) {
     assert.ok(denied(gk(command)), command);
   }
   assert.ok(denied(gk('T=$(mktemp -d); cp package.json src/main/App.java')), 'a write into the repo is still a write');

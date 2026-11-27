@@ -2878,9 +2878,10 @@ function mktempPath(inner) {
   if (repoRel(dir) !== null) return null;
   return `${dir.split(path.sep).join('/')}/mktemp.XXXXXX`;
 }
-// #508: text that may set TMPDIR in a way this reading does not follow (by name, read, printf -v, eval, a sourced file,
-// declare): a mktemp after it is a value only the run can tell.
-const MAY_SET_TMPDIR = /TMPDIR|\beval\b|\bsource\b|\bread\b|\bmapfile\b|\breadarray\b|\bprintf\s+-v|\bdeclare\b|\btypeset\b|(^|[;&|(\n]\s*)\.\s/;
+// #508: text that may change what a later mktemp prints, in a way this reading does not follow: TMPDIR set by name, read,
+// printf -v, eval, a sourced file, declare, export, local or env; mktemp redefined by a function, an alias, hash, enable,
+// PATH or BASH_ENV. Any of them makes that mktemp a value only the run can tell (fail closed).
+const MAY_SET_TMPDIR = /TMPDIR|PATH|BASH_ENV|\b(eval|source|read|mapfile|readarray|declare|typeset|export|local|readonly|env|alias|hash|enable|function)\b|\bprintf\s+-v|\w\s*\(\s*\)|(^|[;&|(\n]\s*)\.\s/;
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
 // `withWrites` (#209, #210, for scope on Bash) also reads what the command writes: each simple command
 // carries its redirection targets as `writes`, a here-document's body is text unless a shell reads it,
