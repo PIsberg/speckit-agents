@@ -2861,6 +2861,17 @@ function balanced(src, i, openCh, closeCh) {
 // A value only known at run time: a substitution's output, $@ or $1, an unset variable, an expansion
 // this reading does not compute. Where git's subcommand or a program word would be, it is denied.
 const DYN = '\u0004';
+// #508: a plain mktemp prints a path in the OS temp folder ($TMPDIR, else the system's), never the repo. With -p, a
+// --tmpdir=DIR or a template that names a folder, the folder is the caller's, so that stays a value only the run can tell.
+function mktempPath(inner) {
+  const w = String(inner).trim().split(/\s+/);
+  if (w[0] !== 'mktemp') return null;
+  for (const a of w.slice(1)) {
+    if (/^-[dqut]+$/.test(a) || ['--directory', '--quiet', '--dry-run', '--tmpdir'].includes(a) || /^[^-/\\$`][^/\\$`]*X{3,}[^/\\$`]*$/.test(a)) continue;
+    return null;
+  }
+  return `${(process.env.TMPDIR || os.tmpdir()).split(path.sep).join('/')}/mktemp.XXXXXX`;
+}
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
 // `withWrites` (#209, #210, for scope on Bash) also reads what the command writes: each simple command
 // carries its redirection targets as `writes`, a here-document's body is text unless a shell reads it,
@@ -2907,11 +2918,11 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
   // $... at src[i]: returns the index after it, having added its value to the word.
   const dollar = (i, quoted) => {
     const put = (v, split = false) => { const s = v ?? DYN; if (quoted && !split) add(s); else addSplit(s); };
-    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); add(DYN); return e < 0 ? src.length : e + 1; }
+    if (src[i] === '`') { const e = src.indexOf('`', i + 1); const inner = src.slice(i + 1, e < 0 ? undefined : e); sub(inner); add((vars.TMPDIR === undefined && mktempPath(inner)) || DYN); return e < 0 ? src.length : e + 1; }
     const c = src[i + 1];
     if (c === '(') {
       if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); add('0'); return after; }
-      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add(DYN); return after;
+      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add((vars.TMPDIR === undefined && mktempPath(inner)) || DYN); return after;
     }
     if (c === '{') {
       const [inner, after] = balanced(src, i + 1, '{', '}');
