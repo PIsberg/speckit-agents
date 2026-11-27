@@ -512,7 +512,7 @@ if (event === 'PreToolUse' && agentKey && str(input.tool_name) && input.tool_nam
   try { if (input.tool_name === 'Bash') fs.rmSync(marker('untested.json'), { force: true }); } catch { /* non-blocking */ }
   if (fs.existsSync(marker('result')) || fs.existsSync(marker('ends-ok'))) {
     try {
-      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked', 'untested.json', 'untested-asked']) fs.rmSync(marker(m), { force: true });
+      for (const m of ['result', 'result-asked', 'ends-ok', 'ends-asked', 'red-asked', 'cited-asked', 'untested.json', 'untested-asked', 'eol-asked']) fs.rmSync(marker(m), { force: true });
     } catch (e) {
       addNote(`speckit-team: ${who}'s last report could not be closed (${e.message}); its next report may go unchecked.`);
     }
@@ -882,6 +882,19 @@ function auditProblem() {
 function startRecord() {
   const sha = git(root, 'rev-parse', 'HEAD');
   return sha ? { sha, dirty: changedSince('HEAD') } : null;
+}
+// #509: production files whose line endings flipped since the agent started, as a script's text-mode rewrite on
+// Windows does: every line of the diff changes. Read from git's own diff, with and without --ignore-cr-at-eol, so
+// core.autocrlf's checkout conversion is never taken for one. A new, untracked file has none to keep.
+function eolFlips(base) {
+  if (!base) return [];
+  const changed = (...extra) => new Map(lines(git(root, 'diff', '--numstat', '--no-renames', ...extra, base, '--'))
+    .map((l) => l.split('\t')).filter(([a, d]) => /^\d+$/.test(a) && /^\d+$/.test(d)).map(([a, d, f]) => [f, Number(a) + Number(d)]));
+  const all = changed();
+  if (!all.size) return [];
+  const real = changed('--ignore-cr-at-eol');
+  return [...all].filter(([rel, n]) => !isTest(rel) && !rel.startsWith('specs/') && !rel.startsWith('.specify/') && n > (real.get(rel) ?? 0))
+    .map(([rel]) => `${rel} changed its line endings (to ${readOr(path.join(root, rel), '').includes('\r\n') ? 'CRLF' : 'LF'})`);
 }
 function changedSince(base) {
   return [...new Set([
@@ -2241,6 +2254,15 @@ if (mode === 'result') {
       const why = `RESULT: GREEN, but ${untested.file} was modified after your last Bash test run. Run the tests on the final code before reporting RESULT: GREEN.`;
       writeJson(untestedAsked, {});
       fs.rmSync(untestedPath, { force: true });
+      if (viaHandback) deny(why);
+      if (!input.stop_hook_active) block(why);
+    }
+    const flips = agentKey ? eolFlips(readState(baseFile(agentKey))?.sha) : [];
+    const eolAsked = agentKey && path.join(stateDir, 'agents', `${agentKey}.eol-asked`);
+    if (flips.length && eolAsked && !fs.existsSync(eolAsked)) {
+      const why = `RESULT: GREEN, but ${flips.join(', ')}, which rewrites every line of the diff. `
+        + 'Restore the endings the file had (a script that rewrites a file in text mode converts them on Windows; change files with the Edit tool), commit, then end with RESULT: GREEN again.';
+      writeJson(eolAsked, {});
       if (viaHandback) deny(why);
       if (!input.stop_hook_active) block(why);
     }

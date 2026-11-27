@@ -5176,6 +5176,37 @@ test('#513: a ticked task named on a later unticked line is not unticked, for th
   assert.doesNotMatch(reasonOf(stopRole(r3.dir, { last_assistant_message: 'Done.\nRESULT: GREEN' })), /unticked/, 'the role skill too');
 });
 
+// #509: on Windows an implementer rewrote src/math.js through `python -` (text mode writes \r\n), so every line changed,
+// spec-gatekeeper REJECTED the whole-file diff and a round went to restoring LF. A GREEN whose production files changed
+// their line endings since the agent started is sent back once, naming them.
+test('#509: a GREEN after a production file flipped its line endings is sent back once, naming it', () => {
+  // As the full-run fixture's repos are; with core.autocrlf=true git would store the rewrite as LF, no churn.
+  const r = repo();
+  r.g('config', 'core.autocrlf', 'false');
+  const { dir } = r;
+  pass(dir);
+  assert.ok(!denied(run(dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, agent_id: 'im1' })), 'its first call records where it started');
+  fs.writeFileSync(path.join(dir, 'src', 'main', 'App.java'), 'class App {}\r\nclass B {}\r\n');
+  const first = greenStop(dir, undefined);
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^RESULT: GREEN, but src\/main\/App\.java changed its line endings \(to CRLF\)/);
+  assert.notEqual(greenStop(dir, undefined, { stop_hook_active: true })?.decision, 'block', 'never twice');
+  const lf = repo();
+  lf.g('config', 'core.autocrlf', 'false');
+  pass(lf.dir);
+  run(lf.dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, agent_id: 'im1' });
+  fs.writeFileSync(path.join(lf.dir, 'src', 'main', 'App.java'), 'class App {}\nclass B {}\n');
+  fs.writeFileSync(path.join(lf.dir, 'src', 'main', 'New.java'), 'class New {}\r\n');
+  assert.notEqual(greenStop(lf.dir, undefined)?.decision, 'block', 'same endings, and a new file has none to keep');
+  // core.autocrlf=true checks files out with CRLF while git stores LF: an ordinary edit is no flip.
+  const ac = repo();
+  ac.g('config', 'core.autocrlf', 'true');
+  pass(ac.dir);
+  run(ac.dir, ['gate'], { hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' }, agent_id: 'im1' });
+  fs.writeFileSync(path.join(ac.dir, 'src', 'main', 'App.java'), 'class App {}\r\nclass B {}\r\n');
+  assert.notEqual(greenStop(ac.dir, undefined)?.decision, 'block', 'autocrlf\'s CRLF working tree');
+});
+
 // #479: the #463 check for the implementer role of --team skill-agents and --team hybrid. Its "launch prompt" is the
 // Skill call's `args`, so the role record keeps what the check needs of them (the task IDs, stub, worktree), never
 // their text. The GREEN is sent back once at the role's Stop, or denied once at the call that closes it.
