@@ -348,8 +348,11 @@ and the denial tells the agent whose lane production code is in.
 ([#431](https://github.com/PIsberg/speckit-agents/issues/431)): it launches product-owner, which writes the
 spec and returns its questions, and the main session puts product-owner's questions to you, with the
 spec to approve: the first of the pipeline's two stops (one stop since #427). The recording below was
-made on 2026-10-17, before #431, and still opens with the team question, which now comes only with
-`--team ?`; it is to be recorded again.
+made on 2026-11-27 with Claude Code 2.1.332 on Haiku (`node docs/media/record.mjs pipeline`): no team
+question, product-owner amends the demo repo's `001-greet` spec and leaves three questions, and the
+first asks how the greeting language is chosen ([#468](https://github.com/PIsberg/speckit-agents/issues/468)).
+In that take the main session also launched security-reviewer, which only `--security` asks for
+([#527](https://github.com/PIsberg/speckit-agents/issues/527)).
 
 ![/speckit-team handing an idea to product-owner and asking its clarification questions](docs/media/pipeline.gif)
 
@@ -2777,7 +2780,11 @@ MCP servers stay out of the frame. On Windows the tapes reach that repo through 
 mapped onto the folder with `subst` (the first free one from `R:`), so the paths a session prints
 read `R:\repo` instead of one with your user name in it; the letter is removed when the script
 ends. The session's `TEMP`, `TMP` and `TMPDIR` point at `R:\tmp` on the same letter, because Claude
-Code gives each agent a scratchpad under the temp folder and an agent can print its path. The `board` tape loads the board from this checkout with
+Code gives each agent a scratchpad under the temp folder and an agent can print its path. Two things the 2026-11-27 recording of `pipeline` met
+([#468](https://github.com/PIsberg/speckit-agents/issues/468)): started from inside a Claude Code session, the recorded one inherits its
+`CLAUDE_CODE_*` variables, and `CLAUDE_CODE_EXPERIMENTAL_CODE_MODE` put a "Code Mode" warning in every frame and stalled the
+run, so unset them first; and with `SPECKIT_DEMO_DIR` the skill's first check wants the folder's real path trusted, not
+`R:\repo`, so trust it once (the default folder kept its trust from earlier runs). The `board` tape loads the board from this checkout with
 `--plugin-dir`, in fullscreen so the pane docks, after staging the demo feature mid-build: three
 tasks ticked, and an audit PASS and one RED recorded by the hook. It swaps test-writer and
 implementer for stand-ins that only report, so its agent rows cost two short Haiku runs.
