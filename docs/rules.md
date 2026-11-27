@@ -388,7 +388,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - The full suite only with `last round`, which the skill leaves out when spec-gatekeeper runs it next (#430), and never in a worktree, which lacks the other slices' code. pinned (#309). Seen 2026-11-11: two worktree implementers ended RED for each other's stubs, 2 of the 3 that lock the role out.
 - Check each command's own exit status, not a pipe's. text, unseen.
 - A Bash `timeout` that covers the run. pinned.
-- Tick and commit; in a worktree tick nothing. pinned; hook `result`: a GREEN while a task its launch prompt names is unticked is sent back once (#463), also through `SubagentHandback` with no transcript (e2e, #479); hook `lane role`: the implementer role's, from its Skill call's `args`, at its Stop or the call that closes it (#479).
+- Tick and commit; in a worktree tick nothing. pinned; hook `result`: a GREEN while a task its launch prompt names is unticked (its own `- [ ] T<id>` line, not a later task that names it, #513) is sent back once (#463), also through `SubagentHandback` with no transcript (e2e, #479); hook `lane role`: the implementer role's, from its Skill call's `args`, at its Stop or the call that closes it (#479).
 
 ### agents/implementer.md: Stub pass
 <!-- fingerprint: a9263c82 -->

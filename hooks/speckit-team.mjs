@@ -1396,9 +1396,11 @@ function untickedOfPrompt(feat) {
 function untickedOf(feat, launch) {
   if (!feat || !launch || !Array.isArray(launch.ids) || launch.stub || launch.worktree) return [];
   const tasks = readOr(path.join(root, feat, 'tasks.md'), '');
-  return launch.ids.filter((id) => /^T\d{3,}$/.test(id) && new RegExp(`^\\s*[-*]\\s+\\[ \\]\\s.*\\b${id}\\b`, 'm').test(tasks));
+  // #513: the task's own line, the ID right after its checkbox; a later open task that names it is not it.
+  const open = new Set([...tasks.matchAll(/^\s*[-*]\s+\[ \]\s+(T\d{3,})\b/gm)].map((m) => m[1]));
+  return launch.ids.filter((id) => open.has(id));
 }
-const untickedWhy = (open, named) => `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which ${named}. Tick each task you finished (- [x]); `
+const untickedWhy = (open, named) => `RESULT: GREEN, but tasks.md still has ${open.join(', ')} unticked, which ${named}. Tick each task you finished (- [X]); `
   + 'name any you did not finish and why. Then end with RESULT: GREEN again.';
 function launchOfAgent() {
   let launch = agentKey ? readState(launchFile(agentKey)) : null;
