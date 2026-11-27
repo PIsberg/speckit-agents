@@ -455,6 +455,15 @@ test('#511: installed spec-auditor says nothing of an optional hook', () => {
   assert.match(work, /not run; an optional one, never\./);
 });
 
+// #511 again: after that rule the 4 reports of 2026-11-27's second batch still said "None is mandatory, so none was run or
+// listed": the preloaded speckit-analyze prints an `## Extension Hooks` block for each optional hook, and the agent split
+// the difference. The rule names the block and the sentence it put in its place.
+test("#511: installed spec-auditor prints no Extension Hooks block, not even to say none is mandatory", () => {
+  const auditor = installedAgent('spec-auditor');
+  const work = flat(auditor.slice(auditor.indexOf('## Process'), auditor.indexOf('## Verdict')));
+  assert.match(work, /print no `## Extension Hooks` block and no line on optional ones, not even that none is mandatory/);
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
