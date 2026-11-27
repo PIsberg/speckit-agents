@@ -1582,6 +1582,13 @@ listed"), since the preloaded speckit-analyze prints an `## Extension Hooks` blo
 ("Mandatory hooks: none."). #509 and #508 need an implementer's text-mode rewrite or a gatekeeper's temp folder, which no run
 produced. The short runs overlapped, so their seconds are not comparable with the earlier batch's.
 
+After #524 (PR stacked on #525), from that branch: two `--team lite` runs on the first commit (the brief round covers every
+FR) both tested FR-007 in the first test commit, but in one the stub, which now runs first, already carried the doc comment,
+so the test passed on it and spec-gatekeeper rejected it (7 launches, $1.04; the other 7 launches, $0.95, a test bug fixed).
+With a stub that carries no doc comment, two more `--team lite` runs went product-owner, stub, test-writer, implementer,
+spec-gatekeeper: 5 launches, $0.73 and $0.75, no REJECTED, against 8 launches and $1.02 before; a default-team run on the
+same build passed ($1.64). About $5.10 more.
+
 ## The drift check's git calls (#342)
 
 Measured 2026-11-15 on this repository, Windows 11, Node 26.13.1, one `drift(repo, { feature, spec: true })`
