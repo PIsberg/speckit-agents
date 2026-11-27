@@ -5110,6 +5110,35 @@ test('#463: no send-back when the prompt\'s tasks are ticked, for a stub pass or
   assert.notEqual(run(r2.dir, ['result'], { hook_event_name: 'SubagentStop', agent_id: 'im2', last_assistant_message: 'RESULT: RED', agent_transcript_path: agentTranscript(r2.dir, 'T002') })?.decision, 'block', 'a RED');
 });
 
+// #513: in a live run the later unticked tasks T011 and T013 named T002 and T004, so the check read the ticked
+// T002 and T004 as open and sent the implementer back; it lowercased its ticks, thinking the case was the fault.
+// A task is unticked only when its own line, the one whose checkbox it follows, is.
+test('#513: a ticked task named on a later unticked line is not unticked, for the agent and the role', () => {
+  const tasks = '- [X] T001 write test\n- [X] T002 implement sum\n- [ ] T003 test mean, reusing T002\n- [ ] T004 [P] implement mean on T001 and T002\n';
+  const { dir, write: w } = repo();
+  pass(dir);
+  w(`${FEAT}/tasks.md`, tasks);
+  const ok = greenStop(dir, agentTranscript(dir, 'Round 1 implementation task IDs: T002\nTest-writer report: T001 red.'));
+  assert.notEqual(ok?.decision, 'block', JSON.stringify(ok));
+  const r2 = repo();
+  pass(r2.dir);
+  r2.write(`${FEAT}/tasks.md`, '- [X] T001 write test\n- [ ] T002 [P] [US1] implement, after T001\n');
+  const open = greenStop(r2.dir, agentTranscript(r2.dir, 'T001 T002'));
+  assert.equal(open?.decision, 'block', 'its own open line still counts, markers and all');
+  assert.match(open.reason, /still has T002 unticked/);
+  assert.doesNotMatch(open.reason, /T001/, 'T001 is ticked; T002 naming it changes nothing');
+  assert.match(open.reason, /\(- \[X\]\)/, 'the tick spelled as the agents are told to write it');
+  const r3 = repo();
+  skillAgentsTeam(r3.dir);
+  r3.write(`${FEAT}/tasks.md`, tasks);
+  pass(r3.dir); // after the write: a changed task text voids the audit
+  const t = transcriptIn(r3.dir, [userRow('typed')]);
+  const call = callWithArgs(r3.dir, 'speckit-role-implementer', t, 'T001 T002');
+  assert.ok(!decided(call), JSON.stringify(call));
+  say(t, 'Done.\nRESULT: GREEN');
+  assert.doesNotMatch(reasonOf(stopRole(r3.dir, { last_assistant_message: 'Done.\nRESULT: GREEN' })), /unticked/, 'the role skill too');
+});
+
 // #479: the #463 check for the implementer role of --team skill-agents and --team hybrid. Its "launch prompt" is the
 // Skill call's `args`, so the role record keeps what the check needs of them (the task IDs, stub, worktree), never
 // their text. The GREEN is sent back once at the role's Stop, or denied once at the call that closes it.
