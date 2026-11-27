@@ -25,7 +25,7 @@ const commit = (repo, files, msg) => {
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
 test('eval: the cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug', 'audit-defect', 'audit-control']);
+  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug', 'audit-defect', 'audit-control', 'patch-escalate']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -537,4 +537,43 @@ test('#469 eval: the audit prompt runs only spec-auditor, changes nothing, ends 
   assert.notEqual(a, s);
   assert.throws(() => fullRunArgv(['--out', 'x', '--hybrid', '--case', 'audit-defect']), /--hybrid runs only a whole pipeline/);
   assert.throws(() => fullRunArgv(['--out', 'x', '--team', 'build', '--case', 'audit-control']), /--team runs only a whole pipeline/);
+});
+
+// #502: an escalated fast track whose draft a /speckit-team run then gets.
+test('#502 eval: patch-escalate is one /speckit-patch turn on a change over the budget, right only when the run stopped with a draft', () => {
+  const { repo, request } = scratch({ case: 'patch-escalate' });
+  assert.match(request, /^\/speckit-patch Add mean\(\), median\(\) and mode\(\)/);
+  assert.equal(fs.readFileSync(path.join(repo, 'src', 'math.js'), 'utf8'), fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'full-run', 'src', 'math.js'), 'utf8'), 'the clean fixture, not the patch-bug overlay');
+  assert.equal(scoreRun('patch-escalate', { repo }).right, false, 'no end record is no escalation');
+  const dir = path.join(repo, '.git', 'speckit-team');
+  fs.mkdirSync(dir, { recursive: true });
+  const record = (outcome, draft) => fs.writeFileSync(path.join(dir, 'patch-undo.json'), JSON.stringify({ outcome, draft }));
+  fs.writeFileSync(path.join(dir, 'patch-draft.patch'), 'diff --git a/src/math.js b/src/math.js\n');
+  record('stopped', path.join(dir, 'patch-draft.patch'));
+  assert.deepEqual(scoreRun('patch-escalate', { repo }), { right: true, why: 'the fast track stopped (stopped) and kept a draft' });
+  record('accepted', null);
+  assert.equal(scoreRun('patch-escalate', { repo }).right, false, 'an accepted patch did not escalate');
+  record('stopped', null);
+  assert.equal(scoreRun('patch-escalate', { repo }).right, false, 'a stop without a draft leaves /speckit-team nothing to read');
+});
+
+test('#502 full run: --draft lays a kept draft where the fast track keeps it and names it in the escalated request; --request picks the request alone', () => {
+  assert.equal(fullRunArgv(['--out', 'x']).request, null);
+  assert.equal(fullRunArgv(['--out', 'x', '--request', 'escalate']).request, 'escalate');
+  assert.throws(() => fullRunArgv(['--out', 'x', '--request', 'nope']), /--request takes one of escalate/);
+  const draft = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skdraft-')), 'patch-draft.patch');
+  assert.throws(() => fullRunArgv(['--out', 'x', '--draft', draft]), /--draft: no file/);
+  fs.writeFileSync(draft, 'diff --git a/src/math.js b/src/math.js\n+export const mean = () => 0;\n');
+  const o = fullRunArgv(['--out', 'x', '--draft', draft]);
+  assert.deepEqual([o.draft, o.request], [path.resolve(draft), 'escalate'], 'a draft is the escalated change\'s');
+  assert.throws(() => fullRunArgv(['--out', 'x', '--draft', draft, '--case', 'defect']), /--draft runs only a whole pipeline/);
+  const repo = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skdraft-')), 'repo');
+  const { request } = buildRepo(repo, { request: 'escalate', draft });
+  const kept = path.join(repo, '.git', 'speckit-team', 'patch-draft.patch');
+  assert.equal(fs.readFileSync(kept, 'utf8'), fs.readFileSync(draft, 'utf8'));
+  assert.match(request, /^Add mean\(\), median\(\) and mode\(\)/);
+  assert.ok(request.endsWith(` (patcher's draft: ${kept.split(path.sep).join('/')})`), request);
+  assert.equal(git(repo, 'status', '--short').stdout, '', 'the draft sits in .git, so the tree stays clean');
+  const { request: control } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skdraft-')), 'repo'), { request: 'escalate' });
+  assert.equal(control, request.slice(0, request.indexOf(" (patcher's draft:")), 'the control is the same request without the draft');
 });

@@ -70,7 +70,9 @@ const git = (cwd, ...args) => {
   return r.stdout;
 };
 
-export function buildRepo(repo, { twoSlices = false, largeSlices = false, constitution = null, case: name = 'clean' } = {}) {
+// #502: the requests a whole pipeline can be given besides the default ones; --draft adds the fast track's kept draft.
+const REQUESTS = ['escalate'];
+export function buildRepo(repo, { twoSlices = false, largeSlices = false, constitution = null, case: name = 'clean', request: requestName = null, draft = null } = {}) {
   fs.mkdirSync(repo, { recursive: true });
   for (const rel of SPEC_KIT) fs.cpSync(path.join(ROOT, rel), path.join(repo, rel), { recursive: true });
   for (const d of fs.readdirSync(path.join(ROOT, '.claude', 'skills')).filter((n) => n.startsWith('speckit-'))) {
@@ -81,7 +83,7 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
   fs.copyFileSync(constitution ? path.join(FIXTURE, 'constitutions', `${constitution}.md`) : path.join(FIXTURE, 'constitution.md'), path.join(repo, '.specify', 'memory', 'constitution.md'));
   for (const rel of ['CLAUDE.md', 'package.json', 'src', 'test']) fs.cpSync(path.join(FIXTURE, rel), path.join(repo, rel), { recursive: true });
   // #247: the patch case starts from a sum() whose empty case throws, with a test that does not try it.
-  if (CASES[name]?.patch) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
+  if (CASES[name]?.patch && !CASES[name]?.escalate) for (const rel of ['src', 'test']) fs.cpSync(path.join(FIXTURE, 'patch', rel), path.join(repo, rel), { recursive: true });
   git(repo, 'init', '-q', '-b', 'main');
   git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'add', '-A');
@@ -149,7 +151,17 @@ export function buildRepo(repo, { twoSlices = false, largeSlices = false, consti
     if (r.status !== 0) throw new Error(`seeding the audit verdict: ${r.stderr}`);
   }
   if (CASES[name]?.contest) return { request: `/speckit-team ${fs.readFileSync(path.join(FIXTURE, 'contest', 'request.txt'), 'utf8').trim()}` };
+  if (CASES[name]?.escalate) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'request-escalate.txt'), 'utf8').trim()}` };
   if (CASES[name]?.patch) return { request: `/speckit-patch ${fs.readFileSync(path.join(FIXTURE, 'patch', 'request.txt'), 'utf8').trim()}` };
+  if (requestName) {
+    const text = fs.readFileSync(path.join(FIXTURE, `request-${requestName}.txt`), 'utf8').trim();
+    if (!draft) return { request: text };
+    // Where the fast track keeps it (#462), so the run reads it as the user's escalated request would name it.
+    const kept = path.join(repo, '.git', 'speckit-team', 'patch-draft.patch');
+    fs.mkdirSync(path.dirname(kept), { recursive: true });
+    fs.copyFileSync(draft, kept);
+    return { request: `${text} (patcher's draft: ${kept.split(path.sep).join('/')})` };
+  }
   // #114: --large-slices asks for two modules of six functions each, slices that take an agent minutes apiece.
   const base = fs.readFileSync(path.join(FIXTURE, largeSlices ? 'request-large-slices.txt' : twoSlices ? 'request-side-by-side.txt' : 'request.txt'), 'utf8').trim();
   return { request: name === 'pressure' ? `${base} ${fs.readFileSync(path.join(FIXTURE, 'pressure.txt'), 'utf8').trim()}` : base };
@@ -516,7 +528,7 @@ const MODEL_TIERS = ['default', 'sonnet', 'opus', 'fast'];
 export const installArgs = ({ models }) => (models ? ['--models', models] : []);
 
 export function args(argv) {
-  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, team: null };
+  const o = { model: 'sonnet', maxCost: 6, maxTurns: 8, login: false, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, team: null, request: null, draft: null };
   for (let i = 0; i < argv.length; i += 2) {
     const [k, v] = [argv[i], argv[i + 1]];
     if (k === '--login') { o.login = true; i--; } else if (k === '--side-by-side') { o.sideBySide = true; o.twoSlices = true; i--; } else if (k === '--skill-agents') { o.skillAgents = true; i--; } else if (k === '--hybrid') { o.hybrid = true; i--; } else if (k === '--two-slices') { o.twoSlices = true; i--; } else if (k === '--out') o.out = path.resolve(v);
@@ -528,6 +540,14 @@ export function args(argv) {
       const known = fs.readdirSync(path.join(FIXTURE, 'constitutions')).filter((n) => n.endsWith('.md')).map((n) => n.slice(0, -3)).sort();
       if (!known.includes(v)) throw new Error(`unknown constitution ${v}; known: ${known.join(', ')}`);
       o.constitution = v;
+    }
+    else if (k === '--request') {
+      if (!REQUESTS.includes(v)) throw new Error(`--request takes one of ${REQUESTS.join(', ')}`);
+      o.request = v;
+    }
+    else if (k === '--draft') {
+      if (!v || !fs.existsSync(v)) throw new Error(`--draft: no file ${v}`);
+      o.draft = path.resolve(v); o.request = 'escalate';
     }
     else if (k === '--team') {
       if (!v || v.startsWith('--') || !teamRoles(v).every((r) => TEAM_ROLE_NAMES.includes(r))) throw new Error(`--team takes build, lite or a comma-separated list of team roles (${TEAM_ROLE_NAMES.join(', ')})`);
@@ -546,6 +566,7 @@ export function args(argv) {
   const c = CASES[o.case];
   if (o.hybrid && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--hybrid runs only a whole pipeline, not the one-step case ${o.case}`);
   for (const [flag, on] of [['--hybrid', o.hybrid], ['--skill-agents', o.skillAgents]]) if (o.team && on) throw new Error(`--team and ${flag} are two different teams: pass one`);
+  if ((o.draft || o.request) && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--${o.draft ? 'draft' : 'request'} runs only a whole pipeline, not the one-step case ${o.case}`);
   if (o.team && (c.gate || c.load || c.contest || c.patch || c.audit)) throw new Error(`--team runs only a whole pipeline, not the one-step case ${o.case}`);
   return o;
 }
@@ -564,7 +585,7 @@ function main() {
   const oneTurn = Boolean(CASES[o.case].contest || CASES[o.case].patch);
   // 012: a load case is one turn too, judged on the last line of load-tester's report.
   const load = Boolean(CASES[o.case].load);
-  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case });
+  const { request: base } = buildRepo(repo, { twoSlices: o.twoSlices, largeSlices: o.largeSlices, constitution: o.constitution, case: o.case, request: o.request, draft: o.draft });
   const head0 = git(repo, 'rev-parse', 'HEAD').trim();
   const request = audit ? auditRequest({ skillAgents: o.skillAgents }) : gate ? gateRequest({ skillAgents: o.skillAgents, claim: o.claim }) : load ? loadRequest({ skillAgents: o.skillAgents }) : base;
   // A session started from a parent Claude Code session would inherit its variables.
@@ -645,6 +666,9 @@ function main() {
   if (!transcript) failures.push('no transcript of the main session was found');
   const all = runFailures(failures, stopped);
   const report = { case: o.case, claim: o.claim, teamRoot: o.teamRoot, skillAgents: o.skillAgents, hybrid: o.hybrid, team: o.team, gate: word, model: o.model, login: o.login, sideBySide: o.sideBySide, twoSlices: o.twoSlices, maxCost: o.maxCost, cost: Math.max(0, ...turns.map((t) => t.cost ?? 0)), turns, transcript, usage, failures: all, platform: `${os.platform()} ${os.release()}` };
+  // #502: the kept draft outlives the scratch repo, for a --draft run.
+  const keptDraft = path.join(repo, '.git', 'speckit-team', 'patch-draft.patch');
+  if (CASES[o.case].escalate && fs.existsSync(keptDraft)) fs.copyFileSync(keptDraft, path.join(o.out, 'patch-draft.patch'));
   fs.writeFileSync(path.join(o.out, 'run.json'), JSON.stringify(report, null, 2));
   console.log(all.length ? `FAILED:\n- ${all.join('\n- ')}` : `passed, $${report.cost.toFixed(2)}`);
   process.exit(all.length ? 1 : 0);

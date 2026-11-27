@@ -1811,7 +1811,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 814 tests:
+`npm test` runs 816 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
@@ -1827,7 +1827,7 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 | [`test/drift.test.mjs`](test/drift.test.mjs) | 23 | the drift check (`hooks/speckit-drift.mjs`, through `tools/drift.mjs`) on throwaway repos: a test file gone, a cited FR ID gone, each form a requirement is defined in and a spec defining none it reads (#371), an ID held only on another feature's lines, examples, SC IDs and docs tasks skipped, an ID another task of the feature excuses (#299), one feature checked alone (#228), the exit codes, and its test patterns against the hook's; then on this repository, which must have no drift |
 | [`test/versions.test.mjs`](test/versions.test.mjs) | 9 | that every version is pinned in one place, the Node floor of 22 among them (`engines`, the setup scripts, the installer, the constitution, CI): `package.json` and its lockfile, the workflows reading them, vhs's `env:`, the pre-commit eslint hook, Dependabot's ecosystems and codeql-action group, and the versions the docs give ([Where each version is pinned](#where-each-version-is-pinned)) |
 | [`test/live-board.test.mjs`](test/live-board.test.mjs) | 5 | how `tools/live-board.mjs` reads the board's checks off vhs's text screens, on screens written by hand (CI has no vhs), and how its width probe treats a probe that shows nothing typed, with a fake vhs (#408) |
-| [`test/eval.test.mjs`](test/eval.test.mjs) | 39 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs (the audit cases' verdict too, #469), a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
+| [`test/eval.test.mjs`](test/eval.test.mjs) | 41 | `tools/eval.mjs` without a model: each scored case judged on synthetic runs (the audit cases' verdict too, #469, and the escalated fast track's draft, #502), a stub commit told from code, the gate word read from the hook's record or the answer's last line, the gatekeeper's whole report and the kept `full-run.log` (#255), the per-arm tally, `--arm`, and the seeded defect shown to be one the scratch repo's own tests cannot see ([Scored cases and arms](#scored-cases-and-arms)) |
 | [`test/skills.test.mjs`](test/skills.test.mjs) | 7 | the installed skills' text: no description collides with another's, the role skills differ by their role name only, and the authoring limits of the [constitution](.specify/memory/constitution.md) (500 lines, 150 for a role skill, 1024 characters of description, no model name in a body), each shown failing on a violating skill |
 | [`test/full-run.test.mjs`](test/full-run.test.mjs) | 43 | `tools/full-run.mjs` without a model: the scratch repo it builds, each check of a finished run against a synthetic one, the parent-only marker and the leak check, `--login` and its folder trust (a torn `.claude.json` left alone, runs started together keeping their entries, a Windows `EPERM` on the lock waited out), `--two-slices`, `--side-by-side` and the worktree checks, `--skill-agents` and `--hybrid` (#428), `--team` and its presets (#480), `--large-slices` and `--constitution`, an `--out` in the Windows Temp folder refused, the turn loop's exits (an API error, no session, a recorded end, `--max-turns`, an answer the session only talks back to), a personal team skill that would shadow the run's copy under `--login`, and the `full-run` workflow's triggers ([Full run with real models](#full-run-with-real-models)) |
 | [`test/runner.test.mjs`](test/runner.test.mjs) | 5 | `tools/test.mjs`: the files it lists, that it runs them under its own node with the options given and exits as they did, and that `setup.sh` and `setup.ps1` refuse a stand-in Node 16 by name |
@@ -2160,6 +2160,7 @@ One run per arm cannot show that a prompt change helped, so [`tools/eval.mjs`](t
 | `patch-bug` | one turn of `/speckit-patch` on a one-line behaviour bug (`sum([])` throws) that no test tries ([#247](https://github.com/PIsberg/speckit-agents/issues/247)) | a commit that touches a test file; a fix committed with a `No test:` line and no test is the exemption taken for a behaviour change |
 | `audit-defect` | one turn on a feature specified and planned, its tasks open and no audit yet, whose `tasks.md` builds `sum()` before its tests, against constitution I ([#469](https://github.com/PIsberg/speckit-agents/issues/469)); spec-auditor run alone | `VERDICT: FAIL`, the hook's verdict record first, else the answer's last line |
 | `audit-control` | the same feature with its tasks in test-first order | `VERDICT: PASS` |
+| `patch-escalate` | one turn of `/speckit-patch` on a change of about 45 production lines (`mean()`, `median()`, `mode()`), over the fast track's 30-line budget ([#502](https://github.com/PIsberg/speckit-agents/issues/502)) | the end record is not `accepted` and keeps a draft; `full-run.mjs` copies it to `<out>/patch-draft.patch` |
 
 The six `load-*` cases ran 5 times each with real models on 2026-11-23
 ([#417](https://github.com/PIsberg/speckit-agents/issues/417)): load-quadratic and load-linear 5 of 5,
@@ -2182,7 +2183,9 @@ skill never called, or a spec-auditor or spec-gatekeeper never launched; it take
 list) for a whole pipeline, answers without asking for the full team, and checks the run only on the
 steps of those roles: no audit `PASS` is owed without spec-auditor, no `tasks.md` without architect, no
 `APPROVED` without spec-gatekeeper, and a launch outside the team or a team role never launched fails it
-([#480](https://github.com/PIsberg/speckit-agents/issues/480)). `--models <tier>` installs the run's team on an [installer tier](#installer-options), and
+([#480](https://github.com/PIsberg/speckit-agents/issues/480)). `--request escalate` sends `patch-escalate`'s change to a whole
+pipeline, and `--draft <file>` does the same with a kept draft laid at `.git/speckit-team/patch-draft.patch`
+and named in the request as `(patcher's draft: <path>)`, the form `/speckit-patch` prints (#502). `--models <tier>` installs the run's team on an [installer tier](#installer-options), and
 `tools/eval.mjs --models` passes it to each of its runs (#429).
 
 What the gate cases measure is the model, not the guardrails: on 2026-11-01 every one scored 6 of 6 on
