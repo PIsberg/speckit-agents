@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CASES, LOAD_WORDS, armArg, parseArgs, fullRunArgs, contestRuling, gateWord, keepLog, patchTested, scoreRun, table, tally, versionCommand, runSweep } from '../tools/eval.mjs';
-import { buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
+import { args as fullRunArgv, auditRequest, auditWord, buildRepo, gateReport, gateRequest, firstPrompt } from '../tools/full-run.mjs';
 import * as fullRun from '../tools/full-run.mjs'; // loadRequest is read from the namespace: 012 T023 adds it
 import { drift } from '../hooks/speckit-drift.mjs';
 
@@ -25,7 +25,7 @@ const commit = (repo, files, msg) => {
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
 test('eval: the cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug']);
+  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug', 'audit-defect', 'audit-control']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -491,4 +491,50 @@ test('#495 eval: parseArgs parses --jobs, --min-free-mb, --resume, and runSweep 
   assert.equal(maxActive, 1, 'memory circuit breaker held back second concurrent job while freeBytes < minFreeMb');
   assert.equal(rows.length, 3);
   assert.equal(rows.filter((r) => r.right).length, 3);
+});
+
+// #469: a scored case for spec-auditor, so its model tier can be compared on a defect it must FAIL.
+test('#469 eval: the audit cases build a specified, planned feature with open tasks and no verdict; only the defect builds code before its tests', () => {
+  for (const name of ['audit-defect', 'audit-control']) {
+    assert.equal(CASES[name].audit, true, name);
+    const { repo } = scratch({ case: name });
+    const tasks = fs.readFileSync(path.join(repo, 'specs', '001-sum', 'tasks.md'), 'utf8');
+    assert.doesNotMatch(tasks, /\[X\]/i, `${name}: nothing is built`);
+    assert.ok(fs.existsSync(path.join(repo, 'specs', '001-sum', 'spec.md')) && fs.existsSync(path.join(repo, 'specs', '001-sum', 'plan.md')), name);
+    assert.equal(git(repo, 'branch', '--show-current').stdout.trim(), '001-sum');
+    assert.equal(git(repo, 'status', '--short').stdout, '', `${name}: everything is committed`);
+    assert.ok(!fs.existsSync(path.join(repo, '.git', 'speckit-team', 'verdicts')), `${name}: no audit verdict is seeded, the run gives it`);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(repo, '.specify', 'feature.json'), 'utf8')).feature_directory, 'specs/001-sum');
+    const ids = tasks.split(/\r?\n/).filter((l) => /^- \[ \] T\d+/.test(l));
+    const firstImpl = ids.findIndex((l) => /Implement/.test(l));
+    const firstTest = ids.findIndex((l) => /\bTest\b/.test(l));
+    assert.ok(firstImpl >= 0 && firstTest >= 0, name);
+    if (name === 'audit-defect') assert.ok(firstImpl < firstTest, 'the defect: sum() is built before its tests, against constitution I');
+    else assert.ok(firstTest < firstImpl, 'the control: tests first');
+  }
+  assert.equal(CASES['audit-defect'].right, 'FAIL');
+  assert.equal(CASES['audit-control'].right, 'PASS');
+});
+
+test('#469 eval: an audit case is right only on the verdict the case expects, and the verdict is the hook record first', () => {
+  for (const [name, word, right] of [['audit-defect', 'FAIL', true], ['audit-defect', 'PASS', false], ['audit-defect', null, false],
+    ['audit-control', 'PASS', true], ['audit-control', 'FAIL', false]]) {
+    const s = scoreRun(name, { report: { gate: { word } } });
+    assert.equal(s.right, right, `${name} saw ${word}`);
+    assert.match(s.why, /spec-auditor/);
+  }
+  assert.deepEqual(auditWord({ verdicts: [{ verdict: 'FAIL' }], text: 'VERDICT: PASS' }), { word: 'FAIL', source: 'hook record' });
+  assert.deepEqual(auditWord({ verdicts: [], text: 'It found two issues.\n\nVERDICT: FAIL' }), { word: 'FAIL', source: 'last line of the answer' });
+  assert.deepEqual(auditWord({ verdicts: [], text: 'it would not say VERDICT: PASS here' }), { word: null, source: 'none' });
+});
+
+test('#469 eval: the audit prompt runs only spec-auditor, changes nothing, ends on its verdict, and differs by mode; no other team takes it', () => {
+  const a = auditRequest({ skillAgents: false });
+  const s = auditRequest({ skillAgents: true });
+  assert.match(a, /spec-auditor/);
+  assert.match(a, /change no file/i, 'the main session must not fix the seeded defect itself');
+  assert.match(a, /VERDICT: PASS or VERDICT: FAIL/);
+  assert.notEqual(a, s);
+  assert.throws(() => fullRunArgv(['--out', 'x', '--hybrid', '--case', 'audit-defect']), /--hybrid runs only a whole pipeline/);
+  assert.throws(() => fullRunArgv(['--out', 'x', '--team', 'build', '--case', 'audit-control']), /--team runs only a whole pipeline/);
 });

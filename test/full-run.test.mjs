@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
+import { TEAM_PRESETS, answer, args, buildRepo, checkRun, firstPrompt, installArgs, newMarker, preflightProblem, runFailures, runTurns, shadowingSkills, tempOutProblem, trustFolder, turnError } from '../tools/full-run.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const git = (cwd, ...args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -138,7 +138,7 @@ test('full run: the leak check fails on the marker in an agent transcript, and n
 // the owner's .claude.json for the run, without which Claude Code skips the agents' hooks (README,
 // "Troubleshooting"). The live checks of 2026-10-24 needed a hand-written driver for this.
 test('full run: --login is a flag without a value, and --out is still required', () => {
-  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, out: path.resolve('x') });
+  assert.deepEqual(args(['--login', '--out', 'x', '--max-cost', '3']), { model: 'sonnet', maxCost: 3, maxTurns: 8, login: true, sideBySide: false, twoSlices: false, skillAgents: false, hybrid: false, case: 'clean', claim: false, teamRoot: ROOT, constitution: null, largeSlices: false, models: null, team: null, out: path.resolve('x') });
   assert.equal(args(['--out', 'x']).login, false);
   assert.throws(() => args(['--login']), /usage/);
   assert.throws(() => args(['--out', 'x', '--nope', '1']), /unknown argument --nope/);
@@ -765,4 +765,48 @@ test('#488: tools/factory.mjs triages issues into patch, build, lite or full tra
   assert.equal(summary.results[0].ciHealRounds, 1);
   assert.equal(prompts.length, 2, 'initial run + 1 CI self-heal turn');
   assert.ok(fs.existsSync(path.join(out, 'factory.json')));
+});
+
+// #480: --team build and --team lite against the full team; a preset runs fewer roles, so the run is
+// judged on the steps of the roles it has.
+test('#480 full run: --team takes a preset or a role list, types it, and runs only a whole pipeline in agents mode', () => {
+  assert.equal(args(['--out', 'x']).team, null, 'the full team unless told otherwise');
+  for (const t of ['build', 'lite', 'test-writer,implementer']) assert.equal(args(['--out', 'x', '--team', t]).team, t);
+  assert.throws(() => args(['--out', 'x', '--team', 'nope']), /--team takes build, lite or a comma-separated list of team roles/);
+  assert.throws(() => args(['--out', 'x', '--team', 'build', '--hybrid']), /--team and --hybrid/);
+  assert.throws(() => args(['--out', 'x', '--team', 'build', '--skill-agents']), /--team and --skill-agents/);
+  assert.throws(() => args(['--out', 'x', '--team', 'build', '--case', 'defect']), /--team runs only a whole pipeline/);
+  assert.equal(firstPrompt('add sum()', { team: 'build' }), '/speckit-team --team build add sum()');
+  assert.match(answer(MARKER), /^Full team\. /);
+  assert.doesNotMatch(answer(MARKER, { team: 'build' }), /Full team/, 'an answer that asks for the full team would contradict the typed preset');
+  assert.match(answer(MARKER, { team: 'build' }), /I approve the spec, the plan and the tasks/);
+});
+
+test('#480 full run: a --team run is checked only on the steps of its roles, and fails on a launch outside the team', () => {
+  const agents = (...types) => types.map((type) => ({ type, background: false }));
+  const build = agents('test-writer', 'implementer', 'spec-gatekeeper');
+  // No spec-auditor: no audit PASS. No architect: no tasks.md.
+  const bare = state({ verdict: null, tasks: null, launches: build });
+  assert.deepEqual(failures(bare, [0.5], 6, { team: 'build' }), []);
+  assert.ok(failures(bare).some((f) => /audit PASS/.test(f)), 'the full team still needs the audit');
+  assert.ok(failures(bare).some((f) => /no tasks\.md/.test(f)), 'the full team still needs tasks.md');
+  const lite = state({ verdict: null, tasks: null, launches: agents('product-owner', 'test-writer', 'implementer', 'spec-gatekeeper') });
+  assert.deepEqual(failures(lite, [0.5], 6, { team: 'lite' }), []);
+  const outside = failures(state({ verdict: null, tasks: null, launches: [...build, ...agents('architect')] }), [0.5], 6, { team: 'build' });
+  assert.equal(outside.length, 1, JSON.stringify(outside));
+  assert.match(outside[0], /architect was launched, but the run's team is build \(test-writer, implementer, spec-gatekeeper\)/);
+  const rejected = failures(state({ verdict: null, tasks: null, word: 'REJECTED', launches: build }), [0.5], 6, { team: 'build' });
+  assert.ok(rejected.some((f) => /APPROVED/.test(f)), 'spec-gatekeeper is in the team, so its APPROVED is still owed');
+  const noGate = failures(state({ verdict: null, tasks: null, word: null, launches: agents('test-writer', 'implementer') }), [0.5], 6, { team: 'test-writer,implementer' });
+  assert.deepEqual(noGate, [], 'without spec-gatekeeper no last word is owed');
+  for (const role of ['test-writer', 'implementer', 'spec-gatekeeper']) {
+    const f = failures(state({ verdict: null, tasks: null, launches: build.filter((l) => l.type !== role) }), [0.5], 6, { team: 'build' });
+    assert.ok(f.some((x) => x.includes(`${role} was never launched`)), `${role}: ${JSON.stringify(f)}`);
+  }
+});
+
+test('#480 full run: the --team presets are the hook\'s TEAM_PRESETS (twins)', () => {
+  const hook = fs.readFileSync(path.join(ROOT, 'hooks', 'speckit-team.mjs'), 'utf8');
+  const literal = hook.match(/const TEAM_PRESETS = (\{[^\n]*\});/)[1];
+  assert.deepEqual(Function(`return ${literal}`)(), TEAM_PRESETS);
 });

@@ -43,6 +43,9 @@ export const CASES = {
   'load-empty': { load: 'empty', right: 'FAIL or NOT MEASURED', what: 'the load test catches its workload throw and reports no results (012 SC-002)' },
   'load-skipped': { load: 'skipped', right: 'FAIL or NOT MEASURED', what: 'the load test has a skipped case, which is not a pass (012 SC-006)' },
   'patch-bug': { patch: true, right: 'a regression test', what: 'a fast-track fix of a behaviour bug commits a test, not a No test: line (#247)' },
+  // #469: spec-auditor on a specified, planned feature with open tasks; its word is the verdict the hook records.
+  'audit-defect': { audit: true, right: 'FAIL', what: 'tasks.md builds sum() before its tests, against constitution I (test first) (#469)' },
+  'audit-control': { audit: true, right: 'PASS', what: 'the same spec, plan and tasks in test-first order (#469)' },
 };
 
 // Spec-gatekeeper's word: the hook's record when there is one, else the last line of the answer that is
@@ -121,6 +124,7 @@ export function scoreRun(name, { repo, report }) {
   if (c.contest) return contestRuling(report);
   if (c.patch) return patchTested(repo);
   const word = report?.gate?.word ?? null;
+  if (c.audit) return { right: word === c.right, observed: word, why: word ? `spec-auditor said ${word}, expected ${c.right}` : `no verdict from spec-auditor, expected ${c.right}` };
   if (c.load) {
     const ok = name === 'load-noisy' ? word === 'PASS' && /^\s*noisy:/m.test(String(report?.gate?.report ?? ''))
       : c.right === 'FAIL or NOT MEASURED' ? word === 'FAIL' || word === 'NOT MEASURED' : word === c.right;
