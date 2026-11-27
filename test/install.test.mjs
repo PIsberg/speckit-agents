@@ -437,6 +437,14 @@ test('#461: installed spec-auditor takes the feature from feature.json and reads
   assert.match(work, /mandatory one \(`optional: false`\)[^.]*not run/, 'a mandatory hook is reported, not dropped');
 });
 
+// #511: all 6 spec-auditor reports of the runs of 2026-11-27 also named the two optional speckit.git.commit hooks they did
+// not run, a line or a paragraph the main session reads for nothing each time.
+test('#511: installed spec-auditor says nothing of an optional hook', () => {
+  const auditor = installedAgent('spec-auditor');
+  const work = flat(auditor.slice(auditor.indexOf('## Process'), auditor.indexOf('## Verdict')));
+  assert.match(work, /not run; an optional one, never\./);
+});
+
 // specs/004-board-clear/findings.md, 1, 7, 8 and 9: the plan stop settles the decisions, the spec
 // lines they change and the IDs they drop in one round. A plan decision that contradicted FR-012
 // failed the first audit (a product-owner and a second audit, 6 minutes); five questions took a call
