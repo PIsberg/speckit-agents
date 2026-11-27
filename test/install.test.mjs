@@ -277,6 +277,16 @@ test("#505: all of a new file's functions go in the round that creates it", () =
   assert.match(shape, /a new file needs none, so all its functions go in the round that creates it/);
 });
 
+// #512: without architect the brief round's stub depended on test-writer reporting it missing, and the two preset runs of
+// 2026-11-27 went on differently after it (--team lite launched test-writer again, --team build did not). A request that
+// names a new function in a file that exists is #460's own case for a stub, so it runs first; one found by test-writer
+// is followed by test-writer again, so the tests are seen failing on the stubs either way.
+test('#512: without architect a named new function in an existing file gets its stub first; one test-writer found gets test-writer again', () => {
+  const build = flat(skillSection(teamSkill(), '## 4-5.'));
+  assert.match(build, /A stub pass runs first when the request names a new function or type in a file that exists/);
+  assert.match(build, /after one test-writer reported, test-writer runs again on the stubs to see its tests fail/);
+});
+
 // #476: after an ESCALATE, /speckit-patch keeps patcher's work as .git/speckit-team/patch-draft.patch and tells the user to
 // type `/speckit-team <change> (patcher's draft: <path>)` (#462). The skill now says who gets that path: product-owner
 // and architect read it for the diagnosis, implementer may start from its production hunks once the round is red, and
