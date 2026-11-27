@@ -394,8 +394,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Tick and commit; in a worktree tick nothing. pinned; hook `result`: a GREEN after a production file changed its line endings since the agent started is sent back once (#509); hook `result`: a GREEN while a task its launch prompt names is unticked (its own `- [ ] T<id>` line, not a later task that names it, #513) is sent back once (#463), also through `SubagentHandback` with no transcript (e2e, #479); hook `lane role`: the implementer role's, from its Skill call's `args`, at its Stop or the call that closes it (#479).
 
 ### agents/implementer.md: Stub pass
-<!-- fingerprint: a9263c82 -->
+<!-- fingerprint: 27ef3f9a -->
 - Signatures only, bodies that signal not implemented; `RESULT: STUB`. hook `result` (counts no attempt), text.
+- No doc comment in a stub, so a test of one fails on it (#524). pinned. Seen 2026-11-27: with the stub first, a `--team lite` stub carried the JSDoc, the FR-007 test passed on it, and spec-gatekeeper rejected a test never seen failing.
 
 ### agents/implementer.md: Lane
 <!-- fingerprint: 47c5d56c -->

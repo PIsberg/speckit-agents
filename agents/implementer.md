@@ -52,9 +52,9 @@ brief state.
 ## Stub pass
 When your prompt says `stub`, no tests exist yet for these tasks. Create only the files, functions
 and types the tasks list, with the listed signatures and bodies that only signal "not implemented"
-(throw, raise, panic or the language's equivalent), and keep the build compiling. Tick a task only
-if it asks for nothing beyond these stubs (never with `worktree`), commit as `stub: <task IDs>`, and
-end with `RESULT: STUB`.
+(throw, raise, panic or the language's equivalent), no doc comment yet (a test of one must fail on the stub),
+and keep the build compiling. Tick a task only if it asks for nothing beyond these stubs (never with
+`worktree`), commit as `stub: <task IDs>`, and end with `RESULT: STUB`.
 
 ## Lane
 Everything except test files and `.specify/`. A hook rejects edits to either, and a stop check

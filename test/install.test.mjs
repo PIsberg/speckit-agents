@@ -296,6 +296,14 @@ test('#524: without architect, the brief round covers every FR of the spec, a do
   assert.match(build, /without `tasks.md` no `No test:` can excuse one/);
 });
 
+// #524 again: with the stub first (#512), the implementer wrote sum()'s doc comment into the stub, so the FR-007 test passed
+// against it and spec-gatekeeper rejected a test never seen failing. A stub carries no doc comment yet.
+test('#524: installed implementer writes no doc comment into a stub', () => {
+  const impl = installedAgent('implementer');
+  const stub = flat(impl.slice(impl.indexOf('## Stub pass'), impl.indexOf('## ', impl.indexOf('## Stub pass') + 5)));
+  assert.match(stub, /no doc comment yet \(a test of one must fail on the stub\)/);
+});
+
 // #476: after an ESCALATE, /speckit-patch keeps patcher's work as .git/speckit-team/patch-draft.patch and tells the user to
 // type `/speckit-team <change> (patcher's draft: <path>)` (#462). The skill now says who gets that path: product-owner
 // and architect read it for the diagnosis, implementer may start from its production hunks once the round is red, and
