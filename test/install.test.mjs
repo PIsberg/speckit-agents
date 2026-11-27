@@ -287,6 +287,23 @@ test('#512: without architect a named new function in an existing file gets its 
   assert.match(build, /after one test-writer reported, test-writer runs again on the stubs to see its tests fail/);
 });
 
+// #524: --team lite (no architect) built from product-owner's spec, whose FR-007 asked for a one-line doc comment; the brief
+// round's test-writer tested none of it, and spec-gatekeeper rejected the build, since without tasks.md no `No test:` can
+// excuse a requirement. A second test-writer, implementer and gatekeeper followed. The brief round now covers every FR.
+test('#524: without architect, the brief round covers every FR of the spec, a docs one too', () => {
+  const build = flat(skillSection(teamSkill(), '## 4-5.'));
+  assert.match(build, /with product-owner's `spec.md` as the brief, test-writer covers every FR of it, a docs or process one too/);
+  assert.match(build, /without `tasks.md` no `No test:` can excuse one/);
+});
+
+// #524 again: with the stub first (#512), the implementer wrote sum()'s doc comment into the stub, so the FR-007 test passed
+// against it and spec-gatekeeper rejected a test never seen failing. A stub carries no doc comment yet.
+test('#524: installed implementer writes no doc comment into a stub', () => {
+  const impl = installedAgent('implementer');
+  const stub = flat(impl.slice(impl.indexOf('## Stub pass'), impl.indexOf('## ', impl.indexOf('## Stub pass') + 5)));
+  assert.match(stub, /no doc comment yet \(a test of one must fail on the stub\)/);
+});
+
 // #476: after an ESCALATE, /speckit-patch keeps patcher's work as .git/speckit-team/patch-draft.patch and tells the user to
 // type `/speckit-team <change> (patcher's draft: <path>)` (#462). The skill now says who gets that path: product-owner
 // and architect read it for the diagnosis, implementer may start from its production hunks once the round is red, and

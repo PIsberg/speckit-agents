@@ -162,10 +162,11 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - An edit to spec, plan, tasks or constitution voids a PASS; ticks do not. hook `gate` (fingerprint).
 
 ### skills/speckit-team/SKILL.md: 4-5. Red and green, one round at a time
-<!-- fingerprint: c88bfb3b -->
+<!-- fingerprint: 672a2ff8 -->
 - Rounds of at most 4 slices, never the whole feature to one agent. pinned.
 - Take the rounds from the architect's `Round <n>:` lines. pinned.
 - Without architect, one round on a brief; without test-writer, no test in implementer's brief. pinned.
+- Without architect, test-writer covers every FR of product-owner's spec, docs and process ones too: no `tasks.md`, so no `No test:` excuse (#524). pinned; hook `ends --record` (the drift check refuses an APPROVED with an FR no test names). Seen 2026-11-27: a `--team lite` REJECTED on a docs FR cost 3 launches.
 - Without architect, the stub pass first when the request names a new function or type in a file that exists, else only after test-writer reports one missing, then test-writer again on the stubs (#512). pinned. Seen 2026-11-27: `--team lite` relaunched test-writer after the stub, `--team build` did not (1 run each).
 - Stubs only for the round's `stub` IDs: a new function or type in a file that exists, or code the tests compile or type-check against; a test failing on a new file not written yet is red (#460). pinned; hook `ends`: a missing production file is a valid RED (#245). Unmeasured: how many stub passes a real run skips.
 - Send back a test that fails for the wrong reason. text, unseen (#240).
@@ -393,8 +394,9 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 - Tick and commit; in a worktree tick nothing. pinned; hook `result`: a GREEN after a production file changed its line endings since the agent started is sent back once (#509); hook `result`: a GREEN while a task its launch prompt names is unticked (its own `- [ ] T<id>` line, not a later task that names it, #513) is sent back once (#463), also through `SubagentHandback` with no transcript (e2e, #479); hook `lane role`: the implementer role's, from its Skill call's `args`, at its Stop or the call that closes it (#479).
 
 ### agents/implementer.md: Stub pass
-<!-- fingerprint: a9263c82 -->
+<!-- fingerprint: 27ef3f9a -->
 - Signatures only, bodies that signal not implemented; `RESULT: STUB`. hook `result` (counts no attempt), text.
+- No doc comment in a stub, so a test of one fails on it (#524). pinned. Seen 2026-11-27: with the stub first, a `--team lite` stub carried the JSDoc, the FR-007 test passed on it, and spec-gatekeeper rejected a test never seen failing.
 
 ### agents/implementer.md: Lane
 <!-- fingerprint: 47c5d56c -->
