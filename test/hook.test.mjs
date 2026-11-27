@@ -371,6 +371,38 @@ test('#378: scope none denies curl -o, sort -o, wget, awk -i inplace, patch, tar
   assert.equal(bash(dir, ['scope', 'no-tests'], 'prettier --write src', { agent_type: 'implementer' }), null);
 });
 
+// #508: in the --large-slices run of 2026-11-27 spec-gatekeeper ran `T=$(mktemp -d); ... cp package.json $T/...` to test each module
+// apart, and the read-only scope denied it as a write only the run can tell. A plain mktemp's output is a path in the OS
+// temp folder, never the repo: a write under it goes through, while a mktemp that names its own folder still does not.
+test('#508: a read-only role may write under a folder a plain $(mktemp) made, not under one that names its folder', () => {
+  const { dir } = repo();
+  const ro = ['scope', 'none'];
+  const gk = (command) => bash(dir, ro, command, { agent_type: 'spec-gatekeeper' });
+  for (const command of ['T=$(mktemp -d); cp package.json "$T/package.json"', 'T=$(mktemp -d -t gk.XXXXXX) && mkdir -p $T/stats/src && cp -r src $T/stats/',
+    'cp src/main/App.java "$(mktemp)"', 'D=`mktemp -d`; touch $D/x']) {
+    assert.equal(gk(command), null, command);
+  }
+  for (const command of ['T=$(mktemp -d -p .); cp package.json $T/x', 'T=$(mktemp -d --tmpdir=src); cp a $T/x', 'T=$(mktemp src/XXXXXX); cp a $T',
+    'T=$(mktemp -d); T=$(pwd); cp a $T/x', 'T=$(pwd); cp package.json $T/x',
+    // A TMPDIR the command sets steers mktemp, perhaps into the repo.
+    'TMPDIR=src; T=$(mktemp -d); cp a $T/x', 'export TMPDIR=src && T=$(mktemp -d) && cp a $T/x', 'T=$(TMPDIR=src mktemp -d); cp a $T/x',
+    // The security review of this change: a template without -t is made in the current folder; a substitution that is more
+    // than one plain mktemp prints something else; and TMPDIR set by read, printf -v, eval or a sourced file.
+    'T=$(mktemp src.XXXXXX); cp a $T', 'T=$(mktemp gk.XXXXXX); cp a $T', 'cp a $(mktemp -d && cd src && pwd)/x', 'T=$(mktemp XXX|cat); cp a $T/x',
+    'cp a "$(mktemp -d; pwd)"/x', 'read TMPDIR <<< src; T=$(mktemp -d); cp a $T/x', 'x=TMP; printf -v ${x}DIR src; T=$(mktemp -d); cp a $T/x',
+    'eval "TMP""DIR=src"; T=$(mktemp -d); cp a $T/x', 'source env.sh; T=$(mktemp -d); cp a $T/x', '. ./env.sh && T=$(mktemp -d) && cp a $T/x',
+    // The second review: mktemp redefined (a function, an alias, PATH, hash) or TMPDIR named through an expansion.
+    'mktemp() { echo src; }; T=$(mktemp -d); cp a $T/x', 'function mktemp { echo src; }; T=$(mktemp -d); cp a $T/x',
+    'alias mktemp="echo src"; T=$(mktemp -d); cp a $T/x', 'PATH=./bin:$PATH; T=$(mktemp -d); cp a $T/x', 'hash -p ./bin/mk mktemp; T=$(mktemp -d); cp a $T/x',
+    'x=TMP; export ${x}DIR=src; T=$(mktemp -d); cp a $T/x', 'x=TMP; env ${x}DIR=src sh -c "cp a $(mktemp -d)/x"',
+    // The third review: zsh's path array, bash's command hash table, and let, getopts and select setting names.
+    'path=(./bin $path); T=$(mktemp -d); cp a $T/x', 'BASH_CMDS[mktemp]=./bin/mk; T=$(mktemp -d); cp a $T/x', 'let x=1; T=$(mktemp -d); cp a $T/x']) {
+    assert.ok(denied(gk(command)), command);
+  }
+  assert.ok(denied(gk('T=$(mktemp -d); cp package.json src/main/App.java')), 'a write into the repo is still a write');
+  assert.equal(gk('cp package.json ${TMPDIR:-/tmp}/p.json'), null, 'a TMPDIR the command only reads keeps its default, as before');
+});
+
 // #412: #378 denied `eslint --fix` and `prettier --write`, but the same flag handed to a package script through its runner
 // (`npm run lint -- --fix`) passed: the script's tool is not on the line. A flag that asks a script to rewrite files is
 // a write only the run can tell. A script run without one is still let through, which #412 leaves to the owner's call.

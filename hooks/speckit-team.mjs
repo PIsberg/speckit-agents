@@ -2861,6 +2861,29 @@ function balanced(src, i, openCh, closeCh) {
 // A value only known at run time: a substitution's output, $@ or $1, an unset variable, an expansion
 // this reading does not compute. Where git's subcommand or a program word would be, it is denied.
 const DYN = '\u0004';
+// #508: a plain mktemp prints a path in the OS temp folder ($TMPDIR, else the system's), never the repo. Only one plain
+// mktemp command counts: no metacharacter, quote or expansion, no -p or --tmpdir=DIR, and a template only with -t or
+// --tmpdir (without them mktemp makes it in the current folder). A temp folder inside the repo does not count.
+function mktempPath(inner) {
+  const s = String(inner).trim();
+  if (!/^mktemp(\s+[\w.=-]+)*$/.test(s)) return null;
+  const a = s.split(/\s+/).slice(1);
+  const inTmp = a.some((w) => /^-[dqu]*t[dqu]*$/.test(w) || w === '--tmpdir');
+  for (const w of a) {
+    if (/^-[dqut]+$/.test(w) || ['--directory', '--quiet', '--dry-run', '--tmpdir'].includes(w)) continue;
+    if (inTmp && /^[\w.][\w.-]*X{3,}[\w.-]*$/.test(w)) continue;
+    return null;
+  }
+  const dir = path.resolve(process.env.TMPDIR || os.tmpdir());
+  if (repoRel(dir) !== null) return null;
+  return `${dir.split(path.sep).join('/')}/mktemp.XXXXXX`;
+}
+// #508: text that may change what a later mktemp prints, in a way this reading does not follow: TMPDIR set by name, read,
+// printf -v, eval, a sourced file, declare, export, local or env; mktemp redefined by a function, an alias, hash, enable,
+// PATH or BASH_ENV. Any of them makes that mktemp a value only the run can tell (fail closed).
+// Not a complete list, nor meant to be: scope none is not airtight (an interpreter's writes pass, README, Known limits); it
+// catches a role's mistaken write, and this keeps a plain mktemp from being one.
+const MAY_SET_TMPDIR = /tmpdir|path|bash_env|bash_cmds|\b(eval|source|read|mapfile|readarray|declare|typeset|export|local|readonly|env|alias|hash|enable|function|let|getopts|select)\b|\bprintf\s+-v|\w\s*\(\s*\)|\w\[[^\]]*\]\+?=|(^|[;&|(\n]\s*)\.\s/i;
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'ash', 'mksh', 'busybox']);
 // `withWrites` (#209, #210, for scope on Bash) also reads what the command writes: each simple command
 // carries its redirection targets as `writes`, a here-document's body is text unless a shell reads it,
@@ -2869,6 +2892,8 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
   // Too deep to read is not read as harmless: the caller denies the command (fail closed).
   if (depth > 8) throw new Error('nested more than 8 levels deep');
   const cmds = []; const vars = { ...inherit }; let cur = []; let word = null; let braces = 0;
+  // Not $TMPDIR's value: only a mktemp after it is unknown (vars keys that no shell name can be).
+  if (MAY_SET_TMPDIR.test(src)) vars['#tmpdir'] = '1';
   let curWrites = []; let heredocs = []; let lineStart = 0;
   const record = (name, value) => { vars[name] = value; if (assigned) (assigned[name] ??= new Set()).add(value); };
   // IFS unset is the shell's default, so an unquoted ${IFS} splits words (git${IFS}push).
@@ -2907,11 +2932,11 @@ function shellCommands(src, pin = null, assigned = null, depth = 0, inherit = {}
   // $... at src[i]: returns the index after it, having added its value to the word.
   const dollar = (i, quoted) => {
     const put = (v, split = false) => { const s = v ?? DYN; if (quoted && !split) add(s); else addSplit(s); };
-    if (src[i] === '`') { const e = src.indexOf('`', i + 1); sub(src.slice(i + 1, e < 0 ? undefined : e)); add(DYN); return e < 0 ? src.length : e + 1; }
+    if (src[i] === '`') { const e = src.indexOf('`', i + 1); const inner = src.slice(i + 1, e < 0 ? undefined : e); sub(inner); add((vars.TMPDIR === undefined && !vars['#tmpdir'] && mktempPath(inner)) || DYN); return e < 0 ? src.length : e + 1; }
     const c = src[i + 1];
     if (c === '(') {
       if (src[i + 2] === '(') { const [, after] = balanced(src, i + 1, '(', ')'); add('0'); return after; }
-      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add(DYN); return after;
+      const [inner, after] = balanced(src, i + 1, '(', ')'); sub(inner); add((vars.TMPDIR === undefined && !vars['#tmpdir'] && mktempPath(inner)) || DYN); return after;
     }
     if (c === '{') {
       const [inner, after] = balanced(src, i + 1, '{', '}');
