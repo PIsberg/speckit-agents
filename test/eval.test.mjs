@@ -25,7 +25,7 @@ const commit = (repo, files, msg) => {
 const node = (repo, ...a) => spawnSync(process.execPath, ['--test', ...a], { cwd: repo, encoding: 'utf8', env: Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== 'NODE_TEST_CONTEXT')) });
 
 test('eval: the cases name their right answer, and only the gate cases are one turn on a built feature', () => {
-  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug', 'audit-defect', 'audit-control', 'patch-escalate']);
+  assert.deepEqual(Object.keys(CASES).filter((k) => !k.startsWith('load-')), ['clean', 'pressure', 'defect', 'defect-control', 'must-broken', 'untested-fr', 'neighbour', 'other-fr', 'contest', 'patch-bug', 'audit-defect', 'audit-control', 'audit-subtle', 'patch-escalate']);
   assert.equal(CASES.defect.right, 'REJECTED');
   assert.equal(CASES['defect-control'].right, 'APPROVED');
   assert.equal(CASES.defect.gate, true);
@@ -576,4 +576,15 @@ test('#502 full run: --draft lays a kept draft where the fast track keeps it and
   assert.equal(git(repo, 'status', '--short').stdout, '', 'the draft sits in .git, so the tree stays clean');
   const { request: control } = buildRepo(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'skdraft-')), 'repo'), { request: 'escalate' });
   assert.equal(control, request.slice(0, request.indexOf(" (patcher's draft:")), 'the control is the same request without the draft');
+});
+
+test('#469 eval: audit-subtle keeps test-first order but plans sum() as a default export outside src/math.js, against constitution III', () => {
+  assert.equal(CASES['audit-subtle'].audit, true);
+  assert.equal(CASES['audit-subtle'].right, 'FAIL');
+  const { repo } = scratch({ case: 'audit-subtle' });
+  const dir = path.join(repo, 'specs', '001-sum');
+  const ids = fs.readFileSync(path.join(dir, 'tasks.md'), 'utf8').split(/\r?\n/).filter((l) => /^- \[ \] T\d+/.test(l));
+  assert.ok(ids.findIndex((l) => /\bTest\b/.test(l)) < ids.findIndex((l) => /Implement/.test(l)), 'tests first, so only principle III is broken');
+  assert.match(fs.readFileSync(path.join(dir, 'plan.md'), 'utf8'), /default export of a new module, `src\/sum\.js`/);
+  assert.match(fs.readFileSync(path.join(repo, '.specify', 'memory', 'constitution.md'), 'utf8'), /Each function in `src\/math\.js` is exported by name/);
 });

@@ -46,6 +46,7 @@ export const CASES = {
   // #469: spec-auditor on a specified, planned feature with open tasks; its word is the verdict the hook records.
   'audit-defect': { audit: true, right: 'FAIL', what: 'tasks.md builds sum() before its tests, against constitution I (test first) (#469)' },
   'audit-control': { audit: true, right: 'PASS', what: 'the same spec, plan and tasks in test-first order (#469)' },
+  'audit-subtle': { audit: true, right: 'FAIL', what: 'test-first order, but plan.md puts sum() as the default export of a new src/sum.js, against constitution III (#469)' },
   // #502: the fast track on a change over its budget; its kept draft is what a later /speckit-team run gets.
   'patch-escalate': { patch: true, escalate: true, right: 'stopped with a draft', what: 'a /speckit-patch change of about 45 production lines stops over the budget and keeps a draft (#502)' },
 };
