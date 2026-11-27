@@ -452,6 +452,21 @@ with it (#461 keeps that open).
 
 What it does not show: the saving. No run has used the new rule; responses are counted, not tokens.
 
+## Round lines and test tasks in the kept runs (#482)
+
+Counted 2026-11-27 over the runs kept on the owner's machine (2026-10-27 to 2026-11-23): 116 `tasks.md` files
+and the last architect report of each of 59 run repositories. A test task is one whose opening words say
+test, as the drift check reads it.
+
+| Check #465 left out | Cases | Of |
+|---|--:|--:|
+| A test task naming no test file | 1, a misread: "Update every test count" is a docs task | 292 test tasks |
+| A last report whose `Round <n>:` lines leave a task out | 1: `red FR-001..FR-006`, FR IDs in place of task IDs (`--models fast`, architect on sonnet) | 59 reports |
+
+What it led to: the Round check, at the architect's Stop as agent and as role, sent back once. The
+test-file check is not built: its one hit in 292 is the opening-words heuristic misreading a docs task,
+the false refusal #482 warned of.
+
 ## The skill's conditional sections
 
 Whether to move the sections of `skills/speckit-team/SKILL.md` that only some runs need into a

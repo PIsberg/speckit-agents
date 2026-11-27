@@ -309,7 +309,7 @@ The board mod's stats (feature 010). Not prompt rules, so no fingerprint: each i
 
 ### agents/architect.md: Report
 <!-- fingerprint: b87bde4d -->
-- At most 15 lines; one `Round <n>:` line per round, `stub` only for a new symbol in an existing file or code the tests compile against (#460). pinned; no `ends` hook.
+- At most 15 lines; one `Round <n>:` line per round, `stub` only for a new symbol in an existing file or code the tests compile against (#460). pinned; hook `lane only` and `lane role`: a report whose Round lines leave an unticked task of `tasks.md` out is sent back once, naming the tasks (#482).
 
 ## agents/spec-auditor.md
 
