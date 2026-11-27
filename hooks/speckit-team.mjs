@@ -372,6 +372,23 @@ function plannedOf(feat) {
 const planRefusal = (ids) => `Plan check: tasks.md leaves ${ids.join(', ')} of spec.md with no test task. Cite each on a test task that names `
   + 'its test file, or give the task that covers it "No test: <reason>" (a process or docs rule), then finish. '
   + 'Found now, it costs one edit; at spec-gatekeeper it costs a new audit and a round (#465).';
+// #482: the unticked task IDs of tasks.md that an architect report's `Round <n>:` lines leave out, in task order. None for a
+// report with no Round line: a revision that leaves tasks.md alone gives none. A range (`T002-T004`, `T002 to T004`) names
+// every ID in it.
+function roundGaps(feat, report) {
+  if (!feat || typeof report !== 'string') return [];
+  const rounds = report.split('\n').filter((l) => /\bRound\s*\d+\s*:/.test(l)).join(' ');
+  if (!rounds) return [];
+  const named = new Set(rounds.match(/\bT\d{3,}\b/g) ?? []);
+  for (const m of rounds.matchAll(/\bT(\d{3,})\s*(?:-|–|to|\.\.)\s*T(\d{3,})\b/g)) {
+    for (let k = Number(m[1]); k <= Number(m[2]) && k - Number(m[1]) < 1000; k++) named.add(`T${String(k).padStart(m[1].length, '0')}`);
+  }
+  const open = [...readOr(path.join(root, feat, 'tasks.md'), '').matchAll(/^\s*[-*]\s+\[ \]\s+(T\d{3,})\b/gm)].map((m) => m[1]);
+  return [...new Set(open)].filter((id) => !named.has(id));
+}
+const roundRefusal = (ids) => `Round check: the \`Round <n>:\` lines of your report leave out ${ids.join(', ')} of tasks.md, so the main `
+  + 'session would have to read tasks.md to build them. Name every task ID in one round\'s stub, red or green list, then send '
+  + 'the report again (#482).';
 // #235: besides the cited IDs of test tasks, every FR of spec.md must be in a test line naming the feature's number.
 const driftRefusal = (name, problems) => `${name}'s APPROVED is refused: requirements that no test holds (the drift check: each ID a test `
   + 'task cites must be in one of its test files, and every FR of spec.md in a test line naming the feature\'s number, '
@@ -1209,6 +1226,11 @@ function closeRole(rec, at, gate = null) {
   if (rec.role === 'architect') {
     const gaps = plannedOf(feature() ?? rec.feature);
     if (gaps.length) refuseOnce(rec, at, 'plan', planRefusal(gaps));
+    // #482: the report is the Stop's last message, or the role's last text before the call that closes it.
+    const texts = rec.offset === null ? null : roleTexts(rec.transcript, rec.offset);
+    const report = (at === 'stop' ? str(input.last_assistant_message) : null) ?? texts?.at(-1) ?? null;
+    const missed = roundGaps(feature() ?? rec.feature, report);
+    if (missed.length) refuseOnce(rec, at, 'rounds', roundRefusal(missed));
     const dWhy = dryRunDecisions(feature() ?? rec.feature);
     if (dWhy) refuseOnce(rec, at, 'decisions', dWhy);
   }
@@ -2596,6 +2618,14 @@ if (mode === 'lane') {
     try { writeJson(planAsked, {}); first = true; } catch { /* the flag decides */ }
     if (first) block(planRefusal(gaps));
   }
+  // #482: the architect's report names every unticked task in its Round lines, so the main session need not read tasks.md.
+  const missed = plannedFeat ? roundGaps(plannedFeat, lastAssistantText()) : [];
+  const roundsAsked = path.join(stateDir, 'agents', `${agentKey}.rounds-asked`);
+  if (missed.length && !fs.existsSync(roundsAsked)) {
+    let first = !input.stop_hook_active;
+    try { writeJson(roundsAsked, {}); first = true; } catch { /* the flag decides */ }
+    if (first) block(roundRefusal(missed));
+  }
   // #491: dry-run clarifications and decisions parsers at product-owner and architect Stop.
   const dryWhy = input.agent_type === 'product-owner' ? dryRunClarifications(feature())
     : input.agent_type === 'architect' ? dryRunDecisions(feature()) : null;
@@ -2609,6 +2639,7 @@ if (mode === 'lane') {
   fs.rmSync(asked, { force: true });
   fs.rmSync(secretAsked, { force: true });
   fs.rmSync(planAsked, { force: true });
+  fs.rmSync(roundsAsked, { force: true });
   fs.rmSync(dryAsked, { force: true });
   if (outside.length) emit({ systemMessage: `WARNING: ${who} left changes outside its lane: ${outside.join(', ')}` });
   process.exit(0);

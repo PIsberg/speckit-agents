@@ -5217,6 +5217,51 @@ test('#465: the architect role is sent back once too, at its Stop or the next ro
   assert.match(stop.reason, /Plan check: tasks\.md leaves FR-002 of spec\.md with no test task/);
 });
 
+// #482: the main session builds every round from the architect's `Round <n>:` lines and reads tasks.md only when no
+// report gave them. In 1 of the 59 kept runs (2026-11-23, architect on sonnet) the last report's line named FR IDs
+// (`red FR-001..FR-006`), so tasks T001 to T003 were in no round. A report with Round lines that leaves an unticked task
+// of tasks.md out is sent back once, naming the tasks; a report with none (a revision that leaves tasks.md alone) is not.
+const ROUND_TASKS = '- [ ] T001 Tests for FR-001 in `test/a.test.js`\n- [ ] T002 Implement FR-001 in `src/a.js`\n- [ ] T003 Docs\n';
+test('#482: the architect\'s Stop sends back once a report whose Round lines leave a task out', () => {
+  const { dir, write: w } = repo();
+  w(`${FEAT}/tasks.md`, ROUND_TASKS);
+  subagentStart(dir, 'ar1', 'architect');
+  const stop = (id, last) => laneOnly(dir, id, ['specs/', 'CLAUDE.md'], 'architect', { last_assistant_message: last });
+  const first = stop('ar1', 'Wrote the plan.\nRound 1: red FR-001; green FR-001');
+  assert.equal(first?.decision, 'block', JSON.stringify(first));
+  assert.match(first.reason, /^Round check: the `Round <n>:` lines of your report leave out T001, T002, T003 of tasks\.md/);
+  assert.notEqual(stop('ar1', 'Round 1: red FR-001; green FR-001')?.decision, 'block', 'once');
+  for (const [i, last] of [['2', 'Round 1: red T001; green T002, T003'], ['3', 'Round 1: red T001; green T002-T003'], ['4', 'Answered D1: done.']]) {
+    subagentStart(dir, `ok${i}`, 'architect');
+    assert.notEqual(stop(`ok${i}`, last)?.decision, 'block', last);
+  }
+  w(`${FEAT}/tasks.md`, ROUND_TASKS.replace('[ ] T001', '[x] T001'));
+  subagentStart(dir, 'ok9', 'architect');
+  assert.notEqual(stop('ok9', 'Round 2: green T002, T003')?.decision, 'block', 'a ticked task needs no round');
+});
+
+test('#482: the architect role is sent back once too, at its Stop', () => {
+  const { dir, write: w } = repo();
+  skillAgentsTeam(dir);
+  assert.ok(!decided(skillCall(dir, 'speckit-role-architect')));
+  w(`${FEAT}/tasks.md`, ROUND_TASKS);
+  const last = 'Round 1: red T001; green T002';
+  const stop = stopRole(dir, { last_assistant_message: last });
+  assert.equal(stop?.decision, 'block', JSON.stringify(stop));
+  assert.match(stop.reason, /^Round check: [^\n]*leave out T003 of tasks\.md/);
+  assert.doesNotMatch(reasonOf(stopRole(dir, { last_assistant_message: last })), /Round check/, 'once');
+  // Closed by the next role call: the report is the role's last text in the transcript.
+  const b = repo();
+  skillAgentsTeam(b.dir);
+  const t = transcriptIn(b.dir, [userRow('typed')]);
+  assert.ok(!decided(skillCall(b.dir, 'speckit-role-architect', { transcript_path: t })));
+  b.write(`${FEAT}/tasks.md`, ROUND_TASKS);
+  say(t, last);
+  const next = callWithArgs(b.dir, 'speckit-role-spec-auditor', t, '<inputs>');
+  assert.ok(denied(next), JSON.stringify(next));
+  assert.match(reasonOf(next), /^Round check: [^\n]*leave out T003/);
+});
+
 // #466: the agents that build or check (architect, test-writer, implementer, spec-gatekeeper, load-tester, patcher) start
 // with the repo's commands and CI steps, so none spends its first turns reading package.json and the workflows. A repo
 // with nothing to name gets no block; product-owner, spec-auditor and security-reviewer get none.
