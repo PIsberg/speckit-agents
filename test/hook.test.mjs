@@ -385,10 +385,16 @@ test('#508: a read-only role may write under a folder a plain $(mktemp) made, no
   for (const command of ['T=$(mktemp -d -p .); cp package.json $T/x', 'T=$(mktemp -d --tmpdir=src); cp a $T/x', 'T=$(mktemp src/XXXXXX); cp a $T',
     'T=$(mktemp -d); T=$(pwd); cp a $T/x', 'T=$(pwd); cp package.json $T/x',
     // A TMPDIR the command sets steers mktemp, perhaps into the repo.
-    'TMPDIR=src; T=$(mktemp -d); cp a $T/x', 'export TMPDIR=src && T=$(mktemp -d) && cp a $T/x', 'T=$(TMPDIR=src mktemp -d); cp a $T/x']) {
+    'TMPDIR=src; T=$(mktemp -d); cp a $T/x', 'export TMPDIR=src && T=$(mktemp -d) && cp a $T/x', 'T=$(TMPDIR=src mktemp -d); cp a $T/x',
+    // The security review of this change: a template without -t is made in the current folder; a substitution that is more
+    // than one plain mktemp prints something else; and TMPDIR set by read, printf -v, eval or a sourced file.
+    'T=$(mktemp src.XXXXXX); cp a $T', 'T=$(mktemp gk.XXXXXX); cp a $T', 'cp a $(mktemp -d && cd src && pwd)/x', 'T=$(mktemp XXX|cat); cp a $T/x',
+    'cp a "$(mktemp -d; pwd)"/x', 'read TMPDIR <<< src; T=$(mktemp -d); cp a $T/x', 'x=TMP; printf -v ${x}DIR src; T=$(mktemp -d); cp a $T/x',
+    'eval "TMP""DIR=src"; T=$(mktemp -d); cp a $T/x', 'source env.sh; T=$(mktemp -d); cp a $T/x', '. ./env.sh && T=$(mktemp -d) && cp a $T/x']) {
     assert.ok(denied(gk(command)), command);
   }
   assert.ok(denied(gk('T=$(mktemp -d); cp package.json src/main/App.java')), 'a write into the repo is still a write');
+  assert.equal(gk('cp package.json ${TMPDIR:-/tmp}/p.json'), null, 'a TMPDIR the command only reads keeps its default, as before');
 });
 
 // #412: #378 denied `eslint --fix` and `prettier --write`, but the same flag handed to a package script through its runner
