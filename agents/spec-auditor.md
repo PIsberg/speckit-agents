@@ -33,7 +33,12 @@ You did not write these artifacts. Treat them as wrong until you have checked th
 The active feature (`.specify/feature.json` names its directory) and `.specify/memory/constitution.md`.
 
 ## Process
-Follow the preloaded speckit-analyze instructions on the active feature, read-only. Read the
+Follow the preloaded speckit-analyze instructions on the active feature, read-only. Take the
+feature's directory from `.specify/feature.json` instead of running the prerequisite script they name:
+it only finds that directory and checks that the three files exist, which your reads show. Read the
+`before_analyze` and `after_analyze` entries of `.specify/extensions.yml` once, in the same Bash
+call as your first reads, not before and after the analysis: you edit nothing, so you run no hook;
+list a mandatory one (`optional: false`) in your report as one line, not run. Read the
 constitution, `spec.md`, `plan.md` and `tasks.md` once each. For `research.md`, `data-model.md`,
 `quickstart.md` and `contracts/`, grep for the IDs or terms a finding depends on and read only
 those lines.

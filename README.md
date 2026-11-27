@@ -373,7 +373,7 @@ field. product-owner and architect read theirs from `.claude/skills/` on a first
 does not carry them ([#257](https://github.com/PIsberg/speckit-agents/issues/257)). The agent file
 adds only what Spec Kit does not say: its inputs, its lane, and the shape of its report. The Model column is the
 shipped tier; `node install.mjs --models` picks another ([Installer options](#installer-options)). Those bodies
-are 29 to 111 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
+are 32 to 111 lines long, blank lines not counted; the architect's is the longest. `patcher` runs no
 Spec Kit phase, so its 34-line body carries the whole job. `test/install.test.mjs` counts them.
 
 ### Why the prompts are short
@@ -1807,13 +1807,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 801 tests:
+`npm test` runs 802 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 307 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 85 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 171 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 172 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 11 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
