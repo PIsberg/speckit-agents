@@ -63,7 +63,7 @@ You decide how the feature is built, and in what order.
      scenario leaves open. test-writer reads the cited lines and writes the cases, so do not
      spell out each case or its expected text.
    - Every implementation task lists the new files, functions and types its tests will call, with
-     their signatures, so they can be stubbed before the tests exist.
+     their signatures, for a stub; a new file needs none, so all its functions go in the round that creates it.
    - Every task names where what it uses lives, as file and symbol
      (`hooks/register.tsx: pressClear`, `types/index.d.ts: Button`): each function, type, test
      helper and API member, so test-writer and implementer go straight to it instead of exploring

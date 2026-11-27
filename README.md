@@ -714,8 +714,11 @@ not measured yet. For each round:
    the next step fail cleanly. A new file the tests import gets no stub: a test failing because
    that file is not written yet is already red (the hook takes a missing production file as a valid
    RED, #245), and the pass it saves is an implementer launch and a main-session response per round
-   ([#460](https://github.com/PIsberg/speckit-agents/issues/460)). How often a real run skips it is
-   not measured yet. The architect's `Round` line names the tasks that need one.
+   ([#460](https://github.com/PIsberg/speckit-agents/issues/460)). So every function of a new file goes
+   in the round that creates it: in the two `--large-slices` runs of 2026-11-27 the architect created
+   each new module in round 1 and stubbed the rest into it in rounds 2 and 3, 8 build launches where the
+   runs of 2026-11-20 had 3 or 4 ([#505](https://github.com/PIsberg/speckit-agents/issues/505)). The
+   architect's `Round` line names the tasks that need a stub.
 2. **Red.** test-writer writes the round's tests and loops until each one fails on an assertion,
    on the stub's not-implemented signal or on a new file not written yet. A test that fails because
    it does not parse, a test-side import is missing or a name is undefined proves nothing about the behaviour, so test-writer
@@ -1811,13 +1814,13 @@ The record: [Live results, The board](docs/live-results.md#the-board).
 
 ### Test suite
 
-`npm test` runs 819 tests:
+`npm test` runs 820 tests:
 
 | Suite | Tests | What it runs |
 |---|--:|---|
 | [`test/hook.test.mjs`](test/hook.test.mjs) | 312 | the hook, fed hook JSON on stdin, against throwaway git repos: every mode but `patch` |
 | [`test/hook-patch.test.mjs`](test/hook-patch.test.mjs) | 85 | the same for the fast track's `patch` mode |
-| [`test/install.test.mjs`](test/install.test.mjs) | 173 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
+| [`test/install.test.mjs`](test/install.test.mjs) | 174 | the installer, against throwaway config dirs, and the rules the installed skill and agents must state to each other; the build stamp and the `check` mode (#230) |
 | [`test/board-mod.test.mjs`](test/board-mod.test.mjs) | 11 | the board mod: its fingerprint, retry-limit, role-color and report-word twins, its descriptions, then `claude plugin validate` and its own 169 tests under `claude plugin test` |
 | [`test/usage.test.mjs`](test/usage.test.mjs) | 11 | `tools/usage.mjs`, on synthetic transcripts: the counts, which relaunch lost its cached prefix, and which launches went out together or in a worktree |
 | [`test/prompt-caching.test.mjs`](test/prompt-caching.test.mjs) | 3 | the agents' `tools:` lines, one per capability, the read-only agents' `disallowedTools`, and `omitClaudeMd: true` on exactly the agents that cannot write |
