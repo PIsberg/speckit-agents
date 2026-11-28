@@ -856,7 +856,7 @@ function teamOf() {
   const r = readState(teamFile(id));
   if (!r || !Array.isArray(r.roles) || !r.roles.every((x) => TEAM_ROLES.includes(x))) return null;
   return { roles: r.roles, noagents: r.noagents === true && r.roles.length === 0, skillAgents: r.skillAgents === true,
-    hybrid: r.skillAgents === true && r.hybrid === true, security: r.security === true };
+    hybrid: r.skillAgents === true && r.hybrid === true, security: r.security === true, request: r.request === true };
 }
 // A subagent skips the audit check when its session's team lacks spec-auditor; the main session only
 // in a request the user typed as `/speckit-team --team noagents`.
@@ -1796,13 +1796,28 @@ if (mode === 'gate') {
     // No Team line, or one naming a non-role: the full team (FR-002).
     let roles = team && !('bad' in team) ? team.roles : CORE_ROLES;
     const was = teamOf();
+    // #527: security-reviewer and load-tester are opt-in. In a request /speckit-team recorded (its team, or the typed
+    // request's choice before the first launch), a launch of one goes only when that team has it or the launch's own
+    // Team: line names it. A session with no recorded request is not judged.
+    const OPT_IN = { 'security-reviewer': '--security', 'load-tester': '--load-test' };
+    if (OPT_IN[role] && !(team && !('bad' in team) && team.roles.includes(role))) {
+      // Judged only in a request typed as /speckit-team: its choice record at the first launch, then the team record's
+      // `request` mark (or a skill-agents or hybrid record, which only a typed request writes).
+      const typedReq = choice !== undefined || was?.request === true || was?.skillAgents === true;
+      const has = !typedReq ? true : choice !== undefined ? Array.isArray(choice?.typed) && choice.typed.includes(role)
+        : was.skillAgents && role === 'security-reviewer' ? was.security : was.roles.includes(role);
+      if (!has) {
+        deny(`speckit-team: ${role} is not in this request's team: it runs only with ${OPT_IN[role]} or when --team names it. `
+          + 'Go on without it; if the user asked for it in this request, launch it with a Team: line that names it.');
+      }
+    }
     // Within a request the team never loses spec-auditor once it has it (#101); a typed /speckit-team
     // starts the next request. The rest of the line still narrows the team.
     if (was?.roles.includes('spec-auditor') && !roles.includes('spec-auditor')) {
       roles = TEAM_ROLES.filter((r) => r === 'spec-auditor' || roles.includes(r));
       addNote("speckit-team: the Team line drops spec-auditor, which this request's team has; the audit gate stays on. A new /speckit-team request chooses a new team.");
     }
-    writeJson(teamFile(id), { session_id: id, roles, at: new Date().toISOString() });
+    writeJson(teamFile(id), { session_id: id, roles, ...(choice !== undefined || was?.request === true ? { request: true } : {}), at: new Date().toISOString() });
     if (team && 'bad' in team) addNote(`speckit-team: the Team line names ${team.bad}, not a team role; the full team's gates apply`);
     else if (team) addNote(`speckit-team: team for this session: ${roles.join(', ')}; audit gate ${roles.includes('spec-auditor') ? 'on' : 'off, spec-auditor is not in the team'}`);
     if (was?.noagents) addNote("speckit-team: a team agent was launched in a no-agents request; the full team's gates apply from here");

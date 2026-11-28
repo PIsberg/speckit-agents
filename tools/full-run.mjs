@@ -260,6 +260,8 @@ export function checkRun({ repo, usage, costs, maxCost, marker, markerSent, agen
   }
   // load-tester is opt-in (--load-test), and a full run never passes it (012).
   if (launches.some((l) => l.type === 'load-tester')) out.push('load-tester was launched, but the run did not pass --load-test');
+  // #527: security-reviewer is opt-in too, and the harness has no --security; a --team that names it asked for it.
+  if (!roles?.includes('security-reviewer') && launches.some((l) => l.type === 'security-reviewer')) out.push('security-reviewer was launched, but the run did not pass --security');
   const bg = launches.filter((l) => l.background);
   if (bg.length) out.push(`${bg.length} agent(s) launched in the background: ${bg.map((l) => l.type).join(', ')}`);
   if (sideBySide && !launches.some((l) => l.type === 'implementer' && l.worktree && l.together > 1)) {

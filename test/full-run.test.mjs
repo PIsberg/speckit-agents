@@ -844,3 +844,11 @@ test('#507 full run: under --login the project copy drops the settings hooks the
   assert.equal(dropDuplicateGates(project, personal), 0, 'without a personal install the project copy keeps its gates');
   assert.equal(dropDuplicateGates(project, path.join(dir, 'missing.json')), 0);
 });
+
+test('#527 full run: a run that launched security-reviewer unasked fails, as one that launched load-tester does', () => {
+  const s = state({ launches: [{ type: 'product-owner', background: false }, { type: 'security-reviewer', background: false }] });
+  const f = failures(s);
+  assert.ok(f.some((x) => /security-reviewer was launched, but the run did not pass --security/.test(x)), JSON.stringify(f));
+  const named = state({ verdict: null, tasks: null, launches: ['test-writer', 'implementer', 'spec-gatekeeper', 'security-reviewer'].map((type) => ({ type, background: false })) });
+  assert.ok(!failures(named, [0.5], 6, { team: 'build,security' }).some((x) => /security-reviewer/.test(x)), 'a --team that names it asked for it');
+});
